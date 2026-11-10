@@ -154,6 +154,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"InstallationService/InstallSolution":                          "Install a solution: compose its agent principal, scope node, standing grant, and installation row.",
 	"InstallationService/ReviewSolutionInstall":                    "Review a delivered solution release and the exact supporting module consent before installation.",
 	"InstallationService/InstallReviewedSolution":                  "Install the unchanged reviewed solution and supporting modules; activate only after setup acknowledgement and final prerequisite checks.",
+	"InstallationService/SetUpModulePage":                          "Set up who may use a module page: each declared role to a team on its composition installation, the administrator joining the teams of the roles they take.",
 	"InstallationService/UninstallSolution":                        "Uninstall a solution and reverse its composition.",
 	"InstallationService/RetryInstallation":                        "Run a failed installation's install step again; the installation is pending until the solution acknowledges.",
 	"InstallationService/NarrowInstallation":                       "Narrow an installation's scope, bump its revision and cancel the organization's affected work.",

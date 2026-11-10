@@ -106,6 +106,26 @@ message Installation {
   string setup_state = 15;
   // Public recovery guidance; transport diagnostics and credentials are omitted.
   string setup_message = 16;
+  // The delivery generation the installation's consent approved, as the shared
+  // authority core holds it: a redelivery that asks nothing new of the
+  // organization advances it without a click; one that asks more leaves it.
+  // Zero for a record the core did not decide (a module installed by this
+  // host's own consent).
+  uint64 approved_generation = 17;
+  // True when the delivered generation asks more than approved_generation did:
+  // the installation stands, active and healthy with its grants, until an
+  // administrator reviews the target again and installs the reviewed release
+  // on this same installation (an update, never an uninstall).
+  bool upgrade_available = 18;
+  // What of the access an administrator's install assigned could not be
+  // applied once the installation became active, one entry per role in words
+  // ("viewer: the role could not be granted to its team: ..."). Set only on
+  // the answer of the call that applied it (InstallReviewedSolution,
+  // RetryInstallation); the installation stands, and Set up grants the rest.
+  repeated string access_problems = 19 [
+    (buf.validate.field).repeated.max_items = 64,
+    (buf.validate.field).repeated.items = {string: {max_len: 1024}}
+  ];
 }
 
 message InstallSolutionRequest {
@@ -288,6 +308,14 @@ message ReviewedSolutionInstall {
   host.installation.v1.ConsentApproval approval = 8;
   string installation_role = 9;
   repeated ReviewedSupportingModule modules = 10;
+  // For an update of an installation whose consent recorded its reach: what
+  // each role reaches as that consent approved it, which its holders hold
+  // until this review is installed. The review's own roles' reach
+  // (host.installation.v1 ReviewedOffer) is the composition now, so a host
+  // names what the update asks beyond what was approved. Empty for a fresh
+  // install, or a consent recorded before reach was kept. Each role carries
+  // its name and reach only.
+  repeated host.installation.v1.OfferRole approved_roles = 11;
 }
 
 message ReviewedSupportingModule {
@@ -313,6 +341,47 @@ message ReviewSolutionInstallRequest {
 message InstallReviewedSolutionRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
   ReviewedSolutionInstall review = 2 [(buf.validate.field).required = true];
+  // The team of the organization that receives each declared role once the
+  // installation is active, by role name. A role not named receives the
+  // organization's team named `<target>-<role>`, created when absent; empty
+  // means every role does. A resumed install applies the assignment its first
+  // attempt recorded, never this one.
+  map<string, string> role_teams = 3 [
+    (buf.validate.field).map.max_pairs = 64,
+    (buf.validate.field).map.keys = {string: {min_len: 1, max_len: 128}},
+    (buf.validate.field).map.values = {string: {uuid: true}}
+  ];
+  // The declared roles the installing person takes: they join the team of each
+  // once the installation is active, and no other. Empty takes none.
+  repeated string installer_roles = 4 [
+    (buf.validate.field).repeated.max_items = 64,
+    (buf.validate.field).repeated.unique = true,
+    (buf.validate.field).repeated.items = {string: {min_len: 1, max_len: 128}}
+  ];
+}
+
+// A module page's access is set up the way a solution's install assigns it,
+// without an install: every module is installed by composition, and a module
+// page's roles decide who may use it, through grants on that composition
+// installation. Each declared role goes to the team role_teams names for it,
+// or else to the organization's team `<module>-<role>` (found by name or by
+// its slug, created when absent), and is granted to it on the composition
+// installation; the acting administrator joins the teams of installer_roles
+// and no other. Setting it up again changes nothing that is already so.
+message SetUpModulePageRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // The module page, as ListAvailableSolutions names it.
+  string target_id = 2 [(buf.validate.field).string.uuid = true];
+  map<string, string> role_teams = 3 [
+    (buf.validate.field).map.max_pairs = 64,
+    (buf.validate.field).map.keys = {string: {min_len: 1, max_len: 128}},
+    (buf.validate.field).map.values = {string: {uuid: true}}
+  ];
+  repeated string installer_roles = 4 [
+    (buf.validate.field).repeated.max_items = 64,
+    (buf.validate.field).repeated.unique = true,
+    (buf.validate.field).repeated.items = {string: {min_len: 1, max_len: 128}}
+  ];
 }
 
 service InstallationService {
@@ -347,6 +416,29 @@ service InstallationService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
     option (google.api.http) = {post: "/v1/solution-installations" body: "*"};
+  }
+  // Set up who may use a module page: its roles to teams on its composition
+  // installation, in one act; the answer is that installation, with what
+  // could not be applied in access_problems.
+  rpc SetUpModulePage(SetUpModulePageRequest) returns (Installation) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {request_field: "org_id" target: RESOURCE_TARGET_ORGANIZATION lookup: RESOURCE_LOOKUP_DIRECT_ID}
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.authority.role_granted"
+        events: "saas.team.created"
+        events: "saas.team.member_added"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {post: "/v1/solution-installations/module-pages/setup" body: "*"};
   }
   // InstallSolution composes an installation in one transaction: an idempotent
   // agent Principal with its ceiling, a solution scope node, the agent's standing
@@ -941,6 +1033,11 @@ message AvailableSolution {
   // module and a solution are set up differently and the page says which it is.
   // Empty when the registration declared neither.
   string kind = 10 [(buf.validate.field).string.max_len = 32];
+  // The roles a module page declares (a module declaring roles), as the
+  // authority composes it: such a module is never installed by an
+  // administrator, its access is set up (SetUpModulePage). Empty for a
+  // solution, whose roles its review answers, and for a module without roles.
+  repeated string roles = 11;
 }
 
 message ListAvailableSolutionsRequest {

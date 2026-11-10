@@ -323,9 +323,11 @@ func TestNarrowingTheEnvelopeRefusesTheNextCheck(t *testing.T) {
 	require.NoError(t, err)
 
 	s.putEnvelope(t, envelopeOptions{none: true})
-	require.ErrorIs(t, s.passReasons(t), business.ErrModulePrincipalOmitted)
+	require.NoError(t, s.passReasons(t), "a principal the envelope leaves out is withheld on its row, never a failing pass")
 	_, present = s.entry()
 	require.False(t, present, "an envelope with no ceiling for the principal grants it nothing")
+	require.Contains(t, s.reconciler.ModulePrincipals().WithheldAuthorityReasons()[s.primary.binding],
+		"the administrative policy declares no grant for it")
 }
 
 // A withdrawal takes the principal out and is terminal for the binding.

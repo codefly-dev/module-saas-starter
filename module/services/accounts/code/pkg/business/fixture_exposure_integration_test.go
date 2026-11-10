@@ -31,11 +31,13 @@ const (
 // legacyCarrier authenticates a module's own delivery workload.
 type legacyCarrier struct{}
 
-func (legacyCarrier) AuthorizeCarrier(_ context.Context, credential, namespace string) error {
-	if credential != "Bearer delivery:"+namespace {
-		return fmt.Errorf("not the delivery workload of %s", namespace)
+func (legacyCarrier) AuthorizeCarrier(_ context.Context, credential string, namespaces ...string) error {
+	for _, namespace := range namespaces {
+		if credential == "Bearer delivery:"+namespace {
+			return nil
+		}
 	}
-	return nil
+	return fmt.Errorf("not the delivery workload of %v", namespaces)
 }
 
 // wireSignedDelivery gives the shared service the signed delivery path a

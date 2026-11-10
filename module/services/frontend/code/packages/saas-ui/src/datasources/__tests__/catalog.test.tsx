@@ -426,3 +426,91 @@ it.each([CatalogProviders, RefusedProvider])(
 			).toBeNull();
 	},
 );
+
+it("ties every source a solution's page connects to its installation, and sends the tie on the wire", async () => {
+	const governance = {
+		installationId: "example-installation",
+		resourceKind: "example.page",
+		action: "write",
+	};
+	const client = clientWith([exampleProvider]);
+	const queries = new QueryClient({
+		defaultOptions: { queries: { retry: false } },
+	});
+	render(
+		<QueryClientProvider client={queries}>
+			<DatasourcesPanel
+				client={client}
+				orgId="example-org"
+				governance={governance}
+			/>
+		</QueryClientProvider>,
+	);
+	await fill(exampleProvider);
+	fireEvent.click(screen.getByRole("button", { name: "Connect source" }));
+	await waitFor(() => expect(client.addSource).toHaveBeenCalledTimes(1));
+	expect(client.addSource).toHaveBeenCalledWith(
+		expect.objectContaining({ provider: exampleProvider, governance }),
+	);
+
+	const received: unknown[] = [];
+	const transport = createRouterTransport((router) =>
+		router.service(DatasourceService, {
+			getDatasourceCatalog: () => ({
+				providers: [
+					{
+						provider: 4,
+						connector: "upload",
+						displayName: "Example bucket",
+						acceptsNewSources: true,
+						credentialModes: [4],
+						configFields: [{ key: "prefix", displayName: "Prefix" }],
+					},
+				],
+			}),
+			addSource: (input) => {
+				received.push(input);
+				return {};
+			},
+			addGitHubSource: (input) => {
+				received.push(input);
+				return {};
+			},
+		}),
+	);
+	const wire = datasourceClientOverTransport(transport);
+	const [bucket] = await wire.getCatalog!();
+	await wire.addSource!({
+		orgId: "example-org",
+		provider: bucket,
+		config: { prefix: "example/" },
+		targetCollection: "Example",
+		credential: { kind: "static_secret", secret: "example-secret" },
+		governance: { ...governance, binding: "documents" },
+	});
+	await wire.addGitHubSource({
+		orgId: "example-org",
+		repo: "acme/example",
+		paths: [],
+		branch: "",
+		targetCollection: "Example",
+		webhookSecret: "",
+		governance,
+	});
+	await wire.addSource!({
+		orgId: "example-org",
+		provider: bucket,
+		config: { prefix: "example/" },
+		targetCollection: "Example",
+		credential: { kind: "static_secret", secret: "example-secret" },
+	});
+	expect(received).toMatchObject([
+		{ governance: { ...governance, binding: "documents" } },
+		{ governance: { ...governance, binding: "" } },
+		{},
+	]);
+	expect(
+		(received[2] as { governance?: unknown }).governance,
+		"the organization's own source carries no tie",
+	).toBeUndefined();
+});

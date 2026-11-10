@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 
 	"accounts/pkg/business"
@@ -58,15 +59,15 @@ func (n *NativeWorkloadIdentity) attest(ctx context.Context, token, audience str
 }
 
 // AuthorizeCarrier requires the credential to name the `delivery` workload of
-// module (a native namespace is its module).
-func (n *NativeWorkloadIdentity) AuthorizeCarrier(ctx context.Context, credential, module string) error {
+// one of modules (a native namespace is its module).
+func (n *NativeWorkloadIdentity) AuthorizeCarrier(ctx context.Context, credential string, modules ...string) error {
 	attested, err := n.attest(ctx, bearerToken(credential), deliveryTokenAudience)
 	if err != nil {
 		return err
 	}
-	if attested.Workload.Module != module || attested.Workload.Service != workloadidentity.DeliveryService {
-		return fmt.Errorf("%w: the manifest is delivered by %s/%s, and the carrier is %s",
-			ErrCarrierNotAuthorized, module, workloadidentity.DeliveryService, attested.Workload.Unique())
+	if attested.Workload.Module == "" || !slices.Contains(modules, attested.Workload.Module) || attested.Workload.Service != workloadidentity.DeliveryService {
+		return fmt.Errorf("%w: the manifest is delivered by %s, and the carrier is %s",
+			ErrCarrierNotAuthorized, deliveryAccounts(modules, workloadidentity.DeliveryService), attested.Workload.Unique())
 	}
 	return nil
 }

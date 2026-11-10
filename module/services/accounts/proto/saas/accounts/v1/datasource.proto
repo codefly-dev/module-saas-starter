@@ -233,6 +233,49 @@ message UploadDatasourceConfig {
   }];
 }
 
+// SourceGovernance ties a source to one installation of a solution (or of a
+// module page declaring roles), and names the one scope of that solution's
+// own declaration that governs the source. A source carrying it is the
+// installation's: connecting it and every later change to it (update, sync,
+// reconnect, removal, operations and trigger declarations, an account link)
+// are decided by that scope alone — any member the authority issues it there,
+// exactly as it would for the solution's page, whether or not they administer
+// the organization, and nobody else, an organization administrator included,
+// who is refused by name. It writes only into the installation's own
+// collections, and is read only by someone holding a role on the
+// installation. A source without it is the organization's own, changed by its
+// administrators alone, as before.
+//
+// The tie is set once, when the source is connected, and never moves; it
+// lapses only when its installation is uninstalled, and the source is then
+// the organization's again.
+message SourceGovernance {
+  // The installation the source belongs to: the authority's installation id.
+  string installation_id = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  // The governing scope: one resource kind and one action. Without binding it
+  // is one of the solution's own kinds, as its roles grant it on the
+  // installation's data; with binding, one its roles reach through that
+  // operation binding (a kind of the module the binding addresses). Either
+  // way it is a scope only the solution's fullest roles hold: one a role is
+  // granted without everything the solution's roles grant (a viewer's read
+  // beside an editor's write) governs no source and is refused.
+  string resource_kind = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  // The governing action on resource_kind, as the solution declares it.
+  string action = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+  }];
+  // The solution's operation binding the scope is held through; empty for one
+  // of its own kinds.
+  string binding = 4 [(buf.validate.field).string.max_len = 255];
+}
+
 // Datasource is one connected external datasource. It is org-scoped and carries
 // only non-secret projection fields; credential material is deliberately absent.
 // Exactly one provider config (github, api, crawler, or upload) is set, matching
@@ -303,6 +346,9 @@ message Datasource {
   // it, which together with live_delivery NONE means it only ever changes when
   // somebody presses "Sync now".
   google.protobuf.Duration reconcile_interval = 22;
+  // The installation that governs this source, and the scope it is governed
+  // by; unset for an organization's own source.
+  SourceGovernance governance = 23;
 }
 
 message AddGitHubSourceRequest {
@@ -363,6 +409,12 @@ message AddGitHubSourceRequest {
       }
     }
   }];
+  // Ties the source to a solution's installation, governed by the scope it
+  // names (SourceGovernance): the caller must be issued that scope there now,
+  // and need not administer the organization; the boundary must be one of the
+  // installation's own collections. Omitted for an organization's own source,
+  // which an organization administrator connects.
+  SourceGovernance governance = 11;
 }
 
 message AddGitHubSourceResponse {
@@ -413,6 +465,12 @@ message AddSourceRequest {
   // confidential client. Optional (a public client omits it). Encrypted at
   // receipt alongside the refresh token carried in credential; never projected.
   string oauth2_client_secret = 10 [(buf.validate.field).string.max_len = 1024];
+  // Ties the source to a solution's installation, governed by the scope it
+  // names (SourceGovernance): the caller must be issued that scope there now,
+  // and need not administer the organization; the boundary must be one of the
+  // installation's own collections. Omitted for an organization's own source,
+  // which an organization administrator connects.
+  SourceGovernance governance = 14;
 }
 
 message AddSourceResponse {
@@ -1693,7 +1751,10 @@ service DatasourceService {
     };
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
-      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      // Any member reaches the handler, which holds an organization's own
+      // source to its administrators and a governed one (SourceGovernance)
+      // to the holders of its governing scope, before anything is written.
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
       resource_bindings: {
         request_field: "org_id"
         target: RESOURCE_TARGET_ORGANIZATION
@@ -1718,7 +1779,10 @@ service DatasourceService {
   rpc AddGitHubSource(AddGitHubSourceRequest) returns (AddGitHubSourceResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
-      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      // Any member reaches the handler, which holds an organization's own
+      // source to its administrators and a governed one (SourceGovernance)
+      // to the holders of its governing scope, before anything is written.
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
       resource_bindings: {
         request_field: "org_id"
         target: RESOURCE_TARGET_ORGANIZATION
@@ -1742,7 +1806,10 @@ service DatasourceService {
   rpc AddSource(AddSourceRequest) returns (AddSourceResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
-      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      // Any member reaches the handler, which holds an organization's own
+      // source to its administrators and a governed one (SourceGovernance)
+      // to the holders of its governing scope, before anything is written.
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
       resource_bindings: {
         request_field: "org_id"
         target: RESOURCE_TARGET_ORGANIZATION
@@ -1768,7 +1835,10 @@ service DatasourceService {
   rpc UpdateSource(UpdateSourceRequest) returns (UpdateSourceResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
-      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      // Any member reaches the handler, which holds an organization's own
+      // source to its administrators and a governed one (SourceGovernance)
+      // to the holders of its governing scope, before anything is written.
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
       resource_bindings: {
         request_field: "org_id"
         target: RESOURCE_TARGET_ORGANIZATION
@@ -1847,7 +1917,10 @@ service DatasourceService {
   rpc SyncSource(SyncSourceRequest) returns (SyncSourceResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
-      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      // Any member reaches the handler, which holds an organization's own
+      // source to its administrators and a governed one (SourceGovernance)
+      // to the holders of its governing scope, before anything is written.
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
       resource_bindings: {
         request_field: "org_id"
         target: RESOURCE_TARGET_ORGANIZATION
@@ -1871,7 +1944,10 @@ service DatasourceService {
   rpc GetSourceSync(GetSourceSyncRequest) returns (GetSourceSyncResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
-      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      // Any member reaches the handler, which holds an organization's own
+      // source's sync to its administrators and a governed one
+      // (SourceGovernance) to the holders of a role on its installation.
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
       resource_bindings: {
         request_field: "org_id"
         target: RESOURCE_TARGET_ORGANIZATION
@@ -1890,7 +1966,10 @@ service DatasourceService {
   rpc DeleteSource(DeleteSourceRequest) returns (DeleteSourceResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
-      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      // Any member reaches the handler, which holds an organization's own
+      // source to its administrators and a governed one (SourceGovernance)
+      // to the holders of its governing scope, before anything is written.
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
       resource_bindings: {
         request_field: "org_id"
         target: RESOURCE_TARGET_ORGANIZATION
@@ -1967,6 +2046,10 @@ service DatasourceService {
   rpc MigrateGitHubSourceToApp(MigrateGitHubSourceToAppRequest) returns (MigrateGitHubSourceToAppResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
+      // The organization's GitHub App is its administrators' to attach, one
+      // source at a time; a governed source (SourceGovernance) is also held
+      // to the holders of its governing scope, so an administrator attaching
+      // the App to one holds that scope too.
       tenant: TENANT_REQUIREMENT_ORG_ADMIN
       resource_bindings: {
         request_field: "org_id"
@@ -2274,7 +2357,10 @@ service DatasourceService {
   rpc DelegateSourceTriggers(DelegateSourceTriggersRequest) returns (DelegateSourceTriggersResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
-      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      // Any member reaches the handler, which holds an organization's own
+      // source to its administrators and a governed one (SourceGovernance)
+      // to the holders of its governing scope, before anything is written.
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
       resource_bindings: {
         request_field: "org_id"
         target: RESOURCE_TARGET_ORGANIZATION

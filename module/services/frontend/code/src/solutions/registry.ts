@@ -137,7 +137,7 @@ export interface SolutionSurface {
 /** The per-viewer navigation projection (see navProjection in projections.ts). */
 export type SolutionNav = Pick<
 	SolutionManifest,
-	"id" | "nav" | "assetVersion" | "group"
+	"id" | "nav" | "assetVersion" | "group" | "kind"
 > & {
 	/**
 	 * False when the solution is installed and granted but its installation is
@@ -322,6 +322,7 @@ interface RegistrySnapshot {
 	revision: number;
 	solutions: SolutionManifest[];
 	byId: Map<string, SolutionManifest>;
+	moduleTargets: ReadonlyMap<string, string>;
 	expiresAt: number;
 }
 
@@ -389,6 +390,7 @@ interface GatewayRegistryEntry {
 function manifestsFromSnapshot(payload: unknown): {
 	revision: number;
 	solutions: SolutionManifest[];
+	moduleTargets: ReadonlyMap<string, string>;
 } | null {
 	if (typeof payload !== "object" || payload === null) return null;
 	const { revision, solutions } = payload as {
@@ -397,7 +399,21 @@ function manifestsFromSnapshot(payload: unknown): {
 	};
 	if (!Array.isArray(solutions)) return null;
 	const manifests: SolutionManifest[] = [];
+	const moduleTargets = new Map<string, string>();
 	for (const entry of solutions as GatewayRegistryEntry[]) {
+		if (
+			entry?.status === "active" &&
+			entry.kind === "module" &&
+			entry.manifest === undefined &&
+			typeof entry.id === "string" &&
+			typeof entry.targetId === "string" &&
+			entry.targetId !== ""
+		) {
+			// A composed module with no page: nothing renders it, and a page
+			// that consumes it on a person's session keys its reach on this.
+			moduleTargets.set(entry.id, entry.targetId);
+			continue;
+		}
 		if (entry?.status !== "active" || typeof entry.manifest !== "string") {
 			continue;
 		}
@@ -445,6 +461,7 @@ function manifestsFromSnapshot(payload: unknown): {
 	return {
 		revision: typeof revision === "number" ? revision : 0,
 		solutions: manifests,
+		moduleTargets,
 	};
 }
 
@@ -522,6 +539,7 @@ async function fetchSnapshot(): Promise<RegistrySnapshot | null> {
 		revision: parsed.revision,
 		solutions: parsed.solutions,
 		byId: new Map(parsed.solutions.map((solution) => [solution.id, solution])),
+		moduleTargets: parsed.moduleTargets,
 		expiresAt: Date.now() + SNAPSHOT_TTL_MS,
 	};
 }
@@ -567,11 +585,21 @@ export async function loadSolutions(): Promise<
  * a later refetch, and the cache key would then claim a set it did not describe.
  */
 export async function loadSolutionsWithRevision(): Promise<
-	{ revision: number; solutions: SolutionManifest[] } | SolutionRegistryFailure
+	| {
+			revision: number;
+			solutions: SolutionManifest[];
+			/** Each active composed module with no page, by alias, to its target. */
+			moduleTargets: ReadonlyMap<string, string>;
+	  }
+	| SolutionRegistryFailure
 > {
 	const current = await snapshot();
 	if (current === null) return "unavailable";
-	return { revision: current.revision, solutions: current.solutions };
+	return {
+		revision: current.revision,
+		solutions: current.solutions,
+		moduleTargets: current.moduleTargets,
+	};
 }
 
 /** One solution by id, or why it could not be resolved. */

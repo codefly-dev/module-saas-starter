@@ -404,7 +404,19 @@
     "saasAccountsV1Installation": {
       "description": "Installation is one solution's bound identity in an org. Server-assigned ids;\nthe browser cannot attest to tenancy, the agent principal, or the scope node.",
       "properties": {
+        "accessProblems": {
+          "description": "What of the access an administrator's install assigned could not be\napplied once the installation became active, one entry per role in words\n(\"viewer: the role could not be granted to its team: ...\"). Set only on\nthe answer of the call that applied it (InstallReviewedSolution,\nRetryInstallation); the installation stands, and Set up grants the rest.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "agentPrincipalId": {
+          "type": "string"
+        },
+        "approvedGeneration": {
+          "description": "The delivery generation the installation's consent approved, as the shared\nauthority core holds it: a redelivery that asks nothing new of the\norganization advances it without a click; one that asks more leaves it.\nZero for a record the core did not decide (a module installed by this\nhost's own consent).",
+          "format": "uint64",
           "type": "string"
         },
         "coOwnerPrincipalIds": {
@@ -460,6 +472,10 @@
         "targetId": {
           "description": "The immutable solution target this installation was consented to: one\ncontinuous period of one binding's presence on this host. It is never\nreused, so a replacement binding — even one claiming the same route alias —\nis a different target and inherits nothing.\n\nDeliberately NOT accompanied by the route alias. The alias is a property of\nthe target that a later generation may move, and resolving it here would\nmean joining the host's presence state into a request-path listing — which\nwould require granting request traffic read over every organisation's\npresence to answer about one. A consumer that needs the alias asks\nListAvailableSolutions, which serves accepted applied state, and joins on\nthis id.\n\nEmpty only on a revoked historical row whose target could not be\nestablished at the cutover; an active installation always names one.",
           "type": "string"
+        },
+        "upgradeAvailable": {
+          "description": "True when the delivered generation asks more than approved_generation did:\nthe installation stands, active and healthy with its grants, until an\nadministrator reviews the target again and installs the reviewed release\non this same installation (an update, never an uninstall).",
+          "type": "boolean"
         }
       },
       "type": "object"
@@ -958,6 +974,13 @@
         },
         "releaseVersion": {
           "type": "string"
+        },
+        "roles": {
+          "description": "The roles a module page declares (a module declaring roles), as the\nauthority composes it: such a module is never installed by an\nadministrator, its access is set up (SetUpModulePage). Empty for a\nsolution, whose roles its review answers, and for a module without roles.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "routeAlias": {
           "description": "The route alias the applied generation claims — `/solutions/<alias>/*`. A\nlater generation may move it, so it is never an identity.",
@@ -1475,6 +1498,10 @@
           "type": "string"
         },
         "operationId": {
+          "type": "string"
+        },
+        "reachDigest": {
+          "description": "sha256 digest of what each of the target's roles reaches, directly and\ntransitively, in the composition reviewed (ReviewedOffer roles' reach):\nthe consent covers it. Required; Install refuses an approval whose reach\nchanged since it was reviewed (INSTALLATION_APPROVAL_REACH_CHANGED).",
           "type": "string"
         },
         "targetId": {
@@ -2521,11 +2548,25 @@
     },
     "v1InstallReviewedSolutionRequest": {
       "properties": {
+        "installerRoles": {
+          "description": "The declared roles the installing person takes: they join the team of each\nonce the installation is active, and no other. Empty takes none.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "orgId": {
           "type": "string"
         },
         "review": {
           "$ref": "#/definitions/v1ReviewedSolutionInstall"
+        },
+        "roleTeams": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The team of the organization that receives each declared role once the\ninstallation is active, by role name. A role not named receives the\norganization's team named `<target>-<role>`, created when absent; empty\nmeans every role does. A resumed install applies the assignment its first\nattempt recorded, never this one.",
+          "type": "object"
         }
       },
       "type": "object"
@@ -3861,6 +3902,150 @@
       },
       "type": "object"
     },
+    "v1OfferCapability": {
+      "description": "OfferCapability is one module operation a role's scopes cover.",
+      "properties": {
+        "module": {
+          "type": "string"
+        },
+        "operation": {
+          "description": "The operation as the module's authority document names it.",
+          "type": "string"
+        },
+        "requires": {
+          "description": "What a call to it must hold.",
+          "items": {
+            "$ref": "#/definitions/v1OfferScope",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "tools": {
+          "description": "The tools composed for this operation, from its prepared Runnable\nbindings; empty when no binding exposes it as a tool.",
+          "items": {
+            "$ref": "#/definitions/v1OfferTool",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "v1OfferReach": {
+      "description": "OfferReach is one module a role reaches, one way. Issuance, for a holder\nor for the installation's agent, never carries past it; it is an upper\nbound (resources and owners are checked at each call).",
+      "properties": {
+        "confinement": {
+          "description": "On the target: \"installation\" (the installation's own data) or\n\"attached\" (what is attached to it); empty otherwise.",
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        },
+        "operations": {
+          "description": "The operations of module those scopes are admitted to, by its declared\nmethod policies; one per operation, whatever face serves it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "path": {
+          "description": "A shortest way from the target to module, by module name, the target\nfirst: a witness. Every way there, re-entries included, is accounted for\nin scopes and operations.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "scopes": {
+          "description": "The most a holder's capability at module can carry.",
+          "items": {
+            "$ref": "#/definitions/v1OfferScope",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "via": {
+          "description": "\"role\": the role's own scopes on the target; \"binding\": the target, then\neach module on the path, acting for the holder; \"person\": an edge the\ntarget's page calls on the holder's own session, where the holder's own\ngrants decide (no scopes, no operations).",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1OfferRole": {
+      "description": "OfferRole is one declared role and what a grant of it reaches.",
+      "properties": {
+        "capabilities": {
+          "description": "Each composed operation the role's scopes cover.",
+          "items": {
+            "$ref": "#/definitions/v1OfferCapability",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "reach": {
+          "description": "Every place a holder of the role can cause an operation, as a static\nmaximum: on the target, through the target's bindings and onward, and\non the holder's own session. An administrator's review reads it in the\ncomposition now; a holder's, as the installation's consent approved it.",
+          "items": {
+            "$ref": "#/definitions/v1OfferReach",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "scopes": {
+          "description": "The scopes the role declares.",
+          "items": {
+            "$ref": "#/definitions/v1OfferScope",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "v1OfferScope": {
+      "description": "OfferScope is one declared scope.",
+      "properties": {
+        "actions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "attachedOnly": {
+          "description": "True when the scope reaches only the resources attached to the\ninstallation, listed in resource_ids (none until one is attached); false\nwhen it reaches every resource the installation owns.",
+          "type": "boolean"
+        },
+        "resourceIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "resourceKind": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1OfferTool": {
+      "description": "OfferTool is one tool-exposed Runnable of an operation.",
+      "properties": {
+        "binding": {
+          "description": "The prepared binding a caller names to run it.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The tool's name, as its exposure declares it.",
+          "type": "string"
+        },
+        "write": {
+          "description": "True when the tool changes data.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "v1OnboardingCompletionMethod": {
       "default": "ONBOARDING_COMPLETION_METHOD_UNSPECIFIED",
       "enum": [
@@ -4853,6 +5038,14 @@
         "approval": {
           "$ref": "#/definitions/v1ConsentApproval"
         },
+        "approvedRoles": {
+          "description": "For an update of an installation whose consent recorded its reach: what\neach role reaches as that consent approved it, which its holders hold\nuntil this review is installed. The review's own roles' reach\n(host.installation.v1 ReviewedOffer) is the composition now, so a host\nnames what the update asks beyond what was approved. Empty for a fresh\ninstall, or a consent recorded before reach was kept. Each role carries\nits name and reach only.",
+          "items": {
+            "$ref": "#/definitions/v1OfferRole",
+            "type": "object"
+          },
+          "type": "array"
+        },
         "bindingId": {
           "type": "string"
         },
@@ -5192,6 +5385,31 @@
           "type": "string"
         },
         "userId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1SetUpModulePageRequest": {
+      "description": "A module page's access is set up the way a solution's install assigns it,\nwithout an install: every module is installed by composition, and a module\npage's roles decide who may use it, through grants on that composition\ninstallation. Each declared role goes to the team role_teams names for it,\nor else to the organization's team `<module>-<role>` (found by name or by\nits slug, created when absent), and is granted to it on the composition\ninstallation; the acting administrator joins the teams of installer_roles\nand no other. Setting it up again changes nothing that is already so.",
+      "properties": {
+        "installerRoles": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "roleTeams": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "targetId": {
+          "description": "The module page, as ListAvailableSolutions names it.",
           "type": "string"
         }
       },
@@ -11492,6 +11710,40 @@
           }
         },
         "summary": "Consent to the exact review; retries retain its original per-owner receipts.",
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/solution-installations/module-pages/setup": {
+      "post": {
+        "operationId": "InstallationService_SetUpModulePage",
+        "parameters": [
+          {
+            "description": "A module page's access is set up the way a solution's install assigns it,\nwithout an install: every module is installed by composition, and a module\npage's roles decide who may use it, through grants on that composition\ninstallation. Each declared role goes to the team role_teams names for it,\nor else to the organization's team `<module>-<role>` (found by name or by\nits slug, created when absent), and is granted to it on the composition\ninstallation; the acting administrator joins the teams of installer_roles\nand no other. Setting it up again changes nothing that is already so.",
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1SetUpModulePageRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/saasAccountsV1Installation"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "summary": "Set up who may use a module page: its roles to teams on its composition\ninstallation, in one act; the answer is that installation, with what\ncould not be applied in access_problems.",
         "tags": [
           "InstallationService"
         ]

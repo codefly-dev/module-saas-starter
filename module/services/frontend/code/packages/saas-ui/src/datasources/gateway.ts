@@ -270,6 +270,12 @@ export function datasourceClientOverTransport(
 				boundary: input.boundaryNodeId
 					? { case: "boundaryNodeId", value: input.boundaryNodeId }
 					: { case: "collectionLabel", value: input.targetCollection },
+				governance: input.governance && {
+					installationId: input.governance.installationId,
+					resourceKind: input.governance.resourceKind,
+					action: input.governance.action,
+					binding: input.governance.binding ?? "",
+				},
 			});
 			// The host starts a GitHub source's first sync as it connects it.
 			notifySourceSyncRequested(response.datasource?.id ?? "");

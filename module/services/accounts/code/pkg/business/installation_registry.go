@@ -74,6 +74,9 @@ func (s *Service) prepareInstallation(ctx context.Context, params *InstallSoluti
 	if declaration.Principal != "" && declaration.Principal != grant.Prefix {
 		return nil, domain.NotNow("INSTALLATION_DELIVERY_CHANGED: the module principal differs from its paired declaration")
 	}
+	if err := modulePageHoldsNothing(declaration, target.RouteAlias); err != nil {
+		return nil, err
+	}
 	if declaration.InstallationRole == domain.NoInstallationRole {
 		if params.RoleID != "" {
 			return nil, domain.Refuse("the delivered module declares no standing machine authority")
@@ -81,17 +84,13 @@ func (s *Service) prepareInstallation(ctx context.Context, params *InstallSoluti
 		params.NoStandingAuthority = true
 	} else if err := undeclaredInstallationRole(declaration); err != nil {
 		return nil, err
-	} else if declaration.InstallationRole != "" {
-		// A module page's signed installation_role selects its standing role,
-		// as the core selects a solution's: a role_id may only name it.
-		role, err := s.declaredInstallationRoleID(ctx, params.OrgID, target, declaration)
-		if err != nil {
-			return nil, err
-		}
-		if params.RoleID != "" && params.RoleID != role {
-			return nil, domain.Refuse("role %q cannot override %s's installation_role declaration", params.RoleID, declaration.Name)
-		}
-		params.RoleID = role
+	} else if params.RoleID == "" && undeclaredAuthorityIsNone(declaration) {
+		// A manifest that declares neither an installation role nor any role
+		// leaves this host nothing to select: with no caller role the module is
+		// installed holding none, which is all a solution's closure asks of it
+		// (supportingInstallationRole). A caller's explicit role keeps the
+		// legacy path, selected above by the role it named.
+		params.NoStandingAuthority = true
 	}
 	// Only the delivered declaration may leave the caller's role out: a named
 	// installation_role is selected above, and "none" grants no standing role.
@@ -175,6 +174,11 @@ func (s *Service) NarrowInstallationScope(ctx context.Context, actorID, orgID, i
 	}
 	if current.Revision != revision {
 		return NewStoreError(fmt.Errorf("installation revision changed"), ErrTypeConflict)
+	}
+	if current.Kind == "module" && s.moduleEnvelopes != nil && snapshot.envelopeRevision != 0 {
+		// moduleConsent reads every module installation as following the
+		// envelope: a narrowing recorded here would hold nothing back.
+		return NewStoreError(fmt.Errorf("a module holds what the operator's envelope grants it; no organisation narrows it"), ErrTypeValidation)
 	}
 	grant, found := snapshot.registry[current.PrincipalID]
 	if !found || current.BindingID != grant.PresenceBinding || !moduleAvailableToOrganization(grant, orgID) ||

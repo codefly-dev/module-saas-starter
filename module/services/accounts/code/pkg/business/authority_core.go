@@ -66,7 +66,11 @@ func (k staticKeys) PublicKeys(context.Context) (map[string]ed25519.PublicKey, e
 // only by accounts' own consent (an administrator's install, within the module
 // envelope): the core installs none itself and reads accounts' records live
 // (HostInstallsModules), so an uninstall or a narrowed ceiling ends it there at
-// once.
+// once. Consents recorded before reach was kept adopt their reach
+// (AdoptLegacyReach), every applied delivery is composed in the core, then
+// the pass every delivery pass repeats runs (KeepAuthorityCoreCurrent). An error with the
+// core built (AuthorityCore answers it) is a reconciliation that did not
+// complete, which the next delivery pass retries; it never stops the host.
 func (s *Service) ConfigureAuthorityCore(ctx context.Context, issuer, keyID string, key ed25519.PrivateKey) error {
 	state := s.authorityCoreState()
 	core, err := s.newAuthorityCore(issuer, keyID, key)
@@ -76,10 +80,39 @@ func (s *Service) ConfigureAuthorityCore(ctx context.Context, issuer, keyID stri
 	if err != nil {
 		return err
 	}
-	if err := s.reconcileAuthorityCore(ctx); err != nil {
-		return fmt.Errorf("authority core: compose the applied deliveries: %w", err)
+	var failures []error
+	// A consent recorded before its reach was kept adopts, once, what its
+	// approved roles reach as the composition stands when the host starts
+	// (installation.reach_adopted); until then the core holds it to that
+	// same reach. The core adopts before any delivery changes the
+	// composition too, so this only covers a host that starts on one.
+	if err := core.AdoptLegacyReach(ctx); err != nil {
+		failures = append(failures, fmt.Errorf("authority core: adopt the reach of earlier consents: %w", err))
 	}
-	return nil
+	if err := s.reconcileAuthorityCore(ctx); err != nil {
+		failures = append(failures, fmt.Errorf("authority core: compose the applied deliveries: %w", err))
+	}
+	if err := s.KeepAuthorityCoreCurrent(ctx); err != nil {
+		failures = append(failures, err)
+	}
+	return errors.Join(failures...)
+}
+
+// KeepAuthorityCoreCurrent is what boot and every delivery pass run once the
+// applied deliveries are composed: every declaration a live consent approved
+// that the store does not keep yet is written where it can be rebuilt and is
+// what was consented to (keepApprovedDeclarations), and every composed module
+// is installed in every organization that does not hold it yet
+// (InstallComposedModules). Both are idempotent.
+func (s *Service) KeepAuthorityCoreCurrent(ctx context.Context) error {
+	var failures []error
+	if err := s.keepApprovedDeclarations(ctx); err != nil {
+		failures = append(failures, fmt.Errorf("authority core: keep the approved declarations: %w", err))
+	}
+	if err := s.InstallComposedModules(ctx); err != nil {
+		failures = append(failures, err)
+	}
+	return errors.Join(failures...)
 }
 
 func (s *Service) newAuthorityCore(issuer, keyID string, key ed25519.PrivateKey) (*authority.Service, error) {

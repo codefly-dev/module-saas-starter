@@ -86,6 +86,10 @@ message ListSolutionEntitlementsRequest {
   }];
   // Opaque cursor from a previous response's next_page_token; empty for page one.
   string page_token = 4;
+  // Also answer composed_modules, on the first page. Asked by a page's binding
+  // only: the navigation and the solution proxy decide on entitlements alone,
+  // and do not pay for a read they never use.
+  bool include_composed_modules = 5;
 }
 
 message ListSolutionEntitlementsResponse {
@@ -93,6 +97,23 @@ message ListSolutionEntitlementsResponse {
   // Set when more entitlements remain; pass it back as page_token. Empty on the
   // last page.
   string next_page_token = 2;
+  // The organization's installation of every composed module that declares no
+  // roles, when include_composed_modules asked for it; on the first page only.
+  //
+  // Not entitlements, and never merged into them: nobody was granted these.
+  // Every composed module is installed in every organization by composition,
+  // and one declaring no roles decides each call on the caller's own
+  // organization access, so naming its installation to a page that consumes it
+  // on the person's session widens nothing. A module declaring roles is never
+  // listed here: it reaches a viewer only through entitlements, by grant.
+  repeated ComposedModuleInstallation composed_modules = 3;
+}
+
+// ComposedModuleInstallation is an organization's installation of one composed
+// module that declares no roles, joined like an entitlement on the target.
+message ComposedModuleInstallation {
+  string target_id = 1 [(buf.validate.field).string.uuid = true];
+  string installation_id = 2 [(buf.validate.field).string.uuid = true];
 }
 
 // Deliberately NOT here: a revision or fingerprint field. A consumer that caches

@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { Layers, RefreshCw, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -7,12 +8,14 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
 import { OrgSelector } from "@/components/org-selector";
+import { teamQueries } from "@/features/teams/service/queries";
+import type { RoleGrant } from "@/gen/host/installation/v1/installation_pb";
 import {
 	type AvailableSolution,
-	type Installation,
 	InstallationStatus,
 } from "@/gen/saas/accounts/v1/installations_pb";
 import { useAuth } from "@/lib/auth";
+import { useOrgMembers } from "@/lib/hooks/use-organizations";
 import {
 	mayKeepRetainedRows,
 	readOutcome,
@@ -48,31 +51,34 @@ import {
 	TableRow,
 	useLoadingPhase,
 } from "@/shared/ui";
+import { holdersByRole, statusLine } from "../model/access";
 import {
-	agentIdentifierFor,
 	availableRows,
 	type FactView,
 	hostRefusal,
 	type InstalledRow,
 	installedRows,
+	isModulePage,
 	type TeamGrantRow,
 } from "../model/installations";
-import { readinessSummary } from "../model/readiness";
-import type { InstallSolutionValues } from "../model/schemas";
 import {
 	useGrantInstallationToTeam,
-	useInstallModule,
 	useInstallReviewedSolution,
 	useRetryInstallation,
 	useRevokeInstallationFromTeam,
+	useSetUpModulePage,
 	useUninstallSolution,
 } from "../service/mutations";
-import { useAvailableSolutions, useInstallations } from "../service/queries";
+import {
+	useAuthorityInstallations,
+	useAvailableSolutions,
+	useInstallations,
+	useOfferedTargets,
+	useRoleGrants,
+} from "../service/queries";
 import { GrantTeamDialog } from "./grant-team-dialog";
-import { InstallModuleDialog } from "./install-module-dialog";
-import { InstallModulePageDialog } from "./install-module-page-dialog";
 import { InstallSolutionDialog } from "./install-solution-dialog";
-import { useRolesDeclaredReview } from "./when-roles-declared";
+import { SetUpModulePageDialog } from "./set-up-module-page-dialog";
 
 /**
  * One fact. A gap reads as its label in muted italics with what it means on
@@ -133,20 +139,6 @@ export function SolutionInstallationsPage({
 	);
 }
 
-/** A module page's install: its release's agent and no agent role, which its declaration selects. */
-function moduleWithoutAgentRole(
-	target: AvailableSolution,
-): InstallSolutionValues {
-	return {
-		agentIdentifier: agentIdentifierFor(target),
-		displayName: "",
-		rootScopeLabel: "",
-		roleId: "",
-		allowedAudiences: "",
-		allowedScopes: "",
-	};
-}
-
 function SolutionInstallationsForOrganization({
 	orgId,
 	showModules,
@@ -156,44 +148,83 @@ function SolutionInstallationsForOrganization({
 }) {
 	const router = useRouter();
 	const [installing, setInstalling] = useState<AvailableSolution | null>(null);
+	// The installed target an administrator is updating: a newer release the
+	// host offers on its existing installation, reviewed as an install is.
+	const [updating, setUpdating] = useState<AvailableSolution | null>(null);
 	const available = useAvailableSolutions(orgId);
 	const installed = useInstallations(orgId);
-	// This owner survives dismissal of the form and reports every host result.
-	const install = useInstallModule(orgId);
 	const combinedInstall = useInstallReviewedSolution(orgId);
-	// A target that declares roles installs through a review of them, as a
-	// solution does; a module that declares none keeps its agent-role form.
-	const {
-		declared: rolesDeclared,
-		error: rolesUnread,
-		retry: readRolesAgain,
-	} = useRolesDeclaredReview(installing?.routeAlias ?? "", installing?.kind);
-	const installModule = (
-		target: AvailableSolution,
-		values: InstallSolutionValues,
-		{ onSuccess }: { onSuccess: (installation: Installation) => void },
-	) =>
-		install.mutate(
-			{
-				targetId: target.targetId,
-				generation: target.appliedGeneration,
-				expectedRevision: (installed.data ?? []).reduce(
-					(revision, row) =>
-						row.installation?.targetId === target.targetId &&
-						row.installation.revision > revision
-							? row.installation.revision
-							: revision,
-					BigInt(0),
-				),
-				operationId: crypto.randomUUID(),
-				values,
-			},
-			{
-				onSuccess,
-				onError: (error) =>
-					toast.error(`The host refused the install: ${hostRefusal(error)}`),
-			},
-		);
+	// Which targets an administrator installs is the authority's one answer
+	// (ListOffers): the solutions. Every module is installed by composition;
+	// a module page (a module declaring roles, AvailableSolution.roles) is
+	// listed with the solutions as an entry whose access is set up, never
+	// installed. Supporting module administration lists the modules. Until
+	// the offers are read, supporting module administration lists nothing,
+	// and a failed read is said as the host words it.
+	const offered = useOfferedTargets(orgId);
+	const setUp = useSetUpModulePage(orgId);
+	const [settingUp, setSettingUp] = useState<AvailableSolution | null>(null);
+	// Until the offers are read, supporting module administration offers no
+	// module to install and lists what is installed without saying which is a
+	// module page: only that classification waits on the authority.
+	const modulesWithheld = showModules && !offered.isSuccess;
+	// Who holds which role on each installation the authority grants roles
+	// on (no host scope root), named as the organization names its teams and
+	// people, and what each cannot reach now: the Solutions page only.
+	const held = useAuthorityInstallations(showModules ? "" : orgId);
+	const teams = useQuery({
+		...teamQueries.list(orgId),
+		enabled: !showModules && Boolean(orgId),
+	});
+	const members = useOrgMembers(showModules ? null : orgId);
+	const roleGranted = showModules
+		? []
+		: (installed.data ?? []).flatMap(({ installation, rootScopePath }) =>
+				installation?.status === InstallationStatus.ACTIVE && !rootScopePath
+					? [installation.id]
+					: [],
+			);
+	const roleGrants = useRoleGrants(orgId, roleGranted);
+	const access: AccessView = {
+		...roleGrants,
+		unreached: (id) => held.data?.get(id)?.unreached ?? [],
+		roles: (id) => held.data?.get(id)?.roles ?? [],
+		name: (grant) =>
+			grant.teamId
+				? (teams.data?.teams.find((team) => team.id === grant.teamId)?.name ??
+					grant.teamId)
+				: members.data?.find((member) => member.userId === grant.personId)
+						?.userEmail || grant.personId,
+	};
+	// A module page's composition installation, and whether anyone holds a
+	// role on it: set up, or not yet.
+	const pageAccess = (page: AvailableSolution) => {
+		const id = (installed.data ?? []).find(
+			(row) =>
+				row.target?.targetId === page.targetId &&
+				row.installation?.status === InstallationStatus.ACTIVE,
+		)?.installation?.id;
+		const grants = id ? roleGrants.grants.get(id) : undefined;
+		return {
+			installationId: id,
+			setUp: grants ? grants.length > 0 : undefined,
+		};
+	};
+	const chosen = (target: AvailableSolution | undefined) =>
+		target !== undefined &&
+		(target.kind === "solution" ||
+			offered.data?.has(target.routeAlias) === true);
+	const listed = (target: AvailableSolution | undefined) =>
+		showModules
+			? !modulesWithheld &&
+				target !== undefined &&
+				target.kind === "module" &&
+				!chosen(target)
+			: chosen(target) || isModulePage(target);
+	const listedInstalled = (target: AvailableSolution | undefined) =>
+		modulesWithheld
+			? target !== undefined && target.kind === "module"
+			: listed(target);
 
 	return (
 		<div className="space-y-6">
@@ -204,8 +235,8 @@ function SolutionInstallationsForOrganization({
 					</h1>
 					<p className="text-muted-foreground">
 						{showModules
-							? "Supporting modules install and converge with the solutions that require them. This page is for administering one directly."
-							: "Choose a solution and review its access and supporting modules together. Choose a team for each of its roles during review; access is granted only once setup is active."}
+							? "Modules are part of the platform: each is installed in every organization by composition and retired only by its withdrawal. This page shows them; nothing here installs or uninstalls one."
+							: "The solutions this organization can install, and the module pages whose access it sets up. Install a solution after reviewing what each role can do and its supporting modules; a module page is already part of the platform, and nobody can use it until its roles are given to teams."}
 					</p>
 					{!showModules && (
 						<Link
@@ -246,51 +277,138 @@ function SolutionInstallationsForOrganization({
 				/>
 			) : (
 				<>
-					<AvailableSection
-						showModules={showModules}
-						query={available}
-						installing={
-							(Boolean(installing) && rolesDeclared === undefined) ||
-							install.isPending ||
-							combinedInstall.isPending ||
-							!installed.isSuccess ||
-							installed.isFetching
-						}
-						onInstall={(solution) => {
-							install.reset();
-							combinedInstall.reset();
-							setInstalling(solution);
-						}}
-					/>
+					{!modulesWithheld && (
+						<AvailableSection
+							showModules={showModules}
+							listed={
+								showModules
+									? listed
+									: (target) => listed(target) && !isModulePage(target)
+							}
+							query={available}
+							installing={
+								(Boolean(installing) && offered.isPending) ||
+								combinedInstall.isPending ||
+								!installed.isSuccess ||
+								installed.isFetching
+							}
+							onInstall={(solution) => {
+								combinedInstall.reset();
+								setInstalling(solution);
+							}}
+						/>
+					)}
+					{!showModules && (
+						<AvailableSection
+							showModules={false}
+							title="Module pages"
+							description="Pages of modules that are part of the platform: installed for this organization already, and used only by the people their roles are given to."
+							hideWhenEmpty
+							listed={(target) => listed(target) && isModulePage(target)}
+							query={available}
+							installing={false}
+							onInstall={() => undefined}
+							pageAccess={pageAccess}
+							onSetUp={(page) => {
+								setUp.reset();
+								setSettingUp(page);
+							}}
+						/>
+					)}
 					<InstalledSection
 						orgId={orgId}
 						query={installed}
 						showModules={showModules}
+						unclassified={modulesWithheld}
+						listed={listedInstalled}
+						updating={combinedInstall.isPending}
+						access={access}
+						onUpdate={(target) => {
+							combinedInstall.reset();
+							setUpdating(target);
+						}}
 					/>
 				</>
 			)}
 
-			{/* A module's roles are read before its form opens: which form is
-			    the authority's answer, not the target's kind. */}
-			<DelayedLoading
-				active={
-					Boolean(installing) && rolesDeclared === undefined && !rolesUnread
-				}
-				label="Reading the roles this module declares"
-			/>
-			{installing && rolesUnread !== undefined && (
+			{offered.isError && (
 				<Banner
 					tone="danger"
-					title={`The roles ${installing.routeAlias} declares could not be read`}
-					onDismiss={() => setInstalling(null)}
+					title="The targets this organization may choose could not be read"
 				>
-					{hostRefusal(rolesUnread)} Which install form applies depends on them.{" "}
-					<Button size="sm" variant="outline" onClick={readRolesAgain}>
+					{hostRefusal(offered.error)}{" "}
+					{showModules
+						? "A module is listed here only once the authority's offers are read, so no module is listed yet."
+						: "A solution is listed once the authority offers it, so no solution is listed yet."}{" "}
+					<Button
+						size="sm"
+						variant="outline"
+						onClick={() => void offered.refetch()}
+					>
 						Try again
 					</Button>
 				</Banner>
 			)}
-			{installing?.kind === "solution" && (
+			<DelayedLoading
+				active={(Boolean(installing) || showModules) && offered.isLoading}
+				label="Reading which targets declare roles"
+			/>
+			{updating && (
+				<InstallSolutionDialog
+					orgId={orgId}
+					solution={updating}
+					upgrade
+					isPending={combinedInstall.isPending}
+					error={
+						combinedInstall.isError
+							? hostRefusal(combinedInstall.error)
+							: undefined
+					}
+					onSubmit={(review, access) =>
+						combinedInstall.mutate(
+							{ review, access },
+							{
+								onSuccess: () => {
+									toast.success(
+										`${updating.routeAlias} updated. Its team access is kept.`,
+									);
+									setUpdating(null);
+								},
+								onError: (error) => toast.error(hostRefusal(error)),
+							},
+						)
+					}
+					onClose={() => setUpdating(null)}
+				/>
+			)}
+			{settingUp && (
+				<SetUpModulePageDialog
+					orgId={orgId}
+					page={settingUp}
+					isPending={setUp.isPending}
+					error={setUp.isError ? hostRefusal(setUp.error) : undefined}
+					onSubmit={(access) =>
+						setUp.mutate(
+							{ targetId: settingUp.targetId, access },
+							{
+								onSuccess: (installation) => {
+									if (installation.accessProblems.length)
+										toast.warning(
+											`Set up, but not every role's access was applied — grant the rest in Set up. ${installation.accessProblems.join(" ")}`,
+										);
+									else
+										toast.success(
+											`Access to ${settingUp.routeAlias} is set up. Each role's team holds it now.`,
+										);
+									setSettingUp(null);
+								},
+							},
+						)
+					}
+					onClose={() => setSettingUp(null)}
+				/>
+			)}
+			{installing && chosen(installing) && (
 				<InstallSolutionDialog
 					orgId={orgId}
 					solution={installing}
@@ -300,59 +418,27 @@ function SolutionInstallationsForOrganization({
 							? hostRefusal(combinedInstall.error)
 							: undefined
 					}
-					onSubmit={(review) =>
-						combinedInstall.mutate(review, {
-							onSuccess: (installation) => {
-								toast.success(
-									installation.status === InstallationStatus.ACTIVE
-										? "Setup active. Completing selected team access in Set up."
-										: "Setup is pending. Your selected team roles are retained.",
-								);
-								setInstalling(null);
-								router.push(`/admin/solutions/${installation.id}`);
+					onSubmit={(review, access) =>
+						combinedInstall.mutate(
+							{ review, access },
+							{
+								onSuccess: (installation) => {
+									if (installation.accessProblems.length)
+										toast.warning(
+											`Installed, but not every role's access was applied — grant the rest in Set up. ${installation.accessProblems.join(" ")}`,
+										);
+									else
+										toast.success(
+											installation.status === InstallationStatus.ACTIVE
+												? "Installed. Each role's team holds it now."
+												: "Setup is pending. Each role's team receives it once setup is active.",
+										);
+									setInstalling(null);
+									router.push(`/admin/solutions/${installation.id}`);
+								},
+								onError: (error) => toast.error(hostRefusal(error)),
 							},
-							onError: (error) => toast.error(hostRefusal(error)),
-						})
-					}
-					onClose={() => setInstalling(null)}
-				/>
-			)}
-			{installing?.kind === "module" && rolesDeclared === true && (
-				<InstallModulePageDialog
-					orgId={orgId}
-					solution={installing}
-					isPending={install.isPending}
-					error={install.isError ? hostRefusal(install.error) : undefined}
-					onSubmit={() =>
-						// The module's signed installation role decides its standing
-						// access, so no agent role is sent; its roles are granted to
-						// teams in Set up, where the installation now lands.
-						installModule(installing, moduleWithoutAgentRole(installing), {
-							onSuccess: (installation) => {
-								toast.success(
-									`${installing.routeAlias} installation ${installation.status === InstallationStatus.ACTIVE ? "active" : "pending"}. Choose a team for each role in Set up.`,
-								);
-								setInstalling(null);
-								router.push(`/admin/solutions/${installation.id}`);
-							},
-						})
-					}
-					onClose={() => setInstalling(null)}
-				/>
-			)}
-			{installing?.kind === "module" && rolesDeclared === false && (
-				<InstallModuleDialog
-					orgId={orgId}
-					solution={installing}
-					isPending={install.isPending}
-					error={install.isError ? hostRefusal(install.error) : undefined}
-					onSubmit={(values) =>
-						installModule(installing, values, {
-							onSuccess: () => {
-								toast.success(`${installing.routeAlias} installation pending`);
-								setInstalling(null);
-							},
-						})
+						)
 					}
 					onClose={() => setInstalling(null)}
 				/>
@@ -363,35 +449,47 @@ function SolutionInstallationsForOrganization({
 
 function AvailableSection({
 	showModules,
+	listed,
 	query,
 	installing,
 	onInstall,
+	onSetUp,
+	pageAccess,
+	title = showModules ? "Available" : "Solutions",
+	description = showModules
+		? "What this host offers this organization right now, at the release it has applied."
+		: "The solutions your organization can install.",
+	hideWhenEmpty = false,
 }: {
 	showModules: boolean;
+	title?: string;
+	description?: string;
+	/** Renders nothing when no row is listed and the read succeeded. */
+	hideWhenEmpty?: boolean;
+	listed: (target: AvailableSolution | undefined) => boolean;
 	query: ReturnType<typeof useAvailableSolutions>;
 	installing: boolean;
 	onInstall: (solution: AvailableSolution) => void;
+	/** Sets up a module page's access; absent where pages are not set up. */
+	onSetUp?: (page: AvailableSolution) => void;
+	/** A module page's installation, and whether anyone holds a role on it. */
+	pageAccess?: (page: AvailableSolution) => {
+		installationId?: string;
+		setUp?: boolean;
+	};
 }) {
 	const { indicator, quiet } = useLoadingPhase(query.isLoading);
 	const outcome = readOutcome(query.isError, query.error);
 	const withheld = !mayKeepRetainedRows(outcome);
 	const stale = staleReadNotice(outcome, "the available modules and solutions");
-	const rows = withheld
-		? []
-		: availableRows(
-				(query.data ?? []).filter(
-					(target) => showModules || target.kind === "solution",
-				),
-			);
+	const rows = withheld ? [] : availableRows((query.data ?? []).filter(listed));
+	if (hideWhenEmpty && query.isSuccess && rows.length === 0) return null;
 
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle className="text-base">Available</CardTitle>
-				<CardDescription>
-					What this host offers this organization right now, at the release it
-					has applied.
-				</CardDescription>
+				<CardTitle className="text-base">{title}</CardTitle>
+				<CardDescription>{description}</CardDescription>
 			</CardHeader>
 			<CardContent>
 				{quiet ? null : indicator ? (
@@ -406,7 +504,7 @@ function AvailableSection({
 							"the available modules and solutions",
 							showModules
 								? "No module or solution is available to this organization. Ask your platform operator to make one available, then refresh this list."
-								: "No solution is available to this organization. Ask your platform operator to make one available, then refresh this list.",
+								: "No solution or module page is available to this organization. Ask your platform operator to make one available, then refresh this list.",
 						)}
 						{query.isError && ` ${hostRefusal(query.error)}`}
 					</p>
@@ -421,16 +519,20 @@ function AvailableSection({
 							aria-label={
 								showModules
 									? "Available modules and solutions"
-									: "Available solutions"
+									: `Available ${title.toLowerCase()}`
 							}
 						>
 							<TableHeader>
 								<TableRow>
 									<TableHead>
-										{showModules ? "Module or solution" : "Solution"}
+										{showModules
+											? "Module or solution"
+											: title === "Module pages"
+												? "Module page"
+												: "Solution"}
 									</TableHead>
-									<TableHead>Release</TableHead>
-									<TableHead>Generation</TableHead>
+									<TableHead>{showModules ? "Release" : "Version"}</TableHead>
+									{showModules && <TableHead>Generation</TableHead>}
 									<TableHead>State</TableHead>
 									<TableHead className="text-right">Action</TableHead>
 								</TableRow>
@@ -439,14 +541,34 @@ function AvailableSection({
 								{rows.map((row) => (
 									<TableRow key={row.targetId}>
 										<TableCell className="font-medium">{row.alias}</TableCell>
-										<TableCell className="font-mono text-sm">
-											{row.release}
-										</TableCell>
-										<TableCell className="text-sm text-muted-foreground">
-											{row.generation}
-										</TableCell>
+										{showModules ? (
+											<>
+												<TableCell className="font-mono text-sm">
+													{row.release}
+												</TableCell>
+												<TableCell className="text-sm text-muted-foreground">
+													{row.generation}
+												</TableCell>
+											</>
+										) : (
+											<TableCell className="text-sm" title={row.release}>
+												{row.solution.releaseVersion}
+											</TableCell>
+										)}
 										<TableCell>
-											{row.installed ? (
+											{onSetUp && isModulePage(row.solution) ? (
+												pageAccess?.(row.solution).setUp ? (
+													<Badge tone="success" dot>
+														Set up
+													</Badge>
+												) : pageAccess?.(row.solution).setUp === false ? (
+													<Badge tone="warning" dot>
+														Nobody has access yet
+													</Badge>
+												) : (
+													<Badge variant="outline">Module page</Badge>
+												)
+											) : row.installed ? (
 												<Badge tone="success" dot>
 													Installed
 												</Badge>
@@ -455,14 +577,39 @@ function AvailableSection({
 											)}
 										</TableCell>
 										<TableCell className="text-right">
-											<Button
-												size="sm"
-												disabled={row.installed || installing}
-												aria-label={`Install ${row.alias}`}
-												onClick={() => onInstall(row.solution)}
-											>
-												Install
-											</Button>
+											{showModules ? null : onSetUp &&
+												isModulePage(row.solution) ? (
+												pageAccess?.(row.solution).setUp &&
+												pageAccess(row.solution).installationId ? (
+													<Link
+														href={`/admin/solutions/${pageAccess(row.solution).installationId}`}
+														aria-label={`Manage access to ${row.alias}`}
+														className={buttonVariants({
+															variant: "outline",
+															size: "sm",
+														})}
+													>
+														Manage access
+													</Link>
+												) : (
+													<Button
+														size="sm"
+														aria-label={`Set up access to ${row.alias}`}
+														onClick={() => onSetUp(row.solution)}
+													>
+														Set up
+													</Button>
+												)
+											) : row.installed ? null : (
+												<Button
+													size="sm"
+													disabled={installing}
+													aria-label={`Install ${row.alias}`}
+													onClick={() => onInstall(row.solution)}
+												>
+													Install
+												</Button>
+											)}
 										</TableCell>
 									</TableRow>
 								))}
@@ -477,12 +624,24 @@ function AvailableSection({
 
 function InstalledSection({
 	showModules,
+	unclassified,
+	listed,
 	orgId,
 	query,
+	updating,
+	onUpdate,
+	access,
 }: {
+	/** Who holds which role, and what each cannot reach, by installation. */
+	access: AccessView;
 	orgId: string;
 	query: ReturnType<typeof useInstallations>;
 	showModules: boolean;
+	/** Every installed module is listed: which is a module page is not read yet. */
+	unclassified: boolean;
+	listed: (target: AvailableSolution | undefined) => boolean;
+	updating: boolean;
+	onUpdate: (target: AvailableSolution) => void;
 }) {
 	const uninstall = useUninstallSolution(orgId);
 	const retry = useRetryInstallation(orgId);
@@ -500,11 +659,7 @@ function InstalledSection({
 	const stale = staleReadNotice(outcome, "the installed modules and solutions");
 	const rows = withheld
 		? []
-		: installedRows(
-				(query.data ?? []).filter(
-					(row) => showModules || row.target?.kind === "solution",
-				),
-			);
+		: installedRows((query.data ?? []).filter((row) => listed(row.target)));
 
 	const name = (row: InstalledRow) =>
 		row.solution.kind === "value" ? row.solution.text : "this installation";
@@ -512,7 +667,12 @@ function InstalledSection({
 	const runRetry = (row: InstalledRow) => {
 		setRefusal(null);
 		retry.mutate(row.installationId, {
-			onSuccess: () => toast.success(`${name(row)} installation pending`),
+			onSuccess: (installation) =>
+				installation.accessProblems.length
+					? toast.warning(
+							`${name(row)}: not every role's access was applied — grant the rest in Set up. ${installation.accessProblems.join(" ")}`,
+						)
+					: toast.success(`${name(row)} installation pending`),
 			onError: (error) =>
 				setRefusal({
 					title: `The host refused to retry ${name(row)}`,
@@ -558,10 +718,13 @@ function InstalledSection({
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle className="text-base">Installed</CardTitle>
+				<CardTitle className="text-base">
+					{unclassified ? "Installed modules" : "Installed"}
+				</CardTitle>
 				<CardDescription>
-					What this organization has installed, at which release, and how
-					healthy each installation is right now.
+					{unclassified
+						? "Every module installed in this organization, by composition. Which targets are solutions is shown once the authority's offers are read."
+						: "What this organization has installed, at which release, and how healthy each installation is right now."}
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-3">
@@ -586,7 +749,7 @@ function InstalledSection({
 							"the installed modules and solutions",
 							showModules
 								? "Nothing is installed in this organization. Once a module or solution is available above, choose it to install it."
-								: "Nothing is installed in this organization. Once a solution is available above, choose it to install it.",
+								: "Nothing is installed in this organization. Once a solution or module page is available above, choose it to install it.",
 						)}
 						{query.isError && ` ${hostRefusal(query.error)}`}
 					</p>
@@ -607,14 +770,12 @@ function InstalledSection({
 							<TableHeader>
 								<TableRow>
 									<TableHead>
-										{showModules ? "Module or solution" : "Solution"}
+										{showModules
+											? "Module or solution"
+											: "Solution or module page"}
 									</TableHead>
-									<TableHead>Revision</TableHead>
 									<TableHead>Status</TableHead>
-									<TableHead>Ready</TableHead>
-									<TableHead>Health</TableHead>
-									<TableHead>Teams</TableHead>
-									<TableHead>Installed</TableHead>
+									<TableHead>Who has access</TableHead>
 									<TableHead className="text-right">Action</TableHead>
 								</TableRow>
 							</TableHeader>
@@ -622,34 +783,61 @@ function InstalledSection({
 								{rows.map((row) => (
 									<TableRow key={row.installationId}>
 										<TableCell className="font-medium">
-											<Fact view={row.solution} />
+											<Link
+												href={`/admin/solutions/${row.installationId}`}
+												className="hover:underline"
+											>
+												<Fact view={row.solution} />
+											</Link>
+											{showModules ? (
+												<span className="block font-normal">
+													<Fact view={row.revision} />
+												</span>
+											) : (
+												row.target && (
+													<span
+														className="block text-xs font-normal text-muted-foreground"
+														title={
+															row.revision.kind === "value"
+																? row.revision.text
+																: undefined
+														}
+													>
+														Version {row.target.releaseVersion}
+													</span>
+												)
+											)}
+											<span
+												className="block text-xs font-normal text-muted-foreground"
+												title={
+													row.installedAt
+														? undefined
+														: "This installation was made before install dates were kept."
+												}
+											>
+												{row.installedAt
+													? `Installed ${formatDate(row.installedAt)}`
+													: "Install date not recorded"}
+											</span>
 										</TableCell>
 										<TableCell>
-											<Fact view={row.revision} />
-										</TableCell>
-										<TableCell>
-											<Fact view={row.lifecycle} />
+											<StatusLine
+												row={row}
+												unreached={access.unreached(row.installationId)}
+											/>
 											{row.failureReason && (
 												<p className="mt-1 text-sm text-muted-foreground">
 													{row.failureReason}
 												</p>
 											)}
 										</TableCell>
-										<TableCell>
-											<Readiness row={row} />
-										</TableCell>
-										<TableCell>
-											{row.status === InstallationStatus.ACTIVE ? (
-												<Fact view={row.health} />
-											) : (
-												<span className="text-sm text-muted-foreground">
-													Unavailable
-												</span>
-											)}
-										</TableCell>
-										<TableCell>
-											{row.status === InstallationStatus.ACTIVE ? (
-												row.hasHostScopeRoot ? (
+										{
+											<TableCell>
+												{row.status !== InstallationStatus.ACTIVE ? (
+													<span className="text-sm text-muted-foreground">
+														Given once it is installed
+													</span>
+												) : row.hasHostScopeRoot ? (
 													<TeamExposure
 														row={row}
 														name={name(row)}
@@ -661,53 +849,69 @@ function InstalledSection({
 														}}
 														onRevoke={(team) => runRevoke(row, team)}
 													/>
+												) : showModules ? (
+													<span className="text-sm text-muted-foreground">
+														—
+													</span>
 												) : (
-													<Link href={`/admin/solutions/${row.installationId}`}>
-														Manage solution roles
-													</Link>
-												)
-											) : (
-												<span className="text-sm text-muted-foreground">
-													Available after activation
-												</span>
-											)}
-										</TableCell>
-										<TableCell className="text-sm text-muted-foreground">
-											{formatDate(row.installedAt)}
-										</TableCell>
+													<RoleHoldersCell row={row} access={access} />
+												)}
+											</TableCell>
+										}
 										<TableCell className="text-right">
-											{(row.status === InstallationStatus.FAILED ||
-												(row.status === InstallationStatus.PENDING &&
-													!row.hasHostScopeRoot)) && (
-												<Button
-													variant="outline"
-													size="sm"
-													disabled={retry.isPending || uninstall.isPending}
-													aria-label={`Retry ${name(row)}`}
-													onClick={() => runRetry(row)}
+											<div className="flex flex-col items-end gap-2">
+												{(row.status === InstallationStatus.FAILED ||
+													(row.status === InstallationStatus.PENDING &&
+														!row.hasHostScopeRoot)) && (
+													<Button
+														variant="outline"
+														size="sm"
+														disabled={retry.isPending || uninstall.isPending}
+														aria-label={`Retry ${name(row)}`}
+														onClick={() => runRetry(row)}
+													>
+														Retry
+													</Button>
+												)}
+												{row.upgradeAvailable &&
+													row.target &&
+													row.target.kind !== "module" &&
+													row.status === InstallationStatus.ACTIVE && (
+														<Button
+															size="sm"
+															disabled={updating || uninstall.isPending}
+															aria-label={`Update ${name(row)}`}
+															onClick={() => {
+																if (row.target) onUpdate(row.target);
+															}}
+														>
+															Review update
+														</Button>
+													)}
+												<Link
+													href={`/admin/solutions/${row.installationId}`}
+													aria-label={`Manage access to ${name(row)}`}
+													className={buttonVariants({
+														variant: "outline",
+														size: "sm",
+													})}
 												>
-													Retry
-												</Button>
-											)}
-											<Link
-												href={`/admin/solutions/${row.installationId}`}
-												aria-label={`Set up ${name(row)}`}
-												className={buttonVariants({
-													variant: "outline",
-													size: "sm",
-												})}
-											>
-												Set up
-											</Link>
-											<Button
-												variant="outline"
-												size="sm"
-												disabled={uninstall.isPending}
-												aria-label={`Uninstall ${name(row)}`}
-												onClick={() => setConfirming(row)}
-											>
-												Uninstall
-											</Button>
+													Manage access
+												</Link>
+												{/* A module is installed by composition; only its
+												    delivered withdrawal retires it. */}
+												{row.target?.kind !== "module" && (
+													<Button
+														variant="outline"
+														size="sm"
+														disabled={uninstall.isPending}
+														aria-label={`Uninstall ${name(row)}`}
+														onClick={() => setConfirming(row)}
+													>
+														Uninstall
+													</Button>
+												)}
+											</div>
 										</TableCell>
 									</TableRow>
 								))}
@@ -772,29 +976,103 @@ function InstalledSection({
 }
 
 /**
- * Whether the host says this row will work. It sits beside Health deliberately:
- * health answers about the installation RECORD, and on a validation cell ten
- * read healthy while four declared bindings had derived nothing. The link goes
- * to the one place that lists why, because a row cannot carry the conditions.
+ * Where one installation stands, on one line: the host's status, readiness
+ * and health, an update the authority offers, and what it cannot reach now.
+ * Anything that needs an administrator links to the installation's page,
+ * which lists why.
  */
-function Readiness({ row }: { row: InstalledRow }) {
-	const summary = readinessSummary(row.readiness);
-	if (summary.ready) {
-		return (
-			<Badge tone="success" dot>
-				Ready
-			</Badge>
-		);
-	}
+function StatusLine({
+	row,
+	unreached,
+}: {
+	row: InstalledRow;
+	unreached: readonly string[];
+}) {
 	return (
-		<Link
-			href={`/admin/solutions/${row.installationId}`}
-			className="hover:underline"
+		<ul
+			className="flex max-w-xs flex-wrap gap-1"
+			aria-label={`Status of ${row.solution.kind === "value" ? row.solution.text : "this installation"}`}
 		>
-			<Badge tone={summary.tone} dot>
-				{summary.text}
-			</Badge>
-		</Link>
+			{statusLine(row, unreached).map((fact) => (
+				<li key={fact.text}>
+					{fact.tone === "success" ? (
+						<Badge tone="success" dot>
+							{fact.text}
+						</Badge>
+					) : (
+						<Link
+							href={`/admin/solutions/${row.installationId}`}
+							className="hover:underline"
+						>
+							<Badge
+								tone={fact.tone}
+								dot
+								className="h-auto whitespace-normal text-left"
+							>
+								{fact.text}
+							</Badge>
+						</Link>
+					)}
+				</li>
+			))}
+		</ul>
+	);
+}
+
+/** Who holds which role and the people and teams the host names. */
+export interface AccessView {
+	grants: Map<string, RoleGrant[]>;
+	failed: Set<string>;
+	unreached: (installationId: string) => readonly string[];
+	roles: (installationId: string) => readonly string[];
+	name: (grant: RoleGrant) => string;
+}
+
+/** Each role and who holds it, by name, as the authority's grants say. */
+function RoleHoldersCell({
+	row,
+	access,
+}: {
+	row: InstalledRow;
+	access: AccessView;
+}) {
+	if (access.failed.has(row.installationId))
+		return (
+			<span className="text-sm text-muted-foreground">
+				Could not be read.{" "}
+				<Link
+					href={`/admin/solutions/${row.installationId}`}
+					className="underline"
+				>
+					Open
+				</Link>
+			</span>
+		);
+	const grants = access.grants.get(row.installationId);
+	if (!grants) return <span className="text-sm text-muted-foreground">…</span>;
+	const roles = holdersByRole(
+		access.roles(row.installationId),
+		grants,
+		access.name,
+	);
+	if (!roles.length)
+		return <span className="text-sm text-muted-foreground">No roles</span>;
+	return (
+		<ul
+			className="space-y-0.5 text-sm"
+			aria-label={`Who has access to ${row.solution.kind === "value" ? row.solution.text : "this installation"}`}
+		>
+			{roles.map(({ role, holders }) => (
+				<li key={role}>
+					<span className="text-muted-foreground">{role}:</span>{" "}
+					{holders.length ? (
+						holders.join(", ")
+					) : (
+						<span className="italic text-muted-foreground">nobody</span>
+					)}
+				</li>
+			))}
+		</ul>
 	);
 }
 
@@ -857,15 +1135,18 @@ function TeamExposure({
 					{row.inheritedTeams.map((team) => team.team).join(", ")}
 				</p>
 			)}
-			<Button
-				variant="outline"
-				size="sm"
-				aria-label={`Grant a team access to ${name}`}
-				disabled={granting}
-				onClick={onGrant}
-			>
-				Grant a team
-			</Button>
+			{/* A module is used through its roles alone: no second access path. */}
+			{row.target?.kind !== "module" && (
+				<Button
+					variant="outline"
+					size="sm"
+					aria-label={`Grant a team access to ${name}`}
+					disabled={granting}
+					onClick={onGrant}
+				>
+					Grant a team
+				</Button>
+			)}
 		</div>
 	);
 }

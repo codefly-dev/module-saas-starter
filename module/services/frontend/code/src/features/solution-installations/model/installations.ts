@@ -66,6 +66,14 @@ export interface AvailableRow {
  * `installed` flag, never inferred from the installation listing: the two reads
  * are separate, and one failing must not make the other say something it did not.
  */
+/**
+ * A module page: a module declaring roles. It is installed by composition,
+ * never by an administrator, and its access is set up (SetUpModulePage).
+ */
+export function isModulePage(target: AvailableSolution | undefined) {
+	return target?.kind === "module" && target.roles.length > 0;
+}
+
 export function availableRows(solutions: AvailableSolution[]): AvailableRow[] {
 	return solutions.map((solution) => ({
 		targetId: solution.targetId,
@@ -143,7 +151,16 @@ export interface TeamGrantRow {
 export interface InstalledRow {
 	installationId: string;
 	targetId: string;
+	/** The catalogue row of the installed target, when this host still offers it. */
+	target: AvailableSolution | undefined;
 	hasHostScopeRoot: boolean;
+	/**
+	 * The host says a newer release of the target asks more than this
+	 * installation's consent approved: the installation stands, healthy with
+	 * its grants, until an administrator reviews the release and installs it
+	 * on this same installation.
+	 */
+	upgradeAvailable: boolean;
 	solution: FactView;
 	revision: FactView;
 	health: FactView;
@@ -213,7 +230,9 @@ export function installedRows(
 				{
 					installationId: installation.id,
 					targetId: installation.targetId,
+					target,
 					hasHostScopeRoot: Boolean(rootScopePath),
+					upgradeAvailable: installation.upgradeAvailable,
 					solution: target
 						? { kind: "value", text: target.routeAlias }
 						: NOT_OFFERED,
@@ -227,7 +246,8 @@ export function installedRows(
 					health: healthView(health),
 					status: installation.status,
 					lifecycle: installationStatusView(installation.status),
-					failureReason: installation.setupMessage || installation.failureReason,
+					failureReason:
+						installation.setupMessage || installation.failureReason,
 					installedAt: installation.createdAt
 						? timestampDate(installation.createdAt).toISOString()
 						: undefined,
@@ -238,20 +258,6 @@ export function installedRows(
 			];
 		},
 	);
-}
-
-/**
- * Splits a one-per-line (or comma-separated) list into its entries, trimmed and
- * de-duplicated. An empty field is an empty list, which the host reads as "no
- * restriction" — so the page says that beside the field rather than here.
- */
-export function parseList(text: string): string[] {
-	const seen = new Set<string>();
-	for (const entry of text.split(/[\n,]/)) {
-		const value = entry.trim();
-		if (value) seen.add(value);
-	}
-	return [...seen];
 }
 
 /**

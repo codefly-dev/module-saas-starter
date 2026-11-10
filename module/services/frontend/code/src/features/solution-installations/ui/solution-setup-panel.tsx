@@ -1,10 +1,11 @@
 "use client";
 
-import { HostInstallationStatus } from "@codefly-dev/saas-sdk";
 import {
 	type SetupCondition,
+	type SetupFact,
 	type SetupSubject,
 	SolutionSetup,
+	type SolutionSetupProps,
 } from "@codefly-dev/saas-ui/solution";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
@@ -14,7 +15,8 @@ import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
 import { useOrgMembers } from "@/lib/hooks/use-organizations";
 import { Banner } from "@/shared/ui";
-import { InstallationTeamChoices } from "./installation-team-choices";
+import { ModulePageAccess } from "./module-page-access";
+import { TeamPeople } from "./team-people";
 
 /**
  * This host's mount of the one Setup UI, `<SolutionSetup>`, the same component
@@ -26,13 +28,20 @@ import { InstallationTeamChoices } from "./installation-team-choices";
 export function SolutionSetupPanel({
 	target,
 	conditions,
-	targetId,
 	installation,
+	modulePage = false,
+	facts,
+	update,
 }: {
 	target: string;
-	targetId?: string;
 	installation?: Installation;
 	conditions?: readonly SetupCondition[];
+	/** A module page: its access is edited on its composition installation. */
+	modulePage?: boolean;
+	/** What the host knows beside the authority, for the status line. */
+	facts?: readonly SetupFact[];
+	/** What an update asks, and the control that reviews it. */
+	update?: SolutionSetupProps["update"];
 }) {
 	const { organizationId = "" } = useAuth();
 	// Names only: a person who may not list them sees ids, and the authority
@@ -50,6 +59,7 @@ export function SolutionSetupPanel({
 				kind: "team" as const,
 				id: t.id,
 				label: t.name || t.id,
+				href: `/admin/teams/${t.id}`,
 			})),
 		],
 		[members.data, teams.data],
@@ -62,6 +72,18 @@ export function SolutionSetupPanel({
 			</Banner>
 		);
 	}
+	if (modulePage && installation)
+		return (
+			<ModulePageAccess
+				organizationId={organizationId}
+				installationId={installation.id}
+				target={target}
+				subjects={subjects}
+				teamControls={(team) => (
+					<TeamPeople orgId={organizationId} team={team} />
+				)}
+			/>
+		);
 	return (
 		<SolutionSetup
 			key={`${installation?.id}:${installation?.revision}:${installation?.status}`}
@@ -70,31 +92,9 @@ export function SolutionSetupPanel({
 			target={target}
 			conditions={conditions}
 			subjects={subjects}
-			renderAccessChoices={
-				targetId && installation
-					? (offer, clients, reload) => (
-							<InstallationTeamChoices
-								orgId={organizationId}
-								targetId={targetId}
-								offer={offer}
-								grant={
-									offer.installation?.id === installation.id &&
-									offer.installation.status === HostInstallationStatus.ACTIVE
-										? async (choice) => {
-												await clients.installations.grantRole({
-													organizationId,
-													installationId: installation.id,
-													teamId: choice.teamId,
-													role: choice.role,
-												});
-											}
-										: undefined
-								}
-								onApplied={reload}
-							/>
-						)
-					: undefined
-			}
+			facts={facts}
+			update={update}
+			teamControls={(team) => <TeamPeople orgId={organizationId} team={team} />}
 		/>
 	);
 }

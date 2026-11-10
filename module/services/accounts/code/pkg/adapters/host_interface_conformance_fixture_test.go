@@ -24,6 +24,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
+
 	"github.com/codefly-dev/core/composition"
 	modulecontract "github.com/codefly-dev/core/contracts/module"
 	"github.com/codefly-dev/core/solutionhost"
@@ -69,8 +71,13 @@ type conformanceSolution struct {
 	generation       uint64
 	ceilings         []*authorityv1.WorkScopeV1
 	roles            map[string][]*authorityv1.WorkScopeV1
-	methods          []*compositionv1.MethodPolicyV1
-	bindings         []solutionhost.AuthorityBinding
+	// owned are the installation-owned scopes of a role, by role name.
+	owned map[string][]*authorityv1.WorkScopeV1
+	// through are the scopes a role names through each of the solution's
+	// bindings, by role name, then binding id.
+	through  map[string]map[string][]*authorityv1.WorkScopeV1
+	methods  []*compositionv1.MethodPolicyV1
+	bindings []solutionhost.AuthorityBinding
 }
 
 // deliverSolution delivers s as the CLI does: core's manifest signed with the
@@ -94,7 +101,11 @@ func deliverSolution(t *testing.T, ctx context.Context, conn grpc.ClientConnInte
 		document.EdgeDependencies = append(document.EdgeDependencies, &compositionv1.EdgeDependencyV1{Module: edge.Module, Presence: edge.Presence})
 	}
 	for name, scopes := range s.roles {
-		document.Roles = append(document.Roles, &compositionv1.RoleV1{Name: name, Scopes: scopes})
+		role := &compositionv1.RoleV1{Name: name, Scopes: scopes, InstallationOwnedScopes: s.owned[name]}
+		for _, binding := range slices.Sorted(maps.Keys(s.through[name])) {
+			role.Through = append(role.Through, &compositionv1.RoleThroughV1{Binding: binding, Scopes: s.through[name][binding]})
+		}
+		document.Roles = append(document.Roles, role)
 	}
 	doc, err := (proto.MarshalOptions{Deterministic: true}).Marshal(document)
 	require.NoError(t, err)
@@ -121,6 +132,12 @@ type conformanceModule struct {
 	// page is core's manifest's frontend, and roles the roles a page declares.
 	page  *solutionhost.Frontend
 	roles map[string][]*authorityv1.WorkScopeV1
+	// methods are what each operation the module serves requires.
+	methods []*compositionv1.MethodPolicyV1
+	// ownerUnaware: the module checks no owner (owner_aware false);
+	// sharedKinds are the served kinds it declares unowned.
+	ownerUnaware bool
+	sharedKinds  []string
 }
 
 // deliverModule delivers m as the CLI does: core's manifest signed with the
@@ -144,7 +161,8 @@ func deliverModule(t *testing.T, ctx context.Context, conn grpc.ClientConnInterf
 	require.NoError(t, err)
 	sum := sha256.Sum256(raw)
 	document := &compositionv1.AuthorityManifestV1{Module: m.alias, Generation: generation,
-		CoreManifestDigest: "sha256:" + hex.EncodeToString(sum[:]), ScopeCeilings: m.ceilings, OwnerAware: true, InstallationRole: m.installationRole}
+		CoreManifestDigest: "sha256:" + hex.EncodeToString(sum[:]), ScopeCeilings: m.ceilings, Methods: m.methods, OwnerAware: !m.ownerUnaware, InstallationRole: m.installationRole,
+		SharedKinds: m.sharedKinds}
 	for _, name := range slices.Sorted(maps.Keys(m.roles)) {
 		document.Roles = append(document.Roles, &compositionv1.RoleV1{Name: name, Scopes: m.roles[name]})
 	}
@@ -177,22 +195,61 @@ func teamNamed(t *testing.T, ctx context.Context, svc *business.Service, orgID, 
 	return ""
 }
 
-// consentModule has org's administrator install a delivered module, or
-// consent again to its current delivery when it is installed, through
-// accounts' own path (the fixture's install: a role of the organization, an
-// approval of the reviewed target and generation, and its install step
-// completed on the durable queue). Nothing writes an installation directly;
-// the authority core reads the one this makes.
+// reconsentModule is an organization administrator installing module again
+// at org, through the same module path composition uses, holding none: a
+// consent at the module's current ceiling, over whatever its installation
+// held (a narrowing, an earlier generation).
+func reconsentModule(ctx context.Context, svc *business.Service, store *infra.PostgresStore, org, admin, module string) error {
+	// The owner of record stays the installation's.
+	installation, _, err := svc.InstallFixtureTarget(ctx, admin, org, module, "", "")
+	if err != nil {
+		return fmt.Errorf("install %s at %s again: %w", module, org, err)
+	}
+	return completeInstallStep(ctx, store, installation)
+}
+
+// consentModule is the suite's InstallModule: the module installed at org
+// by composition, its install step completed on the durable queue; a module
+// composition did not install (one selecting a standing role) is installed by
+// org's administrator through accounts' own path (a role of the
+// organization, an approval of the reviewed target and generation). Nothing
+// writes an installation directly; the authority core reads the one this
+// makes.
 func consentModule(ctx context.Context, svc *business.Service, store *infra.PostgresStore, org, admin, module string) error {
+	// The host installs every composed module holding none by composition,
+	// at delivery: what is left here is to complete a pending install step.
+	// Nothing installed by composition is installed or consented to again.
+	if installed, err := svc.ActiveOrPendingModuleInstallation(ctx, org, module); err != nil {
+		return err
+	} else if installed != nil {
+		return completeInstallStep(ctx, store, installed)
+	}
 	// One role per module and organization: a consent given again keeps the
 	// role the installation holds, which is immutable.
-	// A module page declaring roles is installed holding one of its own, as a
-	// solution is.
 	authority, err := svc.DeliveredSolutionAuthority(ctx, module)
 	if err != nil {
 		return err
 	}
 	role := "Use " + module
+	// A module declaring installation_role none holds no standing authority:
+	// its consent names no role, as a fixture row for it names none.
+	if core, err := svc.AuthorityCore(); err == nil {
+		if m, err := core.Composed(ctx, module); err == nil && m.InstallationRole == domain.NoInstallationRole {
+			// A module page is installed by composition once; a redelivery
+			// that adds or drops a role keeps that installation as it is,
+			// its grants and the capabilities they issued included.
+			if len(m.Roles) > 0 {
+				if id, err := svc.WorkContextAudienceInstallation(ctx, org, module); err == nil && id != "" {
+					return nil
+				}
+			}
+			installation, _, err := svc.InstallFixtureTarget(ctx, admin, org, module, "", admin)
+			if err != nil {
+				return fmt.Errorf("install %s at %s: %w", module, org, err)
+			}
+			return completeInstallStep(ctx, store, installation)
+		}
+	}
 	if authority == nil {
 		// A module page that has since dropped its roles keeps the role it
 		// was installed holding, one of the roles it declared then: no

@@ -212,7 +212,7 @@ func (s *PostgresStore) RevokeInstallationsOfTarget(
 // answer and the one a diagnostic listing would get wrong by reporting the
 // refused desired generation beside it.
 //
-// `installed` is resolved in the same statement rather than by a second query per
+// `installed` (held, not revoked) and `active` are resolved in the same statement rather than by a second query per
 // row, for the reason the installation listing resolves health inline: a
 // catalogue of n rows must not cost n+1 round trips.
 //
@@ -241,6 +241,14 @@ func (s *PostgresStore) ListAvailableSolutionTargets(
 		           SELECT 1 FROM public.authority_core_installations i
 		            WHERE i.organization_id=$1::uuid AND i.status<>'revoked'
 		              AND i.consent->'host_plan'->>'HostTargetID'=t.id::text
+		       ))),
+		       ($1 <> '' AND (EXISTS (
+		           SELECT 1 FROM public.installations i
+		            WHERE i.target_id = t.id AND i.org_id = $1::uuid AND i.kind='module' AND i.status = 'active'
+		       ) OR EXISTS (
+		           SELECT 1 FROM public.authority_core_installations i
+		            WHERE i.organization_id=$1::uuid AND i.status='active'
+		              AND i.consent->'host_plan'->>'HostTargetID'=t.id::text
 		       )))
 		  FROM public.solution_targets t
 		  JOIN public.solution_host_bindings b ON b.binding_id = t.binding_id
@@ -267,7 +275,7 @@ func (s *PostgresStore) ListAvailableSolutionTargets(
 			appliedGeneration int64
 		)
 		if err := rows.Scan(&entry.TargetID, &entry.BindingID, &entry.RouteAlias, &entry.Kind,
-			&release, &openedGeneration, &appliedGeneration, &entry.Installed); err != nil {
+			&release, &openedGeneration, &appliedGeneration, &entry.Installed, &entry.Active); err != nil {
 			return nil, err
 		}
 		entry.OpenedGeneration = uint64(openedGeneration)

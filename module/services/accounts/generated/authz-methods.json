@@ -673,7 +673,8 @@
         "audit": {
           "events": [
             "saas.authority.installation_requested",
-            "saas.authority.installation_activated"
+            "saas.authority.installation_activated",
+            "saas.authority.installation_upgraded"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -692,7 +693,7 @@
         "service": "accounts"
       },
       "source_proto": "host/installation/v1/installation.proto",
-      "policy_sha256": "9848918817951cb839354fccd74257a45731b1ff0ae86aaa3af89dadc0f32a1b",
+      "policy_sha256": "89fe3b4276d0343ab52e8a7256ccff7db57cb8f06129066fd9b1167728cda4d1",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -2635,7 +2636,7 @@
       "server_streaming": false,
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [
@@ -2661,13 +2662,13 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/datasource.proto",
-      "policy_sha256": "503dcc810add5ceb3c22054f4360b9e3955146ea6054a59be667d73c12351ac0",
+      "policy_sha256": "cc348ba8373bfcfd090c83fdee5bec852dbed0807ebf141268c1933d9517b72a",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -2680,7 +2681,7 @@
       "server_streaming": false,
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [
@@ -2706,13 +2707,13 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/datasource.proto",
-      "policy_sha256": "503dcc810add5ceb3c22054f4360b9e3955146ea6054a59be667d73c12351ac0",
+      "policy_sha256": "cc348ba8373bfcfd090c83fdee5bec852dbed0807ebf141268c1933d9517b72a",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -2995,7 +2996,7 @@
       "server_streaming": false,
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [
@@ -3021,13 +3022,13 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/datasource.proto",
-      "policy_sha256": "06cc83915bde775d58b52a7e4f092315f9656c85f08c463164759eb28b1fd3b7",
+      "policy_sha256": "245425b12f9d99778cad759e179596158154b8664d3b44bf2397ef84faf9bbd6",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -3040,7 +3041,7 @@
       "server_streaming": false,
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [
@@ -3067,13 +3068,13 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/datasource.proto",
-      "policy_sha256": "5d59727d6f87ea2ffb5f909a32f56cfb853187bbe1e09f1c47b866168180ee96",
+      "policy_sha256": "4cf3787df140003cba96fd0a1ced1babaed19f94cd5691f74fb43312c9fc1bc5",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -3176,7 +3177,7 @@
       "server_streaming": false,
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [
@@ -3202,13 +3203,13 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/datasource.proto",
-      "policy_sha256": "c6a0c301c6666c75a5113adb13492f3ee9ae1df5e939ee344abe9da447b91dae",
+      "policy_sha256": "772cb71c7291816b43a87235bf49257565812efa7c35a05cc284752ad67cadd7",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -3344,7 +3345,7 @@
       "server_streaming": false,
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [
@@ -3368,13 +3369,13 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/datasource.proto",
-      "policy_sha256": "aeffaabe591b3a428e00bfa5b64b19d6982cadaa0e96b0e8948252e37aa2958b",
+      "policy_sha256": "bbcb8c5df0d7a1272c6a615f636cb16fd1c4c8c93773e0a13a4603896194234b",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -3984,7 +3985,7 @@
       "server_streaming": false,
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [
@@ -4010,13 +4011,13 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/datasource.proto",
-      "policy_sha256": "6ce0fab18e353fa96ed9a46f9da3c7aed13627454d344d25a02e8bfcb27a4d1a",
+      "policy_sha256": "c651d9a2578058cd51242e598a1f68b275803c4db7052cd78b2d0de46f4b6738",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -4074,7 +4075,7 @@
       "server_streaming": false,
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [
@@ -4100,13 +4101,13 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/datasource.proto",
-      "policy_sha256": "8f18fbf423e4a4f0afa902be617d8b960ec24a684774367482aead685b1b19b0",
+      "policy_sha256": "113923130f8568e26cbaa2ffbb26212e6b5821b55bfbe3565510e85ed5ff6eb4",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -5125,6 +5126,53 @@
       },
       "source_proto": "saas/accounts/v1/installations.proto",
       "policy_sha256": "27a0a7b814576c5b823848915610b58388ab31947e230e3c4c630ec25ffdffbe",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.InstallationService/SetUpModulePage",
+      "full_service": "saas.accounts.v1.InstallationService",
+      "method": "SetUpModulePage",
+      "input_type": "saas.accounts.v1.SetUpModulePageRequest",
+      "output_type": "saas.accounts.v1.Installation",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.authority.role_granted",
+            "saas.team.created",
+            "saas.team.member_added"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_admin",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/installations.proto",
+      "policy_sha256": "4bf00644e5c97beff4095fc8bfff08c7f61f766118906438df4cbf58d81ba432",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {

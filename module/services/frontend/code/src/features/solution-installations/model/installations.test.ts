@@ -14,7 +14,6 @@ import {
 	healthView,
 	hostRefusal,
 	installedRows,
-	parseList,
 	roleOptionLabel,
 } from "./installations";
 
@@ -87,12 +86,28 @@ describe("solution installation facts", () => {
 	});
 
 	it("retains the host's exact setup outcome after a fresh listing", () => {
-		for (const message of ["Setup is queued.", "Setup is temporarily unavailable and will retry.", "Setup refused: required configuration is missing.", "Setup acknowledged. Continue the original reviewed installation to finish activation."]) {
+		for (const message of [
+			"Setup is queued.",
+			"Setup is temporarily unavailable and will retry.",
+			"Setup refused: required configuration is missing.",
+			"Setup acknowledged. Continue the original reviewed installation to finish activation.",
+		]) {
 			const response = installed("t-1", true);
 			response.installation!.setupMessage = message;
 			const [row] = installedRows([response]);
 			expect(row.failureReason).toBe(message);
 		}
+	});
+
+	it("carries the host's update offer on the row, with the target it names", () => {
+		const response = installed("t-1", true);
+		response.installation!.upgradeAvailable = true;
+		const [row] = installedRows([response]);
+		expect(row.upgradeAvailable).toBe(true);
+		expect(row.target?.targetId).toBe("t-1");
+		expect(installedRows([installed("t-1", true)])[0].upgradeAvailable).toBe(
+			false,
+		);
 	});
 
 	it("never guesses a name for a target the host no longer offers", () => {
@@ -124,11 +139,6 @@ describe("solution installation facts", () => {
 			kind: "value",
 			tone: "danger",
 		});
-	});
-
-	it("splits a list one per line or by comma, trimmed and once each", () => {
-		expect(parseList(" a \n\nb, a ,c\n")).toEqual(["a", "b", "c"]);
-		expect(parseList("   ")).toEqual([]);
 	});
 
 	it("labels a role with what it permits", () => {

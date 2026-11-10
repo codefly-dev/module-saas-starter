@@ -40,7 +40,7 @@ func DirectorySingleton() *DirectoryServer { return directorySingleton }
 
 func SolutionEntitlementSingleton() *SolutionEntitlementServer { return solutionEntitlementSingleton }
 
-func configurePermissionServerKeys() {
+func configurePermissionServerKeys() error {
 	plugin := permissionsplugin.Default()
 	delegationSingleton.SigningSecret = plugin.HMACSecret()     // gitleaks:allow -- runtime key assignment
 	delegationSingleton.SigningEd25519Key = plugin.Ed25519Key() // gitleaks:allow -- runtime key assignment
@@ -60,10 +60,18 @@ func configurePermissionServerKeys() {
 		Seals:      seals,
 	})
 	// The host interfaces are decided by the shared authority core, which signs
-	// with the same Work Context key Keys publishes.
+	// with the same Work Context key Keys publishes. A core that is built but
+	// whose boot reconciliation did not complete serves; the delivery pass
+	// retries what did not complete.
 	if service != nil {
 		if err := service.ConfigureAuthorityCore(context.Background(), plugin.WorkContextIssuer(), plugin.WorkContextKeyID(), plugin.Ed25519Key()); err != nil {
-			wool.Get(context.Background()).In("configurePermissionServerKeys").Warn("the authority core is not configured; every host interface call answers Unavailable", wool.ErrField(err))
+			log := wool.Get(context.Background()).In("configurePermissionServerKeys")
+			if _, coreErr := service.AuthorityCore(); coreErr != nil {
+				log.Warn("the authority core is not configured; every host interface call answers Unavailable", wool.ErrField(err))
+			} else {
+				log.Error("the authority core is configured and serving, and its boot reconciliation did not complete; every delivery pass retries it", wool.ErrField(err))
+			}
 		}
 	}
+	return nil
 }

@@ -439,6 +439,11 @@ type DatasourceSource struct {
 	LastDeliveryID     string
 	ReconcileInterval  time.Duration
 	NextReconcileAt    *time.Time
+
+	// Governance ties the source to the installation that governs it
+	// (SourceGovernance); nil for an organization's own source. Written once,
+	// with the row.
+	Governance *SourceGovernance
 }
 
 // WebhookConfigured reports whether a signing secret is stored, i.e. whether
@@ -462,6 +467,13 @@ type AddGitHubSourceInput struct {
 	CollectionLabel string
 	AccessToken     string
 	WebhookSecret   string
+	// Governance ties the source to a solution's installation; the caller
+	// decided it with AuthorizeSourceGovernance. Nil for the organization's own.
+	Governance *SourceGovernance
+	// ByOrganizationAdministrator says the caller administers the
+	// organization. A governed connect by anyone else brings its own
+	// credential and never reads through the organization's (governedCredential).
+	ByOrganizationAdministrator bool
 }
 
 // GitHubContentClient is the per-source GitHub client the datasource connector
@@ -669,6 +681,9 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 	if err := requireBoundarySpec(input.BoundaryNodeID, input.CollectionLabel); err != nil {
 		return nil, w.Wrap(err)
 	}
+	if err := input.Governance.validate(); err != nil {
+		return nil, err
+	}
 	extensions, err := normalizeFileExtensions(input.FileExtensions)
 	if err != nil {
 		return nil, w.Wrap(err)
@@ -677,6 +692,9 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 		return nil, w.NewError("datasource secret cipher is not configured")
 	}
 
+	if err := governedCredential(input.Governance, input.ByOrganizationAdministrator, input.AccessToken); err != nil {
+		return nil, err
+	}
 	credential, err := s.resolveGitHubConnectCredential(ctx, orgID, repo, input.Branch, input.AccessToken)
 	if err != nil {
 		return nil, err
@@ -699,6 +717,7 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 		// from birth must be resolvable by installation the moment it exists, or
 		// an App-level delivery cannot reach it. Empty for a PAT source.
 		GitHubInstallationID: credential.InstallationID,
+		Governance:           input.Governance,
 	}
 	nextReconcile := time.Now().UTC().Add(source.ReconcileInterval)
 	source.NextReconcileAt = &nextReconcile
@@ -716,7 +735,7 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 	}
 
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		boundaryID, err := s.resolveBoundary(ctx, orgID, input.BoundaryNodeID, input.CollectionLabel)
+		boundaryID, err := s.resolveSourceBoundary(ctx, orgID, input.Governance, input.BoundaryNodeID, input.CollectionLabel)
 		if err != nil {
 			return err
 		}
@@ -788,6 +807,13 @@ type AddSourceInput struct {
 	CollectionLabel string
 	Credential      string
 	WebhookSecret   string
+	// Governance ties the source to a solution's installation; the caller
+	// decided it with AuthorizeSourceGovernance. Nil for the organization's own.
+	Governance *SourceGovernance
+	// ByOrganizationAdministrator says the caller administers the
+	// organization. A governed connect by anyone else brings its own
+	// credential and never reads through the organization's (governedCredential).
+	ByOrganizationAdministrator bool
 
 	// GitHub provider config.
 	Repo           string
@@ -835,14 +861,18 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 	if err := requireBoundarySpec(input.BoundaryNodeID, input.CollectionLabel); err != nil {
 		return nil, w.Wrap(err)
 	}
+	if err := input.Governance.validate(); err != nil {
+		return nil, err
+	}
 	if s.datasourceCipher == nil {
 		return nil, w.NewError("datasource secret cipher is not configured")
 	}
 	source := &DatasourceSource{
-		ID:       NewIDString(),
-		OrgID:    orgID,
-		Provider: input.Provider,
-		Status:   DatasourceStatusActive,
+		ID:         NewIDString(),
+		OrgID:      orgID,
+		Provider:   input.Provider,
+		Status:     DatasourceStatusActive,
+		Governance: input.Governance,
 	}
 	// Every provider is scheduled, not just GitHub. A pull provider used to be
 	// inserted with next_reconcile_at NULL, which put it outside the reconcile
@@ -868,6 +898,9 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 		// repository-scoped PAT, and none connects through the deployment's App.
 		// Sharing it keeps the provider-agnostic call from refusing a connect the
 		// GitHub-specific one accepts.
+		if err := governedCredential(input.Governance, input.ByOrganizationAdministrator, credential); err != nil {
+			return nil, err
+		}
 		resolved, err := s.resolveGitHubConnectCredential(ctx, orgID, repo, input.Branch, credential)
 		if err != nil {
 			return nil, err
@@ -981,7 +1014,7 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 	}
 
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		boundaryID, err := s.resolveBoundary(ctx, orgID, input.BoundaryNodeID, input.CollectionLabel)
+		boundaryID, err := s.resolveSourceBoundary(ctx, orgID, input.Governance, input.BoundaryNodeID, input.CollectionLabel)
 		if err != nil {
 			return err
 		}

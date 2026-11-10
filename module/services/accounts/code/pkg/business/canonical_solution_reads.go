@@ -2,7 +2,6 @@ package business
 
 import (
 	"context"
-	"errors"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
@@ -75,36 +74,22 @@ func (s *Service) canonicalSolutionEntitlements(ctx context.Context, snapshot *i
 
 // roleGatedInstallation is this host's active, healthy record of held, an
 // installation whose roles decide, or nil. A solution's is the core's
-// canonical record, at the revision the core read; a module page's is
-// accounts' own module installation, which the core reads as its own.
+// canonical record, read at the revision the core read, its health the
+// record's own, following the target's release line. A module page's is its
+// composition installation, this host's own module record, entitling by
+// grants alone: active is all it needs.
 func (s *Service) roleGatedInstallation(ctx context.Context, org string, module domain.Module, held domain.Installation) (*gen.Installation, error) {
-	if module.Kind == domain.KindSolution {
-		canonical, err := s.canonicalSolutionSummaries(ctx, org, held.ID, "", gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE, 1)
-		if err != nil || len(canonical) != 1 || canonical[0].Health != gen.InstallationHealth_INSTALLATION_HEALTH_HEALTHY ||
-			canonical[0].GetInstallation().GetRevision() != held.Revision {
+	if module.Kind != domain.KindSolution {
+		inst, _, err := s.GetInstallation(ctx, org, held.ID)
+		if err != nil || inst.GetStatus() != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE {
 			return nil, err
 		}
-		return canonical[0].GetInstallation(), nil
+		return inst, nil
 	}
-	var installation *gen.Installation
-	var health gen.InstallationHealth
-	if err := s.store.WithOrgTx(ctx, org, func(ctx context.Context) error {
-		var err error
-		installation, health, err = s.installationStore().GetInstallation(ctx, org, held.ID)
-		return err
-	}); err != nil {
-		var missing *StoreError
-		if errors.As(err, &missing) && missing.StoreErrorType == ErrTypeNotFound {
-			return nil, nil
-		}
+	canonical, err := s.canonicalSolutionSummaries(ctx, org, held.ID, "", gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE, 1)
+	if err != nil || len(canonical) != 1 || canonical[0].Health != gen.InstallationHealth_INSTALLATION_HEALTH_HEALTHY ||
+		canonical[0].GetInstallation().GetRevision() != held.Revision {
 		return nil, err
 	}
-	// The core reads a module installation's revision as accounts' plus the
-	// narrowings it raised, never less: a record ahead of what the core read
-	// changed after the held decision, so it is not this one.
-	if installation.GetStatus() != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE || health != gen.InstallationHealth_INSTALLATION_HEALTH_HEALTHY ||
-		installation.GetRevision() > held.Revision {
-		return nil, nil
-	}
-	return installation, nil
+	return canonical[0].GetInstallation(), nil
 }

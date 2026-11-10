@@ -179,7 +179,8 @@ type Service struct {
 	moduleNamespaces ModuleNamespaceRule
 	// hostModule is the module this host was composed as. A delivered module
 	// envelope is the host's own document, so its carrier is the delivery
-	// account of this module's namespace (module_envelope_delivery.go).
+	// account of this module's namespace (module_envelope_delivery.go); the
+	// same account may carry a withdrawal (carrierNamespaces).
 	hostModule             string
 	frontendSource         frontendpayload.Source
 	frontendLazyLoadWindow time.Duration
@@ -209,6 +210,12 @@ type Service struct {
 	// authorityCore decides every operation of the host interfaces: the shared
 	// authority core over this host's store (authority_core.go).
 	authorityCore *authorityCoreState
+	// upgradeCache keeps listings' upgrade_available answers per composition.
+	upgradeCache upgradeCache
+	// composing serializes composition passes (InstallComposedModules): the
+	// ticking reconciler and a delivery's own pass would otherwise race on the
+	// same installation.
+	composing sync.Mutex
 	// admissionKeys persists the hop's registered admission keys
 	// (hop_admission_keys.go). Nil publishes none and registers none.
 	admissionKeys AdmissionKeyStore
@@ -1070,6 +1077,14 @@ func (s *Service) createOrganization(ctx context.Context, actorID, ownerID strin
 		return s.emitTx(ctx, actorID, "user", EventOrgCreated, "organization", org.Id, org.Id)
 	}); err != nil {
 		return nil, err
+	}
+	// The new organization holds every composed module at once, installed by
+	// composition; one that fails is installed by the next delivery pass.
+	s.composing.Lock()
+	err := s.installComposedModulesAt(ctx, org.Id, ownerID)
+	s.composing.Unlock()
+	if err != nil {
+		wool.Get(ctx).In("CreateOrganization").Warn("the composed modules are not all installed in the new organization yet", wool.Field("org_id", org.Id), wool.ErrField(err))
 	}
 	return &gen.CreateOrganizationResponse{Organization: org}, nil
 }

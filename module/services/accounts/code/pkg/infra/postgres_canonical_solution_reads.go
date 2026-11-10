@@ -4,18 +4,31 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/jackc/pgx/v5"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // CanonicalSolutionSummaries projects the canonical row into the host's existing
 // listing. It creates no scope root, standing grant, person grant or mirrored
 // installation. The receipt retains the immutable host target across withdrawal.
+//
+// Health follows the target's release line, as the core holds it: the
+// installation is healthy when it is active, its target is still delivered
+// (the host applies the generation the core holds, under the principal the
+// consent approved), and its consent names a generation the delivered one
+// stands on: the delivered generation itself once the core re-converged the
+// consent, or an earlier one while a redelivery asks more than it approved,
+// which the core answers as upgrade_available (decide.UpgradeAvailable) and
+// the installation stands on, active with its grants. The host compares no
+// generation of its own: the consent's generation and digest are the core's.
 func (s *PostgresStore) CanonicalSolutionSummaries(ctx context.Context, org, id, after string, status gen.InstallationStatus, limit int) ([]*gen.InstallationSummary, error) {
 	var out []*gen.InstallationSummary
 	plans := map[string]*business.SolutionInstallationPlan{}
@@ -23,8 +36,8 @@ func (s *PostgresStore) CanonicalSolutionSummaries(ctx context.Context, org, id,
 		rows, err := s.getQueryExecutor(ctx).Query(ctx, `SELECT i.id,i.organization_id::text,i.principal_id,i.installed_by,i.status,i.revision,i.consent,
  COALESCE(t.closed_generation IS NULL AND NOT b.applied_removed
  AND b.applied_generation=m.generation AND m.principal=i.consent->'host_plan'->'Approval'->>'TargetID'
- AND m.generation::text=i.consent->'host_plan'->'Approval'->>'Generation'
- AND b.applied_digest=i.consent->'host_plan'->>'DeliveryDigest',false)
+ AND COALESCE((i.consent->>'Generation')::bigint,0)<=m.generation,false),
+ COALESCE(m.generation,0), i.installed_at
  FROM public.authority_core_installations i
  LEFT JOIN public.solution_targets t ON t.id::text=i.consent->'host_plan'->>'HostTargetID'
  LEFT JOIN public.solution_host_bindings b ON b.binding_id=t.binding_id
@@ -40,12 +53,23 @@ func (s *PostgresStore) CanonicalSolutionSummaries(ctx context.Context, org, id,
 			var state string
 			var raw []byte
 			var current bool
-			if err := rows.Scan(&i.Id, &i.OrgId, &i.AgentPrincipalId, &i.OwnerPrincipalId, &state, &i.Revision, &raw, &current); err != nil {
+			var delivered int64
+			var installedAt *time.Time
+			if err := rows.Scan(&i.Id, &i.OrgId, &i.AgentPrincipalId, &i.OwnerPrincipalId, &state, &i.Revision, &raw, &current, &delivered, &installedAt); err != nil {
 				return err
+			}
+			// A record written before its install time was kept has none.
+			if installedAt != nil {
+				i.CreatedAt = timestamppb.New(*installedAt)
 			}
 			var receipt solutionConsent
 			if err := json.Unmarshal(raw, &receipt); err != nil {
 				return err
+			}
+			i.ApprovedGeneration = receipt.Generation
+			if receipt.Plan != nil {
+				i.UpgradeAvailable = decide.UpgradeAvailable(domain.Installation{ID: i.Id, Target: receipt.Plan.Target, Status: domain.Status(state), Consent: receipt.ConsentReceipt},
+					domain.Module{Name: receipt.Plan.Target, Generation: uint64(delivered)})
 			}
 			if receipt.Plan != nil {
 				i.TargetId = receipt.Plan.HostTargetID

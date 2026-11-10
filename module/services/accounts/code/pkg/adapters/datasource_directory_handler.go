@@ -11,7 +11,8 @@ import (
 )
 
 // The datasource directory surface. Linking one's own provider account needs
-// organization membership; everything an administrator decides for the whole
+// organization membership (and, to a source a solution governs, its governing
+// scope); everything an administrator decides for the whole
 // organization (bindings, domains, reading every link) needs administration.
 
 func (h *datasourceConnectHandler) BeginDatasourceAccountLink(ctx context.Context, req *connect.Request[gen.BeginDatasourceAccountLinkRequest]) (*connect.Response[gen.BeginDatasourceAccountLinkResponse], error) {
@@ -22,6 +23,19 @@ func (h *datasourceConnectHandler) BeginDatasourceAccountLink(ctx context.Contex
 	}
 	if err := requireOrgMember(ctx, actorID, req.Msg.GetOrgId()); err != nil {
 		return nil, translateGRPCError(err)
+	}
+	// Linking an account to a source a solution governs changes how it reads:
+	// it is held to the source's governing scope, as any change to it is.
+	if id := req.Msg.GetSourceId(); id != "" {
+		source, governed, err := h.governedSource(ctx, req.Msg.GetOrgId(), id)
+		if err != nil {
+			return nil, translateGRPCError(err)
+		}
+		if governed {
+			if err := h.svc.AuthorizeSourceChange(ctx, sourcePerson(actorID, req.Msg.GetOrgId()), source); err != nil {
+				return nil, translateGRPCError(err)
+			}
+		}
 	}
 	handle, err := h.svc.BeginDatasourceAccountLink(ctx, actorID, req.Msg.GetOrgId(), req.Msg.GetConnector(), req.Msg.GetRedirectUri(), req.Msg.GetSourceId())
 	if err != nil {

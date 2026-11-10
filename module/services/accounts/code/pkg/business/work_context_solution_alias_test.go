@@ -2,8 +2,12 @@ package business
 
 import (
 	"context"
+	"crypto/ed25519"
 	"testing"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/memstore"
+	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 )
 
@@ -48,6 +52,14 @@ func TestADeliveredSolutionAliasResolvesToItsOwnInstallation(t *testing.T) {
 	})
 	svc.SetModuleAuthorityReads(everyPrincipalInstalled{}, nil)
 	svc.SetWorkContextSealStore(solutionInstallationSeals{installed: map[string]string{"acme.test.pages": "0199a000-0000-7000-8000-0000000000a1"}})
+	// The authority core composes no module page here, so a module audience
+	// resolves to the module's own installation.
+	_, key, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	core, err := authority.New(memstore.New(), authority.Config{Issuer: "accounts.test", KeyID: "alias-test", Signer: key,
+		Keys: staticKeys{"alias-test": key.Public().(ed25519.PublicKey)}, Replay: workcontext.NewMemoryReplayStore(), HostInstallsModules: true})
+	require.NoError(t, err)
+	svc.SetAuthorityCoreForTest(core)
 
 	installation, err := svc.WorkContextAudienceInstallation(context.Background(), org, "pages")
 	require.NoError(t, err)

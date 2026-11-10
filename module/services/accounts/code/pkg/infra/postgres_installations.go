@@ -144,7 +144,7 @@ func (s *PostgresStore) installSolution(ctx context.Context, params *business.In
 	// A module install or re-install is explicit consent by an organization
 	// administrator. Check the actor here too: fixture and business callers
 	// do not pass through the RPC authorization interceptor.
-	if params.Kind == "module" {
+	if params.Kind == "module" && !params.ByComposition {
 		admin, err := isCurrentOrgAdmin(ctx, executor, params.OrgID, params.GrantedBy)
 		if err != nil {
 			return nil, w.Wrapf(err, "failed to check installing actor org-admin status")

@@ -91,6 +91,9 @@ func TestInstalledContentReadPostgresRetainedBinding(t *testing.T) {
 	}))
 	_, key, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
+	// The host's authority core, built as boot builds it: a module audience is
+	// resolved there first.
+	require.NoError(t, svc.ConfigureAuthorityCore(testCtx, "accounts.test", "content-test", key))
 	previous := *adapters.WorkContextSingleton()
 	t.Cleanup(func() {
 		*adapters.WorkContextSingleton() = previous
@@ -228,12 +231,22 @@ func TestInstalledContentReadPostgresRetainedBinding(t *testing.T) {
 				requireDelivered(t, s.delivery.deliver(t, m))
 				s.pass(t)
 			case "target installation":
-				require.NoError(t, svc.UninstallSolution(testCtx, s.admin, s.tenant, targetInstall.Id))
+				// A module's installation is retired by its lifecycle (its
+				// withdrawal at this organization), never by a person.
+				require.NoError(t, testStore.WithOrgTx(testCtx, s.tenant, func(ctx context.Context) error {
+					_, _, err := testStore.UninstallSolution(ctx, s.tenant, targetInstall.Id)
+					return err
+				}))
 				_, err = check(held)
 				require.Error(t, err)
 				targetInstall = targetScenario.install(t, s.tenant)
 			case "origin installation":
-				require.NoError(t, svc.UninstallSolution(testCtx, s.admin, s.tenant, originInstall.Id))
+				// A module's installation is retired by its lifecycle (its
+				// withdrawal at this organization), never by a person.
+				require.NoError(t, testStore.WithOrgTx(testCtx, s.tenant, func(ctx context.Context) error {
+					_, _, err := testStore.UninstallSolution(ctx, s.tenant, originInstall.Id)
+					return err
+				}))
 				_, err = check(held)
 				require.Error(t, err)
 				originInstall = s.install(t, s.tenant)

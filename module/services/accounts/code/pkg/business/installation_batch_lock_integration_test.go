@@ -223,7 +223,8 @@ func TestDeleteOrganizationWaitsForUninstallBeforeMembershipDeletion(t *testing.
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			uninstalled <- testService.UninstallSolution(ctx, admin, orgID, installationID)
+			// A module's installation is retired by its lifecycle, never by a person.
+			uninstalled <- testService.RetireInstallation(ctx, admin, orgID, installationID)
 		}()
 		var uninstallPID uint32
 		select {

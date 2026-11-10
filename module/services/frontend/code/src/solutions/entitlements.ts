@@ -84,6 +84,16 @@ export interface ViewerEntitlements {
 	 * identical.
 	 */
 	revision: string;
+	/**
+	 * The organization's installation of each composed module that declares no
+	 * roles, keyed on its target — present only when the read asked for it
+	 * (`composedModules`). Not entitlements: nobody was granted these, so no
+	 * projection of what a viewer may use reads them, and they are not part of
+	 * `revision`. A page consuming such a module on the person's session is told
+	 * the installation it acts in; the module decides every call on the
+	 * person's own access.
+	 */
+	composedModules?: ReadonlyMap<string, string>;
 }
 
 /**
@@ -179,12 +189,31 @@ function entitlementRevision(entitlements: SolutionEntitlement[]): string {
 	return `${(hash >>> 0).toString(16)}.${entitlements.length}`;
 }
 
-function parseEntitlements(body: unknown): ViewerEntitlements | null {
+function parseComposedModules(
+	entries: unknown,
+): ReadonlyMap<string, string> | null {
+	if (!Array.isArray(entries)) return null;
+	const out = new Map<string, string>();
+	for (const entry of entries as Array<Record<string, unknown> | null>) {
+		const { targetId, installationId } = entry ?? {};
+		if (typeof targetId !== "string" || targetId === "") return null;
+		if (typeof installationId !== "string" || installationId === "")
+			return null;
+		out.set(targetId, installationId);
+	}
+	return out;
+}
+
+function parseEntitlements(
+	body: unknown,
+	composed: boolean,
+): ViewerEntitlements | null {
 	if (typeof body !== "object" || body === null) return null;
-	const { org, viewer, solutions } = body as {
+	const { org, viewer, solutions, composedModules } = body as {
 		org?: unknown;
 		viewer?: unknown;
 		solutions?: unknown;
+		composedModules?: unknown;
 	};
 	// The organization and viewer are the point of this answer: without them the
 	// caller has a list it cannot attribute, and a cache it cannot key. A response
@@ -206,6 +235,10 @@ function parseEntitlements(body: unknown): ViewerEntitlements | null {
 				typeof entry.installationId === "string" ? entry.installationId : "",
 		});
 	}
+	// Asked and absent is an organization with none: the gateway omits an
+	// empty list.
+	const modules = composed ? parseComposedModules(composedModules ?? []) : null;
+	if (composed && modules === null) return null;
 	return {
 		org,
 		viewer,
@@ -213,6 +246,7 @@ function parseEntitlements(body: unknown): ViewerEntitlements | null {
 			parsed.map((entitlement) => [entitlement.targetId, entitlement]),
 		),
 		revision: entitlementRevision(parsed),
+		...(modules ? { composedModules: modules } : {}),
 	};
 }
 
@@ -229,6 +263,7 @@ function parseEntitlements(body: unknown): ViewerEntitlements | null {
  */
 export async function viewerEntitlements(
 	request: Request,
+	options: { composedModules?: boolean } = {},
 ): Promise<ViewerEntitlements | EntitlementFailure> {
 	const origin = gatewayOrigin();
 	const token = internalToken();
@@ -247,7 +282,8 @@ export async function viewerEntitlements(
 
 	let response: Response;
 	try {
-		response = await fetch(`${origin}${GATEWAY_ENTITLEMENTS_PATH}`, {
+		const query = options.composedModules ? "?composedModules=true" : "";
+		response = await fetch(`${origin}${GATEWAY_ENTITLEMENTS_PATH}${query}`, {
 			headers,
 			cache: "no-store",
 			signal: AbortSignal.timeout(ENTITLEMENTS_READ_TIMEOUT_MS),
@@ -279,7 +315,10 @@ export async function viewerEntitlements(
 		console.error(`solution entitlements: gateway answered ${response.status}`);
 		return "unavailable";
 	}
-	const parsed = parseEntitlements(await response.json().catch(() => null));
+	const parsed = parseEntitlements(
+		await response.json().catch(() => null),
+		options.composedModules === true,
+	);
 	if (parsed === null) {
 		console.error("solution entitlements: malformed gateway answer");
 		return "unavailable";

@@ -17,10 +17,30 @@ The gateway stamps `kind` from the applied declaration; a remote manifest cannot
 choose its routing kind. A shared module has one deployment, while each
 organisation installs it and grants team access independently through the same
 target-based entitlement projection. The organization administration destination
-is labelled "Solutions" and retains `/admin/solutions`, listing solutions only;
-supporting modules are administered at `/admin/modules`, which it links to. Its
-empty state directs an administrator to the platform operator when nothing is
-available.
+is labelled "Solutions" and retains `/admin/solutions`, listing the solutions
+an administrator installs (the authority's one `OfferService.ListOffers` read,
+`useOfferedTargets`: solutions alone) and, beside them, the module pages whose
+access is set up: a module declaring roles (`AvailableSolution.roles`,
+`isModulePage`) is installed by composition, never by an administrator, so its
+row offers "Set up" until someone holds one of its roles (the authority's
+`ListRoleGrants` on its composition installation), then reads "Set up" and
+offers "Manage access"; setting up is one act
+(`SetUpModulePageDialog`, `SetUpModulePage`): each role to its team, the
+conventional `<module>-<role>` unless changed, the administrator taking the
+ticked roles, exactly as an install assigns them. Every module, a module page
+included, is installed by composition in every organization; `/admin/modules`,
+which Solutions links to, is a read-only view of them ("Installed by
+composition", no Install); while the offers cannot be read, that page lists no
+module and the failed read is shown. A module page's Setup page edits who may
+use it on its composition installation (`ModulePageAccess`): the roles from the
+installation read (`InstallationService.List`), grants and revokes through
+`GrantRole` / `RevokeRole`, since the authority refuses a module's offer read. The one place a single target's roles are read from
+its own review (`WhenRolesDeclared`, on `rolesDeclared`) is a member's own
+solution page, where no administrator read applies. An installed row whose
+host says `upgradeAvailable` shows "Update available" and an Update action: the
+same review dialog, installing the reviewed release on the existing installation,
+which stays active with its team grants. Its empty state directs an administrator
+to the platform operator when nothing is available.
 Each installed row links to `/admin/solutions/<installation id>`, that
 installation's setup page: what it is and whether it is READY (the host's
 `InstallationReadiness`, which is not the record's health), the unmet conditions
@@ -114,8 +134,17 @@ integration and is not established by this repository.
 
 The Setup loading state follows the kit's delay and minimum visible duration,
 including when the authority answers immediately after the indicator appears.
-When the host cannot read composed tool bindings, tool exposure is shown as
-unavailable; an empty tool list is not reported as proof of no exposure.
+The kit reads for an organisation administrator: a status line (with this
+host's health, an update available and what it asks beyond the approved reach,
+from `ReviewedSolutionInstall.approved_roles`, and what `Installation.unreached`
+says cannot be reached now), then per role what a holder can do, grouped by
+where, beside who has it (a team linked to its page with its people added and
+removed in place). Operations, tools, the permission ceiling and the consent's
+identifiers are under Technical details; when the host reads no composed tool
+bindings, that section says tools are not listed, never that none is exposed.
+The install and update reviews use the same words (`roleAbilities`,
+`updateAsks`), and Admin → Solutions names each installed target's status on
+one line, who holds each role by team name, and its install date.
 
 The browser reaches that interface at exactly the procedures the local
 authority's edge serves a browser (`src/lib/host-setup-procedures.ts`):
@@ -472,42 +501,53 @@ not replace the cached operation; retries retain it, and Review again explicitly
 requests new consent. Pending installation rows offer current-person continuation.
 Supporting modules remain visible on `/admin/modules` and in installation
 detail. That administrator path remains available, but is not a step in normal
-solution installation. There, which form Install opens is the authority's
-answer, not the target's kind (`useRolesDeclared`): a module page whose offer
-names roles is reviewed from that offer (its machine access and what each role
-permits), installed through `InstallSolution` with no agent role, because its
-signed `installation_role` selects one (or none), and then opened at its Setup
-page, where each role takes a team. The shared core installs only solutions, so
-a module page stays this host's installation and carries no consent tuple. A
-module whose offer the authority refuses NotFound (it declares no roles) keeps
-the agent-role form; any other failure of that read is shown with a retry, never
-taken as "no roles". The review's approval is the browser's: a module page's
-offer carries no consent digest for the host to check it against. On Setup, a
-module page's roles take teams through the shared role grant form; the staged
-team-per-role picker binds to a solution's consent digest and is not offered.
+solution installation. Modules listed there are installed by composition, holding none; a module
+page's access is set up from Solutions and edited on its Setup page.
 
-The only installer configuration is a team for each role the solution's offer
-declares: an existing organization team, or one created inline through
-`TeamService.CreateTeam` with the editable suggested name `<solution>-<role>`.
-A name already taken is surfaced with an explicit "Use existing" choice; it is
-never reused or created twice, and no member is added. The choices are intent
-kept per person, organization and solution in session storage
-(`service/team-choices.ts`), so they survive a pending installation, a retry and
-a remount. Install marks them approved by its operation and binds them to the
-installation it returns; nothing is granted then. The Setup surface grants each
-one through the canonical `GrantRole` only when the authority's own offer reports
-that installation active — automatically once for choices approved by Install,
-otherwise by an explicit Apply — and drops each choice as its grant succeeds, so
-a retry never repeats one. Choices made against another declaration digest or
-generation need an explicit confirmation first. Assignments stay editable in the
-same Setup surface afterwards.
+**Install assigns access; the browser keeps no draft.** The host assigns it
+(`InstallReviewedSolution`'s `role_teams` and `installer_roles`): each declared
+role goes to the organization team `<solution>-<role>` (reused
+case-insensitively or by the root team's path, its slug; created once setup is
+active when absent) unless the administrator changes it, and is granted to it
+once setup is active; the installer joins the teams of the
+roles they keep ticked under "You will get" (all ticked by default), and no
+other. The dialog (`ui/installation-team-assignment.tsx`,
+`model/team-assignment.ts`) shows, per role, the team that will receive it —
+"(will be created)" or "existing team …" — and sends the teams that exist with
+the ticked roles; nothing must be picked. The host records the assignment with
+the installation, so a pending install that resumes, by retry or by the same
+review sent again, applies the same one; nothing in session storage and no
+client-side grant loop. What the host could not apply comes back in
+`access_problems` and the page says so, naming Set up for the rest. An update keeps its teams and grants and shows no
+assignment. Set up keeps its own grant form for every later change.
 
-**Open.** The authority core at the accounts pin decides whether a team belongs
-to the organization from its members, so a grant to a team created here with
-nobody in it is refused (`"<team>" is not a team of <organization>`). The
-refusal is shown and the choice retained for retry. The accounts store already
-answers `TeamExists` from the team directory; the decision moves when the
-authority core reads it and accounts takes that pin.
+**Solutions and module pages are apart.** The sidebar lists solutions in
+their composition groups and module pages in one "Modules" section after them
+(`groupSolutionNavigation`, by the host-stamped `kind`); Admin → Solutions
+shows a "Solutions" card (install) and a "Module pages" card (set up access),
+and an installed solution offers no Install.
+
+**The review leads with what people can do.** The dialog shows, in order: each
+declared role in plain words, its scopes merged per resource kind ("editor:
+read and write pages"), grouped by where they apply from the core's reach
+(`OfferRole.reach`, `roleReach`): "In <solution>" (the role on the solution),
+"Through <solution>, in <module>" (the solution acting for the holder, directly
+or transitively), "Uses your own access in <modules>" (one line naming every
+module the page reaches on the holder's own session). Each row reads its
+scopes, never the operations it reaches: a target whose operations carry no
+policy lets every role reach all of them, so listing them says nothing about
+the role. Only a row without scopes names its operations, at most five, in
+plain words with a Connect route and its gRPC procedure one capability
+(`operationText`). A group where every role reads the same says it once for
+"every role". Identifiers only in the technical disclosure (`reachDetail`); the supporting
+modules as one line each for what the install brings ("Also installs: …",
+naming each that holds a standing machine role as "module (role)") and what it
+reuses; team access; and one collapsed "Show technical access" holding the
+declared operations and, per module this install consents to, its access with
+an operation reached on Connect and gRPC shown once and no binding identifier
+(an audience whose faces act in different delegation modes says each face's
+mode on its lines). A reused module shows no detail: its consent is unchanged. This is
+presentation only; the reviewed request still carries every entry.
 
 The combined review describes Accounts `namespaces` as event publication and
 `external_namespaces` as eligibility for declared external events to reach the

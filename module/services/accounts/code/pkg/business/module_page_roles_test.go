@@ -53,7 +53,7 @@ func signedModulePage(t *testing.T, page bool) (*solutionhost.ModuleManifest, *c
 // accepts them and reads them as the module's role declaration.
 func TestAModulePageDeclaresRolesLikeASolution(t *testing.T) {
 	manifest, req, verified, svc := signedModulePage(t, true)
-	require.NoError(t, precheckCoreModule(req))
+	require.NoError(t, svc.precheckCoreModule(context.Background(), req))
 	doc, err := svc.verifyAuthorityDocument(req.GetAuthority(), verified)
 	require.NoError(t, err, "a module page's roles are accepted")
 	authority := svc.solutionAuthorityOf(doc, manifest)
@@ -65,7 +65,7 @@ func TestAModulePageDeclaresRolesLikeASolution(t *testing.T) {
 // recorded, with the shared core's reason, and its roles never decide here.
 func TestAModuleWithoutAPageDeclaresNoRoles(t *testing.T) {
 	manifest, req, verified, svc := signedModulePage(t, false)
-	err := precheckCoreModule(req)
+	err := svc.precheckCoreModule(context.Background(), req)
 	require.ErrorContains(t, err, "declares roles and no page")
 	code, ok := domain.CodeOf(err)
 	require.True(t, ok)

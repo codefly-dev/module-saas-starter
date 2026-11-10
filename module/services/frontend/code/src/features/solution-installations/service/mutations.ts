@@ -1,49 +1,8 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ReviewedSolutionInstall } from "@/gen/saas/accounts/v1/installations_pb";
-import { useAuth } from "@/lib/auth";
 import { useInstallationService } from "@/lib/hooks/use-api-client";
-import { parseList } from "../model/installations";
-import type { InstallSolutionValues } from "../model/schemas";
+import type { InstallAccess } from "../model/team-assignment";
 import { solutionInstallationKeys } from "./queries";
-import { acknowledgeTeamChoices } from "./team-choices";
-
-/**
- * Installs one available target. The target is the immutable identity the
- * catalogue row named — never a route alias — and the owner of record is left
- * empty so the host records the calling administrator, which it requires to be
- * a current one.
- */
-export function useInstallModule(orgId: string) {
-	const service = useInstallationService();
-	const queryClient = useQueryClient();
-	return useMutation({
-		mutationFn: ({
-			targetId,
-			generation,
-			expectedRevision,
-			operationId,
-			values,
-		}: {
-			targetId: string;
-			generation: bigint;
-			expectedRevision: bigint;
-			operationId: string;
-			values: InstallSolutionValues;
-		}) =>
-			service.installSolution({
-				orgId,
-				targetId,
-				approval: { targetId, generation, expectedRevision, operationId },
-				agentIdentifier: values.agentIdentifier.trim(),
-				displayName: values.displayName.trim(),
-				rootScopeLabel: values.rootScopeLabel.trim(),
-				roleId: values.roleId,
-				allowedAudiences: parseList(values.allowedAudiences),
-				allowedScopes: parseList(values.allowedScopes),
-			}),
-		onSettled: () => invalidate(queryClient, orgId),
-	});
-}
 
 /**
  * Uninstalls one installation. The host may refuse, and the caller shows that
@@ -125,26 +84,67 @@ function invalidate(
 		queryClient.invalidateQueries({
 			queryKey: solutionInstallationKeys.installed(orgId),
 		}),
+		queryClient.invalidateQueries({
+			queryKey: solutionInstallationKeys.held(orgId),
+		}),
+		queryClient.invalidateQueries({
+			queryKey: ["installation-role-grants", orgId],
+		}),
 	]);
 }
 
-/** Submit the original server review, including each supporting consent. */
-export function useInstallReviewedSolution(orgId: string) {
+/** Sets up who may use a module page: its roles to teams, in one act. */
+export function useSetUpModulePage(orgId: string) {
 	const service = useInstallationService();
-	const { user } = useAuth();
 	const queryClient = useQueryClient();
 	return useMutation({
-		mutationFn: (review: ReviewedSolutionInstall) =>
-			service.installReviewedSolution({ orgId, review }),
-		onSuccess: (installation, review) =>
-			acknowledgeTeamChoices(
-				queryClient,
-				user?.id ?? "",
+		mutationFn: ({
+			targetId,
+			access,
+		}: {
+			targetId: string;
+			access: InstallAccess;
+		}) =>
+			service.setUpModulePage({
 				orgId,
-				review.targetId,
-				review.approval?.operationId ?? "",
-				installation.id,
-			),
-		onSettled: () => invalidate(queryClient, orgId),
+				targetId,
+				roleTeams: access.roleTeams,
+				installerRoles: access.installerRoles,
+			}),
+		onSettled: () =>
+			Promise.all([
+				invalidate(queryClient, orgId),
+				queryClient.invalidateQueries({ queryKey: ["teams", orgId] }),
+			]),
+	});
+}
+
+/**
+ * Submit the original server review, including each supporting consent, and
+ * the access the install assigns; the host records both and applies the
+ * access once setup is active.
+ */
+export function useInstallReviewedSolution(orgId: string) {
+	const service = useInstallationService();
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: ({
+			review,
+			access,
+		}: {
+			review: ReviewedSolutionInstall;
+			access: InstallAccess;
+		}) =>
+			service.installReviewedSolution({
+				orgId,
+				review,
+				roleTeams: access.roleTeams,
+				installerRoles: access.installerRoles,
+			}),
+		onSettled: () =>
+			Promise.all([
+				invalidate(queryClient, orgId),
+				queryClient.invalidateQueries({ queryKey: ["teams", orgId] }),
+			]),
 	});
 }

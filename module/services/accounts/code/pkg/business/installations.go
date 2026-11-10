@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/core/wool"
 )
 
@@ -48,6 +51,11 @@ type InstallSolutionParams struct {
 	// NoStandingAuthority is resolved from the paired module declaration. It is
 	// never a public input; the store rechecks it against locked delivery rows.
 	NoStandingAuthority bool `json:"-"`
+	// ByComposition marks the host's own composition install of a module
+	// (installByComposition): no person acts, so no administrator approves it
+	// and it is recorded as the system's, the owner of record still a current
+	// administrator. It is never a public input.
+	ByComposition bool `json:"-"`
 	// OwnerPrincipalID is the accountable human of record; empty defaults to the
 	// installing admin (GrantedBy). Must be a current org admin.
 	OwnerPrincipalID    string
@@ -138,54 +146,14 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 		return nil, approvalErr
 	}
 	params.Approval = approval
-	params.GrantedBy = actorID
-	// Composing at the store level (one transaction) skips the friendly
-	// Principal.Validate() check the CreateAgentPrincipal domain path runs, so a
-	// malformed identifier would otherwise surface as an opaque DB CHECK violation
-	// mapped to Internal. Validate the shape here at the boundary instead.
-	if !looksLikeAgentIdentifier(params.AgentIdentifier) {
-		return nil, NewStoreError(
-			fmt.Errorf("agent_identifier %q must be 'publisher/name:version'", params.AgentIdentifier),
-			ErrTypeValidation,
-		)
-	}
-	// The target is resolved before the transaction, for the same reason the
-	// actor type is: it is control-plane state, and reading it inside the tenant
-	// transaction would reuse that transaction, where the request role holds no
-	// grant on the presence relations and the read would return nothing — a
-	// denied read printing as "no such target".
-	//
-	// Resolving is not the enforcement. A tombstone can be applied between this
-	// read and the insert, so liveness is enforced in the database by
-	// `installations_target_live_on_insert`, where the insert and the target row
-	// are in one transaction. What this read is for is the route alias (a display
-	// label) and a refusal that names the problem instead of surfacing a trigger.
-	_, err := s.prepareInstallation(ctx, params)
-	if err != nil {
+	if err := s.checkInstallable(ctx, actorID, params); err != nil {
 		return nil, err
 	}
-	if params.Kind == "solution" {
-		if _, err := s.AuthorityCore(); err == nil {
-			return nil, NewStoreError(fmt.Errorf("canonical solution installation requires ReviewSolutionInstall and InstallReviewedSolution; legacy solution writes are retired"), ErrTypeValidation)
-		}
-	}
-	if params.OwnerPrincipalID == "" {
-		params.OwnerPrincipalID = actorID
-	}
-	// The ceiling may only name audiences this host actually serves (issue #952).
-	// `allowed_audiences` used to be free text, so an installation could name a
-	// consumer that does not exist and then mint for it — the audience is what
-	// decides which consumer a capability is good at, so a value nothing serves is
-	// a capability pointing nowhere that still passes every other check.
-	//
-	// Refused HERE as well as narrowed at read, and both are needed: this catches
-	// a typo at the moment someone can fix it, and the read-time narrowing catches
-	// the set SHRINKING later, when delivery withdraws a solution long after any
-	// write.
-	if err := s.RequireHostAudiences(ctx, params.AllowedAudiences); err != nil {
-		return nil, NewStoreError(err, ErrTypeValidation)
-	}
 	actorType := s.actorTypeForCreator(ctx, actorID)
+	var by map[string]any
+	if params.ByComposition {
+		actorID, actorType, by = "", ActorTypeSystem, map[string]any{"by": "composition"}
+	}
 	var installation *gen.Installation
 	if err := s.store.WithOrgTx(ctx, params.OrgID, func(ctx context.Context) error {
 		var e error
@@ -206,14 +174,18 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 			}); e != nil {
 			return e
 		}
+		payload := map[string]any{
+			"agent_principal_id": installation.AgentPrincipalId,
+			"target_id":          params.TargetID,
+			"role_id":            params.RoleID,
+			"allowed_audiences":  params.AllowedAudiences,
+			"allowed_scopes":     params.AllowedScopes,
+		}
+		for key, value := range by {
+			payload[key] = value
+		}
 		return s.emitTx(ctx, actorID, actorType, EventInstallationCreated,
-			"installation", installation.Id, params.OrgID, map[string]any{
-				"agent_principal_id": installation.AgentPrincipalId,
-				"target_id":          params.TargetID,
-				"role_id":            params.RoleID,
-				"allowed_audiences":  params.AllowedAudiences,
-				"allowed_scopes":     params.AllowedScopes,
-			})
+			"installation", installation.Id, params.OrgID, payload)
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot install solution")
 	}
@@ -227,6 +199,62 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 		w.Warn("cannot materialize installed solution subscriptions", wool.ErrField(err))
 	}
 	return installation, nil
+}
+
+// checkInstallable applies every predicate InstallSolution holds params to
+// before its transaction, resolving the target and the consent prepareInstallation
+// fills into params, and writes nothing. The store's own fences (the
+// administrator, the generation lock and the revision compare) still decide in
+// the write. A reviewed solution install runs it over every module it is about
+// to install before installing any (checkReviewedModulesInstallable).
+func (s *Service) checkInstallable(ctx context.Context, actorID string, params *InstallSolutionParams) error {
+	params.GrantedBy = actorID
+	// Composing at the store level (one transaction) skips the friendly
+	// Principal.Validate() check the CreateAgentPrincipal domain path runs, so a
+	// malformed identifier would otherwise surface as an opaque DB CHECK violation
+	// mapped to Internal. Validate the shape here at the boundary instead.
+	if !looksLikeAgentIdentifier(params.AgentIdentifier) {
+		return NewStoreError(
+			fmt.Errorf("agent_identifier %q must be 'publisher/name:version'", params.AgentIdentifier),
+			ErrTypeValidation,
+		)
+	}
+	// The target is resolved before the transaction, for the same reason the
+	// actor type is: it is control-plane state, and reading it inside the tenant
+	// transaction would reuse that transaction, where the request role holds no
+	// grant on the presence relations and the read would return nothing — a
+	// denied read printing as "no such target".
+	//
+	// Resolving is not the enforcement. A tombstone can be applied between this
+	// read and the insert, so liveness is enforced in the database by
+	// `installations_target_live_on_insert`, where the insert and the target row
+	// are in one transaction. What this read is for is the route alias (a display
+	// label) and a refusal that names the problem instead of surfacing a trigger.
+	if _, err := s.prepareInstallation(ctx, params); err != nil {
+		return err
+	}
+	if params.Kind == "solution" {
+		if _, err := s.AuthorityCore(); err == nil {
+			return NewStoreError(fmt.Errorf("canonical solution installation requires ReviewSolutionInstall and InstallReviewedSolution; legacy solution writes are retired"), ErrTypeValidation)
+		}
+	}
+	if params.OwnerPrincipalID == "" {
+		params.OwnerPrincipalID = actorID
+	}
+	// The ceiling may only name audiences this host actually serves (issue #952).
+	// `allowed_audiences` used to be free text, so an installation could name a
+	// consumer that does not exist and then mint for it — the audience is what
+	// decides which consumer a capability is good at, so a value nothing serves is
+	// a capability pointing nowhere that still passes every other check.
+	//
+	// Refused HERE as well as narrowed at read, and both are needed: this catches
+	// a typo at the moment someone can fix it, and the read-time narrowing catches
+	// the set SHRINKING later, when delivery withdraws a solution long after any
+	// write.
+	if err := s.RequireHostAudiences(ctx, params.AllowedAudiences); err != nil {
+		return NewStoreError(err, ErrTypeValidation)
+	}
+	return nil
 }
 
 // GetInstallation returns one installation plus its health, resolved live from
@@ -370,6 +398,9 @@ func (s *Service) TransferInstallationOwnership(ctx context.Context, actorID, or
 // scoping is not lost: every statement below names orgID explicitly, which is
 // what the tenant policy would have checked.
 func (s *Service) UninstallSolution(ctx context.Context, actorID, orgID, installationID string) error {
+	if err := s.refuseModuleUninstall(ctx, orgID, installationID); err != nil {
+		return err
+	}
 	canonical, err := s.canonicalSolutionSummaries(ctx, orgID, installationID, "", gen.InstallationStatus_INSTALLATION_STATUS_UNSPECIFIED, 1)
 	if err != nil {
 		return err
@@ -482,5 +513,49 @@ func (s *Service) ListAvailableSolutions(
 		available = available[:pageSize]
 		next = available[pageSize-1].TargetID
 	}
-	return available, next, nil
+	return available, next, s.modulePageRoles(ctx, available)
+}
+
+// modulePageRoles names, on each module of available, the roles the core
+// composes it with: a module declaring roles is a module page, whose access
+// an administrator sets up (SetUpModulePage). A host without the core, or a
+// module it does not compose, names none.
+func (s *Service) modulePageRoles(ctx context.Context, available []*AvailableSolutionTarget) error {
+	core, err := s.AuthorityCore()
+	if err != nil {
+		return nil
+	}
+	for _, target := range available {
+		if target.Kind != "module" {
+			continue
+		}
+		m, err := core.Composed(ctx, target.RouteAlias)
+		if code, ok := domain.CodeOf(err); ok && code == domain.NotFound {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		target.Roles = slices.Sorted(maps.Keys(m.Roles))
+	}
+	return nil
+}
+
+// refuseModuleUninstall refuses a person's uninstall of a module's
+// installation, as the core's Uninstall does: every module is installed by
+// composition in every organization, so only its delivered withdrawal retires
+// it (the next composition pass would install it again).
+func (s *Service) refuseModuleUninstall(ctx context.Context, orgID, installationID string) error {
+	inst, _, err := s.GetInstallation(ctx, orgID, installationID)
+	if err != nil || inst.GetTargetId() == "" {
+		return nil // The uninstall itself says what is wrong with the id.
+	}
+	target, err := s.availableTarget(ctx, orgID, inst.GetTargetId())
+	if err != nil {
+		return nil // A target no longer offered is retired already.
+	}
+	if target.Kind == "module" {
+		return domain.Refuse("%s is a module, installed by composition in every organization: nobody uninstalls it, and only its delivered withdrawal retires it", target.RouteAlias)
+	}
+	return nil
 }

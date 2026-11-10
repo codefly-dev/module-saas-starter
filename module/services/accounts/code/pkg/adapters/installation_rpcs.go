@@ -52,7 +52,7 @@ func (s *InstallationServer) InstallReviewedSolution(ctx context.Context, req *g
 	if err := requireOrgAdmin(ctx, actor, req.OrgId); err != nil {
 		return nil, err
 	}
-	inst, err := service.InstallReviewedSolution(ctx, authority.Person{ID: actor, Organization: req.OrgId}, req.OrgId, req.Review)
+	inst, err := service.InstallReviewedSolution(ctx, authority.Person{ID: actor, Organization: req.OrgId}, req.OrgId, req.Review, business.InstallAccess{RoleTeams: req.RoleTeams, InstallerRoles: req.InstallerRoles})
 	if err != nil {
 		return nil, mapInstallationError(err)
 	}
@@ -60,6 +60,32 @@ func (s *InstallationServer) InstallReviewedSolution(ctx context.Context, req *g
 	if err != nil {
 		return nil, mapInstallationError(err)
 	}
+	result.AccessProblems = business.AccessProblemsToWire(inst.AccessProblems)
+	return result, nil
+}
+
+// SetUpModulePage sets up who may use a module page, as an administrator of
+// the organization: its roles to teams on its composition installation.
+func (s *InstallationServer) SetUpModulePage(ctx context.Context, req *gen.SetUpModulePageRequest) (*gen.Installation, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actor, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, actor, req.OrgId); err != nil {
+		return nil, err
+	}
+	inst, err := service.SetUpModulePage(ctx, authority.Person{ID: actor, Organization: req.OrgId}, req.OrgId, req.TargetId, business.InstallAccess{RoleTeams: req.RoleTeams, InstallerRoles: req.InstallerRoles})
+	if err != nil {
+		return nil, mapInstallationError(err)
+	}
+	result, _, err := service.GetInstallation(ctx, req.OrgId, inst.ID)
+	if err != nil {
+		return nil, mapInstallationError(err)
+	}
+	result.AccessProblems = business.AccessProblemsToWire(inst.AccessProblems)
 	return result, nil
 }
 
@@ -238,8 +264,11 @@ func availableSolutionProto(entry *business.AvailableSolutionTarget) *gen.Availa
 		ReleaseVersion:    entry.ReleaseVersion,
 		OpenedGeneration:  entry.OpenedGeneration,
 		AppliedGeneration: entry.AppliedGeneration,
-		Installed:         entry.Installed,
-		Kind:              entry.Kind,
+		// Installed means ACTIVE, as the field says: a pending attempt reads
+		// false, and the wire has no field for it.
+		Installed: entry.Active,
+		Kind:      entry.Kind,
+		Roles:     entry.Roles,
 	}
 }
 

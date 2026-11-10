@@ -9,6 +9,7 @@ import (
 	"accounts/pkg/business"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 )
@@ -237,5 +238,102 @@ func TestSolutionDependenciesCloseOverWhatSupportingModulesReach(t *testing.T) {
 	plan := business.SolutionInstallationPlan{Dependencies: []business.ModuleInstallationPrerequisite{{PrincipalID: business.ModulePrincipalID("module:documents"), Generation: 5}}}
 	if err := plan.ValidateDependencySet(offer); err == nil || !strings.Contains(err.Error(), `required module "module:model" (reached through "module:documents") has no consent witness`) {
 		t.Fatalf("the activation fence missed the transitive module: %v", err)
+	}
+}
+
+// The host's walker and the core's closure (decide.Closure) are one rule: what
+// the review lists as required is exactly what installing the target brings
+// along. Every module is installed by composition, so a module page (a module
+// declaring roles) reached by the target's own binding or edge, or through a
+// supporting module's, is listed and walked through like any module; only a
+// solution reached is chosen by its own review and left out.
+func TestTheWalkersClosureIsTheCoresClosure(t *testing.T) {
+	read := []*basev0.WorkScopeV1{{ResourceKind: "support", Actions: []string{"read"}}}
+	entries := []*basev0.WorkScopeV1{{ResourceKind: "directory.entry", Actions: []string{"read"}}}
+	page := domain.Module{Name: "directory", Principal: "module:directory", Kind: domain.KindModule, Generation: 2, ResourceKinds: entries,
+		InstallationRole: domain.NoInstallationRole, Roles: map[string][]*basev0.WorkScopeV1{"viewer": entries},
+		Bindings: map[string]domain.Binding{"behind": {ID: "behind", Audience: "module:behind-page"}}}
+	behindPage := domain.Module{Name: "behind-page", Principal: "module:behind-page", Kind: domain.KindModule, Generation: 1}
+	model := domain.Module{Name: "model", Principal: "module:model", Kind: domain.KindModule, Generation: 4}
+	support := domain.Module{Name: "support", Principal: "module:support", Kind: domain.KindModule, Generation: 3, ResourceKinds: read,
+		Bindings: map[string]domain.Binding{
+			"directory": {ID: "directory", Audience: "module:directory", InvokeScopes: entries},
+			"model":     {ID: "model", Audience: "module:model"},
+		}}
+	edged := domain.Module{Name: "edged", Principal: "module:edged", Kind: domain.KindModule, Generation: 1,
+		EdgeDependencies: []domain.EdgeDependency{{Module: "module:directory", Presence: "required"}, {Module: "module:model", Presence: "required"}}}
+	optional := domain.Module{Name: "optional", Principal: "module:optional", Kind: domain.KindModule, Generation: 1,
+		Bindings: map[string]domain.Binding{"model": {ID: "model", Audience: "module:model"}}}
+	app := domain.Module{Name: "app", Principal: "solution:app", Kind: domain.KindSolution, Generation: 1,
+		Bindings: map[string]domain.Binding{
+			"support":   {ID: "support", Audience: "module:support", InvokeScopes: read},
+			"directory": {ID: "directory", Audience: "module:directory", InvokeScopes: entries},
+		},
+		EdgeDependencies: []domain.EdgeDependency{{Module: "module:edged", Presence: "required"}, {Module: "module:directory", Presence: "required"}, {Module: "module:optional", Presence: "optional"}}}
+	composed := []domain.Module{page, behindPage, model, support, edged, optional}
+
+	for name, target := range map[string]domain.Module{
+		"a solution reaching a module page by its own binding and edge, and through a module's binding and edge": app,
+		"a solution reaching it only through a supporting module's binding": {Name: "through-binding", Principal: "solution:through-binding", Kind: domain.KindSolution, Generation: 1,
+			Bindings: map[string]domain.Binding{"support": {ID: "support", Audience: "module:support", InvokeScopes: read}}},
+		"a solution reaching it only through a supporting module's edge": {Name: "through-edge", Principal: "solution:through-edge", Kind: domain.KindSolution, Generation: 1,
+			EdgeDependencies: []domain.EdgeDependency{{Module: "module:edged", Presence: "required"}}},
+		"a module page reaching another module page": {Name: "other-page", Principal: "module:other-page", Kind: domain.KindModule, Generation: 1,
+			InstallationRole: domain.NoInstallationRole, Roles: map[string][]*basev0.WorkScopeV1{"viewer": read},
+			Bindings: map[string]domain.Binding{"support": {ID: "support", Audience: "module:support", InvokeScopes: read}, "directory": {ID: "directory", Audience: "module:directory", InvokeScopes: entries}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			modules := append(slices.Clone(composed), target)
+			offer := authority.ReviewedOffer{Module: target, Modules: modules}
+			core, _, err := decide.Closure(target, modules)
+			if err != nil {
+				t.Fatal(err)
+			}
+			deps, err := business.SolutionInstallationDependencies(offer)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var walked []string
+			for _, d := range deps {
+				if d.Required && d.Delivered {
+					walked = append(walked, d.Module.Name)
+				}
+			}
+			slices.Sort(walked)
+			if !slices.Equal(walked, core) {
+				t.Fatalf("the walker found %v, the core's closure is %v", walked, core)
+			}
+			if len(core) == 0 {
+				t.Fatal("the fixture reaches no supporting module: the comparison proves nothing")
+			}
+		})
+	}
+	// The fixtures the other walker cases use agree as well.
+	documents := domain.Module{Name: "documents", Principal: "module:documents", Kind: domain.KindModule, Generation: 5,
+		Bindings:         map[string]domain.Binding{"model": {ID: "model", Audience: "module:model"}, "pages": {ID: "pages", Audience: "solution:pages"}},
+		EdgeDependencies: []domain.EdgeDependency{{Module: "module:records", Presence: "optional"}, {Module: "solution:pages", Presence: "required"}}}
+	records := domain.Module{Name: "records", Principal: "module:records", Kind: domain.KindModule, Generation: 2,
+		Bindings: map[string]domain.Binding{"directory": {ID: "directory", Audience: "module:directory"}}}
+	pages := domain.Module{Name: "pages", Principal: "solution:pages", Kind: domain.KindSolution, Generation: 3,
+		Bindings:         map[string]domain.Binding{"documents": {ID: "documents", Audience: "module:documents"}},
+		EdgeDependencies: []domain.EdgeDependency{{Module: "module:records", Presence: "required"}}}
+	modules := []domain.Module{documents, model, records, pages, page, behindPage}
+	core, _, err := decide.Closure(pages, modules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deps, err := business.SolutionInstallationDependencies(authority.ReviewedOffer{Module: pages, Modules: modules})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var walked []string
+	for _, d := range deps {
+		if d.Required && d.Delivered {
+			walked = append(walked, d.Module.Name)
+		}
+	}
+	slices.Sort(walked)
+	if want := []string{"behind-page", "directory", "documents", "model", "records"}; !slices.Equal(walked, core) || !slices.Equal(core, want) {
+		t.Fatalf("the walker found %v, the core's closure is %v, want %v", walked, core, want)
 	}
 }

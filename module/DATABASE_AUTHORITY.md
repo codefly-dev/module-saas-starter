@@ -544,7 +544,7 @@ executable inventory and this table in the same change.
 
 | Scope | Relations | Required database boundary |
 |---|---|---|
-| `global` | `audit_event_types`, `authority_core_clients`, `authority_core_delegations`, `authority_core_grant_epochs`, `authority_core_installations`, `authority_core_module_revisions`, `authority_core_modules`, `authority_core_owner_aware`, `authority_core_person_epochs`, `authority_core_replay`, `authority_core_role_grants`, `authority_core_tombstones`, `bootstrap_state`, `data_retention_policies`, `datasource_credential_budgets`, `email_templates`, `feature_flags`, `hop_admission_keys`, `hop_admission_proofs`, `identity_providers`, `module_envelopes`, `plan_entitlements`, `plans`, `platform_admins`, `solution_delivery_documents`, `solution_generation_history`, `solution_host_bindings`, `solution_registrations`, `solution_targets` | No RLS; exact grants |
+| `global` | `audit_event_types`, `authority_core_approved_modules`, `authority_core_clients`, `authority_core_delegations`, `authority_core_grant_epochs`, `authority_core_installations`, `authority_core_module_revisions`, `authority_core_modules`, `authority_core_owner_aware`, `authority_core_person_epochs`, `authority_core_replay`, `authority_core_role_grants`, `authority_core_tombstones`, `bootstrap_state`, `data_retention_policies`, `datasource_credential_budgets`, `email_templates`, `feature_flags`, `hop_admission_keys`, `hop_admission_proofs`, `identity_providers`, `module_envelopes`, `plan_entitlements`, `plans`, `platform_admins`, `solution_delivery_documents`, `solution_generation_history`, `solution_host_bindings`, `solution_registrations`, `solution_targets` | No RLS; exact grants |
 | `tenant` | `actor_chain_journal`, `actor_chain_revocations`, `api_keys`, `approval_decisions`, `approval_requests`, `audit_event_idempotency`, `audit_events`, `connector_credentials`, `dashboards`, `datasource_account_links`, `datasource_domains`, `datasource_group_bindings`, `datasource_object_manifests`, `codefly_effect_receipts`, `datasource_operation_attempts`, `datasource_oauth_consumed_states`, `datasource_source_operations`, `datasource_sources`, `delegation_grants`, `domain_events`, `entitlement_overrides`, `executable_artifact_approvals`, `github_app_installations`, `github_app_setups`, `installations`, `invitations`, `membership_integrity_findings`, `org_generic_settings`, `org_identity_providers`, `org_key_bindings`, `org_settings`, `organization_activations`, `organization_authorization_revisions`, `organization_members`, `organizations`, `principal_authorization_revisions`, `principals`, `record_shares`, `role_assignments`, `role_permissions`, `roles`, `scope_grants`, `scope_nodes`, `source_delegations`, `source_read_revisions`, `subscriptions`, `team_members`, `team_membership_quarantine`, `teams`, `usage_events`, `usage_totals`, `webhook_deliveries`, `webhook_subscriptions`, `work_context_replay` | Enabled and forced RLS with at least one policy |
 | `user` | `client_authorization_codes`, `gdpr_requests`, `mfa_backup_codes`, `mfa_devices`, `mfa_login_transactions`, `notifications`, `onboarding_progress`, `resource_follows`, `sessions`, `user_consent_events`, `user_consent_preferences`, `user_identities`, `users`, `webauthn_ceremonies`, `webauthn_credentials` | Enabled and forced RLS with at least one policy |
 | `pre_auth` | `magic_links`, `waitlist_entries` | Enabled and forced RLS; fail-closed request policy, accessed only by the control-plane role |
@@ -1086,13 +1086,22 @@ Migration 57 drops the former witness's local relations (`policy_log_commits`,
 
 ## The authority core's installations
 
-The authority core (migration 56) keeps the installations of solutions in
-`authority_core_installations`. A module's installation is not there: it is
-accounts' own `installations` row of kind `module`, an administrator's install
-with consent, within the module envelope, revoked by an uninstall or by a
-ceiling that no longer allows the organization, all in accounts' own
-transactions. The core reads those rows live as its installations and installs
-no module itself. Its one write to a module's installation, raising its
+The authority core (migration 56) keeps every installation it decides in
+`authority_core_installations`: a solution's, and a module page's (a module
+declaring roles, chosen through its review like a solution; its row carries the
+principal the core gave it, which a module's own record never has). Each
+consent's approved declaration is kept per module and generation in
+`authority_core_approved_modules` (migration 68), written once and never
+replaced, from which the core decides
+what a holder holds while a redelivery asks more than the consent approved.
+`installed_at` (migration 69) is when a row was first written, the install
+date an administrator's listing shows; a row written before it was kept has
+none, and later writes never move it.
+A module declaring no roles is not there: it is accounts' own `installations`
+row of kind `module`, an administrator's install with consent, within the
+module envelope, revoked by an uninstall or by a ceiling that no longer allows
+the organization, all in accounts' own transactions. The core reads those rows
+live as its installations and installs no such module itself. Its one write to a module's installation, raising its
 revision when a redelivery narrows the module, is kept beside the row in
 `authority_core_module_revisions`, because `installations.revision` is
 lifecycle-owned. The revision the core reads also adds the committed

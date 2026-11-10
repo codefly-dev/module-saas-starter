@@ -196,6 +196,11 @@ async function handler(
 			const value = request.headers.get(name);
 			if (value !== null) headers.set(name, value);
 		}
+		// The page this module call comes from, which the route names: the
+		// authority issues it through the page's target's binding to the
+		// module when the target declares one (the gateway honours it beside
+		// the internal token above, never from a browser).
+		headers.set("X-Codefly-Page", id);
 	}
 	headers.set("accept", request.headers.get("accept") ?? "application/json");
 

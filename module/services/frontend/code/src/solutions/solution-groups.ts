@@ -29,13 +29,23 @@ export function parseSolutionGroup(
 	return { id: group.id, title: group.title, order: group.order as number };
 }
 
-/** Group an already-authorized projection; this function performs no access check. */
-export function groupSolutionNavigation<T extends { group?: SolutionGroup }>(
-	items: T[],
-): Array<{ key: string; title: string; items: T[] }> {
+/**
+ * Group an already-authorized projection; this function performs no access
+ * check. Solutions come first, in their composition groups; module pages are
+ * one section of their own, "Modules", after every solution, whatever group
+ * a module declares: a module page is part of the platform, not a product.
+ */
+export function groupSolutionNavigation<
+	T extends { group?: SolutionGroup; kind?: "module" | "solution" },
+>(items: T[]): Array<{ key: string; title: string; items: T[] }> {
 	const groups = new Map<string, { group: SolutionGroup; items: T[] }>();
 	const ungrouped: T[] = [];
+	const modules: T[] = [];
 	for (const item of items) {
+		if (item.kind === "module") {
+			modules.push(item);
+			continue;
+		}
 		if (!item.group) {
 			ungrouped.push(item);
 			continue;
@@ -60,5 +70,7 @@ export function groupSolutionNavigation<T extends { group?: SolutionGroup }>(
 			title: sections.length ? "Other" : "Solutions",
 			items: ungrouped,
 		});
+	if (modules.length)
+		sections.push({ key: "modules", title: "Modules", items: modules });
 	return sections;
 }

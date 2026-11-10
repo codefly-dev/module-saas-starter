@@ -82,6 +82,45 @@ changing. The repository and the credential are out of reach for the same
 reason — one is the source's identity, the other rebinds whose authority its
 syncs run under (a reconnect, through `SyncSource`).
 
+### A source a solution connects is governed by the solution's own scope
+
+A connect may tie its source to one installation of a role-gated target (a
+solution, or a module page declaring roles) with `governance`
+(`SourceGovernance`: the installation id and one scope of that target's own
+declaration — a kind and action it serves, or one its roles reach through a
+named operation binding). The target declares the scope; the host adds no
+permission of its own. Every decision asks the shared authority core, never a
+second rule: the host has the core issue the caller that scope at the
+installation (`IssueForPerson`, the token discarded), exactly as the core
+would for the target's page.
+
+The source-changing methods declare `org_member`, and the handler decides the
+rest before anything is written:
+
+- **An organization's own source** (no `governance`, or one whose installation
+  was uninstalled, or an id that is not there): an organization
+  administrator, as before. A member is refused.
+- **A governed source** — connect (`AddSource`, `AddGitHubSource`) and change
+  (`UpdateSource`, `SyncSource` including a reconnect, `DeleteSource`,
+  `MigrateGitHubSourceToApp`, `DeclareSourceOperations`,
+  `DelegateSourceTriggers`, and `BeginDatasourceAccountLink` naming it): any
+  member the core issues the governing scope at the installation, whether or
+  not they administer the organization. Anyone it does not issue, an
+  organization administrator included, is refused by name with the core's
+  reason. A connect also requires the installation to be active.
+- **Where a governed source writes**: only into its installation's own
+  collections — a node a source the same installation governs already writes
+  into, or a label that reuses one of those or mints a new one. Naming any
+  other node of the organization is refused, and a label another collection of
+  the organization bears mints the installation's own.
+- **Read** (`ListSources`, `GetSource`, `GetSourceSync`): a governed source is
+  read by the holders of any role on the installation (the core's
+  `HeldInstallations`); anyone else does not list it and is refused a point
+  read. An organization's own source is read as before (`GetSourceSync`
+  stays its administrators').
+
+The tie is written with the row and never moves (migration 70).
+
 Who *triggered* a source's sync is not a datasource field. `ListSources` and
 `GetSource` project `Datasource` to any org member under no declared permission,
 while `SyncSource` is org-admin only and reading its actor goes through

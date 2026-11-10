@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"accounts/pkg/business"
@@ -20,9 +21,9 @@ import (
 // The carrier is the `delivery` ServiceAccount of the module's own namespace:
 // one delivery Job per module tree runs there. The namespace is the module's by
 // the cell's rule (business.ModuleNamespaceRule) — the manifest's module, or for
-// a withdrawal the module of the binding's previously applied manifest — so it
-// comes from signed bytes and this host's own placement, never from
-// configuration a deployer can edit.
+// a withdrawal the module of the binding's previously applied manifest or this
+// host's own module — so it comes from signed bytes and this host's own
+// placement, never from configuration a deployer can edit.
 
 // deliveryServiceAccount is the account a delivery carrier runs as: the CLI's
 // constant (the `delivery` ServiceAccount its render creates per module
@@ -83,8 +84,8 @@ func NewSolutionDeliveryCarrierCheck(kubernetes *KubernetesClient) *SolutionDeli
 	return &SolutionDeliveryCarrierCheck{kubernetes: kubernetes}
 }
 
-// AuthorizeCarrier reviews the caller's token and requires it to authenticate
-// as the delivery account of namespace.
+// AuthorizeCarrier reviews the caller's token once and requires it to
+// authenticate as the delivery account of one of namespaces.
 //
 // The failure taxonomy is the contract, because each class has a different right
 // response from the caller:
@@ -95,7 +96,7 @@ func NewSolutionDeliveryCarrierCheck(kubernetes *KubernetesClient) *SolutionDeli
 //     terminal (403).
 //   - the API server could not be ASKED → ErrKubernetesUnavailable, retryable
 //     (503). Nothing was verified, so nothing may be concluded.
-func (c *SolutionDeliveryCarrierCheck) AuthorizeCarrier(ctx context.Context, credential, namespace string) error {
+func (c *SolutionDeliveryCarrierCheck) AuthorizeCarrier(ctx context.Context, credential string, namespaces ...string) error {
 	if c == nil || c.kubernetes == nil {
 		// Fail closed. A deployment that mounted the endpoint without a way to
 		// review carriers must not accept documents from anyone.
@@ -113,11 +114,20 @@ func (c *SolutionDeliveryCarrierCheck) AuthorizeCarrier(ctx context.Context, cre
 		// Unreachable, or the host's own RBAC refused: nothing was verified.
 		return err
 	}
-	if reviewed.ServiceAccount != deliveryServiceAccount || reviewed.Namespace != namespace {
-		return fmt.Errorf("%w: the manifest is delivered by %s/%s, and the carrier authenticated as %s/%s",
-			ErrCarrierNotAuthorized, namespace, deliveryServiceAccount, reviewed.Namespace, reviewed.ServiceAccount)
+	if reviewed.ServiceAccount != deliveryServiceAccount || reviewed.Namespace == "" || !slices.Contains(namespaces, reviewed.Namespace) {
+		return fmt.Errorf("%w: the manifest is delivered by %s, and the carrier authenticated as %s/%s",
+			ErrCarrierNotAuthorized, deliveryAccounts(namespaces, deliveryServiceAccount), reviewed.Namespace, reviewed.ServiceAccount)
 	}
 	return nil
+}
+
+// deliveryAccounts names each account a carrier may be, for a refusal.
+func deliveryAccounts(owners []string, account string) string {
+	accounts := make([]string, 0, len(owners))
+	for _, owner := range owners {
+		accounts = append(accounts, owner+"/"+account)
+	}
+	return strings.Join(accounts, " or ")
 }
 
 // bearerToken reads the token out of an Authorization header value.

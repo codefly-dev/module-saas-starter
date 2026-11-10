@@ -7,6 +7,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -80,8 +81,10 @@ func reviewedInstallFixture(t *testing.T, dependencies bool) (*Service, *reviewe
 	core, err := authority.New(owner, authority.Config{Issuer: "test.example", KeyID: "key", Signer: private, Keys: staticKeys{"key": public}, Replay: workcontext.NewMemoryReplayStore()})
 	require.NoError(t, err)
 	host := &reviewedInstallStore{targets: []*AvailableSolutionTarget{
-		{TargetID: targetID, BindingID: "example-binding", RouteAlias: "example", Kind: "solution", AppliedGeneration: 1},
-		{TargetID: NewIDString(), BindingID: "records-binding", RouteAlias: "records-route", Kind: "module", AppliedGeneration: 3},
+		{TargetID: targetID, BindingID: "example-binding", RouteAlias: "example", Kind: "solution", AppliedGeneration: 1,
+			ReleasePublisher: "acme.example", ReleaseName: "example", ReleaseVersion: "1.0.0"},
+		{TargetID: NewIDString(), BindingID: "records-binding", RouteAlias: "records-route", Kind: "module", AppliedGeneration: 3,
+			ReleasePublisher: "acme.example", ReleaseName: "records", ReleaseVersion: "1.0.0"},
 	}, records: map[string]*SolutionHostBindingRecord{}}
 	registry := ModulePrincipalRegistry{}
 	for i, target := range host.targets {
@@ -112,21 +115,21 @@ func TestReviewedSolutionAPIKeepsOriginalApprovalAcrossPendingAndActiveReplay(t 
 		}
 		return nil
 	})
-	pending, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, review)
+	pending, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, review, InstallAccess{})
 	require.ErrorContains(t, err, "receiver has not acknowledged")
 	require.Equal(t, domain.Pending, pending.Status)
 	require.True(t, proto.Equal(review, host.plan.Review))
 	changed := proto.Clone(review).(*gen.ReviewedSolutionInstall)
 	changed.DeliveryDigest = "another-review"
-	_, err = s.InstallReviewedSolution(ctx, caller, caller.Organization, changed)
+	_, err = s.InstallReviewedSolution(ctx, caller, caller.Organization, changed, InstallAccess{})
 	require.ErrorContains(t, err, "different original review")
 	acknowledged = true
-	active, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, review)
+	active, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, review, InstallAccess{})
 	require.NoError(t, err)
 	require.Equal(t, domain.Active, active.Status)
 	require.Equal(t, pending.Consent, active.Consent)
 	require.Equal(t, pending.Revision, active.Revision)
-	replayed, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, review)
+	replayed, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, review, InstallAccess{})
 	require.NoError(t, err)
 	require.Equal(t, active, replayed)
 }
@@ -169,7 +172,7 @@ func TestReviewedSolutionAPIRefusesTamperingOrStaleDeliveryBeforeAnyStep(t *test
 			}
 			calls := 0
 			s.SetAuthorityInstallStep(func(context.Context, domain.Installation) error { calls++; return nil })
-			_, err = s.InstallReviewedSolution(ctx, caller, caller.Organization, review)
+			_, err = s.InstallReviewedSolution(ctx, caller, caller.Organization, review, InstallAccess{})
 			require.Error(t, err)
 			require.Zero(t, calls)
 		})
@@ -177,19 +180,154 @@ func TestReviewedSolutionAPIRefusesTamperingOrStaleDeliveryBeforeAnyStep(t *test
 }
 
 func TestReviewedSolutionAPIRequiresDeclaredAuthorityWithoutChoosingRole(t *testing.T) {
-	for _, selector := range []string{"", "reader"} {
-		s, _, owner, caller, target := reviewedInstallFixture(t, true)
-		require.NoError(t, owner.Write(context.Background(), func(tx authority.Tx) error {
-			m, err := tx.ModuleNamed("records-route")
-			if err != nil {
-				return err
+	// A supporting module whose installation_role names a standing role
+	// leaves the host a grant it never makes on a solution's review.
+	s, _, owner, caller, target := reviewedInstallFixture(t, true)
+	require.NoError(t, owner.Write(context.Background(), func(tx authority.Tx) error {
+		m, err := tx.ModuleNamed("records-route")
+		if err != nil {
+			return err
+		}
+		m.InstallationRole = "reader"
+		return tx.PutModule(m)
+	}))
+	_, err := s.ReviewSolutionInstall(context.Background(), caller, caller.Organization, target)
+	require.ErrorContains(t, err, "module:records")
+}
+
+// A module declaring roles is a module page, and a module page is a module:
+// installed by composition. A solution reaching one lists it in its closure
+// and installs it with the solution, holding no standing authority; a module
+// page that does not declare installation_role none is refused by name.
+func TestAReachedModulePageIsInstalledWithTheClosure(t *testing.T) {
+	for _, selector := range []string{"", "reader", domain.NoInstallationRole} {
+		t.Run("installation role "+selector, func(t *testing.T) {
+			s, _, owner, caller, target := reviewedInstallFixture(t, true)
+			ctx := context.Background()
+			require.NoError(t, owner.Write(ctx, func(tx authority.Tx) error {
+				m, err := tx.ModuleNamed("records-route")
+				if err != nil {
+					return err
+				}
+				m.InstallationRole = selector
+				m.Roles = map[string][]*basev0.WorkScopeV1{"viewer": {{ResourceKind: "records", Actions: []string{"read"}}}}
+				return tx.PutModule(m)
+			}))
+			review, err := s.ReviewSolutionInstall(ctx, caller, caller.Organization, target)
+			if selector != domain.NoInstallationRole {
+				require.ErrorContains(t, err, "module:records", "a module page holds no standing authority")
+				return
 			}
-			m.InstallationRole = selector
-			return tx.PutModule(m)
-		}))
-		_, err := s.ReviewSolutionInstall(context.Background(), caller, caller.Organization, target)
-		require.ErrorContains(t, err, "module:records")
+			require.NoError(t, err)
+			i := slices.IndexFunc(review.Modules, func(m *gen.ReviewedSupportingModule) bool { return m.Principal == "module:records" })
+			require.GreaterOrEqual(t, i, 0, "the reached module page is in the solution's closure")
+			require.True(t, review.Modules[i].Required)
+			require.Equal(t, domain.NoInstallationRole, review.Modules[i].InstallationRole)
+			s.SetAuthorityInstallStep(func(context.Context, domain.Installation) error { return nil })
+			inst, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, review, InstallAccess{})
+			require.NoError(t, err)
+			require.Equal(t, domain.Active, inst.Status)
+		})
 	}
+}
+
+// Blue 2026-11-08: every solution review stopped at "annotations cannot be
+// installed automatically", because annotations, model, records and tracing
+// declare no installation role at all, and the review read that as a standing
+// role it could not grant. A manifest that declares neither an installation
+// role nor any role leaves nothing to select: the module is installed holding
+// none, which is all the solution's closure asks of it.
+func TestReviewedSolutionInstallsAnUndeclaredRolelessModuleHoldingNoAuthority(t *testing.T) {
+	s, _, owner, caller, target := reviewedInstallFixture(t, true)
+	ctx := context.Background()
+	require.NoError(t, owner.Write(ctx, func(tx authority.Tx) error {
+		m, err := tx.ModuleNamed("records-route")
+		if err != nil {
+			return err
+		}
+		m.InstallationRole, m.Roles = "", nil
+		return tx.PutModule(m)
+	}))
+	review, err := s.ReviewSolutionInstall(ctx, caller, caller.Organization, target)
+	require.NoError(t, err)
+	var module *gen.ReviewedSupportingModule
+	for _, m := range review.Modules {
+		if m.Required {
+			module = m
+		}
+	}
+	require.NotNil(t, module)
+	require.Equal(t, domain.NoInstallationRole, module.InstallationRole, "the review says no standing machine access is granted")
+	require.Empty(t, module.ReuseInstallationId)
+	require.JSONEq(t, `{"capabilities":true}`, module.Scope)
+	// The same review is what the install reconstructs: nothing changed.
+	calls := 0
+	s.SetAuthorityInstallStep(func(context.Context, domain.Installation) error { calls++; return nil })
+	_, err = s.InstallReviewedSolution(ctx, caller, caller.Organization, review, InstallAccess{})
+	require.NoError(t, err)
+	require.Equal(t, 1, calls)
+}
+
+// A reviewed install checks every supporting module it is about to install
+// before it installs any: one the host would refuse (here, a module whose
+// release the host cannot name an agent for) refuses the whole
+// install with that reason, before the core records a pending attempt and
+// before the install step that installs the closure runs. Nothing is left to
+// resume or to uninstall.
+func TestAReviewedInstallRefusedByAnyModuleLeavesNothingBehind(t *testing.T) {
+	s, host, owner, caller, target := reviewedInstallFixture(t, true)
+	ctx := context.Background()
+	// A second supporting module, installed first in review order.
+	require.NoError(t, owner.Write(ctx, func(tx authority.Tx) error {
+		solution, err := tx.ModuleNamed("example")
+		if err != nil {
+			return err
+		}
+		solution.EdgeDependencies = append([]domain.EdgeDependency{{Module: "module:alpha", Presence: "required"}}, solution.EdgeDependencies...)
+		if err := tx.PutModule(solution); err != nil {
+			return err
+		}
+		return tx.PutModule(domain.Module{Name: "alpha-route", Principal: "module:alpha", Kind: domain.KindModule, Generation: 2, InstallationRole: "none"})
+	}))
+	alpha := &AvailableSolutionTarget{TargetID: NewIDString(), BindingID: "alpha-binding", RouteAlias: "alpha-route", Kind: "module", AppliedGeneration: 2,
+		ReleasePublisher: "acme.example", ReleaseName: "alpha", ReleaseVersion: "1.0.0"}
+	host.targets = append(host.targets, alpha)
+	host.records[alpha.BindingID] = &SolutionHostBindingRecord{BindingID: alpha.BindingID, Applied: &SolutionHostBindingApplied{SolutionHostBindingGeneration: SolutionHostBindingGeneration{Generation: 2, Digest: "digest-module:alpha"}, Release: "acme.example/alpha@1.0.0"}}
+	registry := s.ModulePrincipals()
+	registry[ModulePrincipalID("module:alpha")] = ModulePrincipalGrant{Prefix: "module:alpha", PresenceBinding: alpha.BindingID, PresenceGeneration: 2}
+	s.SetModulePrincipals(registry)
+
+	review, err := s.ReviewSolutionInstall(ctx, caller, caller.Organization, target)
+	require.NoError(t, err)
+	var principals []string
+	for _, m := range review.Modules {
+		if m.Required {
+			principals = append(principals, m.Principal)
+		}
+	}
+	require.Equal(t, []string{"module:alpha", "module:records"}, principals, "alpha is installed before records")
+
+	// The host's projection of records names no release version, so the
+	// agent its installation is made for cannot be named.
+	host.targets[1].ReleaseVersion = ""
+
+	calls := 0
+	s.SetAuthorityInstallStep(func(context.Context, domain.Installation) error { calls++; return nil })
+	_, err = s.InstallReviewedSolution(ctx, caller, caller.Organization, review, InstallAccess{})
+	require.ErrorContains(t, err, "acme.example/records:")
+	require.Zero(t, calls, "the step that installs the closure ran")
+	core, err := s.AuthorityCore()
+	require.NoError(t, err)
+	all, err := core.Installations(ctx, caller, caller.Organization)
+	require.NoError(t, err)
+	require.Empty(t, all, "a refused install left a pending attempt")
+
+	// Once the projection names it, the same review installs.
+	host.targets[1].ReleaseVersion = "1.0.0"
+	inst, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, review, InstallAccess{})
+	require.NoError(t, err)
+	require.Equal(t, domain.Active, inst.Status)
+	require.Equal(t, 1, calls)
 }
 
 func TestFreshReviewedConsentSupersedesPendingWithoutReusingOldAttempt(t *testing.T) {
@@ -204,19 +342,19 @@ func TestFreshReviewedConsentSupersedesPendingWithoutReusingOldAttempt(t *testin
 	})
 	first, err := s.ReviewSolutionInstall(ctx, caller, caller.Organization, target)
 	require.NoError(t, err)
-	old, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, first)
+	old, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, first, InstallAccess{})
 	require.ErrorContains(t, err, "awaiting setup")
 	fresh, err := s.ReviewSolutionInstall(ctx, caller, caller.Organization, target)
 	require.NoError(t, err)
 	require.NotEqual(t, first.Approval.OperationId, fresh.Approval.OperationId)
 	require.Equal(t, old.Revision, fresh.Approval.ExpectedRevision)
-	next, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, fresh)
+	next, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, fresh, InstallAccess{})
 	require.ErrorContains(t, err, "awaiting setup")
 	require.Equal(t, old.ID, next.ID)
 	require.Greater(t, next.Revision, old.Revision)
 	require.NotEqual(t, old.Consent, next.Consent)
 	require.Equal(t, fresh.Approval.OperationId, host.plan.Receipt.OperationID)
-	_, err = s.InstallReviewedSolution(ctx, caller, caller.Organization, first)
+	_, err = s.InstallReviewedSolution(ctx, caller, caller.Organization, first, InstallAccess{})
 	require.Error(t, err, "old approval cannot acknowledge the superseding attempt")
 }
 
@@ -324,4 +462,23 @@ func TestCombinedReviewUsesExactTargetHistoryAcrossPages(t *testing.T) {
 	host.historyErr = errors.New("history unavailable")
 	_, err = s.ReviewSolutionInstall(context.Background(), caller, caller.Organization, target)
 	require.ErrorContains(t, err, "history unavailable")
+}
+
+// The core computes the closure of a target (ReviewedOffer.Closure); the
+// host's walker is what the review installs by. On the fixtures the two name
+// the same supporting modules, and a disagreement is named rather than hidden.
+func TestReviewClosureAgreesWithTheCore(t *testing.T) {
+	s, _, _, caller, _ := reviewedInstallFixture(t, true)
+	core, err := s.AuthorityCore()
+	require.NoError(t, err)
+	offer, err := core.ReviewOffer(context.Background(), caller, caller.Organization, "example")
+	require.NoError(t, err)
+	require.Equal(t, []string{"records-route"}, offer.Closure, "the core names the required module by name; the optional edge is answered apart")
+	require.Equal(t, []string{"module:optional"}, offer.OptionalEdges)
+	dependencies, err := SolutionInstallationDependencies(offer)
+	require.NoError(t, err)
+	require.Empty(t, closureDisagreement(offer, dependencies))
+	// A walker that found one module more is a disagreement, said by name.
+	extra := append(slices.Clone(dependencies), SolutionDependency{Principal: "module:records", Required: true, Delivered: true})
+	require.Contains(t, closureDisagreement(offer, extra), "records-route")
 }

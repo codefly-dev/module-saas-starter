@@ -336,3 +336,31 @@ func TestGatewaySolutionEntitlements_NamesItsOwnRefusals(t *testing.T) {
 	require.Empty(t, user.Header().Get("X-Codefly-Entitlement-Refusal"),
 		"a refused USER credential is ext_authz's verdict, not this endpoint's refusal")
 }
+
+// A page's binding asks for the organization's composed modules and is
+// answered them beside, never inside, the entitled set; the navigation's poll
+// does not ask, so accounts is not asked to read them.
+func TestGatewaySolutionEntitlements_ComposedModulesOnlyWhenAsked(t *testing.T) {
+	gw, authority, priv := entitlementGateway(t)
+	authority.pages = []*accountsv1.ListSolutionEntitlementsResponse{{
+		Entitlements:    []*accountsv1.SolutionEntitlement{{TargetId: fakeSolutionTarget("people"), InstallationId: "install-people", Healthy: true}},
+		ComposedModules: []*accountsv1.ComposedModuleInstallation{{TargetId: fakeSolutionTarget("records"), InstallationId: "install-records"}},
+	}}
+	token := signValidToken(t, priv)
+
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, entitlementRequest("test-internal-token", token))
+	require.Equal(t, http.StatusOK, w.Code)
+	require.False(t, authority.calls[0].GetIncludeComposedModules(), "the navigation does not ask")
+
+	asked := entitlementRequest("test-internal-token", token)
+	asked.URL.RawQuery = composedModulesQuery + "=true"
+	w = httptest.NewRecorder()
+	gw.ServeHTTP(w, asked)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.True(t, authority.calls[1].GetIncludeComposedModules())
+	body := decodeEntitlements(t, w.Body.Bytes())
+	require.Equal(t, []composedModuleEntry{{TargetID: fakeSolutionTarget("records"), InstallationID: "install-records"}}, body.ComposedModules)
+	require.Equal(t, []solutionEntitlementEntry{{TargetID: fakeSolutionTarget("people"), Healthy: true, InstallationID: "install-people"}}, body.Usable,
+		"a composed module is never listed as an entitlement")
+}

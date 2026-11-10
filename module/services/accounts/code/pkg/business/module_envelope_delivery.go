@@ -50,8 +50,10 @@ type ModuleEnvelopeDeliveryReceipt struct {
 }
 
 // SetModuleEnvelopeDeliveryHost names the module this host was composed as,
-// whose delivery account carries the host's envelope. Boot wiring; empty
-// leaves envelope delivery refusing every carrier.
+// whose delivery account carries the host's envelope and may carry the
+// withdrawal of a module the composition dropped. Boot wiring; empty leaves
+// envelope delivery refusing every carrier and a withdrawal carried only from
+// its own module's namespace.
 func (s *Service) SetModuleEnvelopeDeliveryHost(module string) {
 	s.hostModule = module
 }

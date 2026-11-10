@@ -58,7 +58,8 @@ func proposalsOffer(approval domain.ConsentApproval) authority.ReviewedOffer {
 			"viewer": {offerScope("proposals.item", "read")},
 			"editor": {offerScope("proposals.item", "read", "write")},
 		},
-		Bindings: map[string]domain.Binding{"documents": {Audience: "documents", InvokeScopes: []*basev0.WorkScopeV1{offerScope("example-records", "read")}}},
+		Bindings:         map[string]domain.Binding{"documents": {Audience: "documents", InvokeScopes: []*basev0.WorkScopeV1{offerScope("example-records", "read")}}},
+		EdgeDependencies: []domain.EdgeDependency{{Module: "records", Presence: "required"}},
 		Methods: map[string]domain.MethodPolicy{
 			offerRead:              {Requires: []*basev0.WorkScopeV1{offerScope("proposals.item", "read")}},
 			offerWrite:             {Requires: []*basev0.WorkScopeV1{offerScope("proposals.item", "write")}},
@@ -118,6 +119,36 @@ func TestAReviewedOfferShowsEachRolesOperationsAndTools(t *testing.T) {
 	require.Len(t, review.GetCeiling(), 1)
 	require.Equal(t, "documents", review.GetCeiling()[0].GetModule())
 	require.Equal(t, []string{"read"}, review.GetCeiling()[0].GetScopes()[0].GetActions())
+}
+
+// A module the declaration depends on is not a binding: it reaches the wire as
+// an edge dependency with its presence, apart from the ceiling, so a page that
+// lists only the ceiling would say "no other module" of a solution that does
+// not work without one.
+func TestAReviewedOfferCarriesEdgeDependenciesApartFromTheCeiling(t *testing.T) {
+	offer := proposalsOffer(domain.ConsentApproval{})
+	offer.Module.Bindings = nil
+	review, err := reviewedOffer(offer, nil)
+	require.NoError(t, err)
+	require.Empty(t, review.GetCeiling(), "a solution binding nothing has an empty ceiling")
+	require.Len(t, review.GetEdgeDependencies(), 1)
+	require.Equal(t, "records", review.GetEdgeDependencies()[0].GetModule())
+	require.Equal(t, "required", review.GetEdgeDependencies()[0].GetPresence())
+}
+
+// A role whose scopes no delivered operation requires covers nothing: the core
+// joined it against every delivered module's method policies and found none,
+// so the empty capabilities are its answer, carried as such.
+func TestARoleNoDeliveredOperationRequiresCoversNone(t *testing.T) {
+	offer := proposalsOffer(domain.ConsentApproval{})
+	offer.Module.Roles = map[string][]*basev0.WorkScopeV1{"assistant": {offerScope("proposals.assistant", "use")}}
+	offer.Modules = []domain.Module{offer.Module}
+	review, err := reviewedOffer(offer, nil)
+	require.NoError(t, err)
+	require.Len(t, review.GetRoles(), 1)
+	require.Equal(t, "assistant", review.GetRoles()[0].GetName())
+	require.Empty(t, review.GetRoles()[0].GetCapabilities())
+	require.NotEmpty(t, review.GetRoles()[0].GetScopes(), "the role's own scopes are still stated")
 }
 
 // A read the core answers without the consent tuple carries none, and a host

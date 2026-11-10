@@ -230,7 +230,9 @@ func NewGrpServer(c *Configuration, opts ...grpc.ServerOption) (*GrpcServer, err
 		validator:     v,
 	}
 
-	configurePermissionServerKeys()
+	if err := configurePermissionServerKeys(); err != nil {
+		return nil, err
+	}
 	registerCatalogGRPCServices(grpcServer, s)
 	registerCatalogGRPCServices(internalServer, s)
 	registerCatalogGRPCServices(authorityServer, s)

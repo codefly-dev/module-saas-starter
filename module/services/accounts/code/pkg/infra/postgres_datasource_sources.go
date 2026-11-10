@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"accounts/pkg/business"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // datasourceSourceColumns is the shared projection; COALESCE keeps the optional
@@ -21,7 +22,8 @@ const datasourceSourceColumns = `
 	status, COALESCE(status_reason, ''), last_synced_at, created_at, updated_at, config,
 	COALESCE(last_ingested_commit, ''), last_ingested_at, COALESCE(last_delivery_id, ''),
 	(EXTRACT(EPOCH FROM reconcile_interval))::bigint, next_reconcile_at,
-	COALESCE(github_installation_id, '')`
+	COALESCE(github_installation_id, ''),
+	COALESCE(governing_installation_id, ''), COALESCE(governing_kind, ''), COALESCE(governing_action, ''), COALESCE(governing_binding, '')`
 
 // datasourceBoundaryLabelColumn is the boundary's display label, appended to
 // the shared projection by the org-scoped reads the DatasourceService serves
@@ -51,12 +53,14 @@ func scanDatasourceSourceInto(row pgx.Row, label *string) (*business.DatasourceS
 	var d business.DatasourceSource
 	var config []byte
 	var reconcileIntervalSeconds int64
+	var governance business.SourceGovernance
 	dest := []any{
 		&d.ID, &d.OrgID, &d.Provider, &d.Repo, &d.Paths, &d.Branch,
 		&d.BoundaryNodeID, &d.CredentialSecretRef, &d.WebhookSecretRef,
 		&d.Status, &d.StatusReason, &d.LastSyncedAt, &d.CreatedAt, &d.UpdatedAt, &config,
 		&d.LastIngestedCommit, &d.LastIngestedAt, &d.LastDeliveryID,
 		&reconcileIntervalSeconds, &d.NextReconcileAt, &d.GitHubInstallationID,
+		&governance.InstallationID, &governance.Kind, &governance.Action, &governance.Binding,
 	}
 	if label != nil {
 		dest = append(dest, label)
@@ -65,6 +69,9 @@ func scanDatasourceSourceInto(row pgx.Row, label *string) (*business.DatasourceS
 		return nil, err
 	}
 	d.ReconcileInterval = time.Duration(reconcileIntervalSeconds) * time.Second
+	if governance.InstallationID != "" {
+		d.Governance = &governance
+	}
 	if len(config) > 0 {
 		switch d.Provider {
 		case business.DatasourceProviderGitHub:
@@ -207,16 +214,28 @@ func (s *PostgresStore) InsertDatasourceSource(ctx context.Context, source *busi
 	if err != nil {
 		return err
 	}
+	// An organization's own source writes NULL to all four governing columns;
+	// a governed one names its installation and scope, and its binding when it
+	// has one.
+	var governance struct{ InstallationID, Kind, Action, Binding *string }
+	if g := source.Governance; g != nil {
+		governance.InstallationID, governance.Kind, governance.Action = &g.InstallationID, &g.Kind, &g.Action
+		if g.Binding != "" {
+			governance.Binding = &g.Binding
+		}
+	}
 	_, err = s.getQueryExecutor(ctx).Exec(ctx, `
 		INSERT INTO datasource_sources (
 			id, org_id, provider, repo, paths, branch, boundary_node_id,
 			credential_secret_ref, webhook_secret_ref, status, config,
-			reconcile_interval, next_reconcile_at, github_installation_id)
+			reconcile_interval, next_reconcile_at, github_installation_id,
+			governing_installation_id, governing_kind, governing_action, governing_binding)
 		VALUES ($1, $2, $3, NULLIF($4, ''), $5, NULLIF($6, ''), $7, $8, NULLIF($9, ''), $10, $11,
-			make_interval(secs => $12), $13, NULLIF($14, ''))`,
+			make_interval(secs => $12), $13, NULLIF($14, ''), $15, $16, $17, $18)`,
 		source.ID, source.OrgID, source.Provider, source.Repo, paths, source.Branch,
 		source.BoundaryNodeID, source.CredentialSecretRef, source.WebhookSecretRef, source.Status, config,
 		source.ReconcileInterval.Seconds(), source.NextReconcileAt, source.GitHubInstallationID,
+		governance.InstallationID, governance.Kind, governance.Action, governance.Binding,
 	)
 	return err
 }
@@ -724,4 +743,47 @@ func (s *PostgresStore) GetDatasourceSourceByID(ctx context.Context, id string) 
 		return nil, err
 	}
 	return source, nil
+}
+
+// GovernedBoundaryNode reports whether nodeID is the boundary of a source
+// governed by installationID. Runs under the caller's WithOrgTx.
+func (s *PostgresStore) GovernedBoundaryNode(ctx context.Context, orgID, installationID, nodeID string) (bool, error) {
+	var governed bool
+	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM datasource_sources
+		                WHERE org_id = $1 AND governing_installation_id = $2 AND boundary_node_id::text = $3)`,
+		orgID, installationID, nodeID).Scan(&governed)
+	return governed, err
+}
+
+// GetOrCreateGovernedCollectionNode reuses the collection labelled node.Label
+// that a source governed by installationID writes into, or registers node. It
+// takes the same per-label lock GetOrCreateCollectionNode takes, keyed by the
+// installation too, so two connects of one installation agree on one node.
+// Runs under the caller's WithOrgTx.
+func (s *PostgresStore) GetOrCreateGovernedCollectionNode(ctx context.Context, node *gen.ScopeNode, installationID string) (string, error) {
+	executor := s.getQueryExecutor(ctx)
+	if err := validateScopePath(node.ScopePath); err != nil {
+		return "", err
+	}
+	if _, err := executor.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`, node.OrgId, installationID+"/"+node.Label); err != nil {
+		return "", err
+	}
+	var existing string
+	err := executor.QueryRow(ctx, `
+		SELECT n.id::text FROM scope_nodes n
+		  JOIN datasource_sources d ON d.org_id = n.org_id AND d.boundary_node_id = n.id
+		 WHERE n.org_id = $1 AND n.kind = $2 AND n.label = $3 AND d.governing_installation_id = $4
+		 ORDER BY n.created_at
+		 LIMIT 1`, node.OrgId, node.Kind, node.Label, installationID).Scan(&existing)
+	if err == nil {
+		return existing, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", err
+	}
+	if err := s.RegisterScopeNode(ctx, node); err != nil {
+		return "", err
+	}
+	return node.Id, nil
 }

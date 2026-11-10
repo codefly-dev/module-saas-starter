@@ -34,7 +34,9 @@ type RunnableReader func(context.Context) (map[string]*runnablev0.PreparedBindin
 type HostOfferServer struct {
 	installationv1.UnimplementedOfferServiceServer
 	// runnables supplies composed tool metadata. Production has no reader yet,
-	// so exposure is reported as unavailable, not absent. The CLI treats a
+	// so tools_composed is false and the Setup UI says agent tools cannot be
+	// shown because this host reads no composed tool bindings — a limit of the
+	// read, never a finding that none is exposed. The CLI treats a
 	// runnable-bindings consumer as an executor (including network reach);
 	// a read-only delivery must be qualified before enabling this reader.
 	runnables RunnableReader
@@ -87,7 +89,16 @@ func (s *HostOfferServer) ReviewOffer(ctx context.Context, req *installationv1.R
 			return nil, status.Errorf(codes.Unavailable, "the composed tool bindings cannot be read: %v", err)
 		}
 	}
-	return reviewedOffer(offer, bindings)
+	out, err := reviewedOffer(offer, bindings)
+	if err != nil || out.Installation == nil {
+		return out, err
+	}
+	// The offer is the delivered declaration (or, for a role holder, the one
+	// their installation's consent approved); the installation it names is
+	// stated as every installation read states it: the roles its holders may
+	// hold, and whether an upgrade waits.
+	out.Installation = installationToWire(core, ctx, offer.Installation)
+	return out, nil
 }
 
 // offerCaller is the signed-in administrator of org, as listing the offers
@@ -108,30 +119,39 @@ func offerCaller(ctx context.Context, what, org string) (*authority.Service, aut
 }
 
 // reviewedOffer adapts the authority-owned projection to this host's wire.
+// The ceiling is the solution's bindings alone (what it may ask of a module as
+// itself); a module its declaration depends on travels apart, as an edge
+// dependency with a presence and no scope, so the Setup UI can name both.
+// Each role's capabilities are the core's join of the role against every
+// delivered module's method policies: a role with none covers no delivered
+// operation, which is an answer, not a missing read.
 func reviewedOffer(offer authority.ReviewedOffer, bindings map[string]*runnablev0.PreparedBinding) (*installationv1.ReviewedOffer, error) {
 	projected, err := offers.Project(offer, bindings)
 	if err != nil {
 		return nil, coreStatus(err)
 	}
-	out := &installationv1.ReviewedOffer{Target: projected.Target, ToolsComposed: projected.ToolsComposed, InstallationRole: projected.InstallationRole}
+	// roles_declared, page and closure are the core's own answers about the
+	// target, so a host's UI asks them of the one review and never per module.
+	out := &installationv1.ReviewedOffer{Target: projected.Target, ToolsComposed: projected.ToolsComposed, InstallationRole: projected.InstallationRole,
+		RolesDeclared: offer.RolesDeclared, Page: offer.Page, Closure: slices.Clone(offer.Closure), OptionalEdges: slices.Clone(offer.OptionalEdges)}
 	for _, edge := range projected.EdgeDependencies {
 		out.EdgeDependencies = append(out.EdgeDependencies, &installationv1.OfferDependency{Module: edge.Module, Presence: edge.Presence})
 	}
 	if a := projected.Approval; a != nil {
-		out.Approval = &installationv1.ConsentApproval{TargetId: a.TargetID, Generation: a.Generation, ExpectedRevision: a.ExpectedRevision, Digest: a.Digest}
+		out.Approval = &installationv1.ConsentApproval{TargetId: a.TargetID, Generation: a.Generation, ExpectedRevision: a.ExpectedRevision, Digest: a.Digest, ReachDigest: a.ReachDigest}
 	}
 	if projected.Installation != nil {
-		roles := make([]string, 0, len(projected.Roles))
-		for _, role := range projected.Roles {
-			roles = append(roles, role.Name)
-		}
-		out.Installation = installationToWireWithRoles(*projected.Installation, roles)
+		out.Installation = installationWire(*projected.Installation, offer.Module, offer.UpgradeAvailable)
 	}
 	for _, b := range projected.Ceiling {
 		out.Ceiling = append(out.Ceiling, &installationv1.OfferBinding{Binding: b.Binding, Module: b.Module, Scopes: offerScopesToWire(b.Scopes)})
 	}
 	for _, r := range projected.Roles {
 		role := &installationv1.OfferRole{Name: r.Name, Scopes: offerScopesToWire(r.Scopes)}
+		for _, reach := range r.Reach {
+			role.Reach = append(role.Reach, &installationv1.OfferReach{Path: slices.Clone(reach.Path), Module: reach.Module, Via: reach.Via,
+				Confinement: reach.Confinement, Scopes: offerScopesToWire(reach.Scopes), Operations: slices.Clone(reach.Operations)})
+		}
 		for _, c := range r.Capabilities {
 			capability := &installationv1.OfferCapability{Module: c.Module, Operation: c.Operation, Requires: offerScopesToWire(c.Requires)}
 			for _, t := range c.Tools {

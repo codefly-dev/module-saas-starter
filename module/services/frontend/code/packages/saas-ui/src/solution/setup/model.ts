@@ -38,6 +38,16 @@ export interface SetupSubject {
 	kind: "person" | "team";
 	id: string;
 	label: string;
+	/** A short fact beside the name ("3 people"). */
+	detail?: string;
+	/** Where the host shows this person or team. */
+	href?: string;
+}
+
+/** One fact on the setup's status line ("Healthy"), with its tone. */
+export interface SetupFact {
+	text: string;
+	tone?: "success" | "warning" | "danger" | "info" | "neutral";
 }
 
 /**
@@ -71,13 +81,6 @@ export function isDenied(error: unknown): boolean {
 			error.code === Code.Unauthenticated)
 	);
 }
-
-export const statusWords: Record<HostInstallationStatus, string> = {
-	[HostInstallationStatus.UNSPECIFIED]: "Unknown",
-	[HostInstallationStatus.PENDING]: "Pending",
-	[HostInstallationStatus.ACTIVE]: "Installed",
-	[HostInstallationStatus.REVOKED]: "Uninstalled",
-};
 
 /** Whether the offer carries a live installation (pending or active). */
 export function installed(offer: ReviewedOffer | undefined): boolean {
@@ -155,12 +158,6 @@ export function accessMix(
 		.sort(([a], [b]) => byAccess(a, b))
 		.map(([level, count]) => `${count} ${level}`)
 		.join(", ");
-}
-
-/** "a", "a and b", "a, b and c" — for naming the roles that coincide. */
-export function nameList(names: readonly string[]): string {
-	if (names.length <= 1) return names[0] ?? "";
-	return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
 /** A subject's key as the grant picker spells it. */

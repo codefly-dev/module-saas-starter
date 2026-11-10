@@ -47,11 +47,19 @@ func documentOf(in *compositionv1.AuthorityManifestV1) *coredelivered.Document {
 	for _, edge := range in.GetEdgeDependencies() {
 		doc.EdgeDependencies = append(doc.EdgeDependencies, domain.EdgeDependency{Module: edge.GetModule(), Presence: edge.GetPresence()})
 	}
+	doc.SharedKinds = append(doc.SharedKinds, in.GetSharedKinds()...)
 	for _, m := range in.GetMethods() {
 		doc.Methods = append(doc.Methods, coredelivered.Method{Method: m.GetMethod(), Requires: wireScopes(m.GetRequires()), AnyCheckedCaller: m.GetAnyCheckedCaller()})
 	}
 	for _, r := range in.GetRoles() {
-		doc.Roles = append(doc.Roles, coredelivered.Role{Name: r.GetName(), Scopes: wireScopes(r.GetScopes()), InstallationOwned: wireScopes(r.GetInstallationOwnedScopes())})
+		role := coredelivered.Role{Name: r.GetName(), Scopes: wireScopes(r.GetScopes()), InstallationOwned: wireScopes(r.GetInstallationOwnedScopes())}
+		for _, through := range r.GetThrough() {
+			if role.Through == nil {
+				role.Through = map[string]coredelivered.Scopes{}
+			}
+			role.Through[through.GetBinding()] = append(role.Through[through.GetBinding()], wireScopes(through.GetScopes())...)
+		}
+		doc.Roles = append(doc.Roles, role)
 	}
 	return doc
 }
@@ -70,8 +78,11 @@ func wireScopes(in []*authorityv1.WorkScopeV1) []*basev0.WorkScopeV1 {
 
 // precheckCoreModule refuses, before anything is recorded, a delivery the core
 // would refuse to compose. It reads the carrier unverified, so it only ever
-// refuses: what is applied is read again from the verified, applied record.
-func precheckCoreModule(req *compositionv1.ApplyManifestRequest) error {
+// refuses: what is applied is read again from the verified, applied record. A
+// module that gains or loses roles keeps its installations as they are: every
+// module is installed by composition, and its roles decide only who may use
+// it.
+func (s *Service) precheckCoreModule(ctx context.Context, req *compositionv1.ApplyManifestRequest) error {
 	manifest, err := solutionhost.ManifestFromVerified(req.GetCarrier().GetDocument())
 	if err != nil {
 		return nil // the delivery path names a carrier that does not read
@@ -102,13 +113,18 @@ func (s *Service) applyCoreModule(ctx context.Context, manifest *solutionhost.Mo
 		return nil, err
 	}
 	if manifest.Removed {
-		if _, err := core.Composed(ctx, manifest.Alias); err != nil {
+		// A withdrawal is idempotent: two passes may apply the same one at
+		// once (the delivery endpoint's and the reconciler's), and a module the
+		// core no longer composes is already withdrawn. Reading first and
+		// withdrawing after raced exactly that way; the withdrawal's own
+		// NotFound is the one answer that is safe to read.
+		if err := core.WithdrawModule(ctx, manifest.Alias); err != nil {
 			if code, ok := domain.CodeOf(err); ok && code == domain.NotFound {
 				return nil, nil
 			}
 			return nil, err
 		}
-		return nil, core.WithdrawModule(ctx, manifest.Alias)
+		return nil, nil
 	}
 	m, err := coreModuleOf(manifest, carrierDocument, signed)
 	if err != nil {
@@ -123,8 +139,8 @@ func (s *Service) applyCoreModule(ctx context.Context, manifest *solutionhost.Mo
 // coreDeliveryError is a refusal of the core's, carried through the delivery
 // path's own error vocabulary.
 func coreDeliveryError(err error) error {
-	if err == nil {
-		return nil
+	if err == nil || errors.Is(err, ErrSolutionDeliveryConflict) {
+		return err
 	}
 	code, ok := domain.CodeOf(err)
 	switch {
@@ -184,11 +200,7 @@ func (s *Service) composeAppliedDelivery(ctx context.Context, record *SolutionHo
 	if delivered == nil {
 		return nil
 	}
-	var signed *compositionv1.SignedManifestV1
-	if len(delivered.AuthorityDocument) > 0 {
-		signed = &compositionv1.SignedManifestV1{Document: delivered.AuthorityDocument, Envelope: delivered.AuthorityEnvelope}
-	}
-	_, err = s.applyCoreModule(ctx, manifest, delivered.Payload, signed)
+	_, err = s.applyCoreModule(ctx, manifest, delivered.Payload, signedAuthorityOf(delivered))
 	return err
 }
 

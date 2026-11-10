@@ -106,6 +106,15 @@ type Store interface {
 	//     Call it at the top level only — nesting it inside an existing
 	//     WithOrgTx/WithControlPlane violates the no-nesting rule.
 	InsertDatasourceSource(ctx context.Context, source *DatasourceSource) error
+	// GovernedBoundaryNode reports whether nodeID is the boundary a source
+	// governed by installationID writes into: the only existing nodes a
+	// governed connect may name. Run under WithOrgTx.
+	GovernedBoundaryNode(ctx context.Context, orgID, installationID, nodeID string) (bool, error)
+	// GetOrCreateGovernedCollectionNode reuses the collection node labelled
+	// node.Label that a source governed by installationID writes into, or
+	// registers node and returns its id: never another collection of the
+	// organization's. Run under WithOrgTx.
+	GetOrCreateGovernedCollectionNode(ctx context.Context, node *gen.ScopeNode, installationID string) (string, error)
 	// UpdateDatasourceSourceFetchScope replaces what a Source fetches — branch,
 	// paths and the config envelope carrying its file-type filter — and nothing
 	// else. Reports ErrDatasourceSourceNotFound when no row matched, so a source

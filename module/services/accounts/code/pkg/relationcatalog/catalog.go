@@ -119,6 +119,7 @@ var authorities = map[string]Authority{
 	"authority_core_installations":    {Scope: ScopeGlobal},
 	"authority_core_module_revisions": {Scope: ScopeGlobal},
 	"authority_core_modules":          {Scope: ScopeGlobal},
+	"authority_core_approved_modules": {Scope: ScopeGlobal},
 	"authority_core_owner_aware":      {Scope: ScopeGlobal},
 	"authority_core_person_epochs":    {Scope: ScopeGlobal},
 	"authority_core_replay":           {Scope: ScopeGlobal},

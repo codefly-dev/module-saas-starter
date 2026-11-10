@@ -213,7 +213,7 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 		},
 		"/host.installation.v1.InstallationService/Install": func() *policyv1.MethodPolicy {
 			p := adminWrite(string(EventAuthorityInstallationRequested))
-			p.Audit.Events = append(p.Audit.Events, string(EventAuthorityInstallationActivated))
+			p.Audit.Events = append(p.Audit.Events, string(EventAuthorityInstallationActivated), string(EventAuthorityInstallationUpgraded))
 			return p
 		}(),
 		// A module authenticates by its workload credential and a current parent

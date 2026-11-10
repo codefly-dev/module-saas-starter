@@ -18,6 +18,32 @@ refused, with the two row indices; rows are never unioned or deduplicated:
 - assignments: `(org, role, subject lookup kind, subject identity, scope)`, with
   separate email and agent-identifier lookup namespaces;
 - installations: `(org, target)`, regardless of owner, role or team differences.
+  A row names `org`, `target` and `owner`; `role` only where the target holds
+  one (a module declaring `installation_role: none`, or no role at all, is
+  installed holding none), and `teams` only beside a `role`, since a team is
+  granted that role.
+
+A role-gated target (a solution, or a module page declaring roles) is installed
+as an administrator installs it in the admin area: a solution through its
+reviewed install, a module page by composition and then its Set up, each
+declared role going to its `<target>-<role>` team (the first team `teams` names
+for `role`, if any). `installer_roles` are the roles the owner takes, joining
+their teams; `members` maps a declared role to the people, each a member of the
+organisation, who join that role's team, as an administrator adds a person to a
+team:
+
+```yaml
+installations:
+  - org: Acme Corp
+    target: example-solution
+    owner: alex@acme.test
+    installer_roles: [installer]
+    members: {editor: [maya@acme.test], viewer: [remi@acme.test]}
+```
+
+A person holds what their teams are granted on the installation and nothing
+else; a fixture role carrying a module's permissions directly gives a person
+what no deployed organisation gives anyone.
 
 These keys retain the seed's exact spelling, without case folding or trimming.
 The same role name in another organization and distinct assignment subjects or

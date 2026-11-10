@@ -32,8 +32,8 @@ func (h *datasourceConnectHandler) DelegateSourceTriggers(
 	if err != nil {
 		return nil, err
 	}
-	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
-		return nil, translateGRPCError(err)
+	if err := h.authorizeSourceWrite(ctx, actorID, req.Msg.OrgId, req.Msg.SourceId); err != nil {
+		return nil, err
 	}
 	references, err := h.svc.DelegateSourceTriggers(ctx, actorID, req.Msg.OrgId, req.Msg.SourceId)
 	if err != nil {

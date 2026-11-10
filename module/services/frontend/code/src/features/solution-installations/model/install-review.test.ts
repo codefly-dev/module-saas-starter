@@ -1,4 +1,5 @@
 import { clone, create } from "@bufbuild/protobuf";
+import { roleAbilities, updateAsks } from "@codefly-dev/saas-ui/solution";
 import { describe, expect, it } from "vitest";
 import {
 	OfferScopeSchema,
@@ -9,6 +10,7 @@ import {
 	assertMatchingOffer,
 	moduleConsentText,
 	offerScopeText,
+	supportingSummary,
 } from "./install-review";
 
 describe("installation access review", () => {
@@ -104,5 +106,120 @@ describe("installation access review", () => {
 				create(ReviewedOfferSchema, { ...offer, roles: [] }),
 			),
 		).toThrow();
+	});
+	it("names each fresh supporting module that holds a standing machine role", () => {
+		const supporting = (target: string, installationRole: string, reused = "") => ({
+			principal: `module:${target}`,
+			target,
+			required: true,
+			reuseInstallationId: reused,
+			installationRole,
+		});
+		const summary = supportingSummary([
+			supporting("Alpha", "none"),
+			supporting("Bravo", "reader"),
+			supporting("Charlie", "writer", "installed-charlie"),
+		]);
+		expect(summary.installs).toEqual(["Alpha", "Bravo"]);
+		expect(summary.standing).toEqual(["Bravo (reader)"]);
+		expect(summary.reused).toEqual(["Charlie"]);
+	});
+	it("says each face's delegation mode when two faces of one audience differ", () => {
+		const face = (mode: string) => ({
+			audience: "example-items",
+			delegation_mode: mode,
+			invoke_scopes: [{ resource_kind: "item", actions: ["list"] }],
+		});
+		const differing = moduleConsentText(
+			JSON.stringify({
+				capabilities: true,
+				operation_audiences: {
+					EXAMPLE__CONNECT: face("module_actor"),
+					EXAMPLE__GRPC: face("person"),
+				},
+			}),
+		);
+		expect(differing).toContain(
+			"Perform operations through example-items (delegation mode module actor): list item; all items of this type.",
+		);
+		expect(differing).toContain(
+			"Perform operations through example-items (delegation mode person): list item; all items of this type.",
+		);
+		expect(differing.join("\n")).not.toMatch(/Acts at|EXAMPLE__/);
+		const same = moduleConsentText(
+			JSON.stringify({
+				capabilities: true,
+				operation_audiences: {
+					EXAMPLE__CONNECT: face("person"),
+					EXAMPLE__GRPC: face("person"),
+				},
+			}),
+		);
+		expect(same).toContain("Acts at example-items: delegation mode person.");
+		expect(same).toContain(
+			"Perform operations through example-items: list item; all items of this type.",
+		);
+	});
+	it("renders one capability per operation, whatever face serves it", () => {
+		const offer = create(ReviewedOfferSchema, {
+			target: "Example",
+			roles: [
+				{
+					name: "viewer",
+					reach: [
+						{
+							path: ["Example", "documents"],
+							module: "documents",
+							via: "binding",
+							operations: [
+								"/docs.Documents/ListDocuments",
+								"POST /docs.Documents/ListDocuments",
+							],
+						},
+					],
+				},
+			],
+		});
+		expect(roleAbilities(offer.target, offer.roles)).toEqual([
+			{
+				role: "viewer",
+				groups: [
+					{
+						key: "binding:Example>documents",
+						where: "Through Example, in documents",
+						lines: ["list documents"],
+					},
+				],
+			},
+		]);
+	});
+	it("names what an update asks from the review's approved reach, in the same words", () => {
+		const row = (actions: string[]) => ({
+			path: ["Example", "agent", "documents"],
+			module: "documents",
+			via: "binding",
+			scopes: [{ resourceKind: "documents.collection", actions }],
+		});
+		const offer = create(ReviewedOfferSchema, {
+			target: "Example",
+			roles: [{ name: "editor", reach: [row(["read", "create"])] }],
+		});
+		const review = create(ReviewedSolutionInstallSchema, {
+			approvedRoles: [{ name: "editor", reach: [row(["read"])] }],
+		});
+		expect(updateAsks(offer.target, offer.roles, review.approvedRoles)).toEqual(
+			[
+				{
+					role: "editor",
+					groups: [
+						{
+							key: "binding:Example>agent>documents",
+							where: "Through Example and agent, in documents",
+							lines: ["create collections"],
+						},
+					],
+				},
+			],
+		);
 	});
 });

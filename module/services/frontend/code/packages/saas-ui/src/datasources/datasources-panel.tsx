@@ -59,6 +59,7 @@ import type {
 	DatasourceClient,
 	DatasourceStatusName,
 	DatasourceView,
+	SourceGovernanceView,
 	SourceSyncView,
 } from "./types.js";
 import {
@@ -85,6 +86,17 @@ interface DatasourcesPanelBaseProps {
 	 * consumer's own page decides who reaches the panel).
 	 */
 	canManage?: boolean;
+	/**
+	 * Ties every source connected from this panel to a solution's installation:
+	 * a solution's page passes its own installation and the scope its roles
+	 * declare for managing sources. The host then decides each of those
+	 * sources by that scope alone — an editor who administers nothing connects
+	 * and changes them, an administrator holding no such role does not — and
+	 * writes them only into the installation's own collections. With it,
+	 * `canManage` is the solution's own answer to whether the viewer holds that
+	 * scope, and defaults to false rather than to the organization tier.
+	 */
+	governance?: SourceGovernanceView;
 	/**
 	 * Renders beneath a source's repository name: the extension point through
 	 * which a consumer shows what another owner knows about the source. The host
@@ -196,7 +208,10 @@ function GatewayBoundPanel({
 			<DatasourcesPanelView
 				client={client}
 				{...rest}
-				canManage={rest.canManage ?? viewerAdministersOrganization(token)}
+				canManage={
+					rest.canManage ??
+					(rest.governance ? false : viewerAdministersOrganization(token))
+				}
 			/>
 		</QueryClientProvider>
 	);
@@ -211,6 +226,7 @@ function DatasourcesPanelView({
 	orgId,
 	onSyncEnqueued,
 	canManage = true,
+	governance,
 	renderSourceDetail,
 	renderSourceExecution,
 	className,
@@ -354,6 +370,7 @@ function DatasourcesPanelView({
 						: values.accessToken,
 				webhookSecret:
 					values.method === "public" ? "" : (values.webhookSecret ?? ""),
+				...(governance ? { governance } : {}),
 			});
 			setConnectedRepos((prev) => new Set(prev).add(values.repo));
 			setShowConnect(false);
@@ -621,6 +638,7 @@ function DatasourcesPanelView({
 						key={orgId}
 						client={client}
 						orgId={orgId}
+						governance={governance}
 						appSetup={
 							appSetupReturn &&
 							(showConnect ? (

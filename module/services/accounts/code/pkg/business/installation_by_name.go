@@ -33,6 +33,13 @@ var ErrInstallTargetNotPresent = errors.New("no installable target answers to th
 // Held is what the catalogue's
 // `installed` means: any installation not revoked, a pending one among them.
 func (s *Service) InstallTargetByName(ctx context.Context, actorID, orgID, target, role, ownerID string, approval *InstallationApproval) (installation *gen.Installation, installed bool, err error) {
+	return s.installTargetByName(ctx, actorID, orgID, target, role, ownerID, approval, false)
+}
+
+// installTargetByName is InstallTargetByName, or the host's composition
+// install of a module when byComposition (installByComposition): no actor,
+// recorded as the system's.
+func (s *Service) installTargetByName(ctx context.Context, actorID, orgID, target, role, ownerID string, approval *InstallationApproval, byComposition bool) (installation *gen.Installation, installed bool, err error) {
 	approval, err = approval.bindIntent(struct {
 		Actor, Org, Target, Role, Owner string
 		Approval                        *InstallationApproval
@@ -55,43 +62,37 @@ func (s *Service) InstallTargetByName(ctx context.Context, actorID, orgID, targe
 		}
 		coOwners = existing.GetCoOwnerPrincipalIds()
 	}
-	// A solution that declares roles is installed holding one of its own: the
-	// role is the solution's word, never the organisation's catalogue's.
-	authority, _, err := s.deliveredTargetAuthority(ctx, available)
-	if err != nil {
-		return nil, false, err
-	}
+	// Every module, a module page declaring roles included, is installed by
+	// composition: its roles decide who may use it, through grants on this
+	// installation, and never what it holds itself. What it holds is the
+	// organisation's catalogue role its declaration selects, or none at all.
 	var roleID string
 	declaration, err := s.moduleInstallationDeclaration(ctx, available)
 	if err != nil {
 		return nil, false, err
 	}
+	if err := modulePageHoldsNothing(declaration, available.RouteAlias); err != nil {
+		return nil, false, err
+	}
 	if role == domain.NoInstallationRole {
 		return nil, false, domain.Refuse("none is a declaration marker, not an installation role input")
 	}
-	if declaration.InstallationRole == domain.NoInstallationRole {
+	switch {
+	case declaration.InstallationRole == domain.NoInstallationRole:
 		if role != "" {
 			return nil, false, domain.Refuse("the delivered module declares no standing machine authority")
 		}
-	} else if undeclared := undeclaredInstallationRole(declaration); undeclared != nil {
-		return nil, false, undeclared
-	} else if authority != nil {
-		// A module page's signed installation_role selects its standing role
-		// as the core selects a solution's.
-		if declaration.InstallationRole != "" {
-			if role != "" && role != declaration.InstallationRole {
-				return nil, false, domain.Refuse("role %q cannot override %s's installation_role declaration", role, declaration.Name)
-			}
-			role = declaration.InstallationRole
+	case undeclaredInstallationRole(declaration) != nil:
+		return nil, false, undeclaredInstallationRole(declaration)
+	case role == "" && undeclaredAuthorityIsNone(declaration):
+		// Neither an installation role nor any role declared, and no caller
+		// role: installed holding none, the one rule every installer applies
+		// (supportingInstallationRole); roleID stays empty and the registry
+		// selects no standing authority.
+	default:
+		if roleID, err = s.organizationRoleNamed(ctx, orgID, role); err != nil {
+			return nil, false, err
 		}
-		roleID, err = s.solutionRoleID(ctx, orgID, available.TargetID, available.RouteAlias, authority, role)
-	} else if declaration.InstallationRole != "" {
-		return nil, false, declarationDiverged(declaration)
-	} else {
-		roleID, err = s.organizationRoleNamed(ctx, orgID, role)
-	}
-	if err != nil {
-		return nil, false, err
 	}
 	installation, err = s.InstallSolution(ctx, actorID, &InstallSolutionParams{
 		Approval:            approval,
@@ -103,6 +104,7 @@ func (s *Service) InstallTargetByName(ctx context.Context, actorID, orgID, targe
 		RoleID:              roleID,
 		OwnerPrincipalID:    ownerID,
 		CoOwnerPrincipalIDs: coOwners,
+		ByComposition:       byComposition,
 	})
 	if err != nil {
 		return nil, false, err
@@ -144,26 +146,6 @@ func undeclaredInstallationRole(m domain.Module) error {
 		return nil
 	}
 	return domain.Missing("role %q is not one %s declares", m.InstallationRole, m.Name)
-}
-
-// declarationDiverged is why a module whose paired declaration names an
-// installation role cannot be installed while this host reads no role
-// declaration for it: the two deliveries disagree until the next pass.
-func declarationDiverged(m domain.Module) error {
-	return domain.NotNow("INSTALLATION_DELIVERY_CHANGED: module %q declares installation role %q and this host reads no role declaration for it", m.Name, m.InstallationRole)
-}
-
-// declaredInstallationRoleID is the id of the standing role m's signed
-// installation_role selects at orgID's installation of target.
-func (s *Service) declaredInstallationRoleID(ctx context.Context, orgID string, target *AvailableSolutionTarget, m domain.Module) (string, error) {
-	authority, _, err := s.deliveredTargetAuthority(ctx, target)
-	if err != nil {
-		return "", err
-	}
-	if authority == nil {
-		return "", declarationDiverged(m)
-	}
-	return s.solutionRoleID(ctx, orgID, target.TargetID, target.RouteAlias, authority, m.InstallationRole)
 }
 
 // availableTargetNamed is the organisation's catalogue entry whose route alias
@@ -242,4 +224,15 @@ func (s *Service) organizationRoleNamed(ctx context.Context, orgID, name string)
 		return "", NewStoreError(fmt.Errorf("organization %s has no role named %q", orgID, name), ErrTypeNotFound)
 	}
 	return found, nil
+}
+
+// modulePageHoldsNothing refuses a module page (a module declaring roles)
+// whose declaration selects a standing installation role: its roles decide
+// who may use it, through grants on its composition installation, and the
+// page itself acts for nobody.
+func modulePageHoldsNothing(declaration domain.Module, alias string) error {
+	if len(declaration.Roles) > 0 && declaration.InstallationRole != domain.NoInstallationRole {
+		return domain.Refuse("%s declares a page and roles, and a module page holds no standing authority: its installation role must be none", alias)
+	}
+	return nil
 }

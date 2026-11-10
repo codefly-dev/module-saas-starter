@@ -10,13 +10,15 @@ import { apiTransport } from "@/lib/connect/transport";
 const offers = createClient(OfferService, apiTransport);
 
 /**
- * Whether a target declares installation roles, with the read's own failure.
- * A solution always does: the shared authority core composes none without an
- * installer role. A module does only when it declares a page and roles; the
- * authority's offer review is the answer, and only its NotFound (a module
+ * Whether a target declares installation roles, with the read's own failure,
+ * from the authority's review of the one offer a page is about: a solution
+ * always does; a module does only when it declares a page and roles, which
+ * the review states (`rolesDeclared`), and the authority's NotFound (a module
  * that declares no roles) means it does not. Any other failure is not an
  * answer: `declared` stays undefined and `error` says why, so a transient
- * refusal never passes a module page off as one without roles.
+ * refusal never passes a module page off as one without roles. A listing of
+ * several targets never asks this per module: it reads the authority's
+ * offers once (`useOfferedTargets`).
  */
 export function useRolesDeclaredReview(
 	target: string,
@@ -26,10 +28,10 @@ export function useRolesDeclaredReview(
 	const review = useQuery({
 		queryKey: ["solution-declares-roles", organizationId, target],
 		queryFn: async () =>
-			(await offers.reviewOffer({ organizationId, target })).roles.length > 0,
-		enabled: kind === "module" && organizationId !== "",
+			(await offers.reviewOffer({ organizationId, target })).rolesDeclared,
 		retry: false,
 		refetchOnWindowFocus: false,
+		enabled: kind === "module" && organizationId !== "",
 	});
 	const retry = () => void review.refetch();
 	if (kind !== "module")
@@ -45,14 +47,6 @@ export function useRolesDeclaredReview(
 	return { declared: review.data, error: undefined, retry };
 }
 
-/** Whether a target declares installation roles; undefined while unknown. */
-export function useRolesDeclared(
-	target: string,
-	kind?: string,
-): boolean | undefined {
-	return useRolesDeclaredReview(target, kind).declared;
-}
-
 /**
  * Renders its children only for a target that declares installation roles,
  * the only target a Setup tab can answer for (`useRolesDeclared`).
@@ -66,5 +60,5 @@ export function WhenRolesDeclared({
 	kind?: "module" | "solution";
 	children: ReactNode;
 }) {
-	return useRolesDeclared(target, kind) ? <>{children}</> : null;
+	return useRolesDeclaredReview(target, kind).declared ? children : null;
 }

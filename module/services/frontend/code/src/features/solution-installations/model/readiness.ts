@@ -139,13 +139,17 @@ export function readinessSummary(
 	};
 }
 
-/** What this installation is, as its registration declared it. */
+/**
+ * What this installation is, as its registration declared it. A module that
+ * declares roles is a module page, which `rolesDeclared` says when known.
+ */
 export function entryKindText(
 	row: OrganizationInstallation | undefined,
+	rolesDeclared?: boolean,
 ): string {
 	switch (row?.target?.kind) {
 		case "module":
-			return "Module";
+			return rolesDeclared === true ? "Module page" : "Module";
 		case "solution":
 			return "Solution";
 		default:

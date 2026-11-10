@@ -18,6 +18,7 @@ import type {
 	DatasourceClient,
 	DatasourceCredential,
 	DatasourceProviderView,
+	SourceGovernanceView,
 } from "./types.js";
 
 const modes = {
@@ -40,12 +41,15 @@ export function useDatasourceCatalog(client: DatasourceClient, orgId: string) {
 export function ConnectSource({
 	client,
 	orgId,
+	governance,
 	onConnected,
 	onBeginAppSetup,
 	appSetup,
 }: {
 	client: DatasourceClient;
 	orgId: string;
+	/** Ties every source connected here to a solution's installation. */
+	governance?: SourceGovernanceView;
 	onConnected: (
 		input: Pick<ConnectSourceInput, "targetCollection" | "boundaryNodeId">,
 	) => void;
@@ -101,6 +105,7 @@ export function ConnectSource({
 							provider={provider}
 							client={client}
 							orgId={orgId}
+							governance={governance}
 							onCancel={() => setSelected(undefined)}
 							onBeginAppSetup={
 								provider.supportsOrganizationAppSetup
@@ -127,6 +132,7 @@ function ProviderForm({
 	provider,
 	client,
 	orgId,
+	governance,
 	onCancel,
 	onConnected,
 	onBeginAppSetup,
@@ -134,6 +140,7 @@ function ProviderForm({
 	provider: DatasourceProviderView;
 	client: DatasourceClient;
 	orgId: string;
+	governance?: SourceGovernanceView;
 	onCancel: () => void;
 	onConnected: (
 		input: Pick<ConnectSourceInput, "targetCollection" | "boundaryNodeId">,
@@ -195,6 +202,7 @@ function ProviderForm({
 						orgId,
 						provider,
 						...boundary,
+						...(governance ? { governance } : {}),
 						credential,
 						config: Object.fromEntries(
 							provider.fields.map((field) => [

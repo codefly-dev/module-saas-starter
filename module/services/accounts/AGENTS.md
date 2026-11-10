@@ -107,7 +107,7 @@ per binding. `POST /platform/_delivery/manifest` verifies the carrier against th
 pinned keys, reviews the carrier's token — the `delivery` ServiceAccount of the
 module's namespace by the cell's rule (`business.ModuleNamespaceRule`, read off
 this host's own namespace and `CODEFLY__MODULE`), for a withdrawal the previously
-applied manifest's module — admits it with core's `Admit` and `CheckAlias`,
+applied manifest's module or this host's own — admits it with core's `Admit` and `CheckAlias`,
 holds it to the host's own rules (`checkManifestAgainstHost`: one workload runs
 as one manifest; a principal and a release publisher stay with the ownership
 domain that holds them; an endpoint address is its workload's in-cluster Service

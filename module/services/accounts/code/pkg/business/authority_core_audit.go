@@ -18,16 +18,22 @@ var authorityEvents = map[domain.EventKind]struct {
 	event    EventType
 	resource string
 }{
-	domain.InstallationRequested:   {EventAuthorityInstallationRequested, "installation"},
-	domain.InstallationActivated:   {EventAuthorityInstallationActivated, "installation"},
-	domain.InstallationUninstalled: {EventAuthorityInstallationUninstalled, "installation"},
-	domain.RoleGranted:             {EventAuthorityRoleGranted, "installation"},
-	domain.RoleRevoked:             {EventAuthorityRoleRevoked, "installation"},
-	domain.DelegationGranted:       {EventModuleDelegationGranted, "module_delegation"},
-	domain.DelegationRevoked:       {EventModuleDelegationRevoked, "module_delegation"},
-	domain.ResourceAttached:        {EventAuthorityResourceAttached, "installation"},
-	domain.ResourceDetached:        {EventAuthorityResourceDetached, "installation"},
-	domain.ResourceTransferred:     {EventAuthorityResourceTransferred, "installation"},
+	domain.InstallationRequested:        {EventAuthorityInstallationRequested, "installation"},
+	domain.InstallationActivated:        {EventAuthorityInstallationActivated, "installation"},
+	domain.InstallationUninstalled:      {EventAuthorityInstallationUninstalled, "installation"},
+	domain.InstallationReconverged:      {EventAuthorityInstallationReconverged, "installation"},
+	domain.InstallationUpgradeAvailable: {EventAuthorityInstallationUpgradeAvailable, "installation"},
+	domain.InstallationUpgraded:         {EventAuthorityInstallationUpgraded, "installation"},
+	domain.InstallationReachAdopted:     {EventAuthorityInstallationReachAdopted, "installation"},
+	domain.InstallationReachUnreached:   {EventAuthorityInstallationReachUnreached, "installation"},
+	domain.InstallationReachRestored:    {EventAuthorityInstallationReachRestored, "installation"},
+	domain.RoleGranted:                  {EventAuthorityRoleGranted, "installation"},
+	domain.RoleRevoked:                  {EventAuthorityRoleRevoked, "installation"},
+	domain.DelegationGranted:            {EventModuleDelegationGranted, "module_delegation"},
+	domain.DelegationRevoked:            {EventModuleDelegationRevoked, "module_delegation"},
+	domain.ResourceAttached:             {EventAuthorityResourceAttached, "installation"},
+	domain.ResourceDetached:             {EventAuthorityResourceDetached, "installation"},
+	domain.ResourceTransferred:          {EventAuthorityResourceTransferred, "installation"},
 }
 
 // boundTx is the core's transaction as this host's store opened it: the

@@ -64,9 +64,23 @@ func (s *Service) InstallFixtureTarget(ctx context.Context, actorID, orgID, targ
 	if err != nil {
 		return nil, false, err
 	}
-	if available.Installed && available.Kind != "module" {
+	if available.Installed {
 		existing, err := s.heldTargetInstallation(ctx, orgID, available.TargetID)
-		return existing, false, err
+		if err != nil {
+			return nil, false, err
+		}
+		// A solution's installation is the core's; so is a module page's,
+		// chosen through its review while it declared roles. A module that has
+		// since stopped declaring them keeps that installation (the core keeps
+		// a chosen one), so the host installs nothing beside it: one
+		// installation per organization and target.
+		canonical, err := s.canonicalSolutionSummaries(ctx, orgID, existing.GetId(), "", gen.InstallationStatus_INSTALLATION_STATUS_UNSPECIFIED, 1)
+		if err != nil {
+			return nil, false, err
+		}
+		if available.Kind != "module" || len(canonical) == 1 {
+			return existing, false, nil
+		}
 	}
 	// The catalogue counts a solution as installed only through its canonical
 	// record. A host without the authority core still keeps legacy solution
@@ -79,22 +93,30 @@ func (s *Service) InstallFixtureTarget(ctx context.Context, actorID, orgID, targ
 			return existing, false, err
 		}
 	}
+	approval, err := s.freshApproval(ctx, orgID, available)
+	if err != nil {
+		return nil, false, err
+	}
+	return s.InstallTargetByName(ctx, actorID, orgID, target, role, ownerID, approval)
+}
+
+// freshApproval is a fresh consent of available at org, at the revision its
+// installation history stands at (revoked history included).
+func (s *Service) freshApproval(ctx context.Context, orgID string, available *AvailableSolutionTarget) (*InstallationApproval, error) {
 	approval := &InstallationApproval{TargetID: available.TargetID, Generation: available.AppliedGeneration, OperationID: uuid.NewString()}
 	for token := ""; ; {
 		rows, next, err := s.ListOrganizationInstallations(ctx, orgID, token, listInstallationsMaxPageSize)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		for _, row := range rows {
-			i := row.Summary.GetInstallation()
-			if i.GetTargetId() == available.TargetID {
+			if i := row.Summary.GetInstallation(); i.GetTargetId() == available.TargetID {
 				approval.ExpectedRevision = max(approval.ExpectedRevision, i.GetRevision())
 			}
 		}
 		if next == "" {
-			break
+			return approval, nil
 		}
 		token = next
 	}
-	return s.InstallTargetByName(ctx, actorID, orgID, target, role, ownerID, approval)
 }

@@ -24,7 +24,12 @@ import {
 	Spinner,
 	useLoadingPhase,
 } from "@/shared/ui";
-import { hostRefusal, installedRows } from "../model/installations";
+import { healthFacts } from "../model/access";
+import {
+	hostRefusal,
+	installedRows,
+	isModulePage,
+} from "../model/installations";
 import {
 	affordance,
 	clearedByText,
@@ -35,13 +40,18 @@ import {
 } from "../model/readiness";
 import {
 	useGrantInstallationToTeam,
+	useInstallReviewedSolution,
 	useRetryInstallation,
 } from "../service/mutations";
-import { useInstallations } from "../service/queries";
+import {
+	useAvailableSolutions,
+	useInstallations,
+	useUpdateAsks,
+} from "../service/queries";
 import { GrantTeamDialog } from "./grant-team-dialog";
+import { InstallSolutionDialog } from "./install-solution-dialog";
 import { Fact } from "./solution-installations-page";
 import { SolutionSetupPanel } from "./solution-setup-panel";
-import { useRolesDeclared } from "./when-roles-declared";
 
 /**
  * One module's or one solution's setup page: what it is and whether it is ready,
@@ -70,30 +80,44 @@ export function InstallationSetupPage({
 	const row = (query.data ?? []).find(
 		(entry) => entry.installation?.id === installationId,
 	);
+	// Where this installation is listed follows what it declares, not its
+	// kind: a solution and a module page (a module declaring roles,
+	// AvailableSolution.roles) sit on Solutions; a module declaring none is a
+	// supporting module. The one catalogue read serves the header and the
+	// setup below.
+	const available = useAvailableSolutions(orgId);
+	const rolesDeclared =
+		row?.target?.kind === "solution"
+			? true
+			: row?.target && available.isSuccess
+				? isModulePage(
+						available.data.find((t) => t.targetId === row.target?.targetId),
+					)
+				: undefined;
+	// Only a module the authority has answered "no roles" for is a supporting
+	// module; an unknown or still-loading row, and every solution, belongs to
+	// Solutions, which is also where the not-found state sends a person back.
+	const supporting = row?.target?.kind === "module" && rolesDeclared === false;
 
 	return (
 		<div className="space-y-6">
 			<div className="flex flex-wrap items-start justify-between gap-3">
 				<div className="space-y-1">
 					<Link
-						href={
-							row?.target?.kind === "module"
-								? "/admin/modules"
-								: "/admin/solutions"
-						}
+						href={supporting ? "/admin/modules" : "/admin/solutions"}
 						className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"
 					>
 						<ArrowLeft className="h-3 w-3" />
-						{row?.target?.kind === "module"
-							? "Supporting modules"
-							: "Solutions"}
+						{supporting ? "Supporting modules" : "Solutions"}
 					</Link>
 					<h1 data-slot="page-title" className="type-page-title">
 						{row?.target?.routeAlias || "This installation"}
 					</h1>
 					<p className="text-muted-foreground">
-						{entryKindText(row)} — what it is, what it still needs before it
-						will work, and who may reach it.
+						{entryKindText(row, rolesDeclared)} —{" "}
+						{row?.target?.kind === "module"
+							? "who has each of its roles."
+							: "where it stands, what each role can do, and who has it."}
 					</p>
 				</div>
 				<Button
@@ -119,7 +143,11 @@ export function InstallationSetupPage({
 					description="It may have been uninstalled, or it belongs to another organization. Go back to Solutions."
 				/>
 			) : (
-				<InstallationSetup orgId={orgId} row={row} />
+				<InstallationSetup
+					orgId={orgId}
+					row={row}
+					rolesDeclared={rolesDeclared}
+				/>
 			)}
 		</div>
 	);
@@ -128,9 +156,12 @@ export function InstallationSetupPage({
 function InstallationSetup({
 	orgId,
 	row,
+	rolesDeclared,
 }: {
 	orgId: string;
 	row: OrganizationInstallation;
+	/** Whether the target declares roles, from the page's one read of them. */
+	rolesDeclared: boolean | undefined;
 }) {
 	const installationId = row.installation?.id ?? "";
 	const fact = installedRows([row])[0];
@@ -138,6 +169,17 @@ function InstallationSetup({
 	const offers = reachOffers(row.reachedModules);
 	const retry = useRetryInstallation(orgId);
 	const grant = useGrantInstallationToTeam(orgId);
+	// An update the authority offers: what it asks, and its review here.
+	const upgradeAvailable =
+		row.installation?.upgradeAvailable === true &&
+		row.target?.kind === "solution";
+	const asks = useUpdateAsks(
+		orgId,
+		row.target?.targetId ?? "",
+		upgradeAvailable,
+	);
+	const update = useInstallReviewedSolution(orgId);
+	const [updating, setUpdating] = useState(false);
 	const [granting, setGranting] = useState(false);
 	const [refusal, setRefusal] = useState<string | null>(null);
 	// What the last grant carried, as the host reported it in the grant's own
@@ -151,7 +193,6 @@ function InstallationSetup({
 	// This host's own team access card is for a record carrying a host scope
 	// root and no declared roles: a module page that declares roles is set up
 	// through them alone, as a solution is, so it offers no second grant form.
-	const rolesDeclared = useRolesDeclared(target, row.target?.kind);
 	const hasHostScopeRoot =
 		Boolean(row.rootScopePath) &&
 		(row.target?.kind !== "module" || rolesDeclared === false);
@@ -201,15 +242,53 @@ function InstallationSetup({
 			<SolutionSetupPanel
 				target={target}
 				conditions={conditions}
-				// Staged team-per-role choices bind to the offer's consent digest,
-				// which only a solution's carries. A module page's roles are
-				// granted through Setup's own role grant form, so it offers no
-				// picker that could only stay disabled.
-				targetId={
-					row.target?.kind === "module" ? undefined : row.installation?.targetId
-				}
 				installation={row.installation}
+				modulePage={row.target?.kind === "module" && rolesDeclared === true}
+				facts={healthFacts(row.health)}
+				update={
+					upgradeAvailable
+						? {
+								asks: asks.data?.asks,
+								approved: asks.data?.approved,
+								action: (
+									<div>
+										<Button
+											size="sm"
+											disabled={update.isPending}
+											onClick={() => {
+												update.reset();
+												setUpdating(true);
+											}}
+										>
+											Review update
+										</Button>
+									</div>
+								),
+							}
+						: undefined
+				}
 			/>
+			{updating && row.target && (
+				<InstallSolutionDialog
+					orgId={orgId}
+					solution={row.target}
+					upgrade
+					isPending={update.isPending}
+					error={update.isError ? hostRefusal(update.error) : undefined}
+					onSubmit={(review, access) =>
+						update.mutate(
+							{ review, access },
+							{
+								onSuccess: () => {
+									toast.success(`${name} updated. Everyone keeps their role.`);
+									setUpdating(false);
+								},
+							},
+						)
+					}
+					onClose={() => setUpdating(false)}
+				/>
+			)}
 
 			{hasHostScopeRoot ? (
 				<Card>
@@ -296,7 +375,7 @@ function InstallationSetup({
 								tone="info"
 								title="A grant here also carries the modules this reaches"
 							>
-								{entryKindText(row)} {name} reaches{" "}
+								{entryKindText(row, rolesDeclared)} {name} reaches{" "}
 								{offers.map((offer) => offer.label).join(", ")} on the asking
 								person&apos;s own session, from its own applied declaration. A
 								grant carries each of them: what {name} declares it consumes
@@ -358,9 +437,9 @@ function InstallationSetup({
 				</Card>
 			) : (
 				<p className="text-sm text-muted-foreground">
-					Assign people and teams using the solution roles above. Installing a
-					solution does not grant anyone access or change their module
-					permissions.
+					To give someone a role, add them to a team that has it, or give the
+					role to them or their team above. What they already hold in other
+					modules does not change.
 				</p>
 			)}
 

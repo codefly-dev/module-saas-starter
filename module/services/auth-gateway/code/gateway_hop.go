@@ -82,6 +82,9 @@ type hopRole struct {
 	modules []string
 	routes  *routing.Routing
 	issuer  hopIssuer
+	// credential is this instance's workload credential: the actor that
+	// proves to the authority a page it names is the module edge's.
+	credential func() (string, error)
 	// face is the library's HTTP face: it decides with the authority's Check,
 	// signs the admission and forwards to the published listener.
 	face http.Handler
@@ -149,6 +152,27 @@ func (h *hopRole) moduleFor(r *http.Request) (string, error) {
 
 const browserModulePrefix = "/_browser"
 
+// browserPageHeader names the page a module call on the module edge comes
+// from: the route alias of the solution or module page the host's frontend
+// proxy serves it under (/api/solutions/<alias>/proxy/_browser). It is honoured
+// only beside the frontend's cluster-internal token, and only names: the
+// authority issues through the page's target's binding to the module, the
+// person's role there cut to it, or on the person's own access when the target
+// declares none (IssueForPage), so naming a page reaches nothing the target's
+// own backend could not reach for the same person.
+const browserPageHeader = "X-Codefly-Page"
+
+var browserPageAlias = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+
+// browserPageContextKey carries the page a module-edge call was admitted for,
+// from serveBrowserModule to the Work Context it is issued.
+type browserPageContextKey struct{}
+
+func browserPage(r *http.Request) string {
+	page, _ := r.Context().Value(browserPageContextKey{}).(string)
+	return page
+}
+
 var browserProcedure = regexp.MustCompile(`^/(?:[A-Za-z_][A-Za-z0-9_]*\.)+[A-Za-z_][A-Za-z0-9_]*/[A-Za-z_][A-Za-z0-9_]*$`)
 
 // serveBrowserModule is an explicit, public-only door into serveBrowser. The
@@ -162,7 +186,12 @@ func (g *Gateway) serveBrowserModule(w http.ResponseWriter, r *http.Request) {
 		hopBrowserError(w, r, http.StatusNotFound, codes.NotFound, "module procedure not exposed")
 		return
 	}
-	out := r.Clone(r.Context())
+	page := r.Header.Get(browserPageHeader)
+	if g.authz == nil || !g.authz.acceptsInternalToken(r.Header.Get("X-Codefly-Internal-Token")) || !browserPageAlias.MatchString(page) {
+		page = ""
+	}
+	out := r.Clone(context.WithValue(r.Context(), browserPageContextKey{}, page))
+	out.Header.Del(browserPageHeader)
 	out.URL.Path, out.URL.RawPath = path, ""
 	out.RequestURI = out.URL.RequestURI()
 	if !g.serveBrowser(w, g.withTrustedFrontendOrigin(out)) {
@@ -225,7 +254,7 @@ func (g *Gateway) serveBrowser(w http.ResponseWriter, r *http.Request) bool {
 	// route's do.
 	entry := &RouteEntry{Service: hopServicePrefix + module, Protected: true}
 	g.rateLimitThenServe(w, r, entry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token, err := h.workContext(r.Context(), bearer, module)
+		token, err := h.workContext(r.Context(), bearer, module, browserPage(r))
 		if err != nil {
 			code := http.StatusForbidden
 			switch status.Code(err) {
@@ -279,9 +308,11 @@ func withOnlyWorkContext(r *http.Request, token string) *http.Request {
 
 // workContext is the person's Work Context at module, issued by the authority
 // for what the person holds there and held until shortly before it lapses.
-// The hop's Check narrows each call to what its method requires.
-func (h *hopRole) workContext(ctx context.Context, bearer, module string) (string, error) {
-	key := sha256.Sum256([]byte(bearer + "\x00" + module))
+// For a call a page made, the authority issues it through the page's target's
+// binding to module when the target declares one (page_target). The hop's
+// Check narrows each call to what its method requires.
+func (h *hopRole) workContext(ctx context.Context, bearer, module, page string) (string, error) {
+	key := sha256.Sum256([]byte(bearer + "\x00" + module + "\x00" + page))
 	now := h.clock()
 	h.mu.Lock()
 	for k, held := range h.held {
@@ -296,10 +327,24 @@ func (h *hopRole) workContext(ctx context.Context, bearer, module string) (strin
 	h.mu.Unlock()
 	ask, cancel := context.WithTimeout(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+bearer), 10*time.Second)
 	defer cancel()
-	issued, err := h.issuer.Issue(ask, &authorityv1.IssueRequest{
-		As:       &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}},
-		Audience: module,
-	})
+	req := &authorityv1.IssueRequest{
+		As:         &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}},
+		Audience:   module,
+		PageTarget: page,
+	}
+	if page != "" {
+		// The page is the module edge's to name; this instance's workload
+		// credential proves it is that edge, as it does for its admission key.
+		if h.credential == nil {
+			return "", status.Error(codes.Unavailable, "this hop holds no workload credential to name a page with")
+		}
+		credential, err := h.credential()
+		if err != nil {
+			return "", status.Error(codes.Unavailable, "this hop's workload credential cannot be read: "+err.Error())
+		}
+		req.Actor = &authorityv1.WorkloadCredential{Credential: credential}
+	}
+	issued, err := h.issuer.Issue(ask, req)
 	if err != nil {
 		return "", err
 	}
@@ -389,7 +434,7 @@ func newHopRole(ctx context.Context, authority hopAuthorityClient, credential fu
 		return nil, nil, err
 	}
 	log.Printf("hop: standing in front of %s", strings.Join(modules, ", "))
-	return &hopRole{modules: modules, routes: routes, issuer: authority, face: front.Handler, front: front}, front, nil
+	return &hopRole{modules: modules, routes: routes, issuer: authority, credential: credential, face: front.Handler, front: front}, front, nil
 }
 
 // hopFace is the hop's one face, as the hop endpoint serves it: a gRPC call

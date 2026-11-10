@@ -211,7 +211,18 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 		if err := requireOrgMember(ctx, person.ID, person.Organization); err != nil {
 			return nil, err
 		}
-		out, err = core.IssueForPerson(ctx, person, r)
+		// A page's call on the module edge goes through its target's
+		// binding to the audience when the target declares one.
+		if page := req.GetPageTarget(); page != "" {
+			if err := service.RequireModuleEdge(ctx, req.GetActor().GetCredential()); err != nil {
+				return nil, status.Error(codes.PermissionDenied, err.Error())
+			}
+			out, err = core.IssueForPage(ctx, person, page, r)
+			// Through a binding it is the target's hop, recorded as a child.
+			child = err == nil && len(out.Context.GetActorChain()) > 0
+		} else {
+			out, err = core.IssueForPerson(ctx, person, r)
+		}
 	case *authorityv1.IssueRequest_Workload:
 		w, werr := workload(ctx, as.Workload.GetCredential(), "workload")
 		if werr != nil {
@@ -428,12 +439,14 @@ func (s *HostInstallationServer) Current(ctx context.Context, req *installationv
 	if err != nil {
 		return nil, status.Error(codes.PermissionDenied, status.Convert(err).Message())
 	}
-	inst, err := core.CurrentInstallation(ctx, req.GetParentToken(), actor)
+	// The namespace is where the parent authors: the installation's own, or,
+	// for a parent owned by a solution installation, that installation's.
+	inst, namespace, err := core.CurrentAuthoring(ctx, req.GetParentToken(), actor)
 	if err != nil {
 		return nil, coreStatus(err)
 	}
 	return &installationv1.CurrentInstallation{Id: inst.ID, OrganizationId: inst.Organization, Target: inst.Target,
-		Revision: inst.Revision, Namespace: inst.Organization + "." + inst.Target}, nil
+		Revision: inst.Revision, Namespace: namespace}, nil
 }
 
 // Review reads the exact authority offer an administrator consents to,
@@ -454,7 +467,7 @@ func (s *HostInstallationServer) Review(ctx context.Context, req *installationv1
 	if err != nil {
 		return nil, coreStatus(err)
 	}
-	return &installationv1.ConsentApproval{TargetId: a.TargetID, Generation: a.Generation, ExpectedRevision: a.ExpectedRevision, Digest: a.Digest}, nil
+	return &installationv1.ConsentApproval{TargetId: a.TargetID, Generation: a.Generation, ExpectedRevision: a.ExpectedRevision, Digest: a.Digest, ReachDigest: a.ReachDigest}, nil
 }
 
 // Install installs a solution at the caller's organization under the consent
@@ -474,7 +487,7 @@ func (s *HostInstallationServer) Install(ctx context.Context, req *installationv
 	var approval *domain.ConsentApproval
 	if a := req.GetApproval(); a != nil {
 		approval = &domain.ConsentApproval{TargetID: a.GetTargetId(), Generation: a.GetGeneration(), ExpectedRevision: a.GetExpectedRevision(),
-			OperationID: a.GetOperationId(), Digest: a.GetDigest()}
+			OperationID: a.GetOperationId(), Digest: a.GetDigest(), ReachDigest: a.GetReachDigest()}
 	}
 	inst, err := service.InstallAuthoritySolution(ctx, caller, req.GetOrganizationId(), req.GetTarget(), req.GetRole(), req.GetOwnerPersonId(), approval)
 	if err != nil {
@@ -585,25 +598,43 @@ func (s *HostInstallationServer) ListHeld(ctx context.Context, req *installation
 	return out, nil
 }
 
-// installationToWire is an installation as the interface states it, with the
-// roles its solution declares.
+// installationToWire is an installation as the interface states it: the roles
+// its holders may hold, from the declaration that governs them
+// (authority.ApprovedDeclaration, the core's own rule), and upgrade_available
+// as the core answers it (Service.UpgradeAvailable): the target delivered
+// past its approved generation, or what its roles reach in the composition
+// now widened past the approved reach. An installation whose approved
+// declaration the core refuses lists no role: the core refuses its holders.
 func installationToWire(core *authority.Service, ctx context.Context, i domain.Installation) *installationv1.Installation {
-	var roles []string
-	if m, err := core.Composed(ctx, i.Target); err == nil {
-		for name := range m.Roles {
-			roles = append(roles, name)
-		}
+	approved, err := core.ApprovedDeclaration(ctx, i)
+	if err != nil {
+		approved = domain.Module{}
 	}
-	return installationToWireWithRoles(i, roles)
+	upgrade, err := core.UpgradeAvailable(ctx, i)
+	if err != nil {
+		upgrade = false
+	}
+	out := installationWire(i, approved, upgrade)
+	// What its declared reach the composition leaves unreached, as the core
+	// answers it (Service.Unreached): a readiness condition beside
+	// upgrade_available; a read it cannot make answers none.
+	out.Unreached, _ = core.Unreached(ctx, i)
+	return out
 }
 
-// installationToWireWithRoles converts one snapshot without another authority read.
-func installationToWireWithRoles(i domain.Installation, roles []string) *installationv1.Installation {
+// installationWire converts one snapshot beside the declaration its consent
+// approved and the core's upgrade_available, without another authority
+// read: the roles are approved's.
+func installationWire(i domain.Installation, approved domain.Module, upgrade bool) *installationv1.Installation {
 	st := map[domain.Status]installationv1.Installation_Status{
 		domain.Pending: installationv1.Installation_STATUS_PENDING, domain.Active: installationv1.Installation_STATUS_ACTIVE, domain.Revoked: installationv1.Installation_STATUS_REVOKED,
 	}[i.Status]
 	out := &installationv1.Installation{Id: i.ID, OrganizationId: i.Organization, Target: i.Target, Status: st, Revision: i.Revision,
-		Role: i.AgentRole, PrincipalId: i.PrincipalID, Namespace: i.Organization + "." + i.Target, Roles: slices.Clone(roles)}
+		Role: i.AgentRole, PrincipalId: i.PrincipalID, Namespace: i.Organization + "." + i.Target,
+		ApprovedGeneration: i.Consent.Generation, UpgradeAvailable: upgrade}
+	for name := range approved.Roles {
+		out.Roles = append(out.Roles, name)
+	}
 	slices.Sort(out.Roles)
 	return out
 }
@@ -714,7 +745,25 @@ func (s *HostSessionServer) SignIn(ctx context.Context, req *sessionv1.SignInReq
 	if err := s.nameForDisplay(ctx, session, claims.OrgID != ""); err != nil {
 		return nil, err
 	}
+	if claims.OrgID != "" {
+		if err := s.teamsOf(ctx, session); err != nil {
+			return nil, err
+		}
+	}
 	return session, nil
+}
+
+// teamsOf names, on session, the teams its person belongs to in its
+// organization, as SignIn and Current state them.
+func (s *HostSessionServer) teamsOf(ctx context.Context, session *sessionv1.Session) error {
+	teams, err := s.service.ListTeams(ctx, &gen.ListTeamsRequest{OrgId: session.OrganizationId, MemberId: session.PersonId})
+	if err != nil {
+		return status.Error(codes.Unavailable, err.Error())
+	}
+	for _, team := range teams.GetTeams() {
+		session.TeamIds = append(session.TeamIds, team.GetId())
+	}
+	return nil
 }
 
 // nameForDisplay fills the session's display names from the person's own
@@ -765,12 +814,8 @@ func (s *HostSessionServer) Current(ctx context.Context, _ *sessionv1.CurrentReq
 	if err := s.nameForDisplay(ctx, session, role != ""); err != nil {
 		return nil, err
 	}
-	teams, err := s.service.ListTeams(ctx, &gen.ListTeamsRequest{OrgId: session.OrganizationId, MemberId: session.PersonId})
-	if err != nil {
-		return nil, status.Error(codes.Unavailable, err.Error())
-	}
-	for _, team := range teams.GetTeams() {
-		session.TeamIds = append(session.TeamIds, team.GetId())
+	if err := s.teamsOf(ctx, session); err != nil {
+		return nil, err
 	}
 	return session, nil
 }

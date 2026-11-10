@@ -40,6 +40,24 @@ rewrites the provenance. Never edit the baseline by hand: the provenance digest
 refuses it (`qualification/managed-database/stage.py`), and so does the
 reference gate.
 
+### Filling a column a shared contract now keeps
+
+When a library the host runs (the authority core) starts keeping a value the
+host already knew — migration 68 fills each consent's approved generation and
+digest from the host's own reviewed approval and writes the approved
+declaration under that generation — the fill ships in the migration that adds
+what it fills, so a deploy never runs a binary that reads the value before it
+is there. Fill from exactly what the host recorded, never from a guess or a
+nearby value: a value that decides authority filled from the wrong record
+grants what nobody approved. Where SQL cannot reach the exact record (the
+declaration approved at an older generation lives only in the delivery
+inbox's signed documents), the migration writes nothing for it, the host
+rebuilds it at boot from those documents
+(`business.keepApprovedDeclarations`), and where even they are gone nothing is
+written and the consumer refuses by name. Say in the migration which rows it
+leaves to the host and what a missing one surfaces as. A fill is an `UPDATE`
+over the relation, so open it with the same bounded `SET LOCAL lock_timeout`.
+
 ### Replacing a function the baseline reassigned
 
 A migration runs as the principal that installs the ledger, and that principal

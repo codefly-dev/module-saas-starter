@@ -3,6 +3,7 @@ package business
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/codefly-dev/core/solutionhost"
@@ -24,8 +25,8 @@ type compositionOutcomeStore struct {
 
 type compositionOutcomeCarrier struct{}
 
-func (compositionOutcomeCarrier) AuthorizeCarrier(_ context.Context, credential, namespace string) error {
-	if credential != "Bearer host-delivery" || namespace != "example" {
+func (compositionOutcomeCarrier) AuthorizeCarrier(_ context.Context, credential string, namespaces ...string) error {
+	if credential != "Bearer host-delivery" || !slices.Contains(namespaces, "example") {
 		return errors.New("not the example delivery account")
 	}
 	return nil

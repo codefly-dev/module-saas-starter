@@ -40,6 +40,18 @@ import (
 // envelope over granted manifests is therefore a narrowing, applied like any
 // other.
 //
+// A PRINCIPAL THE ENVELOPE DOES NOT NAME IS WITHHELD, NOT A FAILING PASS. The
+// envelope is the administrator's statement, so a composed module it leaves out
+// is a deployment defect to report on that module's binding row (its
+// pending_reason, through WithheldAuthorityReasons), where an operator already
+// reads a delivery this host could not take — and not an error of the pass,
+// which applied every binding it was given. Reporting it as a pass failure
+// logged "reconcile pass failed" every interval over a registry that was
+// derived exactly as asked. The host's own principal — the module this host
+// was composed as — needs no envelope grant at all: nothing mints as the host
+// through this registry, so its manifest's principal is simply not entered
+// and leaves no row behind.
+//
 // Either way an entry's workloads are the manifest's, spelled by the cell's
 // rule (namespace from the module, ServiceAccount from the service).
 //
@@ -266,7 +278,8 @@ func (r *ModulePrincipalReconciler) degraded(applied []*SolutionHostBindingRecor
 
 // RunOnce derives the registry from the applied manifests, narrowed by the
 // envelope where one has been written, and installs it. Its error names every
-// principal and binding it omitted.
+// principal and binding it omitted for a defect in the inputs; a principal the
+// envelope leaves out is withheld and reported on its own row, never returned.
 func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -301,6 +314,11 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 		next.revision = envelope.Revision
 	}
 	rule := r.reconciler.service.moduleNamespaces
+	host := r.reconciler.service.hostModule
+	// withheld is every omission that is a row and not a pass failure (see the
+	// package comment): it reaches withheldModuleAuthority with the refusals,
+	// and never the returned error.
+	var withheld []error
 	for _, manifest := range manifests {
 		if manifest.Authority == nil {
 			// A manifest with no authority asks for nothing: a module that is
@@ -335,10 +353,23 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 			grant, omitted, err = deriveModulePrincipalGrant(prefix, manifestCeiling(manifest.Authority), manifest, workloads)
 		} else {
 			entry, allowed := envelope.Principals[prefix]
-			if !allowed {
-				err = errors.New("the administrative policy declares no grant for it")
-			} else {
+			switch {
+			case allowed:
 				grant, omitted, err = deriveModulePrincipalGrant(prefix, entry, manifest, workloads)
+			case prefix == host:
+				// The host's own principal, with an envelope that does not name
+				// it: exempt from the envelope requirement, so entered nowhere
+				// and reported nowhere (an envelope that names it, or no
+				// envelope at all, still registers it above). A manifest that
+				// merely claims the host's prefix is a signed misdelivery and
+				// is dropped the same way.
+				continue
+			default:
+				withheld = append(withheld, ModulePrincipalOmission{
+					Prefix: prefix, Manifest: manifest.Binding, Generation: manifest.Generation,
+					Reason: errors.New("the administrative policy declares no grant for it"),
+				})
+				continue
 			}
 		}
 		refusals = append(refusals, omitted...)
@@ -351,7 +382,19 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 		next.sources[id] = modulePrincipalSource{binding: manifest.Binding, generation: manifest.Generation}
 	}
 	refusals = append(refusals, next.oneWorkloadOnePrincipal()...)
-	next.withheld, next.authorityReasons = withheldModuleAuthority(manifests, next.registry, refusals)
+	// The host's own manifest is exempt from the envelope and from the
+	// withheld report alike: with no entry of its own, every binding it asked
+	// would otherwise read as withheld on its own row.
+	asking := make([]*solutionhost.ModuleManifest, 0, len(manifests))
+	for _, manifest := range manifests {
+		if manifest.Authority != nil && manifest.Authority.Principal == host && envelope != nil {
+			if _, named := envelope.Principals[host]; !named {
+				continue
+			}
+		}
+		asking = append(asking, manifest)
+	}
+	next.withheld, next.authorityReasons = withheldModuleAuthority(asking, next.registry, slices.Concat(refusals, withheld))
 
 	r.publish(next)
 	return errors.Join(refusals...)
@@ -416,6 +459,10 @@ func withheldModuleAuthority(
 		case omitted && len(missing) > 0:
 			// One reason withholds every binding: say it once, not per binding.
 			reasons[manifest.Binding] = fmt.Sprintf("%s; so all %d bindings it asks for are withheld", principal.Error(), len(missing))
+		case omitted:
+			// A principal asking for no binding is still a principal this
+			// registry does not hold, and its row says why.
+			reasons[manifest.Binding] = principal.Error()
 		case len(missing) > 0:
 			reasons[manifest.Binding] = strings.Join(missing, "; ")
 		}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -59,17 +60,22 @@ func (f *fakeDeliveryStore) ReadDeliveredDocument(context.Context, string, uint6
 	return nil, nil
 }
 
-// fakeCarrierAuthorizer records the namespace the host asked the carrier to be
-// the delivery account of.
+// fakeCarrierAuthorizer records the namespaces the host asked the carrier to
+// be the delivery account of one of. With caller set, it is that namespace's
+// delivery account and is refused unless the host named it.
 type fakeCarrierAuthorizer struct {
-	err       error
-	namespace string
-	calls     int
+	err        error
+	caller     string
+	namespaces []string
+	calls      int
 }
 
-func (f *fakeCarrierAuthorizer) AuthorizeCarrier(_ context.Context, _ string, namespace string) error {
+func (f *fakeCarrierAuthorizer) AuthorizeCarrier(_ context.Context, _ string, namespaces ...string) error {
 	f.calls++
-	f.namespace = namespace
+	f.namespaces = namespaces
+	if f.caller != "" && !slices.Contains(namespaces, f.caller) {
+		return fmt.Errorf("%w: the carrier authenticated as %s/delivery", infra.ErrCarrierNotAuthorized, f.caller)
+	}
 	return f.err
 }
 
@@ -113,6 +119,7 @@ func newDeliveryHarness(t *testing.T, pins map[string][]string, applied ...*solu
 	rule, err := business.NewModuleNamespaceRule("platform-acme-staging-saas", "saas")
 	require.NoError(t, err)
 	service.SetModuleNamespaceRule(rule)
+	service.SetModuleEnvelopeDeliveryHost("saas")
 	harness.handler = NewSolutionDeliveryHTTPHandler(service)
 	return harness
 }
@@ -229,7 +236,7 @@ func TestANewGenerationIsAcceptedAndAReplayIsReplayed(t *testing.T) {
 	require.Equal(t, deliveryReceipt{
 		Disposition: "accepted", Binding: manifest.Binding, Generation: 3, Digest: digest, Signer: deliveryTestKey,
 	}, receipt)
-	require.Equal(t, "platform-acme-staging-reports", fresh.carrier.namespace,
+	require.Equal(t, []string{"platform-acme-staging-reports"}, fresh.carrier.namespaces,
 		"the carrier is the delivery account of the module's namespace, by the cell's rule")
 
 	replay := newDeliveryHarness(t, nil, manifest)
@@ -240,15 +247,63 @@ func TestANewGenerationIsAcceptedAndAReplayIsReplayed(t *testing.T) {
 }
 
 // A withdrawal is delivered from where its binding was delivered from: the
-// previously applied manifest's module, whatever alias the withdrawal names.
+// previously applied manifest's module, whatever alias the withdrawal names —
+// or from the host's own module, which carries the composition.
 func TestAWithdrawalIsCarriedFromTheAppliedModulesNamespace(t *testing.T) {
 	applied := testModuleManifest(t, 3)
 	harness := newDeliveryHarness(t, nil, applied)
+	harness.carrier.caller = "platform-acme-staging-reports"
 	removal := withdrawal(t, applied, 4)
 	removal.Alias = "renamed"
 	recorder := harness.deliver(t, removal)
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-	require.Equal(t, "platform-acme-staging-reports", harness.carrier.namespace)
+	require.Equal(t, []string{"platform-acme-staging-reports", "platform-acme-staging-saas"}, harness.carrier.namespaces)
+}
+
+// A module the composition dropped has no namespace left to carry its own
+// withdrawal: the host module's delivery account carries it, and the host
+// applies it as any other withdrawal.
+func TestTheHostCarriesTheWithdrawalOfAModuleTheCompositionDropped(t *testing.T) {
+	applied := testModuleManifest(t, 3)
+	harness := newDeliveryHarness(t, nil, applied)
+	harness.carrier.caller = "platform-acme-staging-saas"
+	recorder := harness.deliver(t, withdrawal(t, applied, 4))
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	receipt := receiptOf(t, recorder)
+	require.Equal(t, "accepted", receipt.Disposition)
+	require.Equal(t, uint64(4), receipt.Generation)
+	require.Equal(t, 1, harness.store.calls)
+
+	// Admission is unchanged: the host carrier's withdrawal at the applied
+	// generation is still refused as a rewrite.
+	stale := newDeliveryHarness(t, nil, applied)
+	stale.carrier.caller = "platform-acme-staging-saas"
+	recorder = stale.deliver(t, withdrawal(t, applied, 3))
+	require.Equal(t, http.StatusConflict, recorder.Code, recorder.Body.String())
+	require.Zero(t, stale.store.calls)
+}
+
+// Only the withdrawn module and the host carry a withdrawal: another module's
+// delivery account is refused, and nothing is stored.
+func TestAnUnrelatedModuleCannotCarryAWithdrawal(t *testing.T) {
+	applied := testModuleManifest(t, 3)
+	harness := newDeliveryHarness(t, nil, applied)
+	harness.carrier.caller = "platform-acme-staging-billing"
+	recorder := harness.deliver(t, withdrawal(t, applied, 4))
+	require.Equal(t, http.StatusForbidden, recorder.Code, recorder.Body.String())
+	require.Contains(t, receiptOf(t, recorder).Error, "platform-acme-staging-billing")
+	require.Zero(t, harness.store.calls)
+}
+
+// The host carries withdrawals only: a live manifest for another module is
+// still carried from that module's own namespace alone.
+func TestTheHostCannotCarryAnotherModulesLiveManifest(t *testing.T) {
+	harness := newDeliveryHarness(t, nil, testModuleManifest(t, 3))
+	harness.carrier.caller = "platform-acme-staging-saas"
+	recorder := harness.deliver(t, testModuleManifest(t, 4))
+	require.Equal(t, http.StatusForbidden, recorder.Code, recorder.Body.String())
+	require.Equal(t, []string{"platform-acme-staging-reports"}, harness.carrier.namespaces)
+	require.Zero(t, harness.store.calls)
 }
 
 // Each refusal, by its code, with the reason in the body, and nothing stored.

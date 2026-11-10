@@ -368,6 +368,12 @@ type moduleDocument struct {
 	HasMethods       bool                     `json:"has_methods,omitempty"`
 	InstallationRole string                   `json:"installation_role,omitempty"`
 	EdgeDependencies []domain.EdgeDependency  `json:"edge_dependencies,omitempty"`
+	// SharedKinds are the kinds the module declares unowned, issued
+	// unselected (domain.Module.SharedKinds).
+	SharedKinds []string `json:"shared_kinds,omitempty"`
+	// Through are, per role then binding, what a role names through one of
+	// the module's bindings (domain.Module.Through); Roles holds them too.
+	Through map[string]map[string][]storedScope `json:"through,omitempty"`
 }
 
 type storedScope struct {
@@ -410,7 +416,16 @@ func loadScopes(in []storedScope) []*basev0.WorkScopeV1 {
 
 func encodeModule(m domain.Module) ([]byte, error) {
 	doc := moduleDocument{ResourceKinds: storeScopes(m.ResourceKinds), OwnerAware: m.OwnerAware, HasRoles: m.Roles != nil, HasMethods: m.Methods != nil,
-		InstallationRole: m.InstallationRole, EdgeDependencies: m.EdgeDependencies}
+		InstallationRole: m.InstallationRole, EdgeDependencies: m.EdgeDependencies, SharedKinds: m.SharedKinds}
+	for role, bindings := range m.Through {
+		if doc.Through == nil {
+			doc.Through = map[string]map[string][]storedScope{}
+		}
+		doc.Through[role] = map[string][]storedScope{}
+		for id, scopes := range bindings {
+			doc.Through[role][id] = storeScopes(scopes)
+		}
+	}
 	if len(m.Bindings) > 0 {
 		doc.Bindings = map[string]storedBinding{}
 		for id, b := range m.Bindings {
@@ -444,7 +459,16 @@ func decodeModule(m *domain.Module, raw []byte) error {
 		return fmt.Errorf("module %s: stored declarations do not read: %w", m.Name, err)
 	}
 	m.ResourceKinds, m.OwnerAware = loadScopes(doc.ResourceKinds), doc.OwnerAware
-	m.InstallationRole, m.EdgeDependencies = doc.InstallationRole, doc.EdgeDependencies
+	m.InstallationRole, m.EdgeDependencies, m.SharedKinds = doc.InstallationRole, doc.EdgeDependencies, doc.SharedKinds
+	for role, bindings := range doc.Through {
+		if m.Through == nil {
+			m.Through = map[string]map[string][]*basev0.WorkScopeV1{}
+		}
+		m.Through[role] = map[string][]*basev0.WorkScopeV1{}
+		for id, scopes := range bindings {
+			m.Through[role][id] = loadScopes(scopes)
+		}
+	}
 	m.Bindings = map[string]domain.Binding{}
 	for id, b := range doc.Bindings {
 		m.Bindings[id] = domain.Binding{ID: id, Audience: b.Audience, InvokeScopes: loadScopes(b.Invoke), HeadlessScopes: loadScopes(b.Headless), LookupScopes: loadScopes(b.Lookup)}
@@ -522,6 +546,65 @@ func (t coreTx) PutModule(m domain.Module) error {
 	return err
 }
 
+// ApprovedModule and PutApprovedModule keep the declaration an installation's
+// consent approved, per module and generation (authority_core_approved_modules,
+// migration 68): the core writes one whenever a consent is taken or advances
+// and reads it to decide what a holder holds while the consent is behind the
+// delivered generation. A generation no active consent names may be dropped;
+// this store keeps every one it was given. A kept declaration is never
+// replaced: writing the same one again is accepted, writing a different one
+// at a kept (name, generation) answers domain.ErrApprovedDeclarationKept and
+// changes nothing, so the control plane holds no UPDATE on the table.
+func (t coreTx) ApprovedModule(name string, generation uint64) (domain.Module, error) {
+	m, err := scanCoreModule(t.q.QueryRow(t.ctx, `SELECT `+coreModuleColumns+` FROM public.authority_core_approved_modules WHERE name = $1 AND generation = $2`, name, int64(generation)))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Module{}, coreMissing("approved generation", fmt.Sprintf("%s@%d", name, generation))
+	}
+	return m, err
+}
+
+func (t coreTx) PutApprovedModule(m domain.Module) error {
+	if err := t.mustWrite(); err != nil {
+		return err
+	}
+	raw, err := encodeModule(m)
+	if err != nil {
+		return err
+	}
+	tag, err := t.q.Exec(t.ctx, `
+		INSERT INTO public.authority_core_approved_modules (name, generation, principal, kind, stand_in, declarations)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (name, generation) DO NOTHING`,
+		m.Name, int64(m.Generation), m.Principal, m.Kind, m.StandIn, raw)
+	if err != nil || tag.RowsAffected() == 1 {
+		return err
+	}
+	kept, err := t.ApprovedModule(m.Name, m.Generation)
+	if err != nil {
+		return err
+	}
+	// Compared as this store answers both: m as it would read back.
+	written := domain.Module{Name: m.Name, Principal: m.Principal, Kind: m.Kind, Generation: m.Generation, StandIn: m.StandIn}
+	if err := decodeModule(&written, raw); err != nil {
+		return err
+	}
+	same, err := sameOffer(kept, written)
+	if err != nil || same {
+		return err
+	}
+	return fmt.Errorf("%s generation %d: %w", m.Name, m.Generation, domain.ErrApprovedDeclarationKept)
+}
+
+// sameOffer: a and b are the same declaration, as a consent sees it.
+func sameOffer(a, b domain.Module) (bool, error) {
+	da, err := authority.OfferDigest(a)
+	if err != nil {
+		return false, err
+	}
+	db, err := authority.OfferDigest(b)
+	return da == db, err
+}
+
 func (t coreTx) DeleteModule(name string) error {
 	if err := t.mustWrite(); err != nil {
 		return err
@@ -583,15 +666,20 @@ func scanCoreInstallation(row pgx.Row) (domain.Installation, error) {
 	return inst, nil
 }
 
-// A module's installation is accounts' own record (public.installations,
-// kind 'module'): an administrator's consent within the module envelope,
-// retired by an uninstall or by a ceiling that no longer allows the
-// organization, all in accounts' own transactions. The core is configured with
-// HostInstallsModules, so it reads those records as its installations, live,
-// and writes a module's only to raise its revision when a redelivery narrows
-// the module; the raise is kept beside the record
-// (authority_core_module_revisions). authority_core_installations holds the
-// solutions' installations, which the core decides.
+// A module without roles is installed by this host's own consent: its record
+// is accounts' own (public.installations, kind 'module'), an administrator's
+// consent within the module envelope, retired by an uninstall or by a ceiling
+// that no longer allows the organization, all in accounts' own transactions.
+// The core is configured with HostInstallsModules, so it reads those records as
+// its installations, live, and writes one only to raise its revision when a
+// redelivery narrows the module; the raise is kept beside the record
+// (authority_core_module_revisions). authority_core_installations holds every
+// installation the core decides: a solution's, and a module page's (a module
+// declaring roles, chosen through Review and Install like a solution, before
+// modules were installed by composition). A module's own record is told from
+// a row the core decided by the row: the core's rows are its own, and a
+// record carries the principal derived for it (moduleInstallations), never
+// one stored.
 
 // hostModules maps the principal accounts records a module's installation
 // under (business.ModulePrincipalID of its name) to every composed module.
@@ -663,10 +751,21 @@ func (t coreTx) moduleInstallations(where string, args ...any) ([]domain.Install
 		// consent, its scope, an uninstall), the core's raise on a narrowing
 		// redelivery, and the committed envelope revision, so an envelope
 		// write ends every capability decided under the ceiling it replaced.
+		// Its principal is the one the core gives every composition
+		// installation (authority.StablePrincipalID of the organization and
+		// the module): a module page's roles reach a module that checks owners
+		// as the data this installation owns, as a solution's do (RBAC-1).
 		return record{inst: domain.Installation{ID: id.String(), Organization: org.String(), Target: modules[principal],
 			Status: moduleInstallationStatus(status), Revision: uint64(revision) + envelope, Owned: map[string][]string{}}, scope: consented}, nil
 	})
 	if err != nil {
+		return nil, err
+	}
+	insts := make([]*domain.Installation, len(records))
+	for i := range records {
+		insts[i] = &records[i].inst
+	}
+	if err := t.withComposedPrincipals(insts); err != nil {
 		return nil, err
 	}
 	out := make([]domain.Installation, 0, len(records))
@@ -726,19 +825,60 @@ func (t coreTx) InstallationByPrincipal(principal string) (domain.Installation, 
 		return domain.Installation{}, coreMissing("principal", principal)
 	}
 	inst, err := scanCoreInstallation(t.q.QueryRow(t.ctx, `SELECT `+coreInstallationColumns+` FROM public.authority_core_installations WHERE principal_id = $1`, principal))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.Installation{}, coreMissing("principal", principal)
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return inst, err
 	}
-	return inst, err
+	// A module's installation record answers to the principal the core
+	// gives it (moduleInstallations); it is derived, never stored, so it is
+	// found by deriving it from each record's cheap columns, the live record
+	// before a retired one, then read once in full.
+	modules, err := t.hostModules()
+	if err != nil || len(modules) == 0 {
+		return domain.Installation{}, coreMissingOr(err, principal)
+	}
+	principals := make([]uuid.UUID, 0, len(modules))
+	for p := range modules {
+		principals = append(principals, p)
+	}
+	rows, err := t.q.Query(t.ctx, `
+		SELECT i.id, i.org_id, i.registry_principal_id FROM public.installations i
+		 WHERE i.kind = 'module' AND i.registry_principal_id = ANY($1)
+		 ORDER BY (i.status = 'revoked'), i.revision DESC, i.id`, principals)
+	if err != nil {
+		return domain.Installation{}, err
+	}
+	type candidate struct{ id, org, registry uuid.UUID }
+	candidates, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (candidate, error) {
+		var c candidate
+		return c, row.Scan(&c.id, &c.org, &c.registry)
+	})
+	if err != nil {
+		return domain.Installation{}, err
+	}
+	for _, c := range candidates {
+		if authority.StablePrincipalID(c.org.String(), modules[c.registry]) != principal {
+			continue
+		}
+		found, err := t.moduleInstallations(` AND i.id = $2`, c.id)
+		if err != nil {
+			return domain.Installation{}, err
+		}
+		if len(found) == 1 && found[0].PrincipalID == principal {
+			return found[0], nil
+		}
+		break
+	}
+	return domain.Installation{}, coreMissing("principal", principal)
 }
 
 // Installations are the solutions' installations the core decided and the
 // module installations accounts holds now (a retired one is read by its id).
 func (t coreTx) Installations(organization string) ([]domain.Installation, error) {
 	// A module's row the core wrote before accounts held its modules' records
-	// is not an installation any more.
+	// is not an installation any more; a module page's the core decided
+	// through Review and Install (it carries a principal it stored) still is.
 	const solutions = `SELECT ` + coreInstallationColumns + ` FROM public.authority_core_installations
-		WHERE target NOT IN (SELECT name FROM public.authority_core_modules WHERE kind <> 'solution')`
+		WHERE (principal_id <> '' OR target NOT IN (SELECT name FROM public.authority_core_modules WHERE kind <> 'solution'))`
 	var rows pgx.Rows
 	var modules []domain.Installation
 	var err error
@@ -802,11 +942,59 @@ func (t coreTx) PutInstallation(inst domain.Installation) error {
 	return err
 }
 
+func coreMissingOr(err error, principal string) error {
+	if err != nil {
+		return err
+	}
+	return coreMissing("principal", principal)
+}
+
+// withComposedPrincipals gives each module record the principal the core gives
+// a composition installation (authority.StablePrincipalID of the organization
+// and the module) when no other identity holds it, exactly as the core's own
+// composition does (principalFree): not a row the core decided, a module, a
+// withdrawn module, an external client or a person. A taken principal leaves
+// the record without one, owning nothing (RBAC-1).
+func (t coreTx) withComposedPrincipals(insts []*domain.Installation) error {
+	if len(insts) == 0 {
+		return nil
+	}
+	derived := make([]string, len(insts))
+	for i, inst := range insts {
+		derived[i] = authority.StablePrincipalID(inst.Organization, inst.Target)
+	}
+	rows, err := t.q.Query(t.ctx, `
+		SELECT principal_id FROM public.authority_core_installations WHERE principal_id = ANY($1)
+		UNION SELECT principal FROM public.authority_core_modules WHERE principal = ANY($1)
+		UNION SELECT principal FROM public.authority_core_tombstones WHERE principal = ANY($1)
+		UNION SELECT id FROM public.authority_core_clients WHERE id = ANY($1)
+		UNION SELECT uuid::text FROM public.users WHERE uuid::text = ANY($1)`, derived)
+	if err != nil {
+		return err
+	}
+	taken, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return err
+	}
+	for i, inst := range insts {
+		if !slices.Contains(taken, derived[i]) {
+			inst.PrincipalID = derived[i]
+		}
+	}
+	return nil
+}
+
 // raiseModuleInstallation applies the one write the core makes to a module's
-// installation: raising its revision, when a redelivery narrows the module.
-// It reports whether inst is a module's installation at all; any other change
-// to one is refused, because the record is accounts' own.
+// own installation record: raising its revision, when a redelivery narrows the
+// module. It reports whether inst is such a record at all; any other change to
+// one is refused, because the record is accounts' own. An installation the
+// core decided (a solution's, or a module page's from before composition) has
+// its own row, is written like a solution's and is never one of these.
 func (t coreTx) raiseModuleInstallation(inst domain.Installation) (bool, error) {
+	var decided bool
+	if err := t.q.QueryRow(t.ctx, `SELECT EXISTS (SELECT 1 FROM public.authority_core_installations WHERE id = $1)`, inst.ID).Scan(&decided); err != nil || decided {
+		return false, err
+	}
 	var kind string
 	err := t.q.QueryRow(t.ctx, `SELECT kind FROM public.authority_core_modules WHERE name = $1`, inst.Target).Scan(&kind)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && kind == domain.KindSolution) {
@@ -820,8 +1008,8 @@ func (t coreTx) raiseModuleInstallation(inst domain.Installation) (bool, error) 
 		return true, fmt.Errorf("module installation %s is not one accounts holds: %w", inst.ID, err)
 	}
 	if current.Organization != inst.Organization || current.Target != inst.Target || current.Status != inst.Status ||
-		inst.AgentRole != "" || inst.PrincipalID != "" || inst.InstalledBy != "" || len(inst.Owned) > 0 || inst.Revision <= current.Revision {
-		return true, fmt.Errorf("module installation %s is accounts' own record: the authority core only raises its revision", inst.ID)
+		inst.AgentRole != "" || inst.PrincipalID != current.PrincipalID || inst.InstalledBy != "" || len(inst.Owned) > 0 || inst.Revision <= current.Revision {
+		return true, domain.Refuse("module installation %s is accounts' own record: the authority core only raises its revision; it records no attachment or other change on it", inst.ID)
 	}
 	_, err = t.q.Exec(t.ctx, `
 		INSERT INTO public.authority_core_module_revisions (installation_id, raised) VALUES ($1, $2)

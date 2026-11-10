@@ -32,6 +32,10 @@ type SolutionInstallationPlan struct {
 	SetupJobID     string
 	Dependencies   []ModuleInstallationPrerequisite
 	Review         *gen.ReviewedSolutionInstall
+	// Access is the access an administrator's install applies once active;
+	// nil for an install that assigns none (a fixture's, the host
+	// interface's, an upgrade, which keeps the grants that stand).
+	Access *InstallationAccess `json:",omitempty"`
 }
 
 type solutionPlanContextKey struct{}
@@ -42,12 +46,27 @@ type solutionPlanContextKey struct{}
 func WithSolutionInstallationPlan(ctx context.Context, plan SolutionInstallationPlan) context.Context {
 	plan.Dependencies = slices.Clone(plan.Dependencies)
 	plan.Review = proto.CloneOf(plan.Review)
-	return context.WithValue(ctx, solutionPlanContextKey{}, plan)
+	return context.WithValue(ctx, solutionPlanContextKey{}, &plan)
+}
+
+// solutionInstallationPlanRef is the plan WithSolutionInstallationPlan
+// carried, for the one writer of it before the core records it: the install
+// step of an upgrade, which has no pending row to record the closure's
+// witnesses on and leaves them here for the core's write to persist.
+func solutionInstallationPlanRef(ctx context.Context) *SolutionInstallationPlan {
+	plan, _ := ctx.Value(solutionPlanContextKey{}).(*SolutionInstallationPlan)
+	return plan
 }
 
 func SolutionInstallationPlanFromContext(ctx context.Context) (SolutionInstallationPlan, bool) {
-	plan, ok := ctx.Value(solutionPlanContextKey{}).(SolutionInstallationPlan)
-	return plan, ok
+	ref := solutionInstallationPlanRef(ctx)
+	if ref == nil {
+		return SolutionInstallationPlan{}, false
+	}
+	plan := *ref
+	plan.Dependencies = slices.Clone(plan.Dependencies)
+	plan.Review = proto.CloneOf(plan.Review)
+	return plan, true
 }
 
 // ModuleInstallationPrerequisite is the exact module consent that satisfied a
@@ -73,11 +92,23 @@ type ModuleInstallationPrerequisite struct {
 	ConsentRevision     uint64
 }
 
+// DeclaresInstallStep reports whether the role-gated target m declares an
+// install endpoint: the setup its installation runs through the durable queue
+// before it is active, and the acknowledgement its activation then requires.
+// A module page declares none and is active once its closure converges. The
+// delivered declaration does not carry the endpoint today (neither the signed
+// manifest nor the core's module names one), so the answer is the kind: a
+// solution is set up, a module page is not. Every site that asks reads it
+// here, so carrying the endpoint in the declaration changes this alone.
+func DeclaresInstallStep(m domain.Module) bool {
+	return m.Kind == domain.KindSolution
+}
+
 // ValidateActivation is the pure comparison used inside the canonical store's
 // final serializable write. Reading and locking the observed rows is the store's
 // responsibility. It must call this before writing active, and perform no
 // enqueue or other external effect while Store.Write may retry.
-func (p SolutionInstallationPlan) ValidateActivation(inst domain.Installation, observed []ModuleInstallationPrerequisite, acknowledgedJobID string) error {
+func (p SolutionInstallationPlan) ValidateActivation(inst domain.Installation, observed []ModuleInstallationPrerequisite, acknowledgedJobID string, setupStep bool) error {
 	refuse := func(reason string) error {
 		return domain.NotNow("INSTALLATION_PREREQUISITES_CHANGED: %s; review the installation again", reason)
 	}
@@ -94,8 +125,23 @@ func (p SolutionInstallationPlan) ValidateActivation(inst domain.Installation, o
 	if inst.Status != domain.Active {
 		return refuse("the requested transition is not activation")
 	}
-	if p.SetupJobID == "" || acknowledgedJobID != p.SetupJobID {
+	if setupStep && (p.SetupJobID == "" || acknowledgedJobID != p.SetupJobID) {
 		return refuse("the exact setup job has not acknowledged this attempt")
+	}
+	if !setupStep && p.SetupJobID != "" {
+		return refuse("a target without an install step was queued a setup job")
+	}
+	return p.ValidatePrerequisites(inst, observed)
+}
+
+// ValidatePrerequisites holds the supporting module installations observed
+// in the final transaction to the witnesses p recorded when its step
+// converged them: each one, exactly, and nothing else. It is the half of
+// ValidateActivation an upgrade in place runs too, before the core moves the
+// consent of the active installation inst.
+func (p SolutionInstallationPlan) ValidatePrerequisites(inst domain.Installation, observed []ModuleInstallationPrerequisite) error {
+	refuse := func(reason string) error {
+		return domain.NotNow("INSTALLATION_PREREQUISITES_CHANGED: %s; review the installation again", reason)
 	}
 	if len(observed) != len(p.Dependencies) {
 		return refuse("a required module installation is absent or revoked")

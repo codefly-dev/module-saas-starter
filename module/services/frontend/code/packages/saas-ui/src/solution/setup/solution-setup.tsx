@@ -32,18 +32,24 @@ import { Fragment, type ReactNode, useMemo, useState } from "react";
 import type { SolutionRequestBinding } from "../binding.js";
 import { solutionTransport } from "../transport.js";
 import {
+	type AbilityRole,
+	article,
+	type RoleAbilities,
+	roleAbilities,
+	unreachedText,
+} from "./abilities.js";
+import {
 	accessLevel,
 	accessMix,
 	byAccess,
 	holderName,
 	installed,
 	isDenied,
-	nameList,
 	refusalOf,
 	type SetupCondition,
+	type SetupFact,
 	type SetupSubject,
 	scopeText,
-	statusWords,
 	subjectKey,
 } from "./model.js";
 import { type SetupClients, useSolutionSetup } from "./use-solution-setup.js";
@@ -72,21 +78,38 @@ export type SolutionSetupProps = SolutionSetupTransport & {
 	conditions?: readonly SetupCondition[];
 	/** People and teams the host can name, for granting and naming holders. */
 	subjects?: readonly SetupSubject[];
-	/** Host-owned choices, using this same current offer and grant client. */
-	renderAccessChoices?: (
-		offer: ReviewedOffer,
-		clients: SetupClients,
-		reload: () => void,
-	) => ReactNode;
+	/**
+	 * What the host knows of the installation beside the authority ("Healthy"),
+	 * shown on its status line.
+	 */
+	facts?: readonly SetupFact[];
+	/**
+	 * When the authority offers an update: what it asks beyond what was
+	 * approved, in words (`updateAsks`), when the host has read it, and the
+	 * host's control that reviews it.
+	 */
+	update?: {
+		asks?: readonly RoleAbilities[];
+		/**
+		 * Each role's reach as the installation's consent approved it: what its
+		 * holders hold until the update. The roles are read from it while an
+		 * update waits, never from the release not yet approved.
+		 */
+		approved?: readonly AbilityRole[];
+		action?: ReactNode;
+	};
+	/** The host's own control for a team holding a role: its people, in place. */
+	teamControls?: (team: SetupSubject) => ReactNode;
 	className?: string;
 };
 
 /**
- * A solution's setup: is it ready, what each of its roles grants (scopes →
- * module operations → tools, and the permission ceiling), and who holds them.
- * Every fact is the authority's answer through the host installation
- * interface; every refusal is shown with the authority's reason. The page
- * decides nothing: who may see or change what is the authority's to say.
+ * A solution's setup, read by an organization administrator: where it stands,
+ * what each role lets people do and who has it, and — behind "Technical
+ * details" — the identifiers an engineer reads. Every fact is the authority's
+ * answer through the host installation interface; every refusal is shown
+ * with the authority's reason. The page decides nothing: who may see or change
+ * what is the authority's to say.
  */
 export function SolutionSetup(props: SolutionSetupProps) {
 	const { binding, transport: given } = props;
@@ -112,25 +135,31 @@ export function SolutionSetup(props: SolutionSetupProps) {
 				<Spinner label={`Loading the setup of ${props.target}`} />
 			) : quiet || state.phase === "loading" ? null : (
 				<>
-					<ReadySection
+					<StatusSection
 						target={props.target}
 						offer={state.offer}
 						offerError={state.offerError}
 						conditions={props.conditions}
+						facts={props.facts}
+						update={props.update}
 					/>
-					{state.offer &&
-						props.renderAccessChoices?.(state.offer, clients, reload)}
-					<RolesSection offer={state.offer} offerError={state.offerError} />
-					<HoldersSection
+					<RolesSection
 						organizationId={props.organizationId}
 						offer={state.offer}
 						offerError={state.offerError}
 						grants={state.grants}
 						grantsError={state.grantsError}
 						subjects={props.subjects}
+						teamControls={props.teamControls}
+						approved={
+							state.offer?.installation?.upgradeAvailable
+								? props.update?.approved
+								: undefined
+						}
 						clients={clients}
 						onChanged={reload}
 					/>
+					{state.offer && <TechnicalDetails offer={state.offer} />}
 				</>
 			)}
 		</section>
@@ -159,58 +188,152 @@ function Fact({ term, children }: { term: string; children: ReactNode }) {
 	);
 }
 
-function ReadySection({
+/** One role's abilities, grouped by where: the words every surface uses. */
+export function RoleAbilitiesList({
+	abilities,
+	label,
+}: {
+	abilities: RoleAbilities;
+	label?: string;
+}) {
+	if (!abilities.groups.length)
+		return <p className="text-muted-foreground">Nothing yet.</p>;
+	return (
+		<ul
+			className="flex flex-col gap-2"
+			aria-label={
+				label ??
+				`What ${article(abilities.role).toLowerCase()} ${abilities.role} can do`
+			}
+		>
+			{abilities.groups.map((group) => (
+				<li key={group.key}>
+					<p className="type-emphasis">{group.where}</p>
+					<ul className="list-disc pl-5">
+						{group.lines.map((line) => (
+							<li key={line}>{capitalized(line)}</li>
+						))}
+					</ul>
+				</li>
+			))}
+		</ul>
+	);
+}
+
+const capitalized = (text: string) =>
+	text ? text[0].toUpperCase() + text.slice(1) : text;
+
+/** The installation's lifecycle in a reader's words. */
+function statusFact(offer: ReviewedOffer): SetupFact {
+	switch (offer.installation?.status) {
+		case HostInstallationStatus.ACTIVE:
+			return { text: "Installed", tone: "success" };
+		case HostInstallationStatus.PENDING:
+			return { text: "Being set up", tone: "warning" };
+		case HostInstallationStatus.REVOKED:
+			return { text: "Uninstalled", tone: "neutral" };
+		default:
+			return { text: "Not installed", tone: "neutral" };
+	}
+}
+
+function StatusSection({
 	target,
 	offer,
 	offerError,
 	conditions,
+	facts,
+	update,
 }: {
 	target: string;
 	offer?: ReviewedOffer;
 	offerError?: unknown;
 	conditions?: readonly SetupCondition[];
+	facts?: readonly SetupFact[];
+	update?: SolutionSetupProps["update"];
 }) {
-	const installation = offer?.installation;
-	const status = installation?.status;
+	const unreached = offer?.installation?.unreached ?? [];
+	const line: SetupFact[] = offer ? [statusFact(offer)] : [];
+	if (offer && installed(offer) && conditions)
+		line.push(
+			conditions.length
+				? {
+						text: `${conditions.length} ${conditions.length === 1 ? "thing" : "things"} to fix`,
+						tone: "danger",
+					}
+				: { text: "Ready", tone: "success" },
+		);
+	if (offer && installed(offer)) line.push(...(facts ?? []));
 	return (
-		<Card
-			title="Is it ready?"
-			description="Whether this solution is installed at your organization, at which release, and what it still needs from a person."
-		>
+		<Card title="Status">
 			<div className="flex flex-col gap-3">
 				{offer ? (
-					<dl className="grid gap-3 sm:grid-cols-4">
-						<Fact term="Installation">
-							<Badge
-								tone={
-									status === HostInstallationStatus.ACTIVE
-										? "success"
-										: status === HostInstallationStatus.PENDING
-											? "warning"
-											: "neutral"
-								}
-								dot
-							>
-								{status === undefined ? "Not installed" : statusWords[status]}
-							</Badge>
-						</Fact>
-						<Fact term="Release generation">
-							{offer.approval ? String(offer.approval.generation) : "—"}
-						</Fact>
-						<Fact term="Installation revision">
-							{installation ? String(installation.revision) : "—"}
-						</Fact>
-						<Fact term="Agent role">{installation?.role || "—"}</Fact>
-					</dl>
+					<ul className="flex flex-wrap items-center gap-2" aria-label="Status">
+						{line.map((fact) => (
+							<li key={fact.text}>
+								<Badge tone={fact.tone} dot>
+									{fact.text}
+								</Badge>
+							</li>
+						))}
+					</ul>
 				) : (
 					<Refusal error={offerError} what={`the setup of ${target}`} />
 				)}
 				{offer && !installed(offer) && (
 					<p>
-						Not installed at this organization. An administrator installs it
-						where this host installs solutions, consenting to the roles and the
-						permission ceiling below; nobody holds a role until then.
+						Not installed in your organization. An administrator installs it
+						from Solutions, after reviewing what each role can do. Nobody can
+						use it until then.
 					</p>
+				)}
+				{offer?.installation?.upgradeAvailable && (
+					<Banner tone="warning" title="Update available">
+						<div className="flex flex-col gap-2">
+							{update?.asks?.length ? (
+								<>
+									<p>
+										This release asks for more than you approved. Until you
+										update, everyone keeps exactly the access you approved.
+									</p>
+									{update.asks.map((asks) => (
+										<div key={asks.role}>
+											<p className="type-emphasis">
+												{article(asks.role)} {asks.role} would also be able to
+											</p>
+											<RoleAbilitiesList
+												abilities={asks}
+												label={`What the update adds for ${article(asks.role).toLowerCase()} ${asks.role}`}
+											/>
+										</div>
+									))}
+								</>
+							) : (
+								<p>
+									A newer release asks for more than you approved. Until you
+									review and update it, everyone keeps exactly the access you
+									approved.
+								</p>
+							)}
+							{update?.action}
+						</div>
+					</Banner>
+				)}
+				{unreached.length > 0 && (
+					<Banner tone="warning" title="Some access can't be reached right now">
+						<div className="flex flex-col gap-2">
+							<ul className="list-disc pl-5" aria-label="Unreached access">
+								{unreached.map((condition) => (
+									<li key={condition}>{unreachedText(condition)}</li>
+								))}
+							</ul>
+							<p>
+								Until a later release of the module it goes through restores it,
+								the people holding that role cannot do this; everything else they
+								hold keeps working, and nothing is ever widened meanwhile.
+							</p>
+						</div>
+					</Banner>
 				)}
 				{conditions && conditions.length > 0 && (
 					<ul className="flex flex-col gap-3" aria-label="Unmet conditions">
@@ -299,23 +422,417 @@ function Scopes({
 }
 
 /**
- * One grouped view of what every role reaches, in place of one full table per
- * role.
- *
- * The three tables this replaced were near-copies: the operations a solution
- * composes are the same set, and a role differs from its neighbour by a handful
- * of scopes. Three copies of fifty rows hid that difference in 150 rows; one
- * row per operation with a column per role shows it.
- *
- * `operation` is a wire path, which is a developer's artefact and not what an
- * administrator came to read, so operations are grouped by their module and each
- * group is closed until asked for, with its count and access mix on the line
- * that opens it.
- *
- * Inside a module the rows are banded by the access they demand, because the
- * question a reader brings is "why has this role so many permissions" and the
- * answer is never the total: forty-one reads and eleven writes are not the same
- * breadth, and a flat list of fifty-two rows says only "fifty-two".
+ * Each role: what a holder can do, grouped by where, and who has it — the
+ * teams and people holding it, each removable, and a control giving it to
+ * someone else. A role's holders sit beside what the role lets them do, so
+ * a reader never matches a grant list against a role list.
+ */
+function RolesSection({
+	organizationId,
+	offer,
+	offerError,
+	grants,
+	grantsError,
+	subjects,
+	teamControls,
+	approved,
+	clients,
+	onChanged,
+}: {
+	organizationId: string;
+	offer?: ReviewedOffer;
+	offerError?: unknown;
+	grants?: RoleGrant[];
+	grantsError?: unknown;
+	subjects?: readonly SetupSubject[];
+	teamControls?: (team: SetupSubject) => ReactNode;
+	/** The approved reach, while an update waits. */
+	approved?: readonly AbilityRole[];
+	clients: SetupClients;
+	onChanged: () => void;
+}) {
+	const [busy, setBusy] = useState(false);
+	const [refusal, setRefusal] = useState<string | null>(null);
+	const installation = offer?.installation;
+	const change = (what: Promise<unknown>) => {
+		setBusy(true);
+		setRefusal(null);
+		what
+			.then(onChanged)
+			.catch((error: unknown) => setRefusal(refusalOf(error)))
+			.finally(() => setBusy(false));
+	};
+	const request = (grant: {
+		role: string;
+		personId: string;
+		teamId: string;
+	}) => ({
+		organizationId,
+		installationId: installation?.id ?? "",
+		...grant,
+	});
+	// While an update waits, holders hold what was approved: the roles read
+	// that, and say so; a consent that recorded no reach reads the release
+	// under review, and says that instead.
+	const waiting = offer?.installation?.upgradeAvailable === true;
+	const read = (role: OfferRole): AbilityRole =>
+		(waiting && approved?.find((a) => a.name === role.name)) || role;
+	const abilities = offer
+		? roleAbilities(offer.target, offer.roles.map(read))
+		: [];
+	return (
+		<Card
+			title="Roles"
+			description={
+				!waiting
+					? "What each role lets people do, and who has it. Nobody can use it without a role."
+					: approved?.length
+						? "What each role lets people do today, as you approved it, and who has it. The update would add what is listed above."
+						: "What each role lets people do once updated, and who has it. Until you update, what the update adds is not available to anyone."
+			}
+		>
+			{!offer ? (
+				<Refusal error={offerError} what="the roles" />
+			) : offer.roles.length === 0 ? (
+				<p>It declares no role.</p>
+			) : (
+				<div className="flex flex-col gap-4">
+					{refusal && (
+						<Banner
+							tone="danger"
+							title="The authority refused the change"
+							onDismiss={() => setRefusal(null)}
+						>
+							{refusal}
+						</Banner>
+					)}
+					{abilities.map((role) => (
+						<section
+							key={role.role}
+							aria-label={`Role ${role.role}`}
+							className="flex flex-col gap-3 rounded-lg border p-4"
+						>
+							<h4 className="type-section-title">
+								What {article(role.role).toLowerCase()} {role.role} can do
+							</h4>
+							<RoleAbilitiesList abilities={role} />
+							<div className="flex flex-col gap-2">
+								<p className="type-emphasis">Who has it</p>
+								{!installed(offer) || !installation ? (
+									<p className="text-muted-foreground">
+										Nobody, until it is installed.
+									</p>
+								) : grantsError !== undefined ? (
+									<Refusal error={grantsError} what="who has this role" />
+								) : (
+									<Holders
+										role={role.role}
+										target={offer.target}
+										grants={(grants ?? []).filter((g) => g.role === role.role)}
+										subjects={subjects}
+										teamControls={teamControls}
+										busy={busy}
+										onRevoke={(g) =>
+											change(clients.installations.revokeRole(request(g)))
+										}
+									/>
+								)}
+								{installed(offer) &&
+									installation &&
+									grantsError === undefined &&
+									(installation.status === HostInstallationStatus.ACTIVE ? (
+										<SolutionRoleGrantForm
+											roles={[role.role]}
+											fixedRole={role.role}
+											subjects={subjects}
+											busy={busy}
+											submitLabel={`Give ${role.role} access`}
+											onGrant={(grant) =>
+												change(clients.installations.grantRole(request(grant)))
+											}
+										/>
+									) : (
+										<p className="text-muted-foreground">
+											It can be given once the installation is active.
+										</p>
+									))}
+							</div>
+						</section>
+					))}
+				</div>
+			)}
+		</Card>
+	);
+}
+
+/**
+ * Removing one holder of a role: one click, unless it is the role's last
+ * holder, when it first says that nobody will have the role and asks again.
+ */
+export function RemoveHolder({
+	role,
+	target,
+	name,
+	last,
+	busy,
+	onRemove,
+}: {
+	role: string;
+	target: string;
+	name: string;
+	/** Whether this is the role's only holder. */
+	last: boolean;
+	busy: boolean;
+	onRemove: () => void;
+}) {
+	const [confirming, setConfirming] = useState(false);
+	if (confirming)
+		return (
+			<span
+				role="alert"
+				className="flex flex-wrap items-center gap-2 text-warning"
+			>
+				Nobody will have {role} access to {target}.
+				<Button
+					size="sm"
+					variant="destructive"
+					disabled={busy}
+					onClick={() => {
+						setConfirming(false);
+						onRemove();
+					}}
+				>
+					Remove anyway
+				</Button>
+				<Button
+					size="sm"
+					variant="outline"
+					onClick={() => setConfirming(false)}
+				>
+					Keep
+				</Button>
+			</span>
+		);
+	return (
+		<Button
+			size="sm"
+			variant="outline"
+			disabled={busy}
+			aria-label={`Remove ${role} from ${name}`}
+			onClick={() => (last ? setConfirming(true) : onRemove())}
+		>
+			Remove
+		</Button>
+	);
+}
+
+/** The teams and people holding one role, each removable. */
+function Holders({
+	role,
+	target,
+	grants,
+	subjects,
+	teamControls,
+	busy,
+	onRevoke,
+}: {
+	role: string;
+	target: string;
+	grants: readonly RoleGrant[];
+	subjects?: readonly SetupSubject[];
+	teamControls?: (team: SetupSubject) => ReactNode;
+	busy: boolean;
+	onRevoke: (grant: RoleGrant) => void;
+}) {
+	if (!grants.length)
+		return <p className="text-muted-foreground">Nobody has it yet.</p>;
+	return (
+		<ul className="flex flex-col gap-2" aria-label={`Who has ${role}`}>
+			{grants.map((g) => {
+				const kind = g.teamId ? "team" : "person";
+				const subject = subjects?.find(
+					(s) => s.kind === kind && s.id === (g.teamId || g.personId),
+				) ?? {
+					kind,
+					id: g.teamId || g.personId,
+					label: g.teamId || g.personId,
+				};
+				const name = holderName(g, subjects);
+				return (
+					<li
+						key={g.role + g.personId + g.teamId}
+						className="flex flex-col gap-2 rounded-md bg-muted/40 p-2"
+					>
+						<div className="flex flex-wrap items-center justify-between gap-2">
+							<span>
+								{subject.href ? (
+									<a className="underline" href={subject.href}>
+										{name}
+									</a>
+								) : (
+									name
+								)}
+								{subject.detail && (
+									<span className="text-muted-foreground">
+										{" "}
+										· {subject.detail}
+									</span>
+								)}
+							</span>
+							<RemoveHolder
+								role={role}
+								target={target}
+								name={name}
+								last={grants.length === 1}
+								busy={busy}
+								onRemove={() => onRevoke(g)}
+							/>
+						</div>
+						{kind === "team" && teamControls?.(subject)}
+					</li>
+				);
+			})}
+		</ul>
+	);
+}
+
+/**
+ * What an engineer reads, closed until asked for: the consent's identifiers,
+ * the modules the solution may call as itself (the permission ceiling), each
+ * role's reach with its path and operations, and the operations each role
+ * covers, module by module.
+ */
+function TechnicalDetails({ offer }: { offer: ReviewedOffer }) {
+	const groups = reach(offer.roles);
+	const ceiling = ceilingEntries(offer);
+	const anyTools = groups.some((g) => g.rows.some((r) => r.tools.length > 0));
+	const installation = offer.installation;
+	return (
+		<Disclosure title="Technical details" headingLevel={3}>
+			<div className="flex flex-col gap-4">
+				<dl className="grid gap-3 sm:grid-cols-3">
+					<Fact term="Release generation">
+						{offer.approval ? String(offer.approval.generation) : "—"}
+					</Fact>
+					<Fact term="Installation revision">
+						{installation ? String(installation.revision) : "—"}
+					</Fact>
+					<Fact term="Agent role">{installation?.role || "—"}</Fact>
+				</dl>
+				{(installation?.unreached.length ?? 0) > 0 && (
+					<div>
+						<p className="type-emphasis">
+							Unreached, as the authority states it
+						</p>
+						<ul className="list-disc pl-5 font-mono type-caption">
+							{installation?.unreached.map((u) => (
+								<li key={u}>{u}</li>
+							))}
+						</ul>
+					</div>
+				)}
+				<div>
+					<p className="type-emphasis">Permission ceiling</p>
+					<p className="text-muted-foreground">
+						Each module the solution calls as itself, with the most it may ask
+						there, and each module its declaration depends on, which it reaches
+						as the person using it.
+					</p>
+					{ceiling.length === 0 ? (
+						<p>It binds no module and depends on none.</p>
+					) : (
+						<List variant="divided" label="Permission ceiling">
+							{ceiling.map((c) => (
+								<ListItem
+									key={c.key}
+									description={
+										<span className="flex flex-col gap-1">
+											{c.scopes.length > 0 ? (
+												<Scopes scopes={c.scopes} confined={false} />
+											) : c.presence === undefined ? (
+												<span className="text-muted-foreground">
+													Reached, but granted no scope of its own.
+												</span>
+											) : (
+												<span className="text-muted-foreground">
+													Reached as the person using the solution, with that
+													person&apos;s own access there; the solution itself
+													asks nothing of it.
+												</span>
+											)}
+											{c.presence !== undefined && (
+												<span className="text-muted-foreground">
+													{presenceText(c.presence)}
+												</span>
+											)}
+										</span>
+									}
+								>
+									{c.module}
+								</ListItem>
+							))}
+						</List>
+					)}
+				</div>
+				<div>
+					<p className="type-emphasis">Each role&apos;s reach</p>
+					<ul className="list-disc pl-5 type-caption" aria-label="Reach paths">
+						{offer.roles.flatMap((role) =>
+							role.reach.map((row) => (
+								<li
+									key={`${role.name}:${row.via}:${row.path.join(">")}:${row.confinement}`}
+								>
+									<span className="font-mono">
+										{role.name} — {row.via} {row.path.join(" → ")}
+										{row.confinement ? ` (${row.confinement})` : ""}
+									</span>
+									{row.scopes.length > 0 && (
+										<>
+											{" "}
+											<Scopes scopes={row.scopes} confined={false} />
+										</>
+									)}
+								</li>
+							)),
+						)}
+					</ul>
+				</div>
+				<div className="flex flex-col gap-2">
+					<p className="type-emphasis">Operations each role covers</p>
+					{!offer.toolsComposed && (
+						<p className="text-muted-foreground">
+							Agent tools are not listed: this host does not read them.
+						</p>
+					)}
+					{groups.length === 0 ? (
+						<p>No delivered module declares an operation these roles cover.</p>
+					) : (
+						groups.map((group) => (
+							<Disclosure
+								key={group.module}
+								headingLevel={4}
+								title={`${group.module} · ${group.rows.length} ${
+									group.rows.length === 1 ? "operation" : "operations"
+								} · ${accessMix(group.rows.map((row) => row.requires))}`}
+							>
+								<ReachTable
+									group={group}
+									roles={offer.roles}
+									showTools={anyTools}
+								/>
+							</Disclosure>
+						))
+					)}
+				</div>
+			</div>
+		</Disclosure>
+	);
+}
+
+/**
+ * The operations every role covers, one row per operation with a column per
+ * role, grouped by module and banded by the access each demands (reads apart
+ * from writes): for the technical reader, behind the disclosure.
  */
 interface ReachRow {
 	module: string;
@@ -335,8 +852,6 @@ interface ReachGroup {
 	module: string;
 	rows: ReachRow[];
 	bands: AccessBand[];
-	/** Roles reaching exactly the same operations here, named together. */
-	coinciding: string[][];
 }
 
 function reach(roles: readonly OfferRole[]): ReachGroup[] {
@@ -361,16 +876,11 @@ function reach(roles: readonly OfferRole[]): ReachGroup[] {
 			module: row.module,
 			rows: [],
 			bands: [],
-			coinciding: [],
 		};
 		group.rows.push(row);
 		groups.set(row.module, group);
 	}
 	for (const group of groups.values()) {
-		// Reads and writes apart. "Why has this role so many permissions" is
-		// answered by the split, never by the total: forty reads and eleven
-		// writes are not the same breadth, and a flat list of fifty-two rows
-		// says only "fifty-two".
 		const bands = new Map<string, ReachRow[]>();
 		for (const row of group.rows) {
 			const level = accessLevel(row.requires);
@@ -379,165 +889,51 @@ function reach(roles: readonly OfferRole[]): ReachGroup[] {
 		group.bands = [...bands.entries()]
 			.sort(([a], [b]) => byAccess(a, b))
 			.map(([level, rows]) => ({ level, rows }));
-		// Two roles reaching the same operations in a module is the fact a
-		// reader would otherwise have to find by diffing two columns over fifty
-		// rows. It is stated instead.
-		const signatures = new Map<string, string[]>();
-		for (const role of roles) {
-			const reached = group.rows
-				.filter((row) => row.roles.has(role.name))
-				.map((row) => row.operation)
-				.sort()
-				.join("\u0000");
-			if (!reached) continue;
-			signatures.set(reached, [...(signatures.get(reached) ?? []), role.name]);
-		}
-		group.coinciding = [...signatures.values()].filter(
-			(names) => names.length > 1,
-		);
 	}
 	return [...groups.values()];
 }
 
-function RolesSection({
-	offer,
-	offerError,
-}: {
-	offer?: ReviewedOffer;
-	offerError?: unknown;
-}) {
-	const groups = offer ? reach(offer.roles) : [];
-	// A column that can only ever repeat one sentence is not a column. When no
-	// tool is exposed anywhere, the banner above says so once and the column is
-	// gone, rather than printing the same words in every cell.
-	const anyTools = groups.some((g) => g.rows.some((r) => r.tools.length > 0));
-	return (
-		<Card
-			title="Roles and what they grant"
-			description="What each role grants, limited to what this installation owns, and the module operations that covers. The authority checks them again on every call."
-		>
-			{!offer ? (
-				<Refusal error={offerError} what="the roles" />
-			) : (
-				<div className="flex flex-col gap-4">
-					{!offer.toolsComposed && (
-						<Banner
-							tone="info"
-							title="Tool exposure is unavailable from this host."
-						>
-							No operation below can be shown as an agent tool, and nothing
-							about this installation is wrong.
-						</Banner>
-					)}
-					<div>
-						<p className="type-emphasis">Permission ceiling</p>
-						<p className="text-muted-foreground">
-							What the solution may ask of each module it calls.
-						</p>
-						{offer.ceiling.length === 0 ? (
-							<p>The solution calls no other module.</p>
-						) : (
-							<List variant="divided" label="Permission ceiling">
-								{offer.ceiling.map((c) => (
-									<ListItem
-										key={c.binding}
-										description={
-											// A module with no scope under it read as a bare name, which
-											// looks like a value still loading. It is a real answer and
-											// says so.
-											c.scopes.length === 0 ? (
-												<span className="text-muted-foreground">
-													Reached, but granted no scope of its own.
-												</span>
-											) : (
-												<Scopes scopes={c.scopes} confined={false} />
-											)
-										}
-									>
-										{c.module}
-									</ListItem>
-								))}
-							</List>
-						)}
-					</div>
-					{offer.roles.length === 0 ? (
-						<p>This solution declares no role.</p>
-					) : (
-						<>
-							<div>
-								<p className="type-emphasis">Roles</p>
-								<List variant="divided" label="Roles">
-									{offer.roles.map((role) => (
-										<ListItem
-											key={role.name}
-											description={<Scopes scopes={role.scopes} confined />}
-											// The total alone is what made the installer's breadth
-											// unreadable; the split is the answer.
-											meta={
-												role.capabilities.length === 0
-													? "No operation"
-													: `${role.capabilities.length} ${
-															role.capabilities.length === 1
-																? "operation"
-																: "operations"
-														} · ${accessMix(
-															role.capabilities.map((c) => c.requires),
-														)}`
-											}
-										>
-											{role.name}
-										</ListItem>
-									))}
-								</List>
-							</div>
-							<div className="flex flex-col gap-2">
-								<p className="type-emphasis">What the roles reach</p>
-								{groups.length === 0 ? (
-									<p>No composed operation is covered by any role.</p>
-								) : (
-									groups.map((group) => (
-										<Disclosure
-											key={group.module}
-											headingLevel={4}
-											// "requires documents: read" understated a module whose
-											// fifty-two operations include eleven writes. The line
-											// names every access level in it, counted.
-											title={
-												<span>
-													{`${group.module} · ${group.rows.length} ${
-														group.rows.length === 1 ? "operation" : "operations"
-													} · ${accessMix(
-														group.rows.map((row) => row.requires),
-													)}`}
-													{/* On the closed line, because the point of saying
-													    it is that the reader does not have to open the
-													    module and diff two columns over fifty rows. */}
-													{group.coinciding.map((names) => (
-														<span
-															key={names.join()}
-															className="block type-card-description text-muted-foreground"
-														>
-															{`${nameList(names)} reach exactly the same operations here.`}
-														</span>
-													))}
-												</span>
-											}
-										>
-											<ReachTable
-												group={group}
-												roles={offer.roles}
-												showTools={anyTools}
-											/>
-										</Disclosure>
-									))
-								)}
-							</div>
-						</>
-					)}
-				</div>
-			)}
-		</Card>
-	);
+/**
+ * One entry of the permission ceiling: a module the solution binds (what it
+ * may ask there as itself) or one its declaration depends on (reached as the
+ * person using it; the solution itself asks nothing of it).
+ */
+interface CeilingEntry {
+	key: string;
+	module: string;
+	scopes: readonly OfferScope[];
+	/** "required" or "optional" when the declaration depends on the module. */
+	presence?: string;
+}
+
+function ceilingEntries(offer: ReviewedOffer): CeilingEntry[] {
+	const entries: CeilingEntry[] = offer.ceiling.map((c) => ({
+		key: `binding:${c.binding}`,
+		module: c.module,
+		scopes: c.scopes,
+	}));
+	for (const edge of offer.edgeDependencies) {
+		const bound = entries.find((e) => e.module === edge.module);
+		if (bound) {
+			bound.presence = edge.presence;
+			continue;
+		}
+		entries.push({
+			key: `edge:${edge.module}`,
+			module: edge.module,
+			scopes: [],
+			presence: edge.presence,
+		});
+	}
+	return entries;
+}
+
+function presenceText(presence: string): string {
+	return presence === "required"
+		? "Required: the solution does not work without it."
+		: presence === "optional"
+			? "Optional: the solution works without it."
+			: `Presence: ${presence}.`;
 }
 
 function ReachTable({
@@ -614,114 +1010,6 @@ function ReachTable({
 	);
 }
 
-function HoldersSection({
-	organizationId,
-	offer,
-	offerError,
-	grants,
-	grantsError,
-	subjects,
-	clients,
-	onChanged,
-}: {
-	organizationId: string;
-	offer?: ReviewedOffer;
-	offerError?: unknown;
-	grants?: RoleGrant[];
-	grantsError?: unknown;
-	subjects?: readonly SetupSubject[];
-	clients: SetupClients;
-	onChanged: () => void;
-}) {
-	const [busy, setBusy] = useState(false);
-	const [refusal, setRefusal] = useState<string | null>(null);
-	const installation = offer?.installation;
-	const change = (what: Promise<unknown>) => {
-		setBusy(true);
-		setRefusal(null);
-		what
-			.then(onChanged)
-			.catch((error: unknown) => setRefusal(refusalOf(error)))
-			.finally(() => setBusy(false));
-	};
-	const request = (grant: {
-		role: string;
-		personId: string;
-		teamId: string;
-	}) => ({
-		organizationId,
-		installationId: installation?.id ?? "",
-		...grant,
-	});
-	return (
-		<Card
-			title="Who holds them"
-			description="The people and teams holding a role on this installation. A role granted here gives its holder the operations and tools above, on this installation only."
-		>
-			<div className="flex flex-col gap-3">
-				{!offer ? (
-					<Refusal error={offerError} what="who holds the roles" />
-				) : !installed(offer) || !installation ? (
-					<p>Nobody holds a role until the solution is installed.</p>
-				) : grantsError !== undefined ? (
-					<Refusal error={grantsError} what="who holds the roles" />
-				) : (
-					<>
-						{refusal && (
-							<Banner
-								tone="danger"
-								title="The authority refused the change"
-								onDismiss={() => setRefusal(null)}
-							>
-								{refusal}
-							</Banner>
-						)}
-						{!grants || grants.length === 0 ? (
-							<p>No person or team holds a role on this installation yet.</p>
-						) : (
-							<List variant="divided" label="Role grants">
-								{grants.map((g) => (
-									<ListItem
-										key={g.role + g.personId + g.teamId}
-										actions={
-											<Button
-												size="sm"
-												variant="outline"
-												disabled={busy}
-												onClick={() =>
-													change(clients.installations.revokeRole(request(g)))
-												}
-											>
-												Revoke {g.role} from {holderName(g, subjects)}
-											</Button>
-										}
-									>
-										{g.role} · {holderName(g, subjects)}
-									</ListItem>
-								))}
-							</List>
-						)}
-						{installation.status === HostInstallationStatus.ACTIVE ? (
-							<SolutionRoleGrantForm
-								roles={offer.roles.map((r) => r.name)}
-								subjects={subjects}
-								busy={busy}
-								onGrant={(grant) =>
-									change(clients.installations.grantRole(request(grant)))
-								}
-							/>
-						) : (
-							<p className="text-muted-foreground">
-								A role can be granted once the installation is active.
-							</p>
-						)}
-					</>
-				)}
-			</div>
-		</Card>
-	);
-}
-
 export function SolutionRoleGrantForm({
 	roles,
 	subjects,
@@ -750,7 +1038,10 @@ export function SolutionRoleGrantForm({
 	const chosen = named ? subject : id.trim() ? subjectKey(kind, id.trim()) : "";
 	return (
 		<form
-			className="flex flex-col gap-3"
+			className={
+				fixedRole ? "flex flex-wrap items-end gap-3" : "flex flex-col gap-3"
+			}
+			aria-label={fixedRole ? `Give ${fixedRole} to someone` : undefined}
 			onSubmit={(event) => {
 				event.preventDefault();
 				if (
@@ -769,9 +1060,7 @@ export function SolutionRoleGrantForm({
 				});
 			}}
 		>
-			{fixedRole ? (
-				<p>Role: {fixedRole}</p>
-			) : (
+			{fixedRole ? null : (
 				<Field label="Role">
 					{(control) => (
 						<select
