@@ -360,8 +360,8 @@ func requireTeamAdmin(ctx context.Context, actorID, teamID string) (string, erro
 		return "", status.Error(codes.PermissionDenied, "not a member of this team")
 	}
 	// An org admin/owner administers every team in their org — without this, a
-	// freshly created team (zero members) is a bootstrap deadlock: nobody short
-	// of platform super_admin could ever add the FIRST member. (Found by a
+	// freshly created team (zero members) is a bootstrap deadlock: nobody
+	// could ever add the FIRST member. (Found by a
 	// consumer's live provisioning flow.)
 	role, err := lookupMembership(ctx, orgID, actorID)
 	if err != nil {

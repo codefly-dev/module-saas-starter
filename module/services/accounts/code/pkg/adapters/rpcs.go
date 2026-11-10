@@ -557,7 +557,7 @@ func (s *TeamServer) DeleteTeam(ctx context.Context, req *gen.DeleteTeamRequest)
 
 // requireRoleScope gates mutations on a role scope. Global roles (OrgId
 // empty) require platform super_admin; org-scoped roles require org admin
-// on the target org (or platform super_admin bypass).
+// on the target org; a platform role confers nothing there.
 func requireRoleScope(ctx context.Context, actorID, orgID string) error {
 	if orgID == "" {
 		return requirePlatformRole(ctx, actorID, "super_admin")
