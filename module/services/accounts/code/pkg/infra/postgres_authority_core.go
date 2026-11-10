@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -726,7 +727,7 @@ func (t coreTx) moduleInstallations(where string, args ...any) ([]domain.Install
 		envelope = uint64(committed)
 	}
 	rows, err := t.q.Query(t.ctx, `
-		SELECT i.id, i.org_id, i.registry_principal_id, i.status, i.revision + COALESCE(r.raised, 0), i.scope
+		SELECT i.id, i.org_id, i.registry_principal_id, i.status, i.revision + COALESCE(r.raised, 0), i.scope, COALESCE(r.owned, '{}'::jsonb)
 		  FROM public.installations i
 		  LEFT JOIN public.authority_core_module_revisions r ON r.installation_id = i.id
 		 WHERE i.kind = 'module' AND i.registry_principal_id = ANY($1)`+where+`
@@ -742,9 +743,14 @@ func (t coreTx) moduleInstallations(where string, args ...any) ([]domain.Install
 		var id, org, principal uuid.UUID
 		var status string
 		var revision int64
-		var consented []byte
-		if err := row.Scan(&id, &org, &principal, &status, &revision, &consented); err != nil {
+		var consented, ownedRaw []byte
+		if err := row.Scan(&id, &org, &principal, &status, &revision, &consented, &ownedRaw); err != nil {
 			return record{}, err
+		}
+		// What the core attached to this installation, kept beside the record.
+		owned := map[string][]string{}
+		if err := json.Unmarshal(ownedRaw, &owned); err != nil {
+			return record{}, fmt.Errorf("module installation %s owns an unreadable set: %w", id, err)
 		}
 		// The revision the core seals to and checks moves with everything the
 		// consent's bindings are decided from: accounts' own revision (the
@@ -756,7 +762,7 @@ func (t coreTx) moduleInstallations(where string, args ...any) ([]domain.Install
 		// the module): a module page's roles reach a module that checks owners
 		// as the data this installation owns, as a solution's do (RBAC-1).
 		return record{inst: domain.Installation{ID: id.String(), Organization: org.String(), Target: modules[principal],
-			Status: moduleInstallationStatus(status), Revision: uint64(revision) + envelope, Owned: map[string][]string{}}, scope: consented}, nil
+			Status: moduleInstallationStatus(status), Revision: uint64(revision) + envelope, Owned: owned}, scope: consented}, nil
 	})
 	if err != nil {
 		return nil, err
@@ -984,10 +990,12 @@ func (t coreTx) withComposedPrincipals(insts []*domain.Installation) error {
 	return nil
 }
 
-// raiseModuleInstallation applies the one write the core makes to a module's
-// own installation record: raising its revision, when a redelivery narrows the
-// module. It reports whether inst is such a record at all; any other change to
-// one is refused, because the record is accounts' own. An installation the
+// raiseModuleInstallation applies the writes the core makes to a module's own
+// installation record: raising its revision (a redelivery that narrows the
+// module, a detachment), and recording what it owns (an attachment to a module
+// page's composition installation, RBAC-1), both kept beside the record. It
+// reports whether inst is such a record at all; any other change to one is
+// refused, because the record is accounts' own. An installation the
 // core decided (a solution's, or a module page's from before composition) has
 // its own row, is written like a solution's and is never one of these.
 func (t coreTx) raiseModuleInstallation(inst domain.Installation) (bool, error) {
@@ -1007,14 +1015,29 @@ func (t coreTx) raiseModuleInstallation(inst domain.Installation) (bool, error) 
 	if err != nil {
 		return true, fmt.Errorf("module installation %s is not one accounts holds: %w", inst.ID, err)
 	}
+	owned := map[string][]string{}
+	for kind, ids := range inst.Owned {
+		if len(ids) > 0 {
+			owned[kind] = ids
+		}
+	}
+	changed := !maps.EqualFunc(owned, current.Owned, slices.Equal[[]string])
 	if current.Organization != inst.Organization || current.Target != inst.Target || current.Status != inst.Status ||
-		inst.AgentRole != "" || inst.PrincipalID != current.PrincipalID || inst.InstalledBy != "" || len(inst.Owned) > 0 || inst.Revision <= current.Revision {
-		return true, domain.Refuse("module installation %s is accounts' own record: the authority core only raises its revision; it records no attachment or other change on it", inst.ID)
+		inst.AgentRole != "" || inst.PrincipalID != current.PrincipalID || inst.InstalledBy != "" || inst.Revision < current.Revision ||
+		(inst.Revision == current.Revision && !changed) {
+		return true, domain.Refuse("module installation %s is accounts' own record: the authority core only raises its revision and records what it owns; it makes no other change on it", inst.ID)
+	}
+	if len(owned) > 0 && inst.PrincipalID == "" {
+		return true, domain.Refuse("module installation %s holds no principal, so it owns nothing", inst.ID)
+	}
+	ownedRaw, err := json.Marshal(owned)
+	if err != nil {
+		return true, err
 	}
 	_, err = t.q.Exec(t.ctx, `
-		INSERT INTO public.authority_core_module_revisions (installation_id, raised) VALUES ($1, $2)
-		ON CONFLICT (installation_id) DO UPDATE SET raised = public.authority_core_module_revisions.raised + EXCLUDED.raised`,
-		inst.ID, int64(inst.Revision-current.Revision))
+		INSERT INTO public.authority_core_module_revisions (installation_id, raised, owned) VALUES ($1, $2, $3)
+		ON CONFLICT (installation_id) DO UPDATE SET raised = public.authority_core_module_revisions.raised + EXCLUDED.raised, owned = EXCLUDED.owned`,
+		inst.ID, int64(inst.Revision-current.Revision), ownedRaw)
 	return true, err
 }
 

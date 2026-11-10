@@ -1101,10 +1101,12 @@ A module declaring no roles is not there: it is accounts' own `installations`
 row of kind `module`, an administrator's install with consent, within the
 module envelope, revoked by an uninstall or by a ceiling that no longer allows
 the organization, all in accounts' own transactions. The core reads those rows
-live as its installations and installs no such module itself. Its one write to a module's installation, raising its
-revision when a redelivery narrows the module, is kept beside the row in
-`authority_core_module_revisions`, because `installations.revision` is
-lifecycle-owned. The revision the core reads also adds the committed
+live as its installations and installs no such module itself. Its writes to a module's installation, raising its
+revision when a redelivery narrows the module or a detachment ends a grant, and
+recording what a module page's composition installation owns (an attachment,
+migration 71), are kept beside the row in `authority_core_module_revisions`,
+because `installations.revision` is lifecycle-owned; any other change to the
+row is refused. The revision the core reads also adds the committed
 envelope revision, so an envelope write ends every capability decided under
 the ceiling it replaced.
 
