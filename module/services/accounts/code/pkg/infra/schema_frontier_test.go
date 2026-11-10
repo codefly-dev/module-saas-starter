@@ -23,11 +23,11 @@ func TestSchemaRefusal(t *testing.T) {
 	}{
 		{"current", requiredSchemaVersion, false, nil, ""},
 		{"store ahead of the binary (accounts rolled back)", requiredSchemaVersion + 3, false, nil, ""},
-		{"behind names the missing range", requiredSchemaVersion - 2, false, nil, "migrations 73 through 74 are not applied"},
+		{"behind names the missing range", requiredSchemaVersion - 2, false, nil, "migrations 74 through 75 are not applied"},
 		{"mid-migration (dirty at the required version)", requiredSchemaVersion, true, nil, "marked dirty"},
 		{"failed migration (dirty below)", requiredSchemaVersion - 1, true, nil, "marked dirty"},
 		{"unmigrated", 0, false, pgx.ErrNoRows, "has not been migrated"},
-		{"no read grant is a store behind migration 74", 0, false, &pgconn.PgError{Code: "42501"}, "has not applied migration 74"},
+		{"no read grant is a store behind migration 74", 0, false, &pgconn.PgError{Code: "42501"}, "has not applied migration 74, which lets accounts"},
 		{"no ledger table", 0, false, &pgconn.PgError{Code: "42P01"}, "no schema version table"},
 		{"other read failure is surfaced", 0, false, errors.New("connection reset"), "connection reset"},
 	}
