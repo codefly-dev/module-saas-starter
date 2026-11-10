@@ -21,6 +21,20 @@ vi.mock("@/lib/auth", () => ({
 		isLoading: false,
 	}),
 }));
+vi.mock("@/components/empty-state", () => ({
+	EmptyState: ({
+		title,
+		description,
+	}: {
+		title: string;
+		description: string;
+	}) => (
+		<div>
+			<h1>{title}</h1>
+			<p>{description}</p>
+		</div>
+	),
+}));
 vi.mock("@/components/admin-layout", () => ({
 	AdminLayout: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
@@ -46,7 +60,11 @@ it.each(["/admin/users", "/admin/teams-other", "/admin/billing"])(
 		state.pathname = path;
 		render(<AdminRouteShell>Restricted</AdminRouteShell>);
 		expect(screen.queryByText("Restricted")).toBeNull();
-		await waitFor(() => expect(state.replace).toHaveBeenCalledWith("/"));
+		expect(screen.getByText("You don't have access to Admin")).toBeTruthy();
+		expect(
+			screen.getByText(/Your role in this organization is member/),
+		).toBeTruthy();
+		expect(state.replace).not.toHaveBeenCalled();
 	},
 );
 it("still requires authentication", async () => {
