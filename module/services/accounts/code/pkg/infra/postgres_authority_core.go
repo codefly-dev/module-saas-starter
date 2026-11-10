@@ -32,7 +32,6 @@ import (
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
-	"github.com/codefly-dev/authority/libraries/authority-core/go/scope"
 	resources "github.com/codefly-dev/authority/libraries/resources/go"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/workcontext"
@@ -255,8 +254,9 @@ func (t coreTx) members(organization, person string) ([]domain.Person, error) {
 }
 
 // The organization roles a member holds, as the core names them: the
-// membership's administrator role ("owner" or "admin", every action on every
-// kind the audience serves), the members' contributed permissions, and one
+// membership's administrator role ("owner" or "admin", which the core reads to
+// let a person administer installations and carries no scope of its own), the
+// members' contributed permissions, and one
 // role per role assignment and per live scope grant reaching them, directly
 // or through a team.
 const (
@@ -291,7 +291,10 @@ func (t coreTx) OrgRole(organization, name string) (domain.OrgRole, error) {
 	}
 	switch {
 	case name == "owner" || name == "admin":
-		role.Scopes = []domain.RoleScope{{Kind: scope.AnyKind, Actions: []string{scope.AnyAction}}}
+		// Administering is not reading: the role names who may install, grant and
+		// manage members, and holds no scope. What an owner or admin may do to an
+		// audience's data is exactly what a grant, a team or the members' own
+		// permissions give them.
 		return role, nil
 	case name == membersRole:
 		for _, p := range business.MemberPermissions() {

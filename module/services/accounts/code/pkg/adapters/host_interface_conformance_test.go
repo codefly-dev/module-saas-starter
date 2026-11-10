@@ -495,7 +495,9 @@ func runHostInterfaceFixture(t *testing.T) {
 		// who holds no role there, and a Globex member at Acme's content. At
 		// documents, which checks owners, no organization role reaches anything
 		// on a person's own session, an administrator's every kind included
-		// (RBAC-4a); at the model only its shared kinds.
+		// (RBAC-4a); at the model only its shared kinds. The administrators hold
+		// each kind asked of them by the fixture's operator role, not by their
+		// membership role.
 		Matrix: []conformance.Expectation{
 			{Token: "dev-bob", Audience: "records", Kind: "example-entries", Action: "read", Allowed: true},
 			{Token: "dev-bob", Audience: "records", Kind: "example-entries", Action: "write", Allowed: false},
@@ -511,8 +513,8 @@ func runHostInterfaceFixture(t *testing.T) {
 	})
 
 	// The artifact target (conformance RunArtifacts): the one artifact decision
-	// every host makes, the shared core's. Alex administers Acme, so he holds
-	// every action on every kind; the approver holds the policy's activate and
+	// every host makes, the shared core's. Alex administers Acme and holds the
+	// policy's actions by the fixture's operator role; the approver holds the policy's activate and
 	// run through a role and the runner its run alone, which is what proves
 	// consent is the action rather than an administrator tier. Globex's
 	// administrator is the outsider: the module is installed at Acme only (its

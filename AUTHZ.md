@@ -1017,12 +1017,12 @@ A consuming solution does not hand-write the catalog. It ships a
 3. A permission may declare `members: true`: every current member of an
    organization then holds it there, as a person, without a role assignment.
    It is how a contribution gives ordinary members a least-privilege read (a
-   person's own records, say) while an org-wide read stays with the owners
-   and admins, who already hold every permission through their membership.
+   person's own records, say) while an org-wide read stays with whoever is
+   granted it: the membership role "owner" or "admin" administers the
+   organization and holds no permission by itself.
    The grant is evaluated only in the Work Context authority check
    (`workContextPermissionAllowed`), for the mint and the revision recheck
-   alike, and it follows the same membership rule as the owner/admin branch
-   beside it: it never reaches a delegated agent actor, which still needs its
+   alike, and it is held only by a current member as a person: it never reaches a delegated agent actor, which still needs its
    own grant, and like a NULL-scope assignment it is organization-wide. It is
    fixed at build time from the generated catalog, never read from a request.
    The `<namespace>:catalog` role is unchanged by it.

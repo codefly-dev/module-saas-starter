@@ -244,7 +244,8 @@ permissions:
 A permission every ordinary member of an organization should hold, such as
 reading their own records, adds `members: true`. That member holds it as a
 person with no role assignment; a delegated agent actor never does. Owners and
-admins already hold every permission. See `AUTHZ.md` "Built-in role catalog
+admins hold no permission by their membership role: what they may do is what a
+grant, a team or `members: true` gives them. See `AUTHZ.md` "Built-in role catalog
 import".
 
 A platform super_admin then allows the binding for the **calling** principal in
