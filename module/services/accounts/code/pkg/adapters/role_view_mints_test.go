@@ -230,6 +230,7 @@ func testRoleViewHoldsNoOrganizationRole(t *testing.T, conn grpc.ClientConnInter
 	t.Helper()
 	invitations := gen.NewInvitationServiceClient(conn)
 	installations := gen.NewInstallationServiceClient(conn)
+	usage := gen.NewUsageServiceClient(conn)
 
 	_, err := invitations.ListInvitations(person, &gen.ListInvitationsRequest{OrgId: fixtureOrganization})
 	require.NoError(t, err, "outside the view the administrator lists the organization's invitations")
@@ -240,6 +241,14 @@ func testRoleViewHoldsNoOrganizationRole(t *testing.T, conn grpc.ClientConnInter
 	require.Equal(t, codes.PermissionDenied, status.Code(err), "inside the view: %v", err)
 	require.Contains(t, status.Convert(err).Message(), "views as")
 	_, err = installations.ListOrganizationInstallations(viewing, &gen.ListOrganizationInstallationsRequest{OrgId: fixtureOrganization})
+	require.Equal(t, codes.PermissionDenied, status.Code(err), "inside the view: %v", err)
+	require.Contains(t, status.Convert(err).Message(), "views as")
+
+	// requireOrgPermission (usage): refused inside the view, by the view. The fixture
+	// administrator holds no RBAC assignment for entitlements, so there is no
+	// outside-the-view pass to assert here; the message is the proof, because the
+	// permission check's own refusal does not say the session views.
+	_, err = usage.GetUsage(viewing, &gen.GetUsageRequest{OrganizationId: fixtureOrganization, Meter: "unknown_meter"})
 	require.Equal(t, codes.PermissionDenied, status.Code(err), "inside the view: %v", err)
 	require.Contains(t, status.Convert(err).Message(), "views as")
 }

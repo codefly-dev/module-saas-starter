@@ -368,6 +368,9 @@ func requireBillingAdmin(ctx context.Context, actorID, orgID string) error {
 // Service methods (AddTeamMember etc.) skip a redundant WithControlPlane
 // → 3 transactions per request instead of 4.
 func requireTeamAdmin(ctx context.Context, actorID, teamID string) (string, error) {
+	if err := refuseInRoleView(ctx); err != nil {
+		return "", err
+	}
 	if role, err := platformRole(ctx, actorID); err == nil && role == "super_admin" {
 		// Even for super_admin we still need to resolve the org so
 		// the downstream WithOrgTx is correctly scoped.

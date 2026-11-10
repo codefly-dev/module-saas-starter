@@ -82,11 +82,15 @@ func refuseInRoleView(ctx context.Context) error {
 // organisation and the new token would not be a view's, so a view refuses it by name.
 //
 // The organization-role helpers (requireOrgAdmin, requireOrgOwner, requireOrgPermission,
-// requireBillingAdmin) call refuseInRoleView first: an organization role is the
-// person's own, not the viewed roles', so a session that views holds none of it.
-// They are the one place accounts decides by organization role, so the declared
-// reads that a view admits (the invitation list, the installation list, the SSO
-// configuration, usage) cannot show an administrator what a viewer cannot.
+// requireBillingAdmin, requireTeamAdmin) call refuseInRoleView first: an
+// organization role is the person's own, not the viewed roles', so a session that
+// views holds none of it. That covers the handlers' organization-role gates, so the
+// declared reads a view admits (the invitation list, the installation list, the SSO
+// configuration, usage) cannot show an administrator what a viewer cannot. It is not
+// every place accounts reads an organization role: three source-operation lookups in
+// the business layer and the RBAC-grant reads (ListMyAccessibleScopes, GetSource,
+// ListSources, the resource branch of QueryAuditLog) still answer by the person's own
+// grants, and are the end state's work (the held set), not this guard's.
 //
 // roleViewWrites are the accounts writes a session may make while viewing as
 // some of its roles, because they act on the person's own account or content and
