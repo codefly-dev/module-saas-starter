@@ -293,8 +293,8 @@ func (s *UserServer) FindUserByIdentity(ctx context.Context, req *gen.FindUserBy
 	return service.FindUserByIdentity(ctx, req)
 }
 
-// ListUserIdentities returns all linked providers for a user. Same
-// gating as AddIdentity — the user themselves or a platform admin.
+// ListUserIdentities returns all linked providers for a user: the user
+// themselves, or a platform admin (reading, unlike linking, takes no sign-in).
 // Without this, any caller could enumerate the auth providers any user
 // has connected (a subtle privacy leak useful for targeted phishing).
 func (s *UserServer) ListUserIdentities(ctx context.Context, req *gen.ListUserIdentitiesRequest) (*gen.ListUserIdentitiesResponse, error) {
