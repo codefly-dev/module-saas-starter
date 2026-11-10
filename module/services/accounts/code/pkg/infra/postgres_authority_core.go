@@ -375,6 +375,11 @@ type moduleDocument struct {
 	// Through are, per role then binding, what a role names through one of
 	// the module's bindings (domain.Module.Through); Roles holds them too.
 	Through map[string]map[string][]storedScope `json:"through,omitempty"`
+	// SourceGovernance are the scopes that govern a source tied to an
+	// installation (domain.Module.SourceGovernance). Kept with the approved
+	// declaration, so a store that dropped them would leave every approved
+	// target governing no source.
+	SourceGovernance []storedScope `json:"source_governance,omitempty"`
 }
 
 type storedScope struct {
@@ -417,7 +422,8 @@ func loadScopes(in []storedScope) []*basev0.WorkScopeV1 {
 
 func encodeModule(m domain.Module) ([]byte, error) {
 	doc := moduleDocument{ResourceKinds: storeScopes(m.ResourceKinds), OwnerAware: m.OwnerAware, HasRoles: m.Roles != nil, HasMethods: m.Methods != nil,
-		InstallationRole: m.InstallationRole, EdgeDependencies: m.EdgeDependencies, SharedKinds: m.SharedKinds}
+		InstallationRole: m.InstallationRole, EdgeDependencies: m.EdgeDependencies, SharedKinds: m.SharedKinds,
+		SourceGovernance: storeScopes(m.SourceGovernance)}
 	for role, bindings := range m.Through {
 		if doc.Through == nil {
 			doc.Through = map[string]map[string][]storedScope{}
@@ -461,6 +467,7 @@ func decodeModule(m *domain.Module, raw []byte) error {
 	}
 	m.ResourceKinds, m.OwnerAware = loadScopes(doc.ResourceKinds), doc.OwnerAware
 	m.InstallationRole, m.EdgeDependencies, m.SharedKinds = doc.InstallationRole, doc.EdgeDependencies, doc.SharedKinds
+	m.SourceGovernance = loadScopes(doc.SourceGovernance)
 	for role, bindings := range doc.Through {
 		if m.Through == nil {
 			m.Through = map[string]map[string][]*basev0.WorkScopeV1{}

@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
-	"slices"
 	"strings"
 	"time"
 
@@ -20,18 +18,21 @@ import (
 )
 
 // SourceGovernance ties a source to one installation of a role-gated target
-// (a solution, or a module page declaring roles) and names the one scope of
-// that target's own declaration that governs it: Kind and Action, held on the
-// target's own kinds or, with Binding, reached through that operation binding.
+// (a solution, or a module page declaring roles) and names the one scope that
+// governs it: Kind and Action, one of the scopes the target's approved
+// declaration names as governing its sources (core's module contract,
+// source_governance). Binding is what an older request may still name; a
+// declared governing scope is one of the target's own kinds, reached through
+// nothing, so a request naming a binding is refused.
 //
-// The scope is one of the target's own, and only one its fullest roles alone
-// hold (governingScopeDeclared): a scope a lesser role also holds is refused,
-// whatever the request names. The host then only asks the authority core
-// whether it would issue the caller that scope at the installation, as it
-// would for the target's page (IssueForPerson), so the answer is the core's
-// role decision and never a second one. A source without
-// governance is the organization's own and is decided by the organization rule
-// alone, as before. The tie is written once, at connect, and never moves.
+// The request never picks the governing scope: the host admits only one the
+// target's author declared and an administrator approved, then asks the
+// authority core whether it would issue the caller that scope at the
+// installation, as it would for the target's page (IssueForPerson), so the
+// answer is the core's role decision and never a second one. A target that
+// declares no governing scope governs no source; a source without governance
+// is the organization's own and is decided by the organization rule alone,
+// as before. The tie is written once, at connect, and never moves.
 type SourceGovernance struct {
 	InstallationID string
 	Kind, Action   string
@@ -99,90 +100,42 @@ func (s *Service) issuedGovernance(ctx context.Context, who authority.Person, in
 	if !decide.RoleGated(target) {
 		return domain.Refuse("%s declares no roles, so it governs no source", inst.Target)
 	}
-	if err := governingScopeDeclared(target, g.Kind, g.Action); err != nil {
+	if err := governingScopeDeclared(target, g); err != nil {
 		return err
 	}
 	asked := &basev0.WorkScopeV1{ResourceKind: g.Kind, Actions: []string{g.Action}}
 	if target.Kind == domain.KindSolution {
 		// A solution's roles grant only on the data its installation owns.
 		asked.ResourceOwnerId = inst.PrincipalID
-	} else if b, ok := target.Bindings[g.Binding]; ok {
-		// A module page's roles reach a module that checks owners only as
-		// the data its composition installation owns (RBAC-1), through the
-		// page's hop: asked as that owner's, as the page's own call is.
-		if audience, err := core.Composed(ctx, b.Audience); err == nil && audience.OwnerAware && !slices.Contains(audience.SharedKinds, g.Kind) {
-			asked.ResourceOwnerId = inst.PrincipalID
-			_, err = core.IssueForPage(ctx, who, target.Name, authority.IssueRequest{
-				Audience: b.Audience, Binding: g.Binding, Organization: who.Organization,
-				Scopes: decide.Scopes{asked}, TTL: sourceGovernanceProbeTTL,
-			})
-			return err
-		}
 	}
 	_, err = core.IssueForPerson(ctx, who, authority.IssueRequest{
-		Audience: target.Principal, Binding: g.Binding, Organization: who.Organization,
+		Audience: target.Principal, Organization: who.Organization,
 		Scopes: decide.Scopes{asked}, TTL: sourceGovernanceProbeTTL,
 	})
 	return err
 }
 
-// governingScopeDeclared holds a requested governing scope to the target's
-// own roles, so the request never picks a scope its caller already holds. The
-// target's declaration names no scope that governs a source, so the host
-// admits only a scope of the target's fullest roles: roles granted everything
-// the target's roles grant, which strictly contain another of its roles. A
-// scope a lesser role also holds (a viewer's read beside an editor's write)
-// would hand every holder of that role what the fullest roles manage, and is
-// refused. A target with no fullest role governs no source: one whose roles
-// are all partial, and one whose roles are all equal, a single role included,
-// where every holder would be "fullest"; its sources stay the organization
-// administrators'. This is the host's interim rule until the declaration
-// names the governing scope itself; it narrows what may be asked and leaves
-// issuance to the core.
-func governingScopeDeclared(target domain.Module, kind, action string) error {
-	granted := map[string]map[string]bool{}
-	every := map[string]bool{}
-	grant := func(role string, scopes []*basev0.WorkScopeV1) {
-		if granted[role] == nil {
-			granted[role] = map[string]bool{}
-		}
-		for _, scope := range scopes {
-			for _, a := range scope.GetActions() {
-				granted[role][scope.GetResourceKind()+":"+a] = true
-				every[scope.GetResourceKind()+":"+a] = true
+// governingScopeDeclared admits g only when target's approved declaration
+// names its scope as governing its sources: the author's call, which an
+// administrator approved with the rest of the offer. A target naming none
+// governs no source, so its sources stay the organization administrators'.
+// A declared scope is one of the target's own kinds, so a request naming a
+// binding names something no declaration governs by.
+func governingScopeDeclared(target domain.Module, g SourceGovernance) error {
+	if len(target.SourceGovernance) == 0 {
+		return domain.Refuse("%s declares no scope that governs its sources, so they stay the organization administrators'", target.Name)
+	}
+	if g.Binding != "" {
+		return domain.Refuse("%s governs its sources by scopes of its own kinds, never through binding %s", target.Name, g.Binding)
+	}
+	if !decide.Governs(target, g.Kind, g.Action) {
+		declared := make([]string, 0, len(target.SourceGovernance))
+		for _, sc := range target.SourceGovernance {
+			for _, action := range sc.GetActions() {
+				declared = append(declared, sc.GetResourceKind()+":"+action)
 			}
 		}
-	}
-	for role, scopes := range target.Roles {
-		grant(role, scopes)
-	}
-	for role, scopes := range target.OwnedRoles {
-		grant(role, scopes)
-	}
-	fullest, lesser := false, false
-	for _, scopes := range granted {
-		if len(scopes) == len(every) {
-			fullest = true
-		} else {
-			lesser = true
-		}
-	}
-	if !fullest || !lesser {
-		return domain.Refuse("no role of %s is fuller than another of its roles, so none governs a source: its sources stay the organization administrators'", target.Name)
-	}
-	asked := kind + ":" + action
-	held := false
-	for _, role := range slices.Sorted(maps.Keys(granted)) {
-		if !granted[role][asked] {
-			continue
-		}
-		held = true
-		if len(granted[role]) < len(every) {
-			return domain.Refuse("%s's role %s is granted %s without everything %s's roles grant, so %s governs no source: only a scope its fullest roles alone hold does", target.Name, role, asked, target.Name, asked)
-		}
-	}
-	if !held {
-		return domain.Refuse("no role of %s is granted %s, so it governs no source", target.Name, asked)
+		return domain.Refuse("%s does not declare %s:%s as governing its sources; it declares %s", target.Name, g.Kind, g.Action, strings.Join(declared, ", "))
 	}
 	return nil
 }

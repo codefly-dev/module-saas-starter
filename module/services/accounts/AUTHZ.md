@@ -82,17 +82,22 @@ changing. The repository and the credential are out of reach for the same
 reason — one is the source's identity, the other rebinds whose authority its
 syncs run under (a reconnect, through `SyncSource`).
 
-### A source a solution connects is governed by the solution's own scope
+### A source a solution connects is governed by the scope the solution declares
 
 A connect may tie its source to one installation of a role-gated target (a
 solution, or a module page declaring roles) with `governance`
-(`SourceGovernance`: the installation id and one scope of that target's own
-declaration — a kind and action it serves, or one its roles reach through a
-named operation binding). The target declares the scope; the host adds no
-permission of its own. Every decision asks the shared authority core, never a
-second rule: the host has the core issue the caller that scope at the
-installation (`IssueForPerson`, the token discarded), exactly as the core
-would for the target's page.
+(`SourceGovernance`: the installation id and one scope). The scope must be one
+the target's **approved** declaration names as governing its sources — its
+module contract's `source_governance`, carried on core's signed manifest and
+approved by an administrator with the rest of the offer (a redelivery that
+adds or moves one waits for that approval). It is always one of the target's
+own kinds, never one reached through a binding. A target declaring none
+governs no source: its sources stay the organization administrators'. The
+host never infers the scope from the roles' shape and adds no permission of
+its own. Every decision asks the shared authority core, never a second rule:
+the host has the core issue the caller that scope at the installation
+(`IssueForPerson`, the token discarded), exactly as the core would for the
+target's page.
 
 The source-changing methods declare `org_member`, and the handler decides the
 rest before anything is written:
@@ -102,12 +107,15 @@ rest before anything is written:
   administrator, as before. A member is refused.
 - **A governed source** — connect (`AddSource`, `AddGitHubSource`) and change
   (`UpdateSource`, `SyncSource` including a reconnect, `DeleteSource`,
-  `MigrateGitHubSourceToApp`, `DeclareSourceOperations`,
-  `DelegateSourceTriggers`, and `BeginDatasourceAccountLink` naming it): any
-  member the core issues the governing scope at the installation, whether or
-  not they administer the organization. Anyone it does not issue, an
-  organization administrator included, is refused by name with the core's
-  reason. A connect also requires the installation to be active.
+  `DeclareSourceOperations`, `DelegateSourceTriggers`, and
+  `BeginDatasourceAccountLink` naming it): any member the core issues the
+  governing scope at the installation, whether or not they administer the
+  organization. Anyone it does not issue, an organization administrator
+  included, is refused by name with the core's reason. A connect also
+  requires the installation to be active. A member who does not administer
+  the organization brings a credential of their own: the organization's
+  GitHub App is never attached by one, and `MigrateGitHubSourceToApp` takes an
+  organization administrator who is also issued the governing scope.
 - **Where a governed source writes**: only into its installation's own
   collections — a node a source the same installation governs already writes
   into, or a label that reuses one of those or mints a new one. Naming any
