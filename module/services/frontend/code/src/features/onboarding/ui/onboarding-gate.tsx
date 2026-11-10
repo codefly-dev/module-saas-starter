@@ -20,7 +20,11 @@ const reminderStore = createBrowserOnboardingReminderStore(
 );
 
 export function OnboardingGate({ children }: { children: ReactNode }) {
-	const { isAuthenticated, organizationId = "" } = useAuth();
+	const { isAuthenticated, organizationId = "", orgRole } = useAuth();
+	// The optional steps (configure the organization, invite the team, choose
+	// a plan, create an API key) are an administrator's; a member was shown
+	// "Finish workspace setup" over every page with nothing they could finish.
+	const setsUpOrganization = orgRole === "owner" || orgRole === "admin";
 	const pathname = usePathname();
 	const { controller, model } = useOnboardingController(false);
 	// The server cannot know what this browser dismissed, so it renders the
@@ -58,6 +62,7 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
 		<>
 			{children}
 			{pathname !== "/onboarding" &&
+				setsUpOrganization &&
 				model.progress?.requiredComplete &&
 				!model.progress.checklistComplete &&
 				!reminderDismissed && (

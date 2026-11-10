@@ -35,8 +35,7 @@ import { useAuth } from "@/lib/auth";
  */
 export default function DashboardClient() {
 	const { user, platformRole, orgRole } = useAuth();
-	const greetingName =
-		user?.email?.split("@")[0]?.replace(/[._-]/g, " ") ?? "there";
+	const greetingName = greetingNameOf(user);
 
 	return (
 		<div className="space-y-10">
@@ -52,7 +51,7 @@ export default function DashboardClient() {
 					}}
 				/>
 				<div className="relative flex flex-col gap-2">
-					<h1 data-slot="page-title" className="type-page-title capitalize">
+					<h1 data-slot="page-title" className="type-page-title">
 						Welcome back, {greetingName}
 					</h1>
 					<p className="text-muted-foreground">
@@ -75,7 +74,7 @@ export default function DashboardClient() {
 							)}
 							{orgRole && (
 								<span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 font-medium text-primary ring-1 ring-primary/20">
-									org / {orgRole}
+									Organization {orgRole}
 								</span>
 							)}
 						</div>
@@ -152,6 +151,25 @@ export default function DashboardClient() {
 			</RoleGate>
 		</div>
 	);
+}
+
+/**
+ * The name the greeting uses: the person's first name when the session carries
+ * one, else their e-mail's local part with each word capitalised. The heading
+ * used to capitalise itself whole ("Welcome Back, Maya") and never read the
+ * name the person has.
+ */
+export function greetingNameOf(
+	user: { email?: string; name?: string } | null | undefined,
+): string {
+	const first = user?.name?.trim().split(/\s+/)[0];
+	if (first) return first;
+	const local = user?.email
+		?.split("@")[0]
+		?.replace(/[._-]+/g, " ")
+		.trim();
+	if (!local) return "there";
+	return local.replace(/\b\p{L}/gu, (c) => c.toUpperCase());
 }
 
 interface DashboardCardProps {

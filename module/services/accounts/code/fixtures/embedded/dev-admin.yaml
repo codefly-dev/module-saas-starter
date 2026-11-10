@@ -51,17 +51,19 @@ users:
   # teams. What they hold at a composed module is a role over that module's
   # permissions, which this host cannot name: the composing workspace's own
   # fixture adds those roles and assigns them by email (`assignments`). Here
-  # alex and dev are Acme administrators and zoe owns Globex.
+  # alex and dev are Acme administrators and zoe owns Globex. maya's and remi's
+  # names carry no role word: which module role each holds is the composing
+  # workspace's choice, and a sign-in page naming the opposite one misleads.
   - id: 00000000-0000-7000-8000-0000000000b1
     email: maya@acme.test
-    name: Maya Viewer
+    name: Maya Rossi
     role: member
     provider: email
     provider_id: fixture-maya
 
   - id: 00000000-0000-7000-8000-0000000000b2
     email: remi@acme.test
-    name: Remi Editor
+    name: Remi Laurent
     role: member
     provider: email
     provider_id: fixture-remi

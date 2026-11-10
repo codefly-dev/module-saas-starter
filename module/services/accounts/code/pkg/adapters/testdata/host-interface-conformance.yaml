@@ -8,8 +8,8 @@ users:
   - {id: 00000000-0000-7000-8000-0000000000a1, email: admin@acme.com, name: Sarah Chen, role: super_admin, provider: email, provider_id: dev-admin}
   - {id: 00000000-0000-7000-8000-0000000000a2, email: alice@acme.com, name: Alice Johnson, role: admin, provider: email, provider_id: dev-alice}
   - {id: 00000000-0000-7000-8000-0000000000a3, email: bob@acme.com, name: Bob Williams, role: member, provider: email, provider_id: dev-bob}
-  - {id: 00000000-0000-7000-8000-0000000000b1, email: maya@acme.test, name: Maya Viewer, role: member, provider: email, provider_id: fixture-maya}
-  - {id: 00000000-0000-7000-8000-0000000000b2, email: remi@acme.test, name: Remi Editor, role: member, provider: email, provider_id: fixture-remi}
+  - {id: 00000000-0000-7000-8000-0000000000b1, email: maya@acme.test, name: Maya Rossi, role: member, provider: email, provider_id: fixture-maya}
+  - {id: 00000000-0000-7000-8000-0000000000b2, email: remi@acme.test, name: Remi Laurent, role: member, provider: email, provider_id: fixture-remi}
   - {id: 00000000-0000-7000-8000-0000000000b3, email: alex@acme.test, name: Alex Admin, role: member, provider: email, provider_id: fixture-alex}
   - {id: 00000000-0000-7000-8000-0000000000b4, email: dev@acme.test, name: Dev Developer, role: member, provider: email, provider_id: fixture-dev}
   - {id: 00000000-0000-7000-8000-0000000000b5, email: zoe@globex.test, name: Zoe Admin, role: member, provider: email, provider_id: fixture-zoe}
@@ -90,22 +90,27 @@ roles:
     description: Read collection content in explicitly granted collections
     permissions:
       - {resource: example-records, action: read}
-  # The suite's viewer reads example records and directory entries across the
+  # The suite's viewer reads example entries and directory entries across the
   # organization: a role scoped to nothing holds the whole kind, where a
-  # collection's or a record's grant holds only what it names.
+  # collection's or an entry's grant holds only what it names. Both are served
+  # by modules that check no owner; at documents, which checks owners, an
+  # organization role reaches nothing on a person's own session (RBAC-4a).
   - org: Acme Corp
     name: Record viewer
-    description: Read every example record and directory entry of the organization
+    description: Read every example entry and directory entry of the organization
     permissions:
-      - {resource: example-records, action: read}
+      - {resource: example-entries, action: read}
       - {resource: directory.entry, action: read}
-  # A record reader holds example records one id at a time (a resource-limited
+      # The whole example-records kind as well, which documents serves: on the
+      # viewer's own session it reaches nothing there, documents checking owners.
+      - {resource: example-records, action: read}
+  # A record reader holds example entries one id at a time (a resource-limited
   # grant): what ListResources answers by grant.
   - org: Acme Corp
     name: Record reader
-    description: Read the example records granted to them by id
+    description: Read the example entries granted to them by id
     permissions:
-      - {resource: example-records, action: read}
+      - {resource: example-entries, action: read}
   # The conversational module's users: a person who may use the module whether
   # or not a solution it binds to is exposed to them.
   - org: Acme Corp

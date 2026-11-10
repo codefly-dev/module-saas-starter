@@ -5296,6 +5296,17 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/features/solution-installations/ui/target-name.tsx",
+      "imports": [
+        "@/solutions/SolutionsMenu"
+      ],
+      "owner": "host",
+      "disposition": "keep feature-local",
+      "reason": "A target's title from the person's own menu projection, beside its route alias.",
+      "stories": [],
+      "coverage": "missing"
+    },
+    {
       "source": "src/features/solution-installations/ui/when-roles-declared.tsx",
       "imports": [
         "@connectrpc/connect",
@@ -5376,6 +5387,21 @@
       "stories": [],
       "coverage": "missing",
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/teams/ui/team-installation-access.tsx",
+      "imports": [
+        "next/link",
+        "@/gen/host/installation/v1/installation_pb",
+        "@/features/solution-installations/service/queries",
+        "@/features/solution-installations/ui/target-name",
+        "@/shared/ui"
+      ],
+      "owner": "host",
+      "disposition": "keep feature-local",
+      "reason": "The roles a team holds on installed solutions and module pages, read from each installation's role grants.",
+      "stories": [],
+      "coverage": "missing"
     },
     {
       "source": "src/features/teams/ui/team-members-panel.tsx",

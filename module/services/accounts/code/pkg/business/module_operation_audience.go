@@ -10,6 +10,9 @@ import (
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
+	modulecontract "github.com/codefly-dev/core/contracts/module"
+	"github.com/codefly-dev/core/solutionhost"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -158,6 +161,42 @@ func operationValuesSubset(subset, superset []string) bool {
 // admission can never become a second spelling of a module identity.
 func selfAdmittingBinding(binding ModuleOperationAudience) bool {
 	return binding.HeadlessScopes != nil || binding.SourceDelegationScopes != nil
+}
+
+// personSelfBinding reports a binding a module addresses to itself that acts
+// only as the person: its audience is the module's own delivered principal
+// (prefix, never a target alias or a binding id) and it asks invoke or lookup
+// and nothing else, no headless scope. A module's own operations prepared as
+// runnables are such bindings. The authority core issues through one within
+// the person's capability cut to the binding (IssueChild, IssueForPage), never
+// from the module's standing authority, so the registry neither grants nor
+// withholds one: deriving the registry skips it, unless the envelope grants it
+// source delegation (deriveModulePrincipalGrant).
+func personSelfBinding(prefix string, binding solutionhost.AuthorityBinding) bool {
+	if binding.Audience != prefix {
+		return false
+	}
+	for operation := range binding.Operations {
+		if operation != modulecontract.OperationInvoke && operation != modulecontract.OperationLookup {
+			return false
+		}
+	}
+	return len(binding.Operations[modulecontract.OperationInvoke]) > 0 || len(binding.Operations[modulecontract.OperationLookup]) > 0
+}
+
+// skippedPersonSelf reports a person-self binding (personSelfBinding) the
+// registry neither grants nor withholds, given the ceiling's operation
+// audiences: one the ceiling does not list, or lists without source
+// delegation. One the ceiling grants source delegation is standing authority,
+// derived and reported like any binding. deriveModulePrincipalGrant and
+// withheldModuleAuthority both decide by this one predicate, so a binding the
+// derivation omits is never dropped from the withheld report.
+func skippedPersonSelf(prefix string, asked solutionhost.AuthorityBinding, ceiling map[string]ModuleOperationAudience) bool {
+	if !personSelfBinding(prefix, asked) {
+		return false
+	}
+	allowed, inside := ceiling[asked.ID]
+	return !inside || allowed.SourceDelegationScopes == nil
 }
 
 // headlessOnly reports whether a binding grants nothing on a person's behalf:

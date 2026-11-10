@@ -23,6 +23,16 @@ vi.mock("@/lib/auth", () => ({ useAuth: () => session }));
 
 function serveTeam() {
 	server.use(
+		// The owner's page reads what the team holds on installations.
+		http.post(
+			"http://localhost:3000/host.installation.v1.InstallationService/List",
+			() => HttpResponse.json({ installations: [] }),
+		),
+		http.get("http://localhost:3000/api/solutions", () =>
+			HttpResponse.json({ solutions: [] }),
+		),
+	);
+	server.use(
 		http.post(rpc("TeamService", "ListTeams"), () =>
 			HttpResponse.json({
 				teams: [

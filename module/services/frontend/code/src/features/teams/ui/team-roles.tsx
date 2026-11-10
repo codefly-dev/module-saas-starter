@@ -69,8 +69,8 @@ export function TeamRoles({
 
 	return (
 		<Section
-			title="Roles"
-			description="Every member of this team holds these roles."
+			title="Organization roles"
+			description="Every member of this team holds these organization roles. Roles on a solution or module page are listed below."
 			actions={
 				canGrant ? (
 					<Stack direction="row" gap={2} align="center">
@@ -137,7 +137,7 @@ export function TeamRoles({
 						{readOutcomeMessage(
 							outcome,
 							"the roles this team carries",
-							"This team carries no roles.",
+							"This team carries no organization role.",
 						)}
 					</span>
 				) : (

@@ -41,6 +41,12 @@ func (s *WorkContextAuthorityServer) exchangeInstalledBinding(ctx context.Contex
 	if err != nil {
 		return nil, err
 	}
+	// The parent is a person's own session, and this is the installed module's
+	// hop on it through its binding: held at the binding's audience as the
+	// ordinary arm's is (holdOwnSessionExchange).
+	if scopes, err = holdOwnSessionExchange(ctx, claims, selected.audience, scopes, moduleBindingSeal{PrincipalID: caller.PrincipalID, BindingID: request.bindingID}); err != nil {
+		return nil, err
+	}
 	scopes, err = attenuateEffective(claims, scopes)
 	if err != nil {
 		return nil, err

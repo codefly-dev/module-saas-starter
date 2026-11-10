@@ -7,13 +7,13 @@ require (
 	buf.build/go/protovalidate v1.4.0
 	connectrpc.com/connect v1.21.1
 	connectrpc.com/otelconnect v0.9.0
-	github.com/codefly-dev/authority/libraries/authority-client/go v0.2.1-0.20261109220601-1f0887616bde
-	github.com/codefly-dev/authority/libraries/authority-core/go v0.1.1-0.20261110032857-4cb509e3eacd
-	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261109220601-1f0887616bde
-	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261109220601-1f0887616bde
-	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261109220601-1f0887616bde
+	github.com/codefly-dev/authority/libraries/authority-client/go v0.2.1-0.20261110093307-d3d11d62352e
+	github.com/codefly-dev/authority/libraries/authority-core/go v0.1.1-0.20261110093307-d3d11d62352e
+	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261110093307-d3d11d62352e
+	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261110093307-d3d11d62352e
+	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261110093307-d3d11d62352e
 	github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc
-	github.com/codefly-dev/core v0.19.21-0.20261110030241-8566306053f9
+	github.com/codefly-dev/core v0.19.22
 	github.com/codefly-dev/interface-cache/go/cache v0.4.1
 	github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261021192505-6fd56dae2e04
 	github.com/codefly-dev/sdk-go v0.4.1

@@ -1,18 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import {
-	groupSolutionNavigation,
-	type SolutionGroup,
-} from "@/solutions/solution-groups";
 import { useSyncExternalStore } from "react";
-
 import { decodeJWTPayload } from "@/lib/auth-session";
 import {
 	authedFetch,
 	getToken,
 	subscribeToken,
 } from "@/lib/connect/token-store";
+import {
+	groupSolutionNavigation,
+	type SolutionGroup,
+} from "@/solutions/solution-groups";
 
 interface SolutionNav {
 	id: string;
@@ -95,8 +94,38 @@ function forgetIfViewerChanged(): boolean {
 	const viewer = currentViewer();
 	if (viewer === snapshotViewer) return false;
 	snapshotViewer = viewer;
+	answered = false;
+	firstReadRetries = 0;
+	if (firstReadTimer) {
+		clearTimeout(firstReadTimer);
+		firstReadTimer = null;
+	}
 	publish(EMPTY, false);
 	return true;
+}
+
+// Whether this viewer has had one listing answered, and how many quick retries
+// their first read has used. Right after a person switch the first read can
+// meet a session the host has not settled yet (401, 503, a dropped request);
+// the menu then showed no page at all until the next 10 s poll. Until the
+// first answer lands it is asked again after a second, a few times.
+let answered = false;
+let firstReadRetries = 0;
+let firstReadTimer: ReturnType<typeof setTimeout> | null = null;
+const FIRST_READ_RETRY_MS = 1_000;
+const FIRST_READ_RETRIES = 5;
+
+function retryFirstRead(viewer: string): void {
+	if (answered || firstReadTimer || firstReadRetries >= FIRST_READ_RETRIES)
+		return;
+	if (listeners.size === 0 || currentViewer() !== viewer) return;
+	firstReadRetries += 1;
+	firstReadTimer = setTimeout(() => {
+		firstReadTimer = null;
+		// The poll may have answered while this waited.
+		if (answered) return;
+		void refresh();
+	}, FIRST_READ_RETRY_MS);
 }
 
 function sameList(a: SolutionNav[], b: SolutionNav[]): boolean {
@@ -141,6 +170,7 @@ async function refresh(): Promise<void> {
 			// authedFetch already tried to recover the session and could not, so
 			// this viewer is no longer signed in. Their list is not kept on screen.
 			publish(EMPTY);
+			retryFirstRead(viewer);
 			return;
 		}
 		if (!response.ok) {
@@ -148,14 +178,18 @@ async function refresh(): Promise<void> {
 			// an unreadable registry or an authority that could not answer; 429 is
 			// the organization's read budget. Treating any of them as "no solutions"
 			// would empty a working nav on a blip — the reason the route
-			// distinguishes them from an empty projection at all.
+			// distinguishes them from an empty projection at all. A 429 is the
+			// organization's read budget: asking again at once spends more of it.
+			if (response.status !== 429) retryFirstRead(viewer);
 			return;
 		}
 		const data: { solutions?: SolutionNav[] } = await response.json();
 		if (currentViewer() !== viewer) return;
+		answered = true;
 		publish(data.solutions ?? []);
 	} catch {
 		// Network blip — keep the last known list.
+		retryFirstRead(viewer);
 	}
 }
 
@@ -179,6 +213,10 @@ function subscribe(listener: Listener): () => void {
 			}
 			stopWatchingToken?.();
 			stopWatchingToken = null;
+			if (firstReadTimer) {
+				clearTimeout(firstReadTimer);
+				firstReadTimer = null;
+			}
 		}
 	};
 }
@@ -198,6 +236,11 @@ function getSnapshot(): SolutionNav[] {
  */
 export function useRegisteredSolutions(): SolutionNav[] {
 	return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+/** Whether the menu titles each of its groups itself (any group, or a module page). */
+function titlesGroups(solutions: SolutionNav[]): boolean {
+	return solutions.some((entry) => entry.group || entry.kind === "module");
 }
 
 /** Whether this viewer's first authenticated projection has arrived. */
@@ -227,8 +270,7 @@ export function SolutionsMenu({
 					aria-label={section.title}
 					className="flex flex-col gap-2"
 				>
-					{(solutions.some((entry) => entry.group) ||
-						solutions.some((entry) => entry.kind === "module")) && (
+					{titlesGroups(solutions) && (
 						<h3 className="text-sm font-medium text-muted-foreground">
 							{section.title}
 						</h3>
@@ -270,8 +312,10 @@ function SolutionLinks({
 							href={solution.nav.path}
 							className="rounded-xl border p-4 transition-colors hover:bg-accent/40"
 						>
+							{/* The title only: the route alias under it ("Expenses /
+							    expenses") is a builder's id, not something a person
+							    reads. */}
 							<div className="text-sm font-medium">{solution.nav.title}</div>
-							<div className="text-xs opacity-60">{solution.id}</div>
 						</Link>
 					),
 				)}
@@ -314,11 +358,16 @@ export function SolutionsHomeSection() {
 	if (solutions.length === 0) {
 		return null;
 	}
+	// When the cards are grouped they title each group themselves ("Solutions",
+	// "Modules"); a "SOLUTIONS" heading above a "Solutions" group said it twice.
+	const titled = titlesGroups(solutions);
 	return (
-		<section className="flex flex-col gap-3">
-			<h2 className="text-sm font-semibold uppercase tracking-wide opacity-60">
-				Solutions
-			</h2>
+		<section className="flex flex-col gap-3" aria-label="Solutions">
+			{!titled && (
+				<h2 className="text-sm font-semibold uppercase tracking-wide opacity-60">
+					Solutions
+				</h2>
+			)}
 			<SolutionsMenu variant="cards" />
 		</section>
 	);
