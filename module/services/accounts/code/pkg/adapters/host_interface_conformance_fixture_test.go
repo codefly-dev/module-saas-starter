@@ -78,6 +78,9 @@ type conformanceSolution struct {
 	through  map[string]map[string][]*authorityv1.WorkScopeV1
 	methods  []*compositionv1.MethodPolicyV1
 	bindings []solutionhost.AuthorityBinding
+	// governance are the scopes that govern the solution's sources, as core's
+	// signed manifest carries them ("<kind>:<action>").
+	governance []string
 }
 
 // deliverSolution delivers s as the CLI does: core's manifest signed with the
@@ -87,7 +90,8 @@ func deliverSolution(t *testing.T, ctx context.Context, conn grpc.ClientConnInte
 	t.Helper()
 	m := &solutionhost.ModuleManifest{Schema: solutionhost.SchemaModuleManifestV1, Binding: s.alias, Alias: s.alias, Kind: solutionhost.KindSolution, Generation: s.generation,
 		Host: solutionhost.HostTarget{Coordinate: "conformance-host", Domain: "acme"}, Release: solutionhost.Release{Publisher: "conformance", Name: s.alias, Version: "0.1.0"},
-		Workloads: []solutionhost.Workload{{Service: s.alias, Container: "app"}}, Authority: &solutionhost.Authority{Principal: s.alias, Bindings: s.bindings, InstallationRole: s.installationRole, EdgeDependencies: s.edges}}
+		Workloads: []solutionhost.Workload{{Service: s.alias, Container: "app"}}, Authority: &solutionhost.Authority{Principal: s.alias, Bindings: s.bindings, InstallationRole: s.installationRole, EdgeDependencies: s.edges,
+			SourceGovernance: s.governance}}
 	for _, ceiling := range s.ceilings {
 		m.Authority.ResourceKinds = append(m.Authority.ResourceKinds, ceiling.GetResourceKind())
 	}

@@ -326,8 +326,10 @@ export const UploadDatasourceConfigSchema: GenMessage<UploadDatasourceConfig> = 
 
 /**
  * SourceGovernance ties a source to one installation of a solution (or of a
- * module page declaring roles), and names the one scope of that solution's
- * own declaration that governs the source. A source carrying it is the
+ * module page declaring roles), and names the one scope that governs the
+ * source: one the solution's approved declaration names as governing its
+ * sources (its module contract's source_governance). A solution declaring
+ * none governs no source. A source carrying it is the
  * installation's: connecting it and every later change to it (update, sync,
  * reconnect, removal, operations and trigger declarations, an account link)
  * are decided by that scope alone — any member the authority issues it there,
@@ -353,13 +355,11 @@ export type SourceGovernance = Message<"saas.accounts.v1.SourceGovernance"> & {
   installationId: string;
 
   /**
-   * The governing scope: one resource kind and one action. Without binding it
-   * is one of the solution's own kinds, as its roles grant it on the
-   * installation's data; with binding, one its roles reach through that
-   * operation binding (a kind of the module the binding addresses). Either
-   * way it is a scope only the solution's fullest roles hold: one a role is
-   * granted without everything the solution's roles grant (a viewer's read
-   * beside an editor's write) governs no source and is refused.
+   * The governing scope: one resource kind and one action, one of the
+   * solution's own kinds that its approved declaration names as governing its
+   * sources. Any other scope — one a lesser role holds (a viewer's read
+   * beside an editor's write), or one the solution's roles grant but its
+   * declaration does not name — governs no source and is refused.
    *
    * @generated from field: string resource_kind = 2;
    */
@@ -373,8 +373,8 @@ export type SourceGovernance = Message<"saas.accounts.v1.SourceGovernance"> & {
   action: string;
 
   /**
-   * The solution's operation binding the scope is held through; empty for one
-   * of its own kinds.
+   * Always empty: a declared governing scope is one of the solution's own
+   * kinds, reached through no binding, so a request naming one is refused.
    *
    * @generated from field: string binding = 4;
    */
