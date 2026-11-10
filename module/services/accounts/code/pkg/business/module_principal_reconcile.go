@@ -438,6 +438,9 @@ func withheldModuleAuthority(
 			if _, granted := held[asked.ID]; granted {
 				continue
 			}
+			if personSelfBinding(prefix, asked) {
+				continue // the authority core issues it as the person; nothing is withheld
+			}
 			omission, reported := named[prefix+"\x00"+asked.ID]
 			if !reported {
 				// The principal never reached the registry. When this pass
@@ -688,6 +691,15 @@ func deriveModulePrincipalGrant(
 
 	for _, asked := range request.Bindings {
 		allowed, inside := ceiling.OperationAudiences[asked.ID]
+		// A binding the module addresses to itself that acts only as the
+		// person is issued by the authority core within that person's
+		// capability, never from the module's standing authority: the
+		// registry neither grants nor omits it, and nothing here gives it a
+		// headless or standing scope. One the envelope grants source
+		// delegation is a standing grant and keeps the path below.
+		if personSelfBinding(prefix, asked) && (!inside || allowed.SourceDelegationScopes == nil) {
+			continue
+		}
 		switch {
 		case !inside:
 			omit(asked.ID, errors.New("the envelope allows no such operation binding"))

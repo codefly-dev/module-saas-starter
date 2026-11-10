@@ -222,15 +222,7 @@ func (f *readinessFacts) readinessFor(
 	for _, binding := range asked.Authority.Bindings {
 		// Authority IssueChild bounds a person's self invoke/lookup by the
 		// parent and current grants, not the outward installation ceiling.
-		// Compare the delivered principal, not the target alias or binding ID.
-		personSelf := binding.Audience == prefix &&
-			(len(binding.Operations[modulecontract.OperationInvoke]) > 0 || len(binding.Operations[modulecontract.OperationLookup]) > 0)
-		for operation := range binding.Operations {
-			if operation != modulecontract.OperationInvoke && operation != modulecontract.OperationLookup {
-				personSelf = false
-			}
-		}
-		if personSelf {
+		if personSelfBinding(prefix, binding) {
 			continue
 		}
 		if derivedAudience, derived := grant.OperationAudiences[binding.ID]; derived {
