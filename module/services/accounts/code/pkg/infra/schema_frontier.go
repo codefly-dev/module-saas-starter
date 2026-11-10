@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // requiredSchemaVersion is the highest store migration this binary was built
@@ -19,6 +20,21 @@ const requiredSchemaVersion = 72
 // schemaReader is what the check needs; a pool and a transaction both satisfy it.
 type schemaReader interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
+// controlPlaneSchemaVersion reads the version as the control-plane role, the
+// one migration 72 grants it to, rather than as whatever role the login's
+// session defaults to.
+func controlPlaneSchemaVersion(ctx context.Context, pool *pgxpool.Pool) error {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("open control-plane Postgres connection: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // the probe changes nothing
+	if _, err := tx.Exec(ctx, "SET LOCAL ROLE "+controlPlaneDatabaseRole); err != nil {
+		return fmt.Errorf("control-plane Postgres login cannot assume %s: %w", controlPlaneDatabaseRole, err)
+	}
+	return requireSchemaCurrent(ctx, tx)
 }
 
 // requireSchemaCurrent refuses a store that is behind this binary or in the
@@ -39,9 +55,12 @@ func schemaRefusal(version int64, dirty bool, readErr error) error {
 	var pgErr *pgconn.PgError
 	switch {
 	case errors.As(readErr, &pgErr) && pgErr.Code == "42501":
-		// Migration 72 grants the read. A login that cannot read the table is
-		// a store that has not applied it, which is a store behind.
+		// Migration 72 grants the read, so a login refused it is a store that
+		// has not applied 72, which is a store behind. (A grant revoked by hand
+		// reads the same; the remedy, re-running the ledger, is the same too.)
 		return fmt.Errorf("the store has not applied migration %d, which lets accounts read the schema version; this binary requires migration %d: run the store migration and start accounts again", requiredSchemaVersion, requiredSchemaVersion)
+	case errors.As(readErr, &pgErr) && pgErr.Code == "42P01":
+		return fmt.Errorf("the store has no schema version table: it has not been migrated; this binary requires migration %d", requiredSchemaVersion)
 	case errors.Is(readErr, pgx.ErrNoRows):
 		return fmt.Errorf("the store records no schema version: it has not been migrated; this binary requires migration %d", requiredSchemaVersion)
 	case readErr != nil:

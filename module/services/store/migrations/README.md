@@ -46,7 +46,7 @@ Accounts reads this ledger's version at startup and refuses to serve a store
 that is behind, or marked dirty (a migration running or failed), naming the
 migration it needs (`schema_frontier.go`). Adding a migration therefore moves
 `requiredSchemaVersion` in the same change; a test fails until it does. A
-rollout that starts accounts before the migration has finished shows as a
+fold moves the frontier to 1, and the same test then requires 1; the generator re-emits the version-table grant in the baseline's suffix. A rollout that starts accounts before the migration has finished shows as a
 refusal and a restart, never as `column ... does not exist` on a query.
 
 ### Filling a column a shared contract now keeps

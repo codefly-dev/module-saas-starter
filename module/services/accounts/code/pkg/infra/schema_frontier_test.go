@@ -28,6 +28,7 @@ func TestSchemaRefusal(t *testing.T) {
 		{"failed migration (dirty below)", requiredSchemaVersion - 1, true, nil, "marked dirty"},
 		{"unmigrated", 0, false, pgx.ErrNoRows, "has not been migrated"},
 		{"no read grant is a store behind migration 72", 0, false, &pgconn.PgError{Code: "42501"}, "has not applied migration 72"},
+		{"no ledger table", 0, false, &pgconn.PgError{Code: "42P01"}, "no schema version table"},
 		{"other read failure is surfaced", 0, false, errors.New("connection reset"), "connection reset"},
 	}
 	for _, c := range cases {
