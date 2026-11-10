@@ -1450,6 +1450,9 @@ func (s *AuditServer) QueryAuditLog(ctx context.Context, req *gen.QueryAuditLogR
 		ClientID:   req.ClientId,
 		PageSize:   req.PageSize,
 		PageToken:  req.PageToken,
+		// An empty org_id that reached here is the platform-wide read of the
+		// platform's own events, never a cross-tenant one.
+		PlatformEventsOnly: req.OrgId == "",
 	}
 	if len(req.PayloadContains) > 0 {
 		q.PayloadContains = make(map[string]any, len(req.PayloadContains))

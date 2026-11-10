@@ -16,13 +16,19 @@ import (
 // JSON. eventTypes is the set form of eventType, applied together with it, so a
 // download can carry the same family-of-types filter a summary tile opens.
 func (s *Service) ExportAuditLog(ctx context.Context, orgID, format, actorID, eventType string, eventTypes []string) ([]byte, string, string, error) {
+	// No organization is a platform-wide export: the platform's own events.
+	platformOnly := orgID == ""
 	w := wool.Get(ctx).In("ExportAuditLog")
 
 	if format == "" {
 		format = "json"
 	}
 	if format != "csv" && format != "json" {
-		return nil, "", "", w.NewError("unsupported format: %s (use csv or json)", format)
+		// The caller named a format this export does not produce: a request
+		// error, so it must reach them as one and say why, not as an internal
+		// failure that hides the reason.
+		return nil, "", "", NewStoreError(
+			fmt.Errorf("unsupported export format %q: use \"csv\" or \"json\"", format), ErrTypeValidation)
 	}
 
 	// Fetch all matching events (paginate internally to avoid huge single queries)
@@ -34,7 +40,7 @@ func (s *Service) ExportAuditLog(ctx context.Context, orgID, format, actorID, ev
 		// rows through. Don't use s.store.QueryAuditLog directly here
 		// — that bypasses the wrap and returns zero rows.
 		entries, nextToken, _, err := s.QueryAuditLog(ctx, AuditQuery{
-			OrgID: orgID, ActorID: actorID, EventType: eventType, EventTypes: eventTypes,
+			OrgID: orgID, PlatformEventsOnly: platformOnly, ActorID: actorID, EventType: eventType, EventTypes: eventTypes,
 			PageSize: 100, PageToken: pageToken,
 		})
 		if err != nil {

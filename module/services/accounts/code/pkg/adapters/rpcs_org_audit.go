@@ -2,9 +2,13 @@ package adapters
 
 import (
 	"context"
+	"errors"
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // OrgSettings bridges between proto and business types.
@@ -88,6 +92,10 @@ func (s *AuditServer) ExportAuditLog(ctx context.Context, req *gen.ExportAuditLo
 	}
 	data, contentType, filename, err := service.ExportAuditLog(ctx, req.OrgId, req.Format, req.ActorId, req.EventType, req.EventTypes)
 	if err != nil {
+		var storeErr *business.StoreError
+		if errors.As(err, &storeErr) && storeErr.StoreErrorType == business.ErrTypeValidation {
+			return nil, status.Error(codes.InvalidArgument, storeErr.Error())
+		}
 		return nil, err
 	}
 	return &gen.ExportAuditLogResponse{
