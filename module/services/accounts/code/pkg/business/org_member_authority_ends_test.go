@@ -93,19 +93,21 @@ func TestRemoveOrgMemberEndsWhatTheMemberHeldInTheirOwnName(t *testing.T) {
 	clearData(t)
 	ctx := testCtx
 	owner, orgID := mustUserAndOrg(t, ctx, "owner@ends-test.com", "ends-owner", "Ends Org")
-	member, _ := mustUserAndOrg(t, ctx, "member@ends-test.com", "ends-member", "Ends Member Org")
+	member, ownOrg := mustUserAndOrg(t, ctx, "member@ends-test.com", "ends-member", "Ends Member Org")
 	bystander, _ := mustUserAndOrg(t, ctx, "bystander@ends-test.com", "ends-bystander", "Ends Bystander Org")
 	for _, id := range []string{member, bystander} {
 		require.NoError(t, testService.AddOrgMember(ctx, owner, &gen.AddOrgMemberRequest{OrgId: orgID, UserId: id, Role: gen.OrgRole_ORG_ROLE_MEMBER}))
 	}
 	seedMemberAuthority(t, ctx, owner, orgID, member)
 	seedMemberAuthority(t, ctx, owner, orgID, bystander)
+	seedMemberAuthority(t, ctx, member, ownOrg, member)
 	require.Equal(t, everyGrantKind, memberHolds(t, orgID, member))
 
 	require.NoError(t, testService.RemoveOrgMember(ctx, owner, &gen.RemoveOrgMemberRequest{OrgId: orgID, UserId: member}))
 	require.Equal(t, map[string]int{"role_assignments": 0, "scope_grants": 0, "record_shares": 0, "api_keys": 0, "role_grants": 0, "delegations": 0},
 		memberHolds(t, orgID, member), "nothing is left to come back")
 	require.Equal(t, everyGrantKind, memberHolds(t, orgID, bystander), "another member's grants are untouched")
+	require.Equal(t, everyGrantKind, memberHolds(t, ownOrg, member), "the same person's grants in another organization are untouched")
 
 	require.NoError(t, testService.AddOrgMember(ctx, owner, &gen.AddOrgMemberRequest{OrgId: orgID, UserId: member, Role: gen.OrgRole_ORG_ROLE_MEMBER}))
 	require.Equal(t, map[string]int{"role_assignments": 0, "scope_grants": 0, "record_shares": 0, "api_keys": 0, "role_grants": 0, "delegations": 0},

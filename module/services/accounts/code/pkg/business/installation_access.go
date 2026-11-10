@@ -147,7 +147,7 @@ func refuseSharedTeam(access *InstallationAccess, teams []*gen.Team) error {
 
 // applyInstallationAccess applies access once inst is active, as caller:
 // each role's team is resolved (the team named for it while it still exists,
-// else its conventional team: created, or found when it has no members), each role is granted to its
+// else its conventional team: created, or found only when this installation already granted it the role), each role is granted to its
 // team, then the installer joins the team of each role they took. Before
 // activation nothing is applied; the resumed attempt that activates inst
 // applies it. Every step is check-before-write, so applying it again changes
@@ -200,24 +200,19 @@ func (s *Service) applyInstallationAccess(ctx context.Context, caller authority.
 			name = ConventionalTeamName(inst.Target, role)
 		}
 		// A team that already holds the conventional name was not made for this
-		// role: a role is never granted to people nobody chose for it, whatever
-		// the team is called. An empty one has nobody to receive it.
-		// One this installation already granted the role to is the team of an
-		// earlier application of this same access, whose members are the ones
-		// it chose: applying again changes nothing.
+		// role, whoever is in it today: a role is never granted to a team
+		// nobody chose for it, as when the chosen team is gone (above). A team
+		// this installation already granted the role to is the team of an
+		// earlier application of this same access, so applying again changes
+		// nothing.
 		if i := slices.IndexFunc(teams, func(t *gen.Team) bool { return isConventionalTeam(t, name) }); i >= 0 {
 			held, err := s.teamHoldsRole(ctx, caller, inst, role, teams[i].GetId())
 			if err != nil {
 				report(role, "the roles of %s could not be read: %v", name, err)
 				continue
 			}
-			members, err := s.ListTeamMembers(ctx, &gen.ListTeamMembersRequest{TeamId: teams[i].GetId()})
-			if err != nil {
-				report(role, "the members of %s could not be read: %v", name, err)
-				continue
-			}
-			if !held && len(members.GetMembers()) > 0 {
-				report(role, "%s already exists with members nobody chose for this role; grant the role in Set up", name)
+			if !held {
+				report(role, "%s already exists and was not made for this role; grant the role in Set up", name)
 				continue
 			}
 		}

@@ -388,6 +388,12 @@ func (s *Service) ConvergeFixtureOrgMember(ctx context.Context, req *gen.AddOrgM
 //     and API keys the member held in their own name are ended with the
 //     membership: they were gated on membership at read time, which only hid
 //     them, and a person added again would have had them back unrecorded.
+//     An installation's owner of record is the one exception: it is
+//     accountability, not data authority (the owner's own scopes are the
+//     installation agent's grants), it needs a current administrator to stand,
+//     and the owner leaving is the "owner left" signal the installation reports
+//     and has transferred. A removed owner added again as an administrator is
+//     eligible again until it is transferred.
 func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.RemoveOrgMemberRequest) error {
 	orgID, memberID, err := canonicalSubjectTenancyIDs(req.OrgId, req.UserId)
 	if err != nil {
