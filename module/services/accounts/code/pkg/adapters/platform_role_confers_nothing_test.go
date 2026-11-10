@@ -28,6 +28,18 @@ func TestPlatformSuperAdminAdministersNoOrganizationItIsNotAMemberOf(t *testing.
 		"organization admin": func() error { return requireOrgAdmin(ctx, supportActorID, targetOrgID) },
 		"organization owner": func() error { return requireOrgOwner(ctx, supportActorID, targetOrgID) },
 		"billing admin":      func() error { return requireBillingAdmin(ctx, supportActorID, targetOrgID) },
+		"organization read": func() error {
+			_, err := (&OrgServer{}).GetOrganization(ctx, &gen.GetOrganizationRequest{Id: targetOrgID})
+			return err
+		},
+		"role assignments read": func() error {
+			_, err := (&PermServer{}).ListRoleAssignments(ctx, &gen.ListRoleAssignmentsRequest{OrgId: targetOrgID})
+			return err
+		},
+		"audit aggregate": func() error {
+			_, err := (&AuditServer{}).AggregateAuditLog(ctx, &gen.AggregateAuditLogRequest{OrgId: targetOrgID})
+			return err
+		},
 		"audit log read": func() error {
 			_, err := (&AuditServer{}).QueryAuditLog(ctx, &gen.QueryAuditLogRequest{OrgId: targetOrgID, PageSize: 5})
 			return err
