@@ -1,8 +1,11 @@
 "use client";
 
-import { useRouter, usePathname } from "next/navigation";
-import { useEffect, type ReactNode } from "react";
+import { ShieldOff } from "lucide-react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { type ReactNode, useEffect } from "react";
 import { AdminLayout } from "@/components/admin-layout";
+import { EmptyState } from "@/components/empty-state";
 import { ImpersonationBanner } from "@/components/impersonation-banner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/lib/auth";
@@ -24,8 +27,7 @@ export function AdminRouteShell({ children }: { children: ReactNode }) {
 			router.replace("/auth/login");
 			return;
 		}
-		if (!allowed) router.replace("/");
-	}, [isLoading, isAuthenticated, allowed, router]);
+	}, [isLoading, isAuthenticated, router]);
 
 	if (isLoading) {
 		return (
@@ -34,7 +36,22 @@ export function AdminRouteShell({ children }: { children: ReactNode }) {
 			</div>
 		);
 	}
-	if (!isAuthenticated || !allowed) return null;
+	if (!isAuthenticated) return null;
+	// A refusal says why and who can change it; sending the person to the
+	// dashboard unexplained looks like the page does not exist.
+	if (!allowed) {
+		return (
+			<>
+				<ImpersonationBanner />
+				<EmptyState
+					icon={ShieldOff}
+					title="You don't have access to Admin"
+					description={`Admin is for organization and platform administrators. Your role in this organization is ${orgRole ?? "none"}. Ask an administrator of this organization to give you the role you need.`}
+					action={<Link href="/">Back to the dashboard</Link>}
+				/>
+			</>
+		);
+	}
 
 	return (
 		<>

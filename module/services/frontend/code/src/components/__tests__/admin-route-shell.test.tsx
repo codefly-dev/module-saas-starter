@@ -1,5 +1,4 @@
-import { cleanup, screen, waitFor } from "@testing-library/react";
-import { render } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AdminRouteShell } from "../admin-route-shell";
@@ -20,6 +19,20 @@ vi.mock("@/lib/auth", () => ({
 		orgRole: state.orgRole,
 		isLoading: false,
 	}),
+}));
+vi.mock("@/components/empty-state", () => ({
+	EmptyState: ({
+		title,
+		description,
+	}: {
+		title: string;
+		description: string;
+	}) => (
+		<div>
+			<h1>{title}</h1>
+			<p>{description}</p>
+		</div>
+	),
 }));
 vi.mock("@/components/admin-layout", () => ({
 	AdminLayout: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -46,9 +59,21 @@ it.each(["/admin/users", "/admin/teams-other", "/admin/billing"])(
 		state.pathname = path;
 		render(<AdminRouteShell>Restricted</AdminRouteShell>);
 		expect(screen.queryByText("Restricted")).toBeNull();
-		await waitFor(() => expect(state.replace).toHaveBeenCalledWith("/"));
+		expect(screen.getByText("You don't have access to Admin")).toBeTruthy();
+		expect(
+			screen.getByText(/Your role in this organization is member/),
+		).toBeTruthy();
+		expect(state.replace).not.toHaveBeenCalled();
 	},
 );
+it("names a role that is absent", () => {
+	state.pathname = "/admin/users";
+	state.orgRole = undefined;
+	render(<AdminRouteShell>Restricted</AdminRouteShell>);
+	expect(
+		screen.getByText(/Your role in this organization is none/),
+	).toBeTruthy();
+});
 it("still requires authentication", async () => {
 	state.isAuthenticated = false;
 	render(<AdminRouteShell>Team roster</AdminRouteShell>);

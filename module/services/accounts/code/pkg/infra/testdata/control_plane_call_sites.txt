@@ -180,6 +180,7 @@ pkg/infra/postgres.go: (*PostgresStore).LinkIdentity: txbind.BindRequest
 pkg/infra/postgres.go: (*PostgresStore).RegisterUser: pgx.BeginTxFunc(controlPlane)
 pkg/infra/postgres.go: (*PostgresStore).RegisterUser: txbind.BindControlPlane
 pkg/infra/postgres.go: (*PostgresStore).RunInTransaction: txbind.BindRequest
+pkg/infra/postgres.go: NewPostgresStore: controlPlaneSchemaVersion(controlPlane)
 pkg/infra/postgres_audit_registry.go: (*PostgresStore).DropAuditPartitionsBefore: withControlPlaneTx
 pkg/infra/postgres_auth_bootstrap.go: (*PostgresStore).WithAuthBootstrapTx: withControlPlaneTx
 pkg/infra/postgres_auth_bootstrap.go: (*PostgresStore).WithAuthLookupTx: withControlPlaneTx

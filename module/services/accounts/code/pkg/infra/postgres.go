@@ -93,7 +93,19 @@ func NewPostgresStore(ctx context.Context) (*PostgresStore, error) {
 		return nil, w.Wrapf(err, "failed to get control-plane connection string")
 	}
 
-	return NewPostgresStoreWithCapabilities(ctx, readOnlyConnection, readWriteConnection, controlPlaneConnection)
+	store, err := NewPostgresStoreWithCapabilities(ctx, readOnlyConnection, readWriteConnection, controlPlaneConnection)
+	if err != nil {
+		return nil, err
+	}
+	// A store behind this binary, or mid-migration, is refused by name before
+	// any query can fail on a column it does not have yet. This is the served
+	// process's assembly: the capability constructor above is also given
+	// hand-built databases by qualification fixtures that carry no ledger.
+	if err := controlPlaneSchemaVersion(ctx, store.controlPlane); err != nil {
+		store.Close()
+		return nil, err
+	}
+	return store, nil
 }
 
 // NewPostgresStoreWithCapabilities composes the production boundary from
