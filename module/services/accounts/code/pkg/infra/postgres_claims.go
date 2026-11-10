@@ -41,7 +41,8 @@ func (s *PostgresStore) GetAPIKeyAuthentication(ctx context.Context, keyHash str
 			FROM organization_members om
 			JOIN users u ON u.uuid = om.user_id
 			LEFT JOIN platform_admins pa ON pa.user_id = om.user_id
-			WHERE om.org_id = $1 AND om.user_id = $2`, key.OrganizationId, key.UserId,
+			WHERE om.org_id = $1 AND om.user_id = $2
+			  AND u.status = 'active'`, key.OrganizationId, key.UserId,
 		).Scan(&claims.OrgRole, &claims.PlatformRole, &profile)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil

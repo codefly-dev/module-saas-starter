@@ -147,7 +147,7 @@ func refuseSharedTeam(access *InstallationAccess, teams []*gen.Team) error {
 
 // applyInstallationAccess applies access once inst is active, as caller:
 // each role's team is resolved (the team named for it while it still exists,
-// else its conventional team, found or created), each role is granted to its
+// else its conventional team: created, or found only when this installation already granted it the role), each role is granted to its
 // team, then the installer joins the team of each role they took. Before
 // activation nothing is applied; the resumed attempt that activates inst
 // applies it. Every step is check-before-write, so applying it again changes
@@ -199,6 +199,23 @@ func (s *Service) applyInstallationAccess(ctx context.Context, caller authority.
 		if name == "" {
 			name = ConventionalTeamName(inst.Target, role)
 		}
+		// A team that already holds the conventional name was not made for this
+		// role, whoever is in it today: a role is never granted to a team
+		// nobody chose for it, as when the chosen team is gone (above). A team
+		// this installation already granted the role to is the team of an
+		// earlier application of this same access, so applying again changes
+		// nothing.
+		if i := slices.IndexFunc(teams, func(t *gen.Team) bool { return isConventionalTeam(t, name) }); i >= 0 {
+			held, err := s.teamHoldsRole(ctx, caller, inst, role, teams[i].GetId())
+			if err != nil {
+				report(role, "the roles of %s could not be read: %v", name, err)
+				continue
+			}
+			if !held {
+				report(role, "%s already exists and was not made for this role; grant the role in Set up", name)
+				continue
+			}
+		}
 		team, err := s.conventionalTeam(ctx, caller, inst.Organization, name, &teams)
 		if err != nil {
 			report(role, "the team %s could not be created: %v", name, err)
@@ -237,6 +254,19 @@ func (s *Service) applyInstallationAccess(ctx context.Context, caller authority.
 		}
 	}
 	return problems
+}
+
+// teamHoldsRole reports whether inst already grants role to team.
+func (s *Service) teamHoldsRole(ctx context.Context, caller authority.Person, inst domain.Installation, role, team string) (bool, error) {
+	core, err := s.AuthorityCore()
+	if err != nil {
+		return false, err
+	}
+	grants, err := core.ListRoleGrants(ctx, caller, inst.Organization, inst.ID)
+	if err != nil {
+		return false, err
+	}
+	return slices.Contains(grants, domain.RoleGrant{InstallationID: inst.ID, Role: role, TeamID: team}), nil
 }
 
 // accessRoles are the roles access assigns, sorted.

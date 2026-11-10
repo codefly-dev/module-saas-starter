@@ -122,7 +122,10 @@ func (s *Service) LeaveOrganization(ctx context.Context, userID string, req *gen
 		return err
 	}
 	w := wool.Get(ctx).In("LeaveOrganization")
-	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+	// A narrowing, applied directly like an administrator's removal of the same
+	// person: ending the member's grants reaches the authority core's records,
+	// which no tenant transaction may write.
+	if err := s.narrow(ctx, func(ctx context.Context) error {
 		if err := s.store.LockOrgAdministration(ctx, orgID); err != nil {
 			return w.Wrapf(err, "cannot lock organization administration")
 		}
@@ -133,10 +136,15 @@ func (s *Service) LeaveOrganization(ctx context.Context, userID string, req *gen
 		if members <= 1 {
 			return ErrOrgSoleMember
 		}
-		if err := s.removeOrgMembershipTx(ctx, userID, orgID, userID); err != nil {
+		ended, err := s.removeOrgMembershipTx(ctx, userID, orgID, userID)
+		if err != nil {
 			return err
 		}
-		return s.emitTx(ctx, userID, "user", EventOrgMemberLeft, "organization", orgID, orgID)
+		if len(ended) == 0 {
+			return s.emitTx(ctx, userID, "user", EventOrgMemberLeft, "organization", orgID, orgID)
+		}
+		return s.emitTx(ctx, userID, "user", EventOrgMemberLeft, "organization", orgID, orgID,
+			map[string]any{"ended_authority": ended})
 	}); err != nil {
 		return w.Wrapf(err, "cannot leave organization")
 	}
