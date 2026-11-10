@@ -248,6 +248,7 @@ func generatedCatalogConnectRoutes() []*RouteEntry {
 		{Service: "accounts_connect", Method: "POST", Path: "/host.installation.v1.OfferService/ReviewOffer", UpstreamPath: "", Procedure: "/host.installation.v1.OfferService/ReviewOffer"},
 		{Service: "accounts_connect", Method: "POST", Path: "/host.session.v1.SessionService/Current", UpstreamPath: "", Procedure: "/host.session.v1.SessionService/Current"},
 		{Service: "accounts_connect", Method: "POST", Path: "/host.session.v1.SessionService/ListFixturePeople", UpstreamPath: "", Procedure: "/host.session.v1.SessionService/ListFixturePeople"},
+		{Service: "accounts_connect", Method: "POST", Path: "/host.session.v1.SessionService/OpenRoleView", UpstreamPath: "", Procedure: "/host.session.v1.SessionService/OpenRoleView"},
 		{Service: "accounts_connect", Method: "POST", Path: "/host.session.v1.SessionService/SignIn", UpstreamPath: "", Procedure: "/host.session.v1.SessionService/SignIn"},
 		{Service: "accounts_connect", Method: "POST", Path: "/saas.accounts.v1.APIKeyService/CreateAPIKey", UpstreamPath: "", Procedure: "/saas.accounts.v1.APIKeyService/CreateAPIKey"},
 		{Service: "accounts_connect", Method: "POST", Path: "/saas.accounts.v1.APIKeyService/ListAPIKeys", UpstreamPath: "", Procedure: "/saas.accounts.v1.APIKeyService/ListAPIKeys"},

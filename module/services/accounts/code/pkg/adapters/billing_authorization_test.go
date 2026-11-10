@@ -131,6 +131,10 @@ func (*fixedAccessMinter) MintForClient(
 	return nil, nil
 }
 
+func (*fixedAccessMinter) MintRoleView(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (*auth.TokenPair, error) {
+	return nil, nil
+}
+
 func (*fixedAccessMinter) SwitchOrganization(
 	context.Context, uuid.UUID, uuid.UUID, uuid.UUID,
 ) (string, time.Time, error) {
