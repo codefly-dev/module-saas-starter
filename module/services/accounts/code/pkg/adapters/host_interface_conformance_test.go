@@ -1406,7 +1406,7 @@ installations:
 	// The mints decided by organization RBAC are refused, by name, to a session
 	// that views as some of its roles; the session it was opened from mints as before.
 	t.Run("a role view mints no person Work Context of organization RBAC", func(t *testing.T) {
-		testRoleViewRefusesOrganizationMints(t, conn, signIn("fixture-alex"))
+		testRoleViewRefusesOrganizationMints(t, conn, signIn("fixture-alex"), store)
 	})
 
 	// The installed module actor the last case grants, delivered and installed

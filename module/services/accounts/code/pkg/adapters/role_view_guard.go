@@ -78,6 +78,9 @@ func refuseInRoleView(ctx context.Context) error {
 		strings.Join(viewed, "; "))
 }
 
+// SwitchOrganization is deliberately not here: it re-signs the access token for another
+// organisation and the new token would not be a view's, so a view refuses it by name.
+//
 // roleViewWrites are the accounts writes a session may make while viewing as
 // some of its roles, because they act on the person's own account or content and
 // widen no authority. Everything else that is not a read is refused in a view.
@@ -85,7 +88,7 @@ func refuseInRoleView(ctx context.Context) error {
 // it here, which is the opposite of the failure the review found (an operation
 // that mints or administers is refused only if somebody remembered to say so).
 var roleViewWrites = map[string]bool{
-	"AuthService/Logout": true, "AuthService/SwitchOrganization": true,
+	"AuthService/Logout":         true,
 	"ConsentService/AcceptTerms": true, "UserSettingsService/Update": true, "ConsentService/UpdatePreferences": true,
 	"DashboardService/CreateDashboard": true, "DashboardService/UpdateDashboard": true, "DashboardService/DeleteDashboard": true,
 	"NotificationService/MarkRead": true, "NotificationService/MarkAllRead": true, "NotificationService/DeleteNotification": true,

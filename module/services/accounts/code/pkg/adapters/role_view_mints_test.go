@@ -22,6 +22,7 @@ import (
 	sessionv1 "accounts/pkg/gen/host/session/v1"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	policyv1 "accounts/pkg/gen/saas/policy/v1"
+	"accounts/pkg/infra"
 )
 
 // How each entry point that mints, derives or decides a person's authority
@@ -88,7 +89,7 @@ func TestEveryPersonMintEntryPointHonoursOrRefusesARoleView(t *testing.T) {
 // testRoleViewRefusesOrganizationMints opens a role view for the person person
 // calls as, on an installation they hold a role on, then calls each mint
 // listed as refused with the view session's bearer.
-func testRoleViewRefusesOrganizationMints(t *testing.T, conn grpc.ClientConnInterface, person context.Context) {
+func testRoleViewRefusesOrganizationMints(t *testing.T, conn grpc.ClientConnInterface, person context.Context, store *infra.PostgresStore) {
 	held, err := installationv1.NewInstallationServiceClient(conn).ListHeld(person, &installationv1.ListHeldRequest{OrganizationId: fixtureOrganization})
 	require.NoError(t, err)
 	require.NotEmpty(t, held.GetInstallations(), "the person holds a role somewhere")
@@ -123,19 +124,14 @@ func testRoleViewRefusesOrganizationMints(t *testing.T, conn grpc.ClientConnInte
 	}
 	require.Greater(t, refusedInView, 100, "a view refuses most of the accounts surface by default")
 
-	// The lookup every platform gate shares (platformRole) closes on exactly this:
-	// the view session is a view, the session it was opened from is not.
-	viewID, err := uuid.Parse(view.GetSessionId())
-	require.NoError(t, err)
-	personID, err := uuid.Parse(view.GetPersonId())
-	require.NoError(t, err)
-	asView := accountsauth.WithVerifiedRequestIdentity(context.Background(), accountsauth.RequestIdentity{RealActor: personID, EffectiveSubject: personID, SessionID: viewID})
-	seen, err := roleViewOf(asView)
-	require.NoError(t, err)
-	require.NotEmpty(t, seen.Roles, "the view session reads as a view")
-	role, err := platformRole(asView, personID.String())
-	require.NoError(t, err)
-	require.Empty(t, role, "a role view holds no platform role, whatever the store says")
+	// Switching organisation re-signs the access token for another organisation, and
+	// that token would not be a view's: a view refuses it by name rather than
+	// trusting the core's session-keyed record to survive it.
+	_, err = gen.NewAuthServiceClient(conn).SwitchOrganization(viewing, &gen.SwitchOrganizationRequest{OrganizationId: globexOrganization})
+	require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
+	require.Contains(t, status.Convert(err).Message(), "this session views as")
+
+	testRoleViewHoldsNoPlatformRole(t, conn, person, view, store)
 
 	// The session it was opened from mints as before, and Current says it views nothing.
 	_, err = contexts.StartTask(person, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(), Audience: "records",
@@ -179,4 +175,45 @@ func TestRoleViewAdmitsOnlyReadsLoginFlowsAndNamedPersonWrites(t *testing.T) {
 		require.False(t, mutating.MatchString(name),
 			"%s is admitted in a role view as a read or login flow but is named like a mutation: fix its descriptor, or add it to roleViewReadsThatWrite", short)
 	}
+}
+
+// testRoleViewHoldsNoPlatformRole gives the person a platform role, as a platform
+// administrator holds one, and asserts the lookup every platform gate shares
+// (platformRole) returns it from the session the view was opened from and
+// nothing from the view; then that a core that cannot be read answers an error
+// rather than the stored role. It fails when platformRole ignores the view.
+func testRoleViewHoldsNoPlatformRole(t *testing.T, conn grpc.ClientConnInterface, person context.Context, view *sessionv1.Session, store *infra.PostgresStore) {
+	t.Helper()
+	ctx := context.Background()
+	personID := view.GetPersonId()
+	require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return store.GrantPlatformRole(ctx, personID, "super_admin", personID)
+	}))
+	t.Cleanup(func() {
+		_ = store.WithControlPlane(context.Background(), func(ctx context.Context) error { return store.RevokePlatformRole(ctx, personID) })
+	})
+
+	parent, err := sessionv1.NewSessionServiceClient(conn).Current(person, &sessionv1.CurrentRequest{})
+	require.NoError(t, err)
+	identityOf := func(base context.Context, session string) context.Context {
+		sessionID, err := uuid.Parse(session)
+		require.NoError(t, err)
+		subject, err := uuid.Parse(personID)
+		require.NoError(t, err)
+		return accountsauth.WithVerifiedRequestIdentity(base, accountsauth.RequestIdentity{RealActor: subject, EffectiveSubject: subject, SessionID: sessionID})
+	}
+
+	outside, err := platformRole(identityOf(ctx, parent.GetSessionId()), personID)
+	require.NoError(t, err)
+	require.Equal(t, "super_admin", outside, "outside the view the person keeps the role they hold")
+
+	inside, err := platformRole(identityOf(ctx, view.GetSessionId()), personID)
+	require.NoError(t, err)
+	require.Empty(t, inside, "inside the view the role is empty, whatever the store says")
+
+	unreadable, cancel := context.WithCancel(ctx)
+	cancel()
+	role, err := platformRole(identityOf(unreadable, view.GetSessionId()), personID)
+	require.Error(t, err, "a core that cannot be read is an error, never the stored role")
+	require.Empty(t, role)
 }
