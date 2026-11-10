@@ -257,10 +257,10 @@ func (s *UserServer) DeleteUser(ctx context.Context, req *gen.GetUserRequest) (*
 	return &emptypb.Empty{}, nil
 }
 
-// AddIdentity links a provider identity (e.g. WorkOS sub) to an existing
-// user. Only the user themselves OR a platform admin can do this — without
-// the gate, any caller knowing a target user UUID could attach an identity
-// they control and take over the account.
+// AddIdentity links a provider identity (e.g. WorkOS sub) to the caller's own
+// account. Sign-in resolves the user from exactly that (provider, subject) row,
+// so linking an identity someone controls to another account is taking the
+// account over: no one does it for another user, platform roles included.
 func (s *UserServer) AddIdentity(ctx context.Context, req *gen.AddIdentityRequest) (*gen.UserIdentity, error) {
 	if err := Validate(req); err != nil {
 		return nil, err
@@ -269,11 +269,10 @@ func (s *UserServer) AddIdentity(ctx context.Context, req *gen.AddIdentityReques
 	if err != nil {
 		return nil, err
 	}
-	access, err := userDataIdentity(ctx, actorID, req.UserUuid)
-	if err != nil {
-		return nil, err
+	if actorID != req.UserUuid {
+		return nil, status.Error(codes.PermissionDenied, "an identity can be linked only to your own account")
 	}
-	return service.AddIdentity(ctx, actorID, access, req)
+	return service.AddIdentity(ctx, actorID, business.Identity{UserID: actorID}, req)
 }
 
 // FindUserByIdentity resolves (provider, provider_id) → user. This is
