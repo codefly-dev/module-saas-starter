@@ -41,3 +41,19 @@ func TestPlatformSuperAdminAdministersNoOrganizationItIsNotAMemberOf(t *testing.
 		})
 	}
 }
+
+// A refusal names its reason: an export format this host does not produce is an
+// invalid argument that says which formats exist, not a masked internal error.
+func TestExportAuditLogNamesAnUnsupportedFormat(t *testing.T) {
+	store := targetTenantStore()
+	store.platformRoles[supportActorID] = "super_admin"
+	installLayeredAuthzService(t, store)
+
+	identity, err := auth.ParseRequestIdentity(supportActorID, supportActorID, "", "")
+	require.NoError(t, err)
+	ctx := stampRequestIdentity(context.Background(), identity, auth.Assurance{})
+
+	_, err = (&AuditServer{}).ExportAuditLog(ctx, &gen.ExportAuditLogRequest{Format: "EXPORT_FORMAT_JSON"})
+	require.Equal(t, codes.InvalidArgument, status.Code(err), "%v", err)
+	require.Contains(t, status.Convert(err).Message(), `use "csv" or "json"`)
+}

@@ -709,7 +709,7 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventPrincipalEnabled, CategoryAccess, "An agent principal was re-enabled."),
 	mutation(EventScopeNodeRegistered, CategoryAccess, "A scope node was registered.", str("scope_path"), str("kind")),
 	mutation(EventScopeGranted, CategoryAccess, "A role was granted at a scope node.", uid("role_id"), uid("subject_id"), str("scope_path")),
-	mutation(EventScopeRevoked, CategoryAccess, "A scope grant was revoked.", uid("role_id"), str("scope_path")),
+	mutation(EventScopeRevoked, CategoryAccess, "A scope grant was revoked.", uid("role_id"), uid("subject_id"), str("scope_path")),
 	mutation(EventInstallationCreated, CategoryAccess, "A solution was installed: an agent principal, solution scope node, standing grant, and installation row were composed.",
 		uid("agent_principal_id"), uid("target_id"), uid("role_id"), uid("owner_principal_id"), strs("allowed_audiences"), strs("allowed_scopes"), str("by")),
 	mutation(EventInstallationRevoked, CategoryAccess, "A solution was uninstalled, or the presence it was installed from was withdrawn: its agent principal and standing grant were revoked and its scope node soft-deleted.",

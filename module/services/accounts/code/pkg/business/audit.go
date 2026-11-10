@@ -284,9 +284,14 @@ func (e *DurableAuditEmitter) Close() {}
 // plus an optional JSONB payload-containment predicate. All fields are
 // optional; the zero value matches every row visible under RLS.
 type AuditQuery struct {
-	OrgID     string
-	ActorID   string
-	EventType string
+	OrgID string
+	// PlatformEventsOnly restricts the read to the platform's own events, the
+	// ones recorded with no organization. A platform-wide read means this and
+	// nothing wider: an organization's events are read with that organization's
+	// id, by a member, never by reach across tenants.
+	PlatformEventsOnly bool
+	ActorID            string
+	EventType          string
 	// EventTypes is the set form of EventType: a record matches when its type is
 	// any one of them. Set alongside EventType both apply, so a one-element set
 	// and the scalar answer alike.

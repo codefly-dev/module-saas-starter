@@ -25,29 +25,22 @@ type Role = PlatformRole | OrgRole;
 
 // Resource shorthand: `*` means any generated action for that resource.
 const permissionsByRole = {
-	super_admin: [PERMISSIONS.ALL],
-	// Billing role can read the org surface but only write billing.
-	billing: [
-		PERMISSIONS.USERS_READ,
-		PERMISSIONS.ORGS_READ,
-		"billing:*",
-		PERMISSIONS.ENTITLEMENTS_READ,
-		PERMISSIONS.AUDIT_READ,
+	// A platform role confers no organization permission: reading or administering
+	// an organization is explicit, through membership of it. The only thing a
+	// platform role holds here is the platform's own surface, which no tenant owns.
+	super_admin: [
+		PERMISSIONS.MODULE_ENVELOPE_READ,
+		PERMISSIONS.MODULE_ENVELOPE_WRITE,
 	],
-	// Support role: read-only visibility across orgs for triage + impersonate.
-	support: [
-		PERMISSIONS.USERS_READ,
-		PERMISSIONS.ORGS_READ,
-		PERMISSIONS.TEAMS_READ,
-		PERMISSIONS.ROLES_READ,
-		PERMISSIONS.API_KEYS_READ,
-		PERMISSIONS.AUDIT_READ,
-		PERMISSIONS.INVITATIONS_READ,
-	],
-	// Org owner: everything within their own org.
+	billing: [],
+	support: [],
+	// Org owner: everything within their own org. The catalog's `*:*` is the
+	// built-in admin role, an explicit organization role, and only this org's.
 	owner: [
+		PERMISSIONS.ALL,
 		PERMISSIONS.USERS_READ,
 		"orgs:*",
+		"billing:*",
 		"teams:*",
 		"roles:*",
 		"api_keys:*",
@@ -63,8 +56,10 @@ const permissionsByRole = {
 	// (handler enforces requirePlatformAdmin) so admin's roles:write
 	// here doesn't grant that.
 	admin: [
+		PERMISSIONS.ALL,
 		PERMISSIONS.USERS_READ,
 		PERMISSIONS.ORGS_READ,
+		"billing:*",
 		"teams:*",
 		"roles:*",
 		"api_keys:*",
@@ -82,15 +77,14 @@ const permissionsByRole = {
  * carried by the current session grants the requested permission.
  *
  * The format is finite: exact values come from the generated service catalog,
- * while "users:*" grants every generated users action. The generated `*:*`
- * root permission is the effective super-admin bypass.
+ * while "users:*" grants every generated users action. No role is a bypass: a
+ * platform role holds none of an organization's permissions.
  */
 export function hasPermission(
 	platformRole: PlatformRole | undefined,
 	orgRole: OrgRole | undefined,
 	permission: Permission,
 ): boolean {
-	// Platform super_admin has the generated global `*:*` bypass.
 	const roles: Role[] = [];
 	if (platformRole) roles.push(platformRole);
 	if (orgRole) roles.push(orgRole);
@@ -98,6 +92,7 @@ export function hasPermission(
 	for (const role of roles) {
 		const grants = permissionsByRole[role] ?? [];
 		for (const g of grants) {
+			// Only an organization role holds the catalog's `*:*`; no platform role does.
 			if (g === PERMISSIONS.ALL) return true;
 			const [gRes, gAct] = g.split(":");
 			if (gRes !== wantResource) continue;
