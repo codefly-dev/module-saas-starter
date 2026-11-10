@@ -21,7 +21,7 @@ func TestReadOnlyRoleGrantNeedsNoRecentFactor(t *testing.T) {
 		Permissions: []*gen.Permission{{Resource: "collection.content", Action: "read"}}}
 	writes := &gen.Role{Id: "00000000-0000-4000-8000-0000000000c2", OrgId: mfaOrgID, Name: "collection editors",
 		Permissions: []*gen.Permission{{Resource: "collection.content", Action: "read"}, {Resource: "collection.content", Action: "write"}}}
-	installMFAPolicyStore(t, &mfaPolicyStore{platformRole: "super_admin", roles: []*gen.Role{readOnly, writes}})
+	installMFAPolicyStore(t, &mfaPolicyStore{platformRole: "super_admin", orgRole: gen.OrgRole_ORG_ROLE_ADMIN, member: true, roles: []*gen.Role{readOnly, writes}})
 	ctx := privilegedActorContext()
 	server := &PermServer{}
 

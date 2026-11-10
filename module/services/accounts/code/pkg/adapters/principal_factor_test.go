@@ -124,9 +124,11 @@ func TestR1019PrincipalMutationsRequireAFactor(t *testing.T) {
 		name  string
 		store *principalFactorStore
 	}{
-		{"platform super-admin", &principalFactorStore{
-			platformRole: "super_admin",
-			principal:    &business.Principal{ID: factorUUID, OrgID: mfaOrgID},
+		// A platform role grants no organization authority, so the platform
+		// super-admin reaches the factor gate only as an administrator of the org.
+		{"platform super-admin who administers the organization", &principalFactorStore{
+			platformRole: "super_admin", orgRole: gen.OrgRole_ORG_ROLE_ADMIN, member: true,
+			principal: &business.Principal{ID: factorUUID, OrgID: mfaOrgID},
 		}},
 		{"organization owner", &principalFactorStore{
 			orgRole: gen.OrgRole_ORG_ROLE_OWNER, member: true,

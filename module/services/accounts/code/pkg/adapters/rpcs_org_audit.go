@@ -74,20 +74,16 @@ func (s *AuditServer) ExportAuditLog(ctx context.Context, req *gen.ExportAuditLo
 	if err != nil {
 		return nil, err
 	}
-	// Export is a higher-privilege op than Query (it emits a file). Org
-	// members get their own org; cross-org export needs platform admin.
+	// Export is a higher-privilege op than Query (it emits a file). An org's
+	// administrators export their own org; a platform role exports no org it is
+	// not an administrator of. No org_id is a platform-wide export.
 	if req.OrgId == "" {
 		if err := requirePlatformAdmin(ctx, actorID); err != nil {
 			return nil, err
 		}
 	} else {
 		if err := requireOrgAdmin(ctx, actorID, req.OrgId); err != nil {
-			if !IsPermissionDenied(err) {
-				return nil, err
-			}
-			if paErr := requirePlatformAdmin(ctx, actorID); paErr != nil {
-				return nil, err
-			}
+			return nil, err
 		}
 	}
 	data, contentType, filename, err := service.ExportAuditLog(ctx, req.OrgId, req.Format, req.ActorId, req.EventType, req.EventTypes)
