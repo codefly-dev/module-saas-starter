@@ -1394,7 +1394,21 @@ installations:
 		}
 	})
 
-	// Last, because the envelope it writes becomes every module's ceiling: a
+	// Beyond the suite: accounts' own person Work Context mints, beside the
+	// host Issue, follow the core's owner rule (RBAC-4a).
+	t.Run("a person's own Work Context mints follow the core's owner rule", func(t *testing.T) {
+		testOwnSessionOwnerRule(t, conn, signIn("fixture-alex"), credential, func(m conformanceModule) {
+			deliverModule(t, ctx, conn, signer, m)
+			require.NoError(t, installModule(ctx, m.alias))
+		}, &solutionhost.Frontend{Title: "Owner page", ExposedModule: "./Page", HostContract: 1, Payload: pagePayload})
+	})
+
+	// The installed module actor the last case grants, delivered and installed
+	// while no envelope is committed.
+	deliverModule(t, ctx, conn, signer, installedActorModule)
+	require.NoError(t, installModule(ctx, installedActorModule.alias))
+
+	// Among the last, because the envelope it writes becomes every module's ceiling: a
 	// real envelope write that narrows a module's binding (the write
 	// PutModuleEnvelope makes, without its platform administrator check) is
 	// refused at once until the registry is derived again, then issues only
@@ -1457,6 +1471,41 @@ installations:
 		require.Equal(t, []string{"modelservice.profiles"}, kinds(after), "the narrowed ceiling issues only what it allows")
 		_, err = client.Check(ctx, &authorityv1.CheckRequest{Token: before.GetToken(), Audience: "model"})
 		require.Error(t, err, "and the capability issued before stays refused")
+	})
+
+	// After the envelope narrowing, for the same reason: this case writes the
+	// envelope every module's ceiling is derived from.
+	t.Run("an installed module actor's exchange of a person's own session follows the core's owner rule", func(t *testing.T) {
+		testInstalledActorOwnSession(t, installedActorHarness{
+			admin: signIn("fixture-alex"), contexts: gen.NewWorkContextServiceClient(conn), credential: credential,
+			grant: func(principals string) {
+				var latest uint64
+				require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
+					var err error
+					latest, err = store.LatestModuleEnvelopeRevision(ctx)
+					return err
+				}))
+				doc := []byte(fmt.Sprintf(`{"revision":%d,"principals":{%s}}`, latest+1, principals))
+				_, err := business.ParseModuleEnvelope(doc)
+				require.NoError(t, err)
+				require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
+					return store.AppendModuleEnvelopeRecord(ctx, &business.ModuleEnvelopeRecord{Revision: latest + 1, Document: doc, WrittenBy: conformanceAlex}, latest)
+				}))
+				pass, err := business.NewSolutionHostBindingReconciler(svc, business.SolutionHostBindingReconcilerConfig{
+					Source: business.NewDeliveredSolutionHostBindings(svc), Verifier: verifier, Coordinate: "conformance-host", Envelopes: svc,
+				})
+				require.NoError(t, err)
+				// The envelope names two modules: every other is omitted from the registry.
+				if err := pass.RunOnce(ctx); err != nil {
+					require.ErrorContains(t, err, "omitted from the registry")
+				}
+			},
+			withdraw: func(module string) error { return core.WithdrawModule(ctx, module) },
+			registered: func(module string) bool {
+				_, carried := svc.ModulePrincipals()[business.ModulePrincipalID(module)]
+				return carried
+			},
+		})
 	})
 }
 

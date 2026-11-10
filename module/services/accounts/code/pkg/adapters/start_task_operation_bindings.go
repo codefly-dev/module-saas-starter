@@ -8,6 +8,7 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
+	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -50,8 +51,18 @@ type operationBindingProjection struct {
 // if the person holds it at the binding target, by the same check every mint makes; a binding the
 // person holds nothing under is refused by name. A scope the caller already
 // named is not added twice.
+//
+// Through a module that declares no roles, what the person holds at the target
+// is what their own session holds there, as the core reads a binding
+// (throughSolutions): at a target that checks owners, none of its owned kinds
+// (ownSessionRule). Through a role-gated module the core reads its roles,
+// which this mint does not, so that projection is left as it was.
 func (s *WorkContextAuthorityServer) withOperationBindingScopes(ctx context.Context, orgID, audience string, asked []*gen.WorkContextScope, names []string) (*operationBindingProjection, error) {
 	ownerID, err := s.authorizeOwner(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	through, err := ownSessionThrough(ctx, audience)
 	if err != nil {
 		return nil, err
 	}
@@ -67,6 +78,11 @@ func (s *WorkContextAuthorityServer) withOperationBindingScopes(ctx context.Cont
 			kept, err := s.heldBindingScope(ctx, orgID, ownerID, binding.Audience, scope)
 			if err != nil {
 				return nil, err
+			}
+			if through {
+				if kept, err = heldProjection(ctx, binding.Audience, kept); err != nil {
+					return nil, err
+				}
 			}
 			for _, part := range kept {
 				held++
@@ -140,4 +156,18 @@ func (s *WorkContextAuthorityServer) heldBindingScope(ctx context.Context, orgID
 		}
 	}
 	return out, nil
+}
+
+// heldProjection is parts of a binding's scope narrowed to what the core's
+// owner rule holds at the binding's audience: a part of a kind it owns is not
+// held, so it is not projected, and a binding that holds nothing is refused by
+// its own name.
+func heldProjection(ctx context.Context, audience string, parts []*gen.WorkContextScope) ([]*gen.WorkContextScope, error) {
+	target, composed, err := composedAudience(ctx, audience)
+	if err != nil || !composed {
+		return parts, err
+	}
+	return slices.DeleteFunc(parts, func(part *gen.WorkContextScope) bool {
+		return ownSessionRule(target, []*basev0.WorkScopeV1{{ResourceKind: part.ResourceKind, Actions: part.Actions}}) != nil
+	}), nil
 }

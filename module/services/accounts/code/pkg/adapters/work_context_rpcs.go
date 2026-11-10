@@ -627,6 +627,13 @@ func (s *WorkContextAuthorityServer) StartTask(
 	if err != nil {
 		return nil, err
 	}
+	// A person's own session: what it carries at the audience, asked or
+	// projected through a binding, is held to the core's owner rule there.
+	if req.GetActorPrincipalId() == "" {
+		if err := holdOwnSession(ctx, req.GetAudience(), scopes); err != nil {
+			return nil, err
+		}
+	}
 	taskID, err := s.taskBoundary(ctx, req.GetOrgId(), req.GetTaskId())
 	if err != nil {
 		return nil, err
@@ -1364,6 +1371,13 @@ func (s *WorkContextAuthorityServer) StartRootSession(
 	if err := enforceActorAudience(ctx, actor, req.GetAudience()); err != nil {
 		return nil, err
 	}
+	// The owner's own session re-issued at a new audience carries every scope
+	// of the parent there, so it is held to the core's owner rule there.
+	if ownSession(parent.Context()) {
+		if err := holdOwnSession(ctx, req.GetAudience(), parent.Context().GetAuthorityScopes()); err != nil {
+			return nil, err
+		}
+	}
 	token, signed, err := s.remint(ctx, parent.Context(), req.GetAudience(),
 		workContextReplayPolicy(req.GetReplayPolicy()), workContextTTL(req.GetTtlSeconds()),
 		nil, "", moduleBindingSeal{})
@@ -1409,6 +1423,9 @@ func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
 	_, scopes, err := workContextScopes(req.GetAttenuatedScopes(), mintContentReads(req.GetAudience()))
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if scopes, err = holdOwnSessionExchange(ctx, parent, req.GetAudience(), scopes, exercised); err != nil {
+		return nil, err
 	}
 	// Enforce both dimensions of the actor ceiling: an exchange can name a new
 	// audience AND re-declare scopes, so the scope cap must apply here too, not
