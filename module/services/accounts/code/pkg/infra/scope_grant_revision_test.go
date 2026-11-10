@@ -58,3 +58,33 @@ func TestRevokingAScopeGrantMovesTheAuthorizationRevision(t *testing.T) {
 	}))
 	require.Equal(t, orgAfter, authorizationRevision(t, orgID))
 }
+
+// A team's grant moves the organization's revision alone (no person row), and
+// re-granting an identical grant, which changes no row, moves nothing.
+func TestRevokingATeamScopeGrantMovesTheOrganizationRevision(t *testing.T) {
+	orgID, principalID, roleID := layeredFixture(t, "doc", "read")
+	teamID := business.NewIDString()
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		if err := testStore.CreateTeam(ctx, &gen.Team{Id: teamID, OrgId: orgID, Name: "Team", Slug: "team-" + teamID, Path: "team-" + teamID}); err != nil {
+			return err
+		}
+		return testStore.RegisterScopeNode(ctx, &gen.ScopeNode{Id: business.NewIDString(), OrgId: orgID, ScopePath: "space", Kind: "space", Label: "space"})
+	}))
+	grant := func() error {
+		return testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+			return testStore.GrantScope(ctx, &gen.ScopeGrant{
+				Id: business.NewIDString(), OrgId: orgID, SubjectId: teamID,
+				SubjectKind: gen.SubjectKind_SUBJECT_KIND_TEAM, ScopePath: "space", RoleId: roleID, GrantedBy: principalID,
+			})
+		})
+	}
+	require.NoError(t, grant())
+	before := authorizationRevision(t, orgID)
+	require.NoError(t, grant())
+	require.Equal(t, before, authorizationRevision(t, orgID), "granting the same grant again changes no row and moves no revision")
+
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		return testStore.RevokeScope(ctx, orgID, teamID, gen.SubjectKind_SUBJECT_KIND_TEAM, "space", roleID)
+	}))
+	require.Greater(t, authorizationRevision(t, orgID), before, "revoking a team's grant moves the organization's revision")
+}

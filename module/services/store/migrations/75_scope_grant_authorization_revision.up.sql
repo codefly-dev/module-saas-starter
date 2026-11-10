@@ -34,10 +34,10 @@ BEGIN
 END;
 $$;
 
+CREATE TRIGGER scope_grants_bump_authorization_revision AFTER UPDATE OR DELETE ON public.scope_grants
+    FOR EACH ROW EXECUTE FUNCTION public.authorization_revision_scope_grant_mutation();
+
 REVOKE ALL ON FUNCTION public.authorization_revision_scope_grant_mutation() FROM PUBLIC;
 GRANT CREATE ON SCHEMA public TO app_control_plane;
 ALTER FUNCTION public.authorization_revision_scope_grant_mutation() OWNER TO app_control_plane;
 REVOKE CREATE ON SCHEMA public FROM app_control_plane;
-
-CREATE TRIGGER scope_grants_bump_authorization_revision AFTER UPDATE OR DELETE ON public.scope_grants
-    FOR EACH ROW EXECUTE FUNCTION public.authorization_revision_scope_grant_mutation();
