@@ -86,8 +86,7 @@ otherwise independent runs and migration revisions.
 
 Core is pinned per Go module. The module agent, tooling and frontend payload
 select released Core **v0.19.7**. The services — accounts, auth-gateway and
-store — select one Core together, the candidate
-`v0.19.20-0.20261109211818-3e7b38e3d9ad` (core main after core#900): the gateway reads the module
+store — select one Core together, released **v0.19.20**: the gateway reads the module
 manifests accounts accepts with Core's strict parser, so a gateway on an older
 Core drops every manifest carrying a field it does not know (a dropped manifest
 is logged and shown as `refusal` in `/solutions/_registry`). Move the three
