@@ -40,6 +40,15 @@ rewrites the provenance. Never edit the baseline by hand: the provenance digest
 refuses it (`qualification/managed-database/stage.py`), and so does the
 reference gate.
 
+### Accounts refuses a store behind its binary
+
+Accounts reads this ledger's version at startup and refuses to serve a store
+that is behind, or marked dirty (a migration running or failed), naming the
+migration it needs (`schema_frontier.go`). Adding a migration therefore moves
+`requiredSchemaVersion` in the same change; a test fails until it does. A
+rollout that starts accounts before the migration has finished shows as a
+refusal and a restart, never as `column ... does not exist` on a query.
+
 ### Filling a column a shared contract now keeps
 
 When a library the host runs (the authority core) starts keeping a value the

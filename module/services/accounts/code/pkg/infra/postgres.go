@@ -174,6 +174,13 @@ func NewPostgresStoreWithCapabilities(ctx context.Context, readOnlyConnection, r
 		requestPool.Close()
 		return nil, err
 	}
+	// A store behind this binary, or mid-migration, is refused by name before
+	// any query can fail on a column it does not have yet.
+	if err := requireSchemaCurrent(ctx, controlPlanePool); err != nil {
+		controlPlanePool.Close()
+		requestPool.Close()
+		return nil, err
+	}
 	// And the database judges by the settings this process can bind. A catalog
 	// and a binary that disagree about the two names do not fail: every scoped
 	// read is empty and every scoped write fails its WITH CHECK, silently. The

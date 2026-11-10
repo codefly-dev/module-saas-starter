@@ -98,9 +98,13 @@ export class OnboardingController {
 
 	setOrganizationName(name: string): void {
 		const current = this.model.draft;
+		// The slug follows the name until the person edits it. Following only
+		// while it is empty froze it at the first letter typed.
+		const following =
+			!current.slug || current.slug === slugifyOrganizationName(current.name);
 		const draft = {
 			name,
-			slug: current.slug || slugifyOrganizationName(name),
+			slug: following ? slugifyOrganizationName(name) : current.slug,
 		};
 		this.update({ draft, error: undefined });
 		this.draftStore?.save(draft);
