@@ -1187,11 +1187,11 @@ func TestSessionStore_ImpersonationAndRefreshCredentialAreMutuallyExclusive(t *t
 
 	err := insert(t, someHash(), targetID)
 	require.Error(t, err, "an impersonation row must not also carry a rotatable credential")
-	require.Contains(t, err.Error(), "sessions_impersonation_has_no_refresh_credential")
+	require.Contains(t, err.Error(), "sessions_access_only_has_no_refresh_credential")
 
 	err = insert(t, nil, nil)
 	require.Error(t, err, "an ordinary login must carry a refresh credential")
-	require.Contains(t, err.Error(), "sessions_impersonation_has_no_refresh_credential")
+	require.Contains(t, err.Error(), "sessions_access_only_has_no_refresh_credential")
 }
 
 // `refresh_token_hash = $1` never matches NULL, so no presented hash — however

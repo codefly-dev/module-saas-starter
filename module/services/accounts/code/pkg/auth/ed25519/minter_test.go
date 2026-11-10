@@ -160,7 +160,7 @@ func (s *memoryStore) AuthorizeClientSession(
 			}
 			return err
 		}
-		if next == nil || next.UserID != current.UserID || next.FamilyID == current.FamilyID || next.ClientID == "" {
+		if next == nil || next.UserID != current.UserID || next.FamilyID == current.FamilyID || (next.ClientID == "" && !next.AccessOnly) {
 			return errors.New("memory session store: invalid client session")
 		}
 		s.records = append(s.records, *next)

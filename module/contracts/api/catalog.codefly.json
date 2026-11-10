@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/authority/contract.binpb",
-      "digest": "sha256:22c86b05a4cd6388affa81fd199ca3b7548f7defb36baf4c9222ae9c3bfd7cd1",
+      "digest": "sha256:023a128950ce901dfd6527773923fb46430d6e08ecb6ef27f2025d35eeec9087",
       "services": [
         {
           "name": "ModuleCapabilitiesService",
@@ -66,7 +66,7 @@
       "kind": "protobuf",
       "package": "",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:22c86b05a4cd6388affa81fd199ca3b7548f7defb36baf4c9222ae9c3bfd7cd1",
+      "digest": "sha256:023a128950ce901dfd6527773923fb46430d6e08ecb6ef27f2025d35eeec9087",
       "services": [
         {
           "name": "ArtifactService",
@@ -129,6 +129,7 @@
           "procedures": [
             "/host.session.v1.SessionService/Current",
             "/host.session.v1.SessionService/ListFixturePeople",
+            "/host.session.v1.SessionService/OpenRoleView",
             "/host.session.v1.SessionService/SignIn"
           ]
         },
