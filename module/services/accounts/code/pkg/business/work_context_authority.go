@@ -23,13 +23,13 @@ type WorkContextPermission struct {
 	// composed module declares its content under (the module principal registry
 	// `resources`). This host authorizes every read of such content per scope
 	// node, at the moment of the read: ListReadableSourceCollections and
-	// CheckWorkContextRecordAccess intersect each node with the grants, shares
-	// and platform read authority of the owner and every actor. The scope in
+	// CheckWorkContextRecordAccess intersect each node with the grants and shares
+	// of the owner and every actor. The scope in
 	// the capability is therefore the owner's standing to ask, never
 	// organization-wide authority over the content, and a collection read grant
 	// is exactly how an administrator confers it. The owner holds it when an
-	// organization-level role grants it (as before) or when a live grant, share
-	// or platform read authority confers it on at least one node.
+	// organization-level role grants it (as before) or when a live grant or share
+	// confers it on at least one node.
 	//
 	// Only the adapters set it, and only from the declared registry, so a
 	// module's own vocabulary never reaches the store as a literal.

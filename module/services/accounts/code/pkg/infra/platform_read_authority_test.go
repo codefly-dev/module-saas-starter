@@ -9,9 +9,8 @@ import (
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
-	"accounts/pkg/infra"
+	"accounts/pkg/infra/storetx"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -57,13 +56,6 @@ func (f platformReadFixture) joinOrg(t *testing.T) string {
 	user := seedUser(t)
 	seedOrgMember(t, f.org, user)
 	return user
-}
-
-func impersonating(realActor, effectiveSubject string) context.Context {
-	return auth.WithVerifiedRequestIdentity(testCtx, auth.RequestIdentity{
-		RealActor:        uuid.MustParse(realActor),
-		EffectiveSubject: uuid.MustParse(effectiveSubject),
-	})
 }
 
 type platformReadAnswer struct {
@@ -116,126 +108,66 @@ func requireNoRead(t *testing.T, answer platformReadAnswer, why string) {
 	require.Empty(t, answer.resourceIDs, "ListAccessibleResourceIDs: %s", why)
 }
 
-// A platform super_admin reads every node in an organization it has no grant
-// in, and every oracle says the read rests on platform authority, not a grant.
-func TestPlatformSuperAdminReadsWithoutAGrant(t *testing.T) {
+// A platform role is a role like any other: it holds no read of its own. Every
+// oracle refuses a platform super_admin who has no grant, and a grant it does
+// hold reads exactly the grant. This is the owner's rule that all roles are
+// explicit; it failed against the platform read authority this host used to
+// have, which let a super_admin read every collection in every organization.
+func TestPlatformSuperAdminReadsNothingWithoutAGrant(t *testing.T) {
 	f := newPlatformReadFixture(t)
 	admin := f.joinOrg(t)
 	grantPlatformRoleForTest(t, admin, "super_admin")
 
 	answer := f.readAs(t, testCtx, admin, "read")
-	require.True(t, answer.checkAccess)
-	require.Equal(t, infra.PlatformReadBasis, answer.reason)
-	require.Equal(t, map[string]gen.AccessBasis{
-		"root":                   gen.AccessBasis_ACCESS_BASIS_PLATFORM_ADMINISTRATOR,
-		"root.collection":        gen.AccessBasis_ACCESS_BASIS_PLATFORM_ADMINISTRATOR,
-		"root.collection.record": gen.AccessBasis_ACCESS_BASIS_PLATFORM_ADMINISTRATOR,
-	}, answer.listed)
-	require.True(t, answer.canReadNode)
-	require.Equal(t, []string{"record-a"}, answer.resourceIDs)
+	requireNoRead(t, answer, "a platform super_admin with no grant")
+	require.Equal(t, "no scope grant or record share", answer.reason,
+		"the refusal names why: there is no grant, not a hidden policy")
 
-	// Read only: platform authority confers no other action, and no wildcard.
-	for _, action := range []string{"write", "delete", "*"} {
-		requireNoRead(t, f.readAs(t, testCtx, admin, action), "platform authority is read-only, not "+action)
-	}
-
-	// A grant the administrator also holds is reported as the grant.
+	// An explicit grant is read as a grant, and reaches only what it names.
 	require.NoError(t, testStore.WithOrgTx(testCtx, f.org, func(ctx context.Context) error {
 		return testStore.GrantScope(ctx, &gen.ScopeGrant{Id: business.NewIDString(), OrgId: f.org, SubjectId: admin,
 			SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ScopePath: "root.collection", RoleId: f.role})
 	}))
 	answer = f.readAs(t, testCtx, admin, "read")
 	require.Equal(t, "granted via scope", answer.reason)
-	require.Equal(t, gen.AccessBasis_ACCESS_BASIS_GRANT, answer.listed["root.collection"])
-	require.Equal(t, gen.AccessBasis_ACCESS_BASIS_GRANT, answer.listed["root.collection.record"])
-	require.Equal(t, gen.AccessBasis_ACCESS_BASIS_PLATFORM_ADMINISTRATOR, answer.listed["root"],
-		"the grant sits below root, so root is still reachable only through platform authority")
-
-	// Revoking the platform role withdraws the authority on the next read.
-	require.NoError(t, revokePlatformRoleForTest(admin))
-	answer = f.readAs(t, testCtx, admin, "read")
-	require.NotContains(t, answer.listed, "root")
-	require.Equal(t, gen.AccessBasis_ACCESS_BASIS_GRANT, answer.listed["root.collection"])
+	require.Equal(t, map[string]gen.AccessBasis{
+		"root.collection":        gen.AccessBasis_ACCESS_BASIS_GRANT,
+		"root.collection.record": gen.AccessBasis_ACCESS_BASIS_GRANT,
+	}, answer.listed, "the grant sits below root: root is not reachable through the platform role")
 }
 
-// Nothing but the super_admin platform role confers it: not the organization's
-// owner, not a plain member, not the lesser platform roles.
-func TestPlatformReadAuthorityIsOnlySuperAdmin(t *testing.T) {
+// No role confers a read by itself: not the organization's owner, a plain
+// member, nor any platform role.
+func TestNoRoleReadsWithoutAGrant(t *testing.T) {
 	f := newPlatformReadFixture(t)
 	requireNoRead(t, f.readAs(t, testCtx, f.orgOwner, "read"),
 		"an organization owner's flat role never substitutes for a collection grant")
+	requireNoRead(t, f.readAs(t, testCtx, f.joinOrg(t), "read"), "a plain member holds no grant")
 
-	member := f.joinOrg(t)
-	requireNoRead(t, f.readAs(t, testCtx, member, "read"), "a plain member holds no grant")
-
-	for _, role := range []string{"support", "billing"} {
+	for _, role := range []string{"super_admin", "support", "billing"} {
 		user := f.joinOrg(t)
 		grantPlatformRoleForTest(t, user, role)
-		requireNoRead(t, f.readAs(t, testCtx, user, "read"), "platform "+role+" is not an administrator of content")
+		requireNoRead(t, f.readAs(t, testCtx, user, "read"), "platform "+role+" holds no grant")
 	}
-
-	// A team never holds platform authority, even one a super_admin belongs to.
-	admin := f.joinOrg(t)
-	grantPlatformRoleForTest(t, admin, "super_admin")
-	require.NoError(t, testStore.WithOrgTx(testCtx, f.org, func(ctx context.Context) error {
-		ok, _, err := testStore.CheckAccess(ctx, admin, gen.SubjectKind_SUBJECT_KIND_TEAM, "example.record", "record-a", "read")
-		require.False(t, ok)
-		return err
-	}))
 }
 
-// Impersonation confers it in neither direction: an administrator impersonating
-// a member does not read through the member, and nobody impersonating an
-// administrator reads through the administrator.
-func TestPlatformReadAuthorityNeverCrossesImpersonation(t *testing.T) {
+// A module acting for a viewer asks through the Work Context oracles. A
+// super_admin viewer with no grant is refused there as well, on the exact-record
+// check and on the collection projection; with a grant the same calls pass.
+func TestPlatformSuperAdminIsRefusedWhenAModuleActsForThem(t *testing.T) {
 	f := newPlatformReadFixture(t)
 	admin := f.joinOrg(t)
 	grantPlatformRoleForTest(t, admin, "super_admin")
-	member := f.joinOrg(t)
-	support := f.joinOrg(t)
-	grantPlatformRoleForTest(t, support, "support")
-
-	requireNoRead(t, f.readAs(t, impersonating(admin, member), member, "read"),
-		"the impersonator's platform role must not reach the member it acts as")
-	requireNoRead(t, f.readAs(t, impersonating(support, admin), admin, "read"),
-		"the impersonated administrator's platform role is not the impersonator's to borrow")
-	requireNoRead(t, f.readAs(t, impersonating(admin, member), admin, "read"),
-		"no subject reads through platform authority on an impersonated request")
-
-	// The same administrator, signed in as themselves, does read.
-	require.True(t, f.readAs(t, testCtx, admin, "read").checkAccess)
-}
-
-// A module acting for a viewer asks through the Work Context oracles, which
-// intersect every subject the capability names. A super_admin viewer passes on
-// platform authority there as well, while a delegated actor with no grant of
-// its own still fails the intersection.
-func TestPlatformReadAuthorityReachesAModuleActingForTheViewer(t *testing.T) {
-	f := newPlatformReadFixture(t)
-	admin := f.joinOrg(t)
-	grantPlatformRoleForTest(t, admin, "super_admin")
-	member := f.joinOrg(t)
 	source := seedDatasourceSource(t, f.org)
 
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
 	current := func(context.Context) error { return nil }
-
-	// The exact-record oracle behind CheckWorkContextRecordAccess.
 	viewer := auth.WithVerifiedDatabaseIdentity(testCtx, admin, f.org)
-	decision, err := svc.CheckDelegatedRecordAccess(viewer, f.org, []string{admin}, "example.record", "record-a", "read", current)
-	require.NoError(t, err)
-	require.True(t, decision.GetAllowed())
-	require.NotEmpty(t, decision.GetScopeNodeId())
-	decision, err = svc.CheckDelegatedRecordAccess(viewer, f.org, []string{admin, member}, "example.record", "record-a", "read", current)
-	require.NoError(t, err)
-	require.False(t, decision.GetAllowed(), "every delegated subject must read independently")
-
-	// The collection projection behind ListReadableSourceCollections.
-	readable := func(ctx context.Context, subjects []string, resources []string) []string {
+	readable := func(subjects, resources []string) []string {
 		t.Helper()
 		var ids []string
-		require.NoError(t, testStore.WithSourceReadSnapshot(ctx, f.org, func(snapshot context.Context) error {
+		require.NoError(t, testStore.WithSourceReadSnapshot(viewer, f.org, func(snapshot context.Context) error {
 			rows, err := testStore.ListReadableSourcesPage(snapshot, f.org, subjects, resources, "", 10)
 			for _, row := range rows {
 				ids = append(ids, row.SourceId)
@@ -244,9 +176,49 @@ func TestPlatformReadAuthorityReachesAModuleActingForTheViewer(t *testing.T) {
 		}))
 		return ids
 	}
-	require.Equal(t, []string{source}, readable(viewer, []string{admin}, []string{"documents"}))
-	require.Empty(t, readable(viewer, []string{admin, member}, []string{"documents"}))
-	require.Empty(t, readable(auth.WithVerifiedDatabaseIdentity(testCtx, member, f.org), []string{member}, []string{"documents"}))
-	require.Empty(t, readable(viewer, []string{admin}, nil),
-		"platform authority replaces the grant, never the module's declaration of its content")
+
+	decision, err := svc.CheckDelegatedRecordAccess(viewer, f.org, []string{admin}, "example.record", "record-a", "read", current)
+	require.NoError(t, err)
+	require.False(t, decision.GetAllowed(), "a platform role confers no read on a module's record")
+	require.Empty(t, readable([]string{admin}, []string{"documents"}),
+		"a platform role confers no read on a module's collection")
+
+	// Granted at the root, both pass.
+	require.NoError(t, testStore.WithOrgTx(testCtx, f.org, func(ctx context.Context) error {
+		return testStore.GrantScope(ctx, &gen.ScopeGrant{Id: business.NewIDString(), OrgId: f.org, SubjectId: admin,
+			SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ScopePath: "root", RoleId: f.role})
+	}))
+	decision, err = svc.CheckDelegatedRecordAccess(viewer, f.org, []string{admin}, "example.record", "record-a", "read", current)
+	require.NoError(t, err)
+	require.True(t, decision.GetAllowed())
+
+	// The source's own collection is read through a grant that covers it, and
+	// only then.
+	docsRole := business.NewIDString()
+	require.NoError(t, testStore.WithOrgTx(testCtx, f.org, func(ctx context.Context) error {
+		return testStore.CreateRole(ctx, &gen.Role{Id: docsRole, Name: "docs " + docsRole, OrgId: f.org,
+			Permissions: []*gen.Permission{{Resource: "documents", Action: "read"}}})
+	}))
+	var sourcePath string
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		return storetx.Tx(ctx).QueryRow(ctx, `SELECT n.scope_path::text FROM datasource_sources s
+			JOIN scope_nodes n ON n.id = s.boundary_node_id WHERE s.id = $1`, source).Scan(&sourcePath)
+	}))
+	require.Empty(t, readable([]string{admin}, []string{"documents"}))
+	require.NoError(t, testStore.WithOrgTx(testCtx, f.org, func(ctx context.Context) error {
+		return testStore.GrantScope(ctx, &gen.ScopeGrant{Id: business.NewIDString(), OrgId: f.org, SubjectId: admin,
+			SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ScopePath: sourcePath, RoleId: docsRole})
+	}))
+	require.Equal(t, []string{source}, readable([]string{admin}, []string{"documents"}),
+		"the grant is what lets the module read the collection")
+
+	// Every delegated subject must read independently: a member with no grant
+	// of its own fails the intersection whatever the administrator holds.
+	member := f.joinOrg(t)
+	decision, err = svc.CheckDelegatedRecordAccess(viewer, f.org, []string{admin, member}, "example.record", "record-a", "read", current)
+	require.NoError(t, err)
+	require.False(t, decision.GetAllowed(), "every delegated subject must read independently")
+	require.Empty(t, readable([]string{admin, member}, []string{"documents"}))
+	require.Empty(t, readable([]string{admin}, nil),
+		"a grant never replaces the module's declaration of what its content is")
 }
