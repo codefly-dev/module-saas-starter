@@ -329,7 +329,7 @@ function StatusSection({
 							</ul>
 							<p>
 								Until a later release of the module it goes through restores it,
-								the people holding that role can't do this; everything else they
+								the people holding that role cannot do this; everything else they
 								hold keeps working, and nothing is ever widened meanwhile.
 							</p>
 						</div>

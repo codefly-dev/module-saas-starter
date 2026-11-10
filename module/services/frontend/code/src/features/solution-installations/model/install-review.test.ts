@@ -108,7 +108,7 @@ describe("installation access review", () => {
 		).toThrow();
 	});
 	it("names each fresh supporting module that holds a standing machine role", () => {
-		const module = (target: string, installationRole: string, reused = "") => ({
+		const supporting = (target: string, installationRole: string, reused = "") => ({
 			principal: `module:${target}`,
 			target,
 			required: true,
@@ -116,9 +116,9 @@ describe("installation access review", () => {
 			installationRole,
 		});
 		const summary = supportingSummary([
-			module("Alpha", "none"),
-			module("Bravo", "reader"),
-			module("Charlie", "writer", "installed-charlie"),
+			supporting("Alpha", "none"),
+			supporting("Bravo", "reader"),
+			supporting("Charlie", "writer", "installed-charlie"),
 		]);
 		expect(summary.installs).toEqual(["Alpha", "Bravo"]);
 		expect(summary.standing).toEqual(["Bravo (reader)"]);
