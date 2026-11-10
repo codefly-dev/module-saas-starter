@@ -7,10 +7,12 @@ import (
 	"strings"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	accountsauth "accounts/pkg/auth"
+	"accounts/pkg/business"
 )
 
 // A role view fixes a session to act as some of the roles its person holds on
@@ -33,7 +35,7 @@ import (
 // no authority core, has no view to refuse.
 func refuseInRoleView(ctx context.Context) error {
 	identity, ok := accountsauth.VerifiedRequestIdentity(ctx)
-	if !ok || identity.SessionID.String() == "" || service == nil {
+	if !ok || identity.SessionID == uuid.Nil || service == nil {
 		return nil
 	}
 	core, err := authorityCore()
@@ -53,6 +55,26 @@ func refuseInRoleView(ctx context.Context) error {
 	}
 	slices.Sort(viewed)
 	return status.Errorf(codes.PermissionDenied,
-		"this session views as %s; a person's own Work Contexts are decided by organization roles, which a role view does not narrow, so they are not minted in a role view: use the session the view was opened from",
+		"this session views as %s; this operation is decided by organization roles, which a role view does not narrow, so it is unavailable in a role view: use the session the view was opened from",
 		strings.Join(viewed, "; "))
+}
+
+// enforceRoleViewPolicy refuses, in a role view, every operation of the accounts
+// API that the descriptors withhold from an impersonated session. Those are the
+// privileged mutations (API keys, approvals, platform administration, person
+// Work Context mints, organisation and member administration), and every one is
+// decided by organisation roles, which a role view does not narrow; the session
+// the view was opened from performs them as before. The host interfaces
+// (host.*) are exempt because the authority core decides them and reads the
+// view itself; TestEveryPersonMintEntryPointHonoursOrRefusesARoleView holds
+// each of those to a stated decision. A new restricted accounts operation is
+// therefore refused in a view by default, with nothing to remember.
+func enforceRoleViewPolicy(ctx context.Context, fullMethod string) error {
+	if !strings.HasPrefix(fullMethod, "/saas.accounts.v1.") {
+		return nil
+	}
+	if policy, ok := business.LookupRPCPolicy(fullMethod); ok && !business.ImpersonationForbidden(policy) {
+		return nil
+	}
+	return refuseInRoleView(ctx)
 }

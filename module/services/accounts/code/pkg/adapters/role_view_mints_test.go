@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -11,6 +12,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
 	installationv1 "accounts/pkg/gen/host/installation/v1"
@@ -99,6 +101,23 @@ func testRoleViewRefusesOrganizationMints(t *testing.T, conn grpc.ClientConnInte
 	require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
 	require.Contains(t, status.Convert(err).Message(), "this session views as")
 	require.Contains(t, status.Convert(err).Message(), "use the session the view was opened from")
+
+	// Every accounts operation the descriptors withhold from an impersonated session
+	// is refused in a view too, by name and before its handler runs: API keys,
+	// approvals, platform administration, member administration. The list is the
+	// impersonation restriction set itself, so a new restricted operation is
+	// covered without being remembered here.
+	refusedInView := 0
+	for _, procedure := range restrictedProcedures(t) {
+		if !strings.HasPrefix(procedure, "/saas.accounts.v1.") {
+			continue
+		}
+		refusedInView++
+		err := conn.Invoke(viewing, procedure, &emptypb.Empty{}, &emptypb.Empty{})
+		require.Equal(t, codes.PermissionDenied, status.Code(err), "%s: %v", procedure, err)
+		require.Contains(t, status.Convert(err).Message(), "this session views as", procedure)
+	}
+	require.Greater(t, refusedInView, 50, "the restriction set names the accounts operations a view refuses")
 
 	// The session it was opened from mints as before, and Current says it views nothing.
 	_, err = contexts.StartTask(person, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(), Audience: "records",

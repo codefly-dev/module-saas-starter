@@ -463,6 +463,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 	const getToken = useCallback(() => state.accessToken, [state.accessToken]);
 
+	// True while the installed token is a role view's. A view has no refresh half
+	// of its own, so a 401 repair below would swap in the person's FULL session
+	// and replay the failed request with it: the one thing a view must never do.
+	const roleViewRef = useRef(false);
+
 	const applyAccessToken = useCallback(
 		(accessToken: string, userId?: string, email?: string) => {
 			const { organizationId, platformRole, orgRole } =
@@ -848,6 +853,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	}, []);
 
 	const logout = useCallback(async (): Promise<SignOutResult> => {
+		roleViewRef.current = false;
 		// Always hit logout so the server clears the httpOnly refresh cookie, even
 		// if we have no access token in memory. The refresh token is read from the
 		// cookie server-side (no body token needed).
@@ -908,6 +914,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		(accessToken: string) => {
 			if (!accessToken) throw new Error("Opening a role view returned no session");
 			applyAccessToken(accessToken);
+			roleViewRef.current = true;
 		},
 		[applyAccessToken],
 	);
@@ -917,6 +924,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		if (outcome.status !== "ok") {
 			throw new Error("Could not restore your session — please try again.");
 		}
+		roleViewRef.current = false;
 		setTokens(outcome.accessToken, outcome.refreshToken);
 	}, [setTokens]);
 
@@ -1057,9 +1065,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		// single handler is where every dead-session 401 converges.
 		setRefreshHandler(async () => {
 			const wasImpersonating = impersonatingRef.current;
+			const wasViewing = roleViewRef.current;
 			const outcome = await exchangeRefreshCookie();
 			if (outcome.status === "ok") {
+				roleViewRef.current = false;
 				setTokens(outcome.accessToken, outcome.refreshToken);
+				// Same reasoning as impersonation: the request was issued under the
+				// view, so it fails rather than replaying with all of the person's roles.
+				if (wasViewing) return null;
 				// An impersonation token carries no refresh half of its own, so
 				// this cookie is the admin's and the session just restored is the
 				// admin's too. The request that triggered the refresh was issued
