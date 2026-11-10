@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Every journey runs as a plain person holding only explicit grants. A journey that
+# passes as an administrator proves nothing about its grant path, so the
+# administrators here are cases under test (they must get nothing for free); the
+# few steps that need one say why.
 # Checks the host-only playground journeys that need no solution against a
 # running `codefly run service --fixture dev-admin` (see module/PLAYGROUND.md).
 # The address is discovered, never typed; the personas are the fixture's own.
@@ -32,11 +36,10 @@ expect() { # description email expected-basis
   if [[ "$got" == "$3" ]]; then echo "pass  $1"; else echo "FAIL  $1: got '${got:-nothing}', want '${3:-nothing}'"; fails=1; fi
 }
 
-expect "explicit reader (bob, member) reads the collection by grant"     bob@acme.com   ACCESS_BASIS_GRANT
-expect "explicit reader (admin@acme.com) reads it by grant"              admin@acme.com ACCESS_BASIS_GRANT
+expect "explicit reader (bob, a plain member) reads the collection by grant" bob@acme.com   ACCESS_BASIS_GRANT
+expect "member without a grant (carol) reads nothing"                    carol@acme.com ""
 expect "organization admin (alice) holds no grant: reads nothing"        alice@acme.com ""
 expect "organization admin (alex) holds no grant: reads nothing"         alex@acme.test ""
-expect "member without a grant (carol) reads nothing"                    carol@acme.com ""
 
 # Explicit grant: the collection's owner gives carol the role at the collection,
 # access appears; the grant is revoked, access goes. Nothing else changes it.
@@ -45,6 +48,8 @@ api() { # email service/method json
     -H 'content-type: application/json' -d "$3"
 }
 field() { python3 -c "import sys,json;d=json.load(sys.stdin);print($1)"; }
+# Granting and revoking is an act of the collection's owner, so these steps run as
+# the organization owner (admin@acme.com): that is the one place an admin is the lens.
 owner=admin@acme.com
 role=$(api $owner PermissionService/ListRoles "{\"orgId\":\"$org\"}" | field "[r['id'] for r in d['roles'] if r['name']=='Collection reader'][0]")
 scopepath=$(api $owner PermissionService/ListCollectionAccess "{\"orgId\":\"$org\"}" | field "d['collections'][0]['node']['scopePath']")
@@ -63,4 +68,22 @@ expect "after an explicit grant, carol reads the collection"            carol@ac
 revoke
 expect "after the grant is revoked, carol reads nothing again"          carol@acme.com ""
 trap - EXIT
+
+# The platform super_admin is also the collection's owner here. With her own grant
+# removed she must read nothing: a platform role is not a read. Restored after.
+sarah=$(awk '$1=="-"&&$2=="id:"{id=$3} $1=="email:"&&$2=="admin@acme.com"{print id; exit}' "$fixture")
+own="{\"orgId\":\"$org\",\"subjectId\":\"$sarah\",\"subjectKind\":\"SUBJECT_KIND_PRINCIPAL\",\"scopePath\":\"$scopepath\",\"roleId\":\"$role\"}"
+restore() { api $owner PermissionService/GrantScope "$own" >/dev/null 2>&1 || echo "FAIL  the owner's grant could not be restored: GrantScope it by hand" >&2; }
+trap restore EXIT
+api $owner PermissionService/RevokeScope "$own" >/dev/null
+expect "platform super_admin with no grant reads nothing"               admin@acme.com ""
+restore; trap - EXIT
+expect "the same super_admin reads it again once granted"               admin@acme.com ACCESS_BASIS_GRANT
+
+# A platform role reads no other organization's audit trail.
+globex=$(awk '/^organizations:/{o=1} o&&/id:/{n++; if(n==2){print $3; exit}}' "$fixture")
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$base/saas.accounts.v1.AuditService/QueryAuditLog" \
+  -H "Authorization: Bearer $(token $owner)" -H 'content-type: application/json' -d "{\"orgId\":\"$globex\",\"pageSize\":1}")
+if [[ "$code" == 403 ]]; then echo "pass  platform super_admin is refused another organization's audit trail"
+else echo "FAIL  platform super_admin read another organization's audit trail (HTTP $code)"; fails=1; fi
 exit $fails
