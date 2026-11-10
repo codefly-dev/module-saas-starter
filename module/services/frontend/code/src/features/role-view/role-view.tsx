@@ -27,7 +27,7 @@ export function useRoleView(): RoleViewEntry[] {
 	const { accessToken, isAuthenticated } = useAuth();
 	const [view, setView] = useState<RoleViewEntry[]>([]);
 	useEffect(() => {
-		if (!isAuthenticated || !accessToken) return setView([]);
+		if (!isAuthenticated || !accessToken) return;
 		let current = true;
 		sessions
 			.current({})
@@ -37,16 +37,18 @@ export function useRoleView(): RoleViewEntry[] {
 			current = false;
 		};
 	}, [accessToken, isAuthenticated]);
-	return view;
+	// Signed out, there is nothing to show; derived here, not set from the effect.
+	return isAuthenticated && accessToken ? view : [];
 }
 
 /** "View as": what the person holds on each installation, and a way to act as less of it. */
 export function RoleViewSelector() {
 	const { organizationId, accessToken, enterRoleView, exitRoleView } = useAuth();
 	const view = useRoleView();
-	const [held, setHeld] = useState<Held[]>([]);
+	const [heldRaw, setHeld] = useState<Held[]>([]);
+	const held = organizationId && accessToken ? heldRaw : [];
 	useEffect(() => {
-		if (!organizationId || !accessToken) return setHeld([]);
+		if (!organizationId || !accessToken) return;
 		let current = true;
 		installations
 			.listHeld({ organizationId })
