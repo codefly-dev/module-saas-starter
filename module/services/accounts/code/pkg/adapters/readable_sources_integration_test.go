@@ -263,6 +263,14 @@ func TestSourceReadPostgresSignedRPC(t *testing.T) {
 	}))
 	exec(`DELETE FROM scope_grants WHERE org_id=$1`, readOrg)
 	exec(`INSERT INTO scope_grants(org_id,subject_id,subject_kind,scope_path,role_id) VALUES($1,$2,'principal','root.collection',$3)`, readOrg, readOwner, role)
+	// Removing a scope grant moves the authorization revision, so the context
+	// issued before it is stale: the reader asks again.
+	reissue := func() {
+		t.Helper()
+		resolve(business.WorkContextPermission{ResourceKind: "documents", Action: "read"})
+		token = mint("documents", "documents", "read")
+	}
+	reissue()
 
 	// Source mutation invalidates an existing cursor without rescanning the tenant.
 	secondSource := uuid.NewString()
@@ -278,6 +286,7 @@ func TestSourceReadPostgresSignedRPC(t *testing.T) {
 
 	// Grant expiration changes no row, but still invalidates a partial enumeration.
 	exec(`UPDATE scope_grants SET expires_at=now()+interval '1 second' WHERE org_id=$1`, readOrg)
+	reissue() // setting the expiry rewrote the grant, which moved the revision
 	first, err = client.ListReadableSourceCollections(ctx, sourceReadRequest(token))
 	require.NoError(t, err)
 	next = sourceReadRequest(token)
@@ -288,6 +297,7 @@ func TestSourceReadPostgresSignedRPC(t *testing.T) {
 	}, 3*time.Second, 50*time.Millisecond)
 	exec(`UPDATE scope_grants SET expires_at=NULL WHERE org_id=$1`, readOrg)
 	exec(`DELETE FROM scope_grants WHERE org_id=$1`, readOrg)
+	reissue()
 	result, err = client.ListReadableSourceCollections(ctx, sourceReadRequest(token))
 	require.NoError(t, err)
 	require.Empty(t, result.Msg.Collections)
