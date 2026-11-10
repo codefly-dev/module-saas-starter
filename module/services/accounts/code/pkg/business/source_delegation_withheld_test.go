@@ -170,7 +170,12 @@ type withheldHost struct {
 
 func newWithheldHost(t *testing.T, envelope *business.ModuleEnvelope) *withheldHost {
 	t.Helper()
-	manifest := withheldManifest(t)
+	return newWithheldHostFor(t, envelope, withheldManifest(t))
+}
+
+// newWithheldHostFor is newWithheldHost over the given applied manifest.
+func newWithheldHostFor(t *testing.T, envelope *business.ModuleEnvelope, manifest *solutionhost.ModuleManifest) *withheldHost {
+	t.Helper()
 	payload, err := solutionhost.SignedPayload(manifest)
 	require.NoError(t, err)
 	digest, err := manifest.Digest()
@@ -323,4 +328,81 @@ func TestConnectRecordsNothingWhenNoManifestAsksForADelegationBinding(t *testing
 	require.NoError(t, err, "a deployment composing no delegating module must still connect sources")
 	require.Empty(t, host.store.delegations)
 	require.NotEmpty(t, source.ID)
+}
+
+// selfSyncManifest is withheldManifest whose delegation binding, `sync`, is
+// addressed to the module itself and asks invoke alone: the shape of a
+// module's own operation the CLI requests as a prepared binding.
+func selfSyncManifest(t *testing.T) *solutionhost.ModuleManifest {
+	t.Helper()
+	manifest := withheldManifest(t)
+	manifest.Authority.Bindings = []solutionhost.AuthorityBinding{
+		manifest.Authority.Bindings[0],
+		{ID: "sync", Audience: withheldPrefix, Operations: map[string][]string{"invoke": {"collections:read"}}},
+	}
+	require.NoError(t, manifest.Validate())
+	return manifest
+}
+
+// selfSyncEnvelope allows `run` and, when sync is non-nil, lists `sync` as given.
+func selfSyncEnvelope(t *testing.T, sync map[string]any) *business.ModuleEnvelope {
+	t.Helper()
+	audiences := map[string]any{
+		withheldOtherBinding: map[string]any{
+			"audience":      "docstore-run",
+			"invoke_scopes": []any{map[string]any{"resource_kind": "collections", "actions": []any{"read"}}},
+		},
+	}
+	if sync != nil {
+		audiences["sync"] = sync
+	}
+	raw, err := json.Marshal(map[string]any{"revision": 1, "principals": map[string]any{
+		withheldPrefix: map[string]any{"grant": map[string]any{
+			"tenant": testOrg, "namespaces": []any{"collections"}, "resources": []any{"collections", "ledgers"},
+			"operation_audiences": audiences,
+		}},
+	}})
+	require.NoError(t, err)
+	envelope, err := business.ParseModuleEnvelope(raw)
+	require.NoError(t, err)
+	return envelope
+}
+
+// A self-addressed binding the envelope grants source delegation is standing
+// authority. When the derivation omits it (here, the manifest asks invoke on
+// a kind the envelope's entry does not carry), the withheld report must name
+// it and a connect must refuse, exactly as for any withheld delegation
+// binding: skipping it from the report would let a connect record no
+// delegation and report success.
+func TestASelfAddressedDelegationBindingTheDerivationOmitsIsStillWithheld(t *testing.T) {
+	host := newWithheldHostFor(t, selfSyncEnvelope(t, map[string]any{
+		"audience":                 withheldPrefix,
+		"invoke_scopes":            []any{map[string]any{"resource_kind": "ledgers", "actions": []any{"read"}}},
+		"source_delegation_scopes": []any{map[string]any{"resource_kind": "ledgers", "actions": []any{"read"}}},
+	}), selfSyncManifest(t))
+	require.ErrorIs(t, host.derive(t), business.ErrModulePrincipalBindingOmitted, "the derivation omits sync by name")
+	reasons := host.pass.ModulePrincipals().WithheldAuthorityReasons()
+	require.Contains(t, reasons[withheldManifestBinding], "sync", "the withheld report names the omitted self-addressed delegation binding")
+
+	_, err := host.svc.AddGitHubSource(context.Background(), "actor-1", business.AddGitHubSourceInput{
+		OrgID: testOrg, Repo: "acme/docs", Branch: "main", CollectionLabel: "guides", AccessToken: "t",
+	})
+	require.Equal(t, codes.FailedPrecondition, status.Code(err), "a connect that would record no delegation is refused: %v", err)
+	require.Contains(t, err.Error(), "sync")
+	require.Empty(t, host.store.delegations)
+}
+
+// A self-addressed binding that acts only as the person, which the envelope
+// does not list, fails nothing: the pass returns nil, nothing is withheld, and
+// a connect goes ahead (no composed module asks for a delegation).
+func TestAPassWithASelfAddressedPersonBindingFailsNothing(t *testing.T) {
+	host := newWithheldHostFor(t, selfSyncEnvelope(t, nil), selfSyncManifest(t))
+	require.NoError(t, host.derive(t), "a self-addressed person binding is not an omission")
+	require.Empty(t, host.pass.ModulePrincipals().WithheldAuthorityReasons())
+
+	_, err := host.svc.AddGitHubSource(context.Background(), "actor-1", business.AddGitHubSourceInput{
+		OrgID: testOrg, Repo: "acme/docs", Branch: "main", CollectionLabel: "guides", AccessToken: "t",
+	})
+	require.NoError(t, err)
+	require.Empty(t, host.store.delegations)
 }

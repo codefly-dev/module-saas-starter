@@ -394,7 +394,15 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 		}
 		asking = append(asking, manifest)
 	}
-	next.withheld, next.authorityReasons = withheldModuleAuthority(asking, next.registry, slices.Concat(refusals, withheld))
+	// The ceiling each manifest was derived under, so the report skips exactly
+	// the person-self bindings the derivation skipped (skippedPersonSelf).
+	ceilingOf := func(manifest *solutionhost.ModuleManifest) map[string]ModuleOperationAudience {
+		if envelope == nil {
+			return manifestCeiling(manifest.Authority).Grant.OperationAudiences
+		}
+		return envelope.Principals[manifest.Authority.Principal].Grant.OperationAudiences
+	}
+	next.withheld, next.authorityReasons = withheldModuleAuthority(asking, next.registry, slices.Concat(refusals, withheld), ceilingOf)
 
 	r.publish(next)
 	return errors.Join(refusals...)
@@ -412,6 +420,7 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 // a principal that never reached the registry has none of its own.
 func withheldModuleAuthority(
 	manifests []*solutionhost.ModuleManifest, registry ModulePrincipalRegistry, refusals []error,
+	ceilingOf func(*solutionhost.ModuleManifest) map[string]ModuleOperationAudience,
 ) ([]ModuleBindingOmission, map[string]string) {
 	named := map[string]ModuleBindingOmission{}
 	principals := map[string]ModulePrincipalOmission{}
@@ -433,12 +442,13 @@ func withheldModuleAuthority(
 		}
 		prefix := manifest.Authority.Principal
 		held := registry[ModulePrincipalID(prefix)].OperationAudiences
+		ceiling := ceilingOf(manifest)
 		var missing []string
 		for _, asked := range manifest.Authority.Bindings {
 			if _, granted := held[asked.ID]; granted {
 				continue
 			}
-			if personSelfBinding(prefix, asked) {
+			if skippedPersonSelf(prefix, asked, ceiling) {
 				continue // the authority core issues it as the person; nothing is withheld
 			}
 			omission, reported := named[prefix+"\x00"+asked.ID]
@@ -697,7 +707,7 @@ func deriveModulePrincipalGrant(
 		// registry neither grants nor omits it, and nothing here gives it a
 		// headless or standing scope. One the envelope grants source
 		// delegation is a standing grant and keeps the path below.
-		if personSelfBinding(prefix, asked) && (!inside || allowed.SourceDelegationScopes == nil) {
+		if skippedPersonSelf(prefix, asked, ceiling.OperationAudiences) {
 			continue
 		}
 		switch {

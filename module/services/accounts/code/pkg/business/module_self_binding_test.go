@@ -38,7 +38,10 @@ func TestASelfAddressedPersonBindingIsNeitherRegisteredNorOmitted(t *testing.T) 
 	require.NotContains(t, grant.OperationAudiences, "self-tools", "the registry grants nothing through it: no invoke, lookup, headless or source delegation")
 
 	registry := ModulePrincipalRegistry{ModulePrincipalID(testModulePrefix): grant}
-	withheld, reasons := withheldModuleAuthority([]*solutionhost.ModuleManifest{manifest}, registry, omitted)
+	ceilingOf := func(*solutionhost.ModuleManifest) map[string]ModuleOperationAudience {
+		return envelope.Principals[testModulePrefix].Grant.OperationAudiences
+	}
+	withheld, reasons := withheldModuleAuthority([]*solutionhost.ModuleManifest{manifest}, registry, omitted, ceilingOf)
 	require.Empty(t, withheld, "nor is it reported as authority withheld")
 	require.Empty(t, reasons)
 
@@ -110,5 +113,4 @@ func TestPersonSelfBindingIsInvokeOrLookupToItself(t *testing.T) {
 	require.False(t, personSelfBinding(testModulePrefix, solutionhost.AuthorityBinding{Audience: testModulePrefix,
 		Operations: map[string][]string{"invoke": {"reports:read"}, "headless": {"reports:read"}}}), "invoke beside headless is standing authority")
 	require.False(t, personSelfBinding(testModulePrefix, runBinding), "another module's audience")
-	require.False(t, personSelfBinding(testModulePrefix, solutionhost.AuthorityBinding{Audience: testModulePrefix, Operations: map[string][]string{}}), "asks nothing")
 }

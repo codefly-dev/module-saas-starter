@@ -184,6 +184,21 @@ func personSelfBinding(prefix string, binding solutionhost.AuthorityBinding) boo
 	return len(binding.Operations[modulecontract.OperationInvoke]) > 0 || len(binding.Operations[modulecontract.OperationLookup]) > 0
 }
 
+// skippedPersonSelf reports a person-self binding (personSelfBinding) the
+// registry neither grants nor withholds, given the ceiling's operation
+// audiences: one the ceiling does not list, or lists without source
+// delegation. One the ceiling grants source delegation is standing authority,
+// derived and reported like any binding. deriveModulePrincipalGrant and
+// withheldModuleAuthority both decide by this one predicate, so a binding the
+// derivation omits is never dropped from the withheld report.
+func skippedPersonSelf(prefix string, asked solutionhost.AuthorityBinding, ceiling map[string]ModuleOperationAudience) bool {
+	if !personSelfBinding(prefix, asked) {
+		return false
+	}
+	allowed, inside := ceiling[asked.ID]
+	return !inside || allowed.SourceDelegationScopes == nil
+}
+
 // headlessOnly reports whether a binding grants nothing on a person's behalf:
 // no invoke scopes, only headless ones. validateOperationAudiences is what holds
 // such a binding to having no lookup and no source-delegation scopes either.
