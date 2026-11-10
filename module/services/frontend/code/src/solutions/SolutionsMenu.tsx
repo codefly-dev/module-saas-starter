@@ -8,7 +8,6 @@ import {
 	getToken,
 	subscribeToken,
 } from "@/lib/connect/token-store";
-import { RoleViewSelector } from "@/features/role-view/role-view";
 import {
 	groupSolutionNavigation,
 	type SolutionGroup,
@@ -279,7 +278,6 @@ export function SolutionsMenu({
 					<SolutionLinks solutions={section.items} variant={variant} />
 				</section>
 			))}
-			{variant === "list" && <RoleViewSelector />}
 		</div>
 	);
 }
