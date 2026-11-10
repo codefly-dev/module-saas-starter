@@ -39,6 +39,7 @@ func TestHopTheGatewayPassesTheHopFrontTarget(t *testing.T) {
 		if err != nil {
 			return nil, nil, err
 		}
-		return hopFace(grpc.NewServer(front.ServerOptions...), role.face), front.Close, nil
+		grpcFace := grpc.NewServer(front.ServerOptions...)
+		return hopFace(grpcFace, role.face), func() { grpcFace.Stop(); front.Close() }, nil
 	}})
 }
