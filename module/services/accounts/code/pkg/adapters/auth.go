@@ -199,6 +199,9 @@ func requireOrgMember(ctx context.Context, actorID, orgID string) error {
 // in that organization. API-key scopes remain a separate ceiling enforced by
 // requireScope before this helper is called.
 func requireOrgPermission(ctx context.Context, actorID, orgID, resource, action string) error {
+	if err := refuseInRoleView(ctx); err != nil {
+		return err
+	}
 	if err := requireOrgMember(ctx, actorID, orgID); err != nil {
 		return err
 	}
@@ -223,6 +226,9 @@ func requireOrgPermission(ctx context.Context, actorID, orgID, resource, action 
 // organization is a member of it, which the organization can see and withdraw.
 // Cache-backed same as above.
 func requireOrgAdmin(ctx context.Context, actorID, orgID string) error {
+	if err := refuseInRoleView(ctx); err != nil {
+		return err
+	}
 	if orgID == "" {
 		return status.Error(codes.InvalidArgument, "org_id required")
 	}
@@ -311,6 +317,9 @@ func requireSubjectInOrg(ctx context.Context, orgID, subjectID string, kind gen.
 // and organization admins retain their expected access; a member can also be
 // delegated the narrower billing:write permission through a custom role.
 func requireBillingAdmin(ctx context.Context, actorID, orgID string) error {
+	if err := refuseInRoleView(ctx); err != nil {
+		return err
+	}
 	if orgID == "" {
 		return status.Error(codes.InvalidArgument, "org_id required")
 	}
@@ -354,6 +363,9 @@ func requireBillingAdmin(ctx context.Context, actorID, orgID string) error {
 // Service methods (AddTeamMember etc.) skip a redundant WithControlPlane
 // → 3 transactions per request instead of 4.
 func requireTeamAdmin(ctx context.Context, actorID, teamID string) (string, error) {
+	if err := refuseInRoleView(ctx); err != nil {
+		return "", err
+	}
 	if teamID == "" {
 		return "", status.Error(codes.InvalidArgument, "team_id required")
 	}
