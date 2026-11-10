@@ -31,29 +31,42 @@ import (
 // TestEveryPersonMintEntryPointHonoursOrRefusesARoleView, which fails when a
 // method is added without a decision.
 
-// refuseInRoleView refuses the call when the session it is made from views as
-// some of its roles. A call that carries no session, or comes from a host with
-// no authority core, has no view to refuse.
-func refuseInRoleView(ctx context.Context) error {
+// roleViewOf returns what the session a call is made from views as, empty when
+// it views nothing. A call that carries no session, or comes from a host with no
+// authority core, has no view.
+func roleViewOf(ctx context.Context) (domain.RoleView, error) {
 	identity, ok := accountsauth.VerifiedRequestIdentity(ctx)
 	if !ok || identity.SessionID == uuid.Nil || service == nil {
-		return nil
+		return domain.RoleView{}, nil
 	}
 	core, err := service.AuthorityCore()
 	if errors.Is(err, business.ErrAuthorityCoreUnconfigured) {
-		return nil // a host that builds no core has no views
+		return domain.RoleView{}, nil // a host that builds no core has no views
 	}
 	if err != nil {
 		// A core that cannot be read right now must not open the restricted
 		// surface to a session that may be a view.
-		return status.Errorf(codes.Unavailable, "cannot read whether this session views as some of its roles: %v", err)
+		return domain.RoleView{}, status.Errorf(codes.Unavailable, "cannot read whether this session views as some of its roles: %v", err)
 	}
 	view, err := core.RoleViewOf(ctx, identity.SessionID.String())
 	if errors.Is(err, domain.ErrNotFound) {
-		return nil
+		return domain.RoleView{}, nil
 	}
 	if err != nil {
-		return status.Errorf(codes.Unavailable, "cannot read whether this session views as some of its roles: %v", err)
+		return domain.RoleView{}, status.Errorf(codes.Unavailable, "cannot read whether this session views as some of its roles: %v", err)
+	}
+	return view, nil
+}
+
+// refuseInRoleView refuses the call when the session it is made from views as
+// some of its roles.
+func refuseInRoleView(ctx context.Context) error {
+	view, err := roleViewOf(ctx)
+	if err != nil {
+		return err
+	}
+	if len(view.Roles) == 0 {
+		return nil
 	}
 	var viewed []string
 	for _, roles := range view.Roles {
@@ -73,7 +86,7 @@ func refuseInRoleView(ctx context.Context) error {
 // that mints or administers is refused only if somebody remembered to say so).
 var roleViewWrites = map[string]bool{
 	"AuthService/Logout": true, "AuthService/SwitchOrganization": true,
-	"ConsentService/AcceptTerms": true, "ConsentService/UpdatePreferences": true,
+	"ConsentService/AcceptTerms": true, "UserSettingsService/Update": true, "ConsentService/UpdatePreferences": true,
 	"DashboardService/CreateDashboard": true, "DashboardService/UpdateDashboard": true, "DashboardService/DeleteDashboard": true,
 	"NotificationService/MarkRead": true, "NotificationService/MarkAllRead": true, "NotificationService/DeleteNotification": true,
 	"ResourceFollowService/Follow": true, "ResourceFollowService/Unfollow": true,
@@ -83,7 +96,7 @@ var roleViewWrites = map[string]bool{
 // roleViewReadsThatWrite are operations whose descriptor says STANDARD_READ but
 // that decide something: DecideDelegation approves a delegation and mints from
 // it. They are refused in a view whatever their rate-limit class says.
-var roleViewReadsThatWrite = map[string]bool{"DelegationService/DecideDelegation": true}
+var roleViewReadsThatWrite = map[string]bool{"DelegationService/DecideDelegation": true, "DelegationService/WaitForDelegation": true}
 
 // roleViewAdmits reports whether a session viewing as some of its roles may call
 // an accounts operation. Default deny: only a declared read, a login-flow call

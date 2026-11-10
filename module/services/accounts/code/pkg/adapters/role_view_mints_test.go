@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	accountsauth "accounts/pkg/auth"
 	"accounts/pkg/business"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
 	installationv1 "accounts/pkg/gen/host/installation/v1"
@@ -121,6 +122,20 @@ func testRoleViewRefusesOrganizationMints(t *testing.T, conn grpc.ClientConnInte
 		require.Contains(t, status.Convert(err).Message(), "this session views as", policy.FullMethod)
 	}
 	require.Greater(t, refusedInView, 100, "a view refuses most of the accounts surface by default")
+
+	// The lookup every platform gate shares (platformRole) closes on exactly this:
+	// the view session is a view, the session it was opened from is not.
+	viewID, err := uuid.Parse(view.GetSessionId())
+	require.NoError(t, err)
+	personID, err := uuid.Parse(view.GetPersonId())
+	require.NoError(t, err)
+	asView := accountsauth.WithVerifiedRequestIdentity(context.Background(), accountsauth.RequestIdentity{RealActor: personID, EffectiveSubject: personID, SessionID: viewID})
+	seen, err := roleViewOf(asView)
+	require.NoError(t, err)
+	require.NotEmpty(t, seen.Roles, "the view session reads as a view")
+	role, err := platformRole(asView, personID.String())
+	require.NoError(t, err)
+	require.Empty(t, role, "a role view holds no platform role, whatever the store says")
 
 	// The session it was opened from mints as before, and Current says it views nothing.
 	_, err = contexts.StartTask(person, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(), Audience: "records",
