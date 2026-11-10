@@ -69,7 +69,7 @@ func seedMemberAuthority(t *testing.T, ctx context.Context, owner, orgID, userID
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
 		q := storetx.Tx(ctx)
 		installation := uuid.NewString()
-		if _, err := q.Exec(ctx, `INSERT INTO authority_core_installations (id, organization_id, target, status, revision) VALUES ($1, $2, 'wiki', 'active', 1)
+		if _, err := q.Exec(ctx, `INSERT INTO authority_core_installations (id, organization_id, target, status, revision) VALUES ($1, $2, 'conformance-target', 'active', 1)
 			ON CONFLICT (id) DO NOTHING`, installation, orgID); err != nil {
 			return err
 		}
