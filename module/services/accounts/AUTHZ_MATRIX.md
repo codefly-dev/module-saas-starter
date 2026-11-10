@@ -99,7 +99,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperation` | unary | `GET /v1/datasource-operation-receipts/{effect_id}` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=datasource:read; scope=datasource:read | effect_id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → SECRET | Read the current authorized outcome of a source effect without redispatching it. |
 | `/saas.accounts.v1.DatasourceService/LookupPruneSourceOperationReceipts` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=datasource:read; scope=datasource:read | effect_id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read an authorized source receipt-cleanup result. |
 | `/saas.accounts.v1.DatasourceService/LookupReconcileSource` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=datasource:read; scope=datasource:read | effect_id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | — | FORBIDDEN / STANDARD_READ | INTERNAL → INTERNAL | Read back the receipt of one reconcile pass. |
-| `/saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.datasource.credential.updated | FORBIDDEN / STANDARD_WRITE | INTERNAL → CONFIDENTIAL | Re-point a token-backed GitHub source at the deployment's GitHub App in place, keeping its identity and history. |
+| `/saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.datasource.credential.updated | FORBIDDEN / STANDARD_WRITE | INTERNAL → CONFIDENTIAL | Re-point a token-backed GitHub source at the deployment's GitHub App in place, keeping its identity and history. |
 | `/saas.accounts.v1.DatasourceService/PruneSourceOperationReceipts` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=datasource:invoke; scope=datasource:invoke | source_id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | SUCCESS: saas.datasource.receipts.pruned | REQUIRED / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Expire old source receipt output while retaining effect tombstones. |
 | `/saas.accounts.v1.DatasourceService/ReconcileSource` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=datasource:invoke; scope=datasource:invoke | source_id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | SUCCESS: saas.datasource.source.synced | REQUIRED / STANDARD_WRITE | INTERNAL → INTERNAL | Reconcile one data source: the operation a declared schedule's occurrence admits. |
 | `/saas.accounts.v1.DatasourceService/RevokeSourceDelegation` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.datasource.delegation.revoked | FORBIDDEN / STANDARD_WRITE | INTERNAL → CONFIDENTIAL | Revoke one of the organization's source delegations. |
@@ -317,8 +317,8 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `auth`: 52
 - `internal`: 55
 - `mfa`: 5
-- `org_admin`: 63
-- `org_member`: 66
+- `org_admin`: 64
+- `org_member`: 65
 - `platform_admin`: 29
 - `public`: 33
 

@@ -8318,7 +8318,7 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x16CompleteGitHubAppSetup\x12/.saas.accounts.v1.CompleteGitHubAppSetupRequest\x1a0.saas.accounts.v1.CompleteGitHubAppSetupResponse\"R\xc2\xf3\x18N\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:.\n" +
 	"*saas.datasource.github_app.setup_completed\x10\x02@\x01H\x04P\x04X\x03`\x01\x12\xcd\x01\n" +
-	"\x18MigrateGitHubSourceToApp\x121.saas.accounts.v1.MigrateGitHubSourceToAppRequest\x1a2.saas.accounts.v1.MigrateGitHubSourceToAppResponse\"J\xc2\xf3\x18F\b\x02\x10\x03*\f\n" +
+	"\x18MigrateGitHubSourceToApp\x121.saas.accounts.v1.MigrateGitHubSourceToAppRequest\x1a2.saas.accounts.v1.MigrateGitHubSourceToAppResponse\"J\xc2\xf3\x18F\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:&\n" +
 	"\"saas.datasource.credential.updated\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\xd5\x01\n" +
 	"\x1aBeginDatasourceAccountLink\x123.saas.accounts.v1.BeginDatasourceAccountLinkRequest\x1a4.saas.accounts.v1.BeginDatasourceAccountLinkResponse\"L\xc2\xf3\x18H\b\x02\x10\x03*\f\n" +
