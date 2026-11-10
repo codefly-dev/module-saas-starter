@@ -15,7 +15,7 @@ import (
 // a rollback of accounts, which the ledger's forward-only rule allows). The
 // lockstep test fails when a migration is added without moving this number, so
 // a binary can never be released that does not know the schema it needs.
-const requiredSchemaVersion = 72
+const requiredSchemaVersion = 74
 
 // schemaReader is what the check needs; a pool and a transaction both satisfy it.
 type schemaReader interface {
@@ -23,7 +23,7 @@ type schemaReader interface {
 }
 
 // controlPlaneSchemaVersion reads the version as the control-plane role, the
-// one migration 72 grants it to, rather than as whatever role the login's
+// one migration 74 grants it to, rather than as whatever role the login's
 // session defaults to.
 func controlPlaneSchemaVersion(ctx context.Context, pool *pgxpool.Pool) error {
 	tx, err := pool.Begin(ctx)
@@ -55,8 +55,8 @@ func schemaRefusal(version int64, dirty bool, readErr error) error {
 	var pgErr *pgconn.PgError
 	switch {
 	case errors.As(readErr, &pgErr) && pgErr.Code == "42501":
-		// Migration 72 grants the read, so a login refused it is a store that
-		// has not applied 72, which is a store behind. (A grant revoked by hand
+		// Migration 74 grants the read, so a login refused it is a store that
+		// has not applied 74, which is a store behind. (A grant revoked by hand
 		// reads the same; the remedy, re-running the ledger, is the same too.)
 		return fmt.Errorf("the store has not applied migration %d, which lets accounts read the schema version; this binary requires migration %d: run the store migration and start accounts again", requiredSchemaVersion, requiredSchemaVersion)
 	case errors.As(readErr, &pgErr) && pgErr.Code == "42P01":
