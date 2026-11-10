@@ -5,4 +5,11 @@
 -- plane learns which migration the store is at and whether one is running or
 -- failed, and can change nothing.
 SET LOCAL lock_timeout = '15s';
-GRANT SELECT ON TABLE public.schema_migrations TO app_control_plane;
+-- The ledger table belongs to the migration engine. A replay that applies these
+-- files without the engine (the qualification stages) has none, and accounts
+-- reads it only where the engine ran, so the grant waits for the table.
+DO $grant$ BEGIN
+ IF to_regclass('public.schema_migrations') IS NOT NULL THEN
+  GRANT SELECT ON TABLE public.schema_migrations TO app_control_plane;
+ END IF;
+END $grant$;

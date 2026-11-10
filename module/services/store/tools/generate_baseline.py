@@ -202,7 +202,7 @@ DO $owner_policy$ DECLARE owner_role name; BEGIN
 END $owner_policy$;
 '''
         suffix += 'GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.job_state_transitions_sequence_seq TO CURRENT_USER;\n'
-        suffix += 'GRANT SELECT ON TABLE public.schema_migrations TO app_control_plane;\n'
+        suffix += "DO $ledger_grant$ BEGIN\n IF to_regclass('public.schema_migrations') IS NOT NULL THEN\n  GRANT SELECT ON TABLE public.schema_migrations TO app_control_plane;\n END IF;\nEND $ledger_grant$;\n"
         suffix += f"COMMENT ON SCHEMA public IS 'codefly store baseline {baseline_id}';\n"
         suffix += 'SET row_security = on;\nSET check_function_bodies = on;\n'
         text = prefix + dump + suffix
