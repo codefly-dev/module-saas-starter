@@ -23,8 +23,8 @@ import (
 // testOwnSessionOwnerRule drives accounts' own person Work Context mints in
 // the conformance harness's composition: documents checks owners of
 // example-records; model checks owners of its datasets and shares its
-// profiles; records and org-directory check no owner. An administrator's
-// organization RBAC holds every kind, so whatever is refused here is refused
+// profiles; records and org-directory check no owner. The administrator holds every kind asked here
+// by a role the fixture grants, so whatever is refused here is refused
 // by the core's owner rule (RBAC-4a), named as the core names it.
 //
 // credential is a module workload's projected credential; deliver delivers a

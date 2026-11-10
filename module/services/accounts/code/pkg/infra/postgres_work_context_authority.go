@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -160,6 +161,12 @@ func resolveWorkContextAuthority(
 		if err != nil {
 			return nil, fmt.Errorf("check owner work-context permission: %w", err)
 		}
+		if !ownerAllowed && includeScopeGrants && actorPrincipalID != "" {
+			ownerAllowed, err = ownerAnswersForInstallationAgent(ctx, reader, orgID, ownerPrincipalID, actorPrincipalID)
+			if err != nil {
+				return nil, fmt.Errorf("check installation owner of record: %w", err)
+			}
+		}
 		if !ownerAllowed {
 			return nil, business.NewStoreError(
 				fmt.Errorf(
@@ -201,10 +208,28 @@ func (s *PostgresStore) CheckWorkContextAuthorizationRevision(
 	subjects []business.WorkContextRevisionSubject,
 ) error {
 	return s.readAs(ctx, orgID, ownerPrincipalID, func(ctx context.Context, reader ReadQueryExecutor) error {
+		// What the installations the owner answers for hold through their
+		// agents, as this context names them: the owner's own slice of such a
+		// context is held to be within it (the agents are each held in full).
+		var agentHeld []business.WorkContextPermission
+		for _, subject := range subjects {
+			if subject.PrincipalID == ownerPrincipalID {
+				continue
+			}
+			answers, err := ownerAnswersForInstallationAgent(ctx, reader, orgID, ownerPrincipalID, subject.PrincipalID)
+			if err != nil {
+				return fmt.Errorf("check installation owner of record: %w", err)
+			}
+			if answers {
+				agentHeld = append(agentHeld, subject.Permissions...)
+			}
+		}
 		for _, subject := range subjects {
 			actorID := subject.PrincipalID
+			permissions := subject.Permissions
 			if actorID == ownerPrincipalID {
 				actorID = ""
+				permissions = outsideOf(permissions, agentHeld)
 			}
 			facts, err := resolveWorkContextAuthority(
 				ctx,
@@ -212,7 +237,7 @@ func (s *PostgresStore) CheckWorkContextAuthorizationRevision(
 				orgID,
 				ownerPrincipalID,
 				actorID,
-				subject.Permissions,
+				permissions,
 				// A previously issued Work Context may be installation-derived, whose
 				// actor authority lives in scope_grants; honor it here so a valid
 				// headless token is not rejected as stale.
@@ -295,6 +320,42 @@ func (s *PostgresStore) AuthorizeEvidenceRead(
 	})
 }
 
+// outsideOf is the permissions in held that are not in within.
+func outsideOf(held, within []business.WorkContextPermission) []business.WorkContextPermission {
+	var outside []business.WorkContextPermission
+	for _, p := range held {
+		if !slices.Contains(within, p) {
+			outside = append(outside, p)
+		}
+	}
+	return outside
+}
+
+// ownerAnswersForInstallationAgent reports whether ownerID is a current
+// administrator and an owner or co-owner of record of an active installation
+// whose agent is agentID. An installation's headless context is bounded by the
+// agent's own standing grants, which the actor check still requires in full;
+// the owner of record is the accountable human, and holds no permission of its
+// own to carry. This is not a role-name shortcut: it names one installation
+// the person owns, and reaches only that installation's agent.
+func ownerAnswersForInstallationAgent(ctx context.Context, reader ReadQueryExecutor, orgID, ownerID, agentID string) (bool, error) {
+	var answers bool
+	err := reader.QueryRow(ctx, `
+		SELECT EXISTS (
+		    SELECT 1
+		    FROM installations AS i
+		    JOIN organization_members AS owner
+		      ON owner.org_id = i.org_id
+		     AND owner.user_id::text = $2
+		     AND owner.role IN ('owner', 'admin')
+		    WHERE i.org_id = $1
+		      AND i.agent_principal_id::text = $3
+		      AND i.status = 'active'
+		      AND owner.user_id = ANY (ARRAY[i.owner_principal_id] || i.co_owner_principal_ids)
+		)`, orgID, ownerID, agentID).Scan(&answers)
+	return answers, err
+}
+
 // isMemberPermission is the generated catalog's member grant. It is a variable
 // only so this package's database tests can exercise the SQL branch without a
 // composed catalog; production code never reassigns it.
@@ -329,22 +390,16 @@ func workContextPermissionAllowed(
 	var allowed bool
 	err := reader.QueryRow(ctx, `
 		SELECT
-		    (
-		        $5
-		        AND EXISTS (
-		            SELECT 1
-		            FROM organization_members AS administrator
-		            WHERE administrator.org_id = $1
-		              AND administrator.user_id = $2
-		              AND administrator.role IN ('owner', 'admin')
-		        )
-		    )
+		    -- The membership role (owner, admin) is no permission: an
+		    -- administrator holds what a grant, a team or the members' own
+		    -- permissions give, like any member.
+		    --
 		    -- A contributed permission declared for every member (members: true)
 		    -- is held by any current member of the organization, as a person.
 		    -- $5 is false for a delegated actor, so an agent never gains it this
 		    -- way; $10 is decided in Go from the generated catalog, never from
 		    -- the request. Like a NULL-scope assignment it is organization-wide.
-		    OR (
+		    (
 		        $5
 		        AND $10
 		        AND EXISTS (

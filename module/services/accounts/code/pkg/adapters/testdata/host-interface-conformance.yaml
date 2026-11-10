@@ -144,6 +144,32 @@ roles:
     permissions:
       - {resource: principal-a.note, action: read}
 
+  # An organization administrator administers; the role "admin" or "owner" holds
+  # no data scope. What the suite's administrators (Alex, Alice) use of the
+  # composed modules is therefore granted to them here, by name, like any
+  # person's: example entries, and the model's shared kinds. The model's
+  # datasets are granted too: at the model they are refused by its owner rule.
+  - org: Acme Corp
+    name: Fixture operator
+    description: Use the composed modules' kinds the suite's administrators exercise
+    permissions:
+      - {resource: example-entries, action: read}
+      - {resource: example-entries, action: write}
+      - {resource: example-entries, action: invoke}
+      - {resource: modelservice.profiles, action: read}
+      - {resource: modelservice.profiles, action: invoke}
+      - {resource: modelservice.templates, action: read}
+      - {resource: conformance-artifact.intent, action: activate}
+      - {resource: conformance-artifact.intent, action: run}
+      - {resource: conformance-artifact.preview, action: activate}
+      - {resource: conformance-artifact.preview, action: run}
+      # The owner-checking modules' kinds: held by the role, so that what is
+      # refused at them is refused by the core's owner rule alone.
+      - {resource: example-records, action: read}
+      - {resource: example-records, action: write}
+      - {resource: modelservice.datasets, action: read}
+      - {resource: conformance-owner-page.note, action: read}
+
   # The artifact policy is a resource kind the module serves, and its actions
   # are the whole requirement: activate to consent and to revoke, run to use
   # what was consented to. A role scoped to nothing holds the whole kind,
@@ -167,6 +193,8 @@ assignments:
   - {org: Acme Corp, role: Record reader, email: maya@acme.test, scope: conformance-record-a}
   - {org: Acme Corp, role: Collection transfer, email: ivy@acme.test, scope: collection-x}
   - {org: Acme Corp, role: Record viewer, email: bob@acme.com}
+  - {org: Acme Corp, role: Fixture operator, email: alex@acme.test}
+  - {org: Acme Corp, role: Fixture operator, email: alice@acme.com}
   - {org: Acme Corp, role: Agent user, email: maya@acme.test}
   - {org: Acme Corp, role: Agent user, email: remi@acme.test}
   - {org: Acme Corp, role: Artifact approver, email: artifact-approver@acme.test}

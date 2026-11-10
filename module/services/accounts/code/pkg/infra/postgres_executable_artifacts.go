@@ -52,7 +52,7 @@ func (s *PostgresStore) GetExecutableArtifactApprovalByID(ctx context.Context, o
 	return scanArtifactApproval(s.getQueryExecutor(ctx).QueryRow(ctx, `SELECT `+artifactApprovalColumns+` FROM executable_artifact_approvals WHERE org_id=$1 AND installation_id=$2 AND module_principal_id=$3 AND id=$4 FOR UPDATE`, org, installation, module, id))
 }
 
-// Uses the same permission decision as Work Context issuance, including admin,
+// Uses the same permission decision as Work Context issuance, including
 // member-contributed, team and exact-resource grants. No impersonation or
 // cross-user readAs call is needed: actor is the current authenticated parent.
 func (s *PostgresStore) CheckExecutableArtifactAuthority(ctx context.Context, org, actor, installation string, p business.ArtifactPermission, admin bool) (bool, error) {

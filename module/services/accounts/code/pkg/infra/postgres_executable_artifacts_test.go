@@ -29,6 +29,9 @@ func TestExecutableArtifactPostgresConsentRevocationAndTenantFloor(t *testing.T)
 		scope := business.FullInstallationScope(grant)
 		p.RegistryPrincipalID, p.Scope = principal, &scope
 	})
+	// Approving an artifact takes an administrator who also holds the policy's
+	// permission: the role alone is none.
+	seedScopedRole(t, org, owner, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "definitions", "configure", "")
 	// Keep the independent persisted-target check: policy must name the
 	// immutable binding this installation actually consented to.
 	var consented *business.SolutionTarget
