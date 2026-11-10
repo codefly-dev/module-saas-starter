@@ -11,7 +11,6 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
-	"github.com/codefly-dev/authority/libraries/authority-core/go/scope"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/storetest"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/google/uuid"
@@ -121,9 +120,8 @@ func seedAuthorityIdentity(t *testing.T, id storetest.Identity) {
 	}))
 }
 
-// An organization administrator holds every action on every kind an audience
-// serves (accounts' RBAC: an admin or owner is allowed every permission), and
-// a person's roles through a team are theirs while they are on it.
+// An organization administrator administers and holds no data scope by that
+// role, and a person's roles through a team are theirs while they are on it.
 func TestTheAuthorityCoreStoreReadsAccountsRBAC(t *testing.T) {
 	org, admin, member, team := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
 	seedAuthorityIdentity(t, storetest.Identity{
@@ -151,7 +149,7 @@ func TestTheAuthorityCoreStoreReadsAccountsRBAC(t *testing.T) {
 		require.Contains(t, a.Roles, "admin")
 		role, err := tx.OrgRole(org, "admin")
 		require.NoError(t, err)
-		require.Equal(t, []domain.RoleScope{{Kind: scope.AnyKind, Actions: []string{scope.AnyAction}}}, role.Scopes)
+		require.Empty(t, role.Scopes, "the administrator role names who administers; it holds no scope")
 
 		m, err := tx.Member(org, member)
 		require.NoError(t, err)

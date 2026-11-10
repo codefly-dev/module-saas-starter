@@ -21,6 +21,8 @@ func TestWorkContextAuthorityUsesCurrentRLSBoundFactsAndExactScopes(t *testing.T
 		testCtx, ownerID, "owner",
 	))
 	agent := seedAgentPrincipal(t, orgID, "test.codefly.dev/work-context:0.1.0")
+	// An owner holds what is granted: delegating to the agent is bounded by it.
+	seedScopedRole(t, orgID, ownerID, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "evidence", "append", "project:one")
 
 	teamID := business.NewIDString()
 	roleID := business.NewIDString()
@@ -303,6 +305,8 @@ func TestWorkContextConsumerAuthorityUsesCurrentRevisionAndExactEvidenceRead(t *
 	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).AddOrgMember(
 		testCtx, readerID, "member",
 	))
+
+	seedScopedRole(t, orgID, ownerID, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "evidence", "append", "task:one")
 
 	ownerContext := auth.WithVerifiedDatabaseIdentity(testCtx, ownerID, orgID)
 	facts, err := testStore.ResolveWorkContextAuthority(

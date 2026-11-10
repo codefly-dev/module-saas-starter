@@ -64,6 +64,16 @@ func TestStory_HOST_ID_001(t *testing.T) {
 	})
 	t.Cleanup(func() { testService.SetModulePrincipals(previousPrincipals) })
 	installCapabilityFixture(t, testService, tenantA, personID)
+	// The organization's owner holds what is granted: the story's person reads
+	// evidence because a role says so, not because they own the organization.
+	reader, err := testService.CreateRole(ctx, personID, &gen.CreateRoleRequest{
+		Name: "evidence reader", OrgId: tenantA, Permissions: []*gen.Permission{{Resource: "evidence", Action: "read"}},
+	})
+	require.NoError(t, err)
+	_, err = testService.AssignRole(ctx, &gen.AssignRoleRequest{
+		SubjectId: personID, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, RoleId: reader.Role.Id, OrgId: tenantA,
+	})
+	require.NoError(t, err)
 	issuer := &adapters.WorkContextAuthorityServer{}
 	issuer.Configure(adapters.WorkContextAuthorityConfiguration{
 		Issuer:     storyWorkContextIssuer,

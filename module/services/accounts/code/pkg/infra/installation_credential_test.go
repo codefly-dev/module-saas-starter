@@ -104,6 +104,9 @@ func TestSealedModuleCredentialDBLiveInstallationAtEveryEntryPoint(t *testing.T)
 	require.NoError(t, testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error {
 		return testStore.GrantScope(ctx, &gen.ScopeGrant{Id: business.NewIDString(), OrgId: org, SubjectId: owner, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ScopePath: root, RoleId: role})
 	}))
+	// Approving an artifact takes an administrator who also holds the policy's
+	// permission: the role alone is none.
+	seedScopedRole(t, org, owner, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "definitions", "configure", "")
 	pool, worker := newJobExecutionHarness(t)
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
