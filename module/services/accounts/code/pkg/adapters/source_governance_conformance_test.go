@@ -216,6 +216,68 @@ func testSolutionSourcesAreGovernedByTheirScope(t *testing.T, h reviewedClosureH
 		require.NoError(t, remove(alex, records.GetId()), "an editor who administers removes it too")
 	})
 
+	t.Run("a governed connect by a member brings its own credential, never the organization's App", func(t *testing.T) {
+		github := func(as context.Context) error {
+			_, err := sources.AddGitHubSource(as, &gen.AddGitHubSourceRequest{OrgId: fixtureOrganization, Repo: "example/private-repo",
+				Boundary: &gen.AddGitHubSourceRequest_CollectionLabel{CollectionLabel: "Governed sources: a repository"}, Governance: byEditors})
+			return err
+		}
+		refused(t, github(remi), codes.PermissionDenied, "with their own repository-scoped token")
+		if err := github(alex); err != nil {
+			require.NotContains(t, status.Convert(err).Message(), "with their own repository-scoped token", "an administrator who edits may attach the organization's credentials")
+		}
+	})
+
+	t.Run("the organization's App is attached to a governed source by an administrator alone", func(t *testing.T) {
+		migrate := func(as context.Context) error {
+			_, err := sources.MigrateGitHubSourceToApp(as, &gen.MigrateGitHubSourceToAppRequest{OrgId: fixtureOrganization, Id: governed.GetId()})
+			return err
+		}
+		refused(t, migrate(remi), codes.PermissionDenied, "administrator")
+		refused(t, migrate(maya), codes.PermissionDenied, "administrator")
+		// An administrator who only views is not issued the governing scope.
+		refused(t, migrate(dev), codes.PermissionDenied, governedRefusal)
+		if err := migrate(alex); err != nil {
+			require.NotEqual(t, codes.PermissionDenied, status.Code(err), "an administrator holding the governing scope passes: %v", err)
+		}
+	})
+
+	t.Run("a widening awaiting approval governs nothing until it is approved", func(t *testing.T) {
+		const pending = "conformance-governed-pending"
+		note := pending + ".page"
+		deliver := func(generation uint64, roles map[string][]*authorityv1.WorkScopeV1) {
+			deliverSolution(t, h.ctx, h.conn, h.signer, conformanceSolution{alias: pending, generation: generation,
+				ceilings: []*authorityv1.WorkScopeV1{wireScope(note, "read", "write")}, roles: roles})
+		}
+		// Generation 1, approved: viewers read, editors read and write.
+		deliver(1, map[string][]*authorityv1.WorkScopeV1{
+			"installer": {wireScope(note, "read", "write")},
+			"editor":    {wireScope(note, "read", "write")},
+			"viewer":    {wireScope(note, "read")},
+		})
+		installed, err := installConformanceSolution(h.ctx, h.svc, h.core, pending, "viewer", conformanceAlex)
+		require.NoError(t, err)
+		_, err = h.core.GrantRoleAsHost(h.ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: installed.ID, Role: "viewer", PersonID: conformanceMaya})
+		require.NoError(t, err)
+		byReaders := &gen.SourceGovernance{InstallationId: installed.ID, ResourceKind: note, Action: "read"}
+		_, err = connect(maya, "Governed sources: pending, approved", byReaders)
+		refused(t, err, codes.PermissionDenied, "without everything")
+		// Generation 2 widens the viewer to write, beside a guest who only
+		// writes: on it, read is held by the fullest roles alone. It awaits
+		// an administrator's approval, so the approved generation 1 decides.
+		deliver(2, map[string][]*authorityv1.WorkScopeV1{
+			"installer": {wireScope(note, "read", "write")},
+			"editor":    {wireScope(note, "read", "write")},
+			"viewer":    {wireScope(note, "read", "write")},
+			"guest":     {wireScope(note, "write")},
+		})
+		upgrade, err := h.core.UpgradeAvailable(h.ctx, installed)
+		require.NoError(t, err)
+		require.True(t, upgrade, "generation 2 widens the viewer, so it awaits approval")
+		_, err = connect(maya, "Governed sources: pending, unapproved", byReaders)
+		refused(t, err, codes.PermissionDenied, "may not connect a source governed by "+note+":read")
+	})
+
 	t.Run("an editor who administers nothing removes the governed source", func(t *testing.T) {
 		require.NoError(t, remove(remi, governed.GetId()))
 		require.False(t, listed(remi, governed.GetId()))

@@ -89,7 +89,10 @@ func (s *Service) issuedGovernance(ctx context.Context, who authority.Person, in
 	if err != nil {
 		return status.Errorf(codes.Unavailable, "the source's governance at installation %s cannot be decided: %v", inst.ID, err)
 	}
-	target, err := core.Composed(ctx, inst.Target)
+	// The declaration the installation's consent approved, the one the core
+	// issues from: a redelivery that widens a role grants nothing, here as in
+	// issuance, until an administrator approves it.
+	target, err := core.ApprovedDeclaration(ctx, inst)
 	if err != nil {
 		return err
 	}
@@ -126,13 +129,16 @@ func (s *Service) issuedGovernance(ctx context.Context, who authority.Person, in
 // governingScopeDeclared holds a requested governing scope to the target's
 // own roles, so the request never picks a scope its caller already holds. The
 // target's declaration names no scope that governs a source, so the host
-// admits only one no role is granted unless that role is granted everything
-// the target's roles grant: the scope of the target's fullest roles. A scope
-// a lesser role also holds (a viewer's read beside an editor's write) would
-// hand every holder of that role what the fullest roles manage, and is
-// refused; a target whose roles are all partial governs no source. This is
-// the host's interim rule until the declaration names the governing scope
-// itself; it narrows what may be asked and leaves issuance to the core.
+// admits only a scope of the target's fullest roles: roles granted everything
+// the target's roles grant, which strictly contain another of its roles. A
+// scope a lesser role also holds (a viewer's read beside an editor's write)
+// would hand every holder of that role what the fullest roles manage, and is
+// refused. A target with no fullest role governs no source: one whose roles
+// are all partial, and one whose roles are all equal, a single role included,
+// where every holder would be "fullest"; its sources stay the organization
+// administrators'. This is the host's interim rule until the declaration
+// names the governing scope itself; it narrows what may be asked and leaves
+// issuance to the core.
 func governingScopeDeclared(target domain.Module, kind, action string) error {
 	granted := map[string]map[string]bool{}
 	every := map[string]bool{}
@@ -152,6 +158,17 @@ func governingScopeDeclared(target domain.Module, kind, action string) error {
 	}
 	for role, scopes := range target.OwnedRoles {
 		grant(role, scopes)
+	}
+	fullest, lesser := false, false
+	for _, scopes := range granted {
+		if len(scopes) == len(every) {
+			fullest = true
+		} else {
+			lesser = true
+		}
+	}
+	if !fullest || !lesser {
+		return domain.Refuse("no role of %s is fuller than another of its roles, so none governs a source: its sources stay the organization administrators'", target.Name)
 	}
 	asked := kind + ":" + action
 	held := false
