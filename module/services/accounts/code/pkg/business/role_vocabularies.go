@@ -33,9 +33,9 @@ func RoleVocabularies() []RoleVocabulary {
 		{
 			Name:  "Organisation role",
 			Words: organizationRoleWords(),
-			Decides: "Who administers the organisation. The `org_admin` tier admits `owner` and `admin` (and a platform `super_admin`); " +
+			Decides: "Who administers the organisation. The `org_admin` tier admits `owner` and `admin`, and no platform role; " +
 				"`org_member` admits any member. The `/admin` pages gate on `roles:write`, which admits the same people " +
-				"(`owner`, `admin`, a platform `super_admin`) as the API's org-admin check.",
+				"(`owner`, `admin`) as the API's org-admin check.",
 			DeclaredIn: "the organisation membership; the session's `or` claim",
 		},
 		{

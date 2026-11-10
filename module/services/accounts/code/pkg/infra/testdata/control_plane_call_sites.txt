@@ -12,7 +12,6 @@ fixtures/seed.go: validateOrganizationPreconditions: WithControlPlane
 pkg/adapters/auth.go: requireSubjectInOrg: WithControlPlane
 pkg/adapters/auth.go: requireSubjectInOrg: WithControlPlane
 pkg/adapters/auth.go: requireTeamAdmin: WithControlPlane
-pkg/adapters/auth.go: requireTeamAdmin: WithControlPlane
 pkg/adapters/auth.go: requireTeamMember: WithControlPlane
 pkg/adapters/organization_lifecycle_rpcs.go: (*InvitationServer).IssueInvitationLink: WithControlPlane
 pkg/adapters/rpcs.go: (*InvitationServer).ResendInvitation: WithControlPlane
