@@ -423,7 +423,7 @@ func workContextPermissionAllowed(
 		    -- Content read (business.WorkContextPermission.ContentRead): the
 		    -- owner's standing to read a declared module content type, which this
 		    -- host then authorizes node by node at read time. It is held through
-		    -- the same three bases the read oracles in
+		    -- the same two bases the read oracles in
 		    -- postgres_readable_sources.go and postgres_layered_access.go accept —
 		    -- a live scope grant (the owner's or a team's) or a live record share, on at least one node. Owner only: an
 		    -- actor's authority is never widened here.

@@ -150,8 +150,8 @@ never disagree.
 ## No role reads without a grant
 
 Every read is explicit. A platform role (`super_admin`, `support`, `billing`)
-reads no collection and no record, and neither does an organization owner or
-administrator: only a live scope grant or record share the subject holds (or its
+reads no collection and no record through these oracles, and neither does an
+organization owner or administrator: only a live scope grant or record share the subject holds (or its
 team holds) confers a read. This holds in every layered-access read oracle, all
 in `pkg/infra/postgres_layered_access.go` and `postgres_readable_sources.go`:
 `CheckAccess`, `ListAccessibleScopes` / `ListMyAccessibleScopes`, the point and

@@ -9,6 +9,7 @@ import (
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/infra/storetx"
 
 	"github.com/stretchr/testify/require"
 )
@@ -182,7 +183,7 @@ func TestPlatformSuperAdminIsRefusedWhenAModuleActsForThem(t *testing.T) {
 	require.Empty(t, readable([]string{admin}, []string{"documents"}),
 		"a platform role confers no read on a module's collection")
 
-	// Granted at the source's collection, both pass.
+	// Granted at the root, both pass.
 	require.NoError(t, testStore.WithOrgTx(testCtx, f.org, func(ctx context.Context) error {
 		return testStore.GrantScope(ctx, &gen.ScopeGrant{Id: business.NewIDString(), OrgId: f.org, SubjectId: admin,
 			SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ScopePath: "root", RoleId: f.role})
@@ -190,5 +191,34 @@ func TestPlatformSuperAdminIsRefusedWhenAModuleActsForThem(t *testing.T) {
 	decision, err = svc.CheckDelegatedRecordAccess(viewer, f.org, []string{admin}, "example.record", "record-a", "read", current)
 	require.NoError(t, err)
 	require.True(t, decision.GetAllowed())
-	_ = source
+
+	// The source's own collection is read through a grant that covers it, and
+	// only then.
+	docsRole := business.NewIDString()
+	require.NoError(t, testStore.WithOrgTx(testCtx, f.org, func(ctx context.Context) error {
+		return testStore.CreateRole(ctx, &gen.Role{Id: docsRole, Name: "docs " + docsRole, OrgId: f.org,
+			Permissions: []*gen.Permission{{Resource: "documents", Action: "read"}}})
+	}))
+	var sourcePath string
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		return storetx.Tx(ctx).QueryRow(ctx, `SELECT n.scope_path::text FROM datasource_sources s
+			JOIN scope_nodes n ON n.id = s.boundary_node_id WHERE s.id = $1`, source).Scan(&sourcePath)
+	}))
+	require.Empty(t, readable([]string{admin}, []string{"documents"}))
+	require.NoError(t, testStore.WithOrgTx(testCtx, f.org, func(ctx context.Context) error {
+		return testStore.GrantScope(ctx, &gen.ScopeGrant{Id: business.NewIDString(), OrgId: f.org, SubjectId: admin,
+			SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ScopePath: sourcePath, RoleId: docsRole})
+	}))
+	require.Equal(t, []string{source}, readable([]string{admin}, []string{"documents"}),
+		"the grant is what lets the module read the collection")
+
+	// Every delegated subject must read independently: a member with no grant
+	// of its own fails the intersection whatever the administrator holds.
+	member := f.joinOrg(t)
+	decision, err = svc.CheckDelegatedRecordAccess(viewer, f.org, []string{admin, member}, "example.record", "record-a", "read", current)
+	require.NoError(t, err)
+	require.False(t, decision.GetAllowed(), "every delegated subject must read independently")
+	require.Empty(t, readable([]string{admin, member}, []string{"documents"}))
+	require.Empty(t, readable([]string{admin}, nil),
+		"a grant never replaces the module's declaration of what its content is")
 }
