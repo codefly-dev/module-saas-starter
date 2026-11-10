@@ -13,10 +13,12 @@ package modulepackage
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -56,9 +58,11 @@ type HostInterfaceDeclaration struct {
 func (d HostInterfaceDeclaration) ID() string { return d.Publisher + "/" + d.Name }
 
 // AuthorityPin is the one codefly-dev/authority revision a go.mod pins its
-// authority libraries at, read from their pseudo-versions.
+// authority libraries at, read from their pseudo-versions and the commits
+// their tags were cut from.
 type AuthorityPin struct {
-	// Revision is the commit the pseudo-versions abbreviate.
+	// Revision is the commit the pins name, abbreviated as a pseudo-version
+	// abbreviates it.
 	Revision string
 	// Libraries are the pinned authority modules, by path, sorted.
 	Libraries []string
@@ -90,7 +94,7 @@ type HostInterfaceOptions struct {
 	// InterfacesDir is authority's interfaces/ tree at the pinned revision.
 	InterfacesDir string
 	// Revision, when given, is the commit InterfacesDir was read at; it must be
-	// the commit the go.mod pseudo-versions abbreviate.
+	// the commit the go.mod pins name.
 	Revision string
 }
 
@@ -138,14 +142,46 @@ func parseDeclaration(service, entry string) (HostInterfaceDeclaration, error) {
 	return HostInterfaceDeclaration{Service: service, Publisher: entry[:slash], Name: entry[slash+1 : at], Version: entry[at+1:]}, nil
 }
 
+// ResolveTag answers the full commit a tagged module version was cut from,
+// for the go.mod in dir.
+type ResolveTag func(dir, modulePath, version string) (string, error)
+
+// ResolveTagOrigin resolves a tag through the go command: `go mod download
+// -json` reports the origin commit of the version it serves, from the module
+// cache when the version is there and from the module proxy otherwise.
+func ResolveTagOrigin(dir, modulePath, version string) (string, error) {
+	cmd := exec.Command("go", "mod", "download", "-json", modulePath+"@"+version)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GOWORK=off")
+	out, err := cmd.Output()
+	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return "", fmt.Errorf("go mod download %s@%s: %w: %s", modulePath, version, err, strings.TrimSpace(string(exit.Stderr)))
+		}
+		return "", fmt.Errorf("go mod download %s@%s: %w", modulePath, version, err)
+	}
+	var info struct {
+		Origin *struct{ Hash string }
+	}
+	if err := json.Unmarshal(out, &info); err != nil {
+		return "", fmt.Errorf("go mod download %s@%s: %w", modulePath, version, err)
+	}
+	if info.Origin == nil || info.Origin.Hash == "" {
+		return "", fmt.Errorf("go mod download %s@%s records no origin commit", modulePath, version)
+	}
+	return info.Origin.Hash, nil
+}
+
 // ReadAuthorityPin reads the authority revision a go.mod pins: every direct
-// requirement under AuthorityLibraryPrefix must be a pseudo-version, and all of
-// them must abbreviate one commit, because the suite, the core it decides
-// with and the client are run together. A replace or an exclude of an
+// requirement under AuthorityLibraryPrefix names a commit, by its
+// pseudo-version or by the commit resolve answers for its tag, and all of
+// them must name one commit, because the suite, the core it decides with and
+// the client are run together. A nil resolve refuses a tag. A replace or an exclude of an
 // authority library is refused: the require line would then name nothing the
 // suite runs (authority's own services replace these libraries with local
 // directories, which is right there and never here).
-func ReadAuthorityPin(goModPath string) (AuthorityPin, error) {
+func ReadAuthorityPin(goModPath string, resolve ResolveTag) (AuthorityPin, error) {
 	data, err := os.ReadFile(goModPath)
 	if err != nil {
 		return AuthorityPin{}, err
@@ -170,12 +206,9 @@ func ReadAuthorityPin(goModPath string) (AuthorityPin, error) {
 		if req.Indirect || !strings.HasPrefix(req.Mod.Path, AuthorityLibraryPrefix) {
 			continue
 		}
-		if !module.IsPseudoVersion(req.Mod.Version) {
-			return AuthorityPin{}, fmt.Errorf("%s pins %s at %s, which names no commit: this gate reads the revision from a pseudo-version, so a tagged authority library needs the gate taught to resolve its tag", goModPath, req.Mod.Path, req.Mod.Version)
-		}
-		rev, err := module.PseudoVersionRev(req.Mod.Version)
+		rev, err := pinnedRevision(goModPath, req.Mod, resolve)
 		if err != nil {
-			return AuthorityPin{}, fmt.Errorf("%s pins %s at %s: %w", goModPath, req.Mod.Path, req.Mod.Version, err)
+			return AuthorityPin{}, err
 		}
 		revisions[rev] = append(revisions[rev], shortLibraries([]string{req.Mod.Path})...)
 		pin.Libraries = append(pin.Libraries, req.Mod.Path)
@@ -200,6 +233,31 @@ func ReadAuthorityPin(goModPath string) (AuthorityPin, error) {
 		pin.Revision = rev
 	}
 	return pin, nil
+}
+
+// pinnedRevision is the commit one requirement names, abbreviated to the
+// length a pseudo-version carries so a tag and a pseudo-version of one commit
+// compare equal.
+func pinnedRevision(goModPath string, mod module.Version, resolve ResolveTag) (string, error) {
+	if module.IsPseudoVersion(mod.Version) {
+		rev, err := module.PseudoVersionRev(mod.Version)
+		if err != nil {
+			return "", fmt.Errorf("%s pins %s at %s: %w", goModPath, mod.Path, mod.Version, err)
+		}
+		return rev, nil
+	}
+	if resolve == nil {
+		return "", fmt.Errorf("%s pins %s at %s, which names no commit without resolving its tag", goModPath, mod.Path, mod.Version)
+	}
+	hash, err := resolve(filepath.Dir(goModPath), mod.Path, mod.Version)
+	if err != nil {
+		return "", fmt.Errorf("%s pins %s at %s, whose commit cannot be resolved: %w", goModPath, mod.Path, mod.Version, err)
+	}
+	const abbreviated = 12
+	if len(hash) < abbreviated {
+		return "", fmt.Errorf("%s pins %s at %s, resolved to %q, which is not a commit", goModPath, mod.Path, mod.Version, hash)
+	}
+	return hash[:abbreviated], nil
 }
 
 // ReadPublishedInterfaces reads <dir>/<name>/interface.codefly.yaml for every
@@ -358,7 +416,7 @@ func VerifyHostInterfaces(options HostInterfaceOptions, out io.Writer) error {
 	var failures []string
 	for _, service := range services {
 		goMod := filepath.Join(options.ModuleRoot, "services", service, "code", "go.mod")
-		pin, err := ReadAuthorityPin(goMod)
+		pin, err := ReadAuthorityPin(goMod, ResolveTagOrigin)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				return fmt.Errorf("service %s declares host interfaces but has no Go module at %s, so no pinned suite proves them", service, goMod)

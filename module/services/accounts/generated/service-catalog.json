@@ -5214,7 +5214,7 @@
       "http_bindings": [],
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [
@@ -5240,7 +5240,7 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_member",
+      "policy_tier": "org_admin",
       "description": "Re-point a token-backed GitHub source at the deployment's GitHub App in place, keeping its identity and history.",
       "owner": {
         "module": "saas-starter",
@@ -6929,8 +6929,12 @@
         ],
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
-          "events": [],
-          "emission": "AUDIT_EMISSION_NONE"
+          "events": [
+            "saas.authority.role_granted",
+            "saas.team.created",
+            "saas.team.member_added"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
         },
         "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
         "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",

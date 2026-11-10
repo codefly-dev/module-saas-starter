@@ -251,6 +251,50 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.authority.installation_reach_adopted": {
+      "address": "saas.authority.installation_reach_adopted",
+      "title": "saas.authority.installation_reach_adopted",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.authority.installation_reach_adopted"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.authority.installation_reach_restored": {
+      "address": "saas.authority.installation_reach_restored",
+      "title": "saas.authority.installation_reach_restored",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.authority.installation_reach_restored"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.authority.installation_reach_unreached": {
+      "address": "saas.authority.installation_reach_unreached",
+      "title": "saas.authority.installation_reach_unreached",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.authority.installation_reach_unreached"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.authority.installation_reconverged": {
+      "address": "saas.authority.installation_reconverged",
+      "title": "saas.authority.installation_reconverged",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.authority.installation_reconverged"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.authority.installation_requested": {
       "address": "saas.authority.installation_requested",
       "title": "saas.authority.installation_requested",
@@ -268,6 +312,28 @@
       "messages": {
         "envelope": {
           "$ref": "#/components/messages/saas.authority.installation_uninstalled"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.authority.installation_upgrade_available": {
+      "address": "saas.authority.installation_upgrade_available",
+      "title": "saas.authority.installation_upgrade_available",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.authority.installation_upgrade_available"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.authority.installation_upgraded": {
+      "address": "saas.authority.installation_upgraded",
+      "title": "saas.authority.installation_upgraded",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.authority.installation_upgraded"
         }
       },
       "x-visibility": "external",
@@ -2419,6 +2485,34 @@
       },
       "title": "saas publishes saas.authority.installation_activated"
     },
+    "send:saas.authority.installation_reach_adopted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.authority.installation_reach_adopted"
+      },
+      "title": "saas publishes saas.authority.installation_reach_adopted"
+    },
+    "send:saas.authority.installation_reach_restored": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.authority.installation_reach_restored"
+      },
+      "title": "saas publishes saas.authority.installation_reach_restored"
+    },
+    "send:saas.authority.installation_reach_unreached": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.authority.installation_reach_unreached"
+      },
+      "title": "saas publishes saas.authority.installation_reach_unreached"
+    },
+    "send:saas.authority.installation_reconverged": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.authority.installation_reconverged"
+      },
+      "title": "saas publishes saas.authority.installation_reconverged"
+    },
     "send:saas.authority.installation_requested": {
       "action": "send",
       "channel": {
@@ -2432,6 +2526,20 @@
         "$ref": "#/channels/saas.authority.installation_uninstalled"
       },
       "title": "saas publishes saas.authority.installation_uninstalled"
+    },
+    "send:saas.authority.installation_upgrade_available": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.authority.installation_upgrade_available"
+      },
+      "title": "saas publishes saas.authority.installation_upgrade_available"
+    },
+    "send:saas.authority.installation_upgraded": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.authority.installation_upgraded"
+      },
+      "title": "saas publishes saas.authority.installation_upgraded"
     },
     "send:saas.authority.resource_attached": {
       "action": "send",
@@ -3850,6 +3958,34 @@
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
       },
+      "saas.authority.installation_reach_adopted": {
+        "name": "saas.authority.installation_reach_adopted",
+        "title": "saas.authority.installation_reach_adopted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.authority.installation_reach_restored": {
+        "name": "saas.authority.installation_reach_restored",
+        "title": "saas.authority.installation_reach_restored",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.authority.installation_reach_unreached": {
+        "name": "saas.authority.installation_reach_unreached",
+        "title": "saas.authority.installation_reach_unreached",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.authority.installation_reconverged": {
+        "name": "saas.authority.installation_reconverged",
+        "title": "saas.authority.installation_reconverged",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
       "saas.authority.installation_requested": {
         "name": "saas.authority.installation_requested",
         "title": "saas.authority.installation_requested",
@@ -3860,6 +3996,20 @@
       "saas.authority.installation_uninstalled": {
         "name": "saas.authority.installation_uninstalled",
         "title": "saas.authority.installation_uninstalled",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.authority.installation_upgrade_available": {
+        "name": "saas.authority.installation_upgrade_available",
+        "title": "saas.authority.installation_upgrade_available",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.authority.installation_upgraded": {
+        "name": "saas.authority.installation_upgraded",
+        "title": "saas.authority.installation_upgraded",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

@@ -209,7 +209,8 @@ func testReviewedClosures(t *testing.T, h reviewedClosureHarness) {
 		pageInst, held := h.coreInstallation(t, alex, page)
 		require.True(t, held, "the module page is installed with the solution's closure")
 		require.Equal(t, domain.Active, pageInst.Status)
-		require.Empty(t, pageInst.PrincipalID, "by composition: the host's own record, holding no standing authority")
+		require.Empty(t, pageInst.InstalledBy, "by composition: the host's own record, holding no standing authority")
+		require.Equal(t, authority.StablePrincipalID(pageInst.Organization, pageInst.Target), pageInst.PrincipalID, "owning its page's data (RBAC-1)")
 		_, err = installConformanceSolution(h.ctx, h.svc, h.core, page, "", conformanceAlex)
 		code, _ := domain.CodeOf(err)
 		require.Equal(t, domain.NotFound, code, "a module page is never installed through a review: %v", err)
@@ -351,7 +352,8 @@ installations:
 				if target == solution {
 					require.Equal(t, owner, inst.InstalledBy, "the row's owner installed %s", target)
 				} else {
-					require.Empty(t, inst.PrincipalID, "the module page is installed by composition")
+					require.Empty(t, inst.InstalledBy, "the module page is installed by composition")
+					require.Equal(t, authority.StablePrincipalID(org, target), inst.PrincipalID, "owning its page's data (RBAC-1)")
 				}
 				grants, err := h.core.ListRoleGrants(h.ctx, caller, org, inst.ID)
 				require.NoError(t, err)
