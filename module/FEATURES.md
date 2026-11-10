@@ -391,7 +391,7 @@ their next owning change.
 | User registration        | ✅    | `RegisterUser` (provider-based; JIT during first login)                        |
 | Profile (name, avatar)   | ✅    | Free-form `profile_data` JSON map                                              |
 | Multiple linked identities | ✅  | Same user can have WorkOS + Google linked; lookup via `(provider, sub)`        |
-| Add identity             | ✅    | `AddIdentity` — gated to self or platform-admin (security fix 2026-04-25)      |
+| Add identity             | ✅    | `AddIdentity` — the caller's own account only; no platform role links an identity to another user      |
 | Find by identity         | ✅    | `FindUserByIdentity` — platform-admin only (security fix 2026-04-25)           |
 | List identities          | ✅    | `ListUserIdentities` — gated to self or platform-admin (security fix 2026-04-25) |
 | Account deletion request | ❌    | Request/status scaffolding fails closed until a complete deletion, retention, provider-cleanup, and legal-hold workflow is wired |

@@ -106,6 +106,9 @@ func (s *OrgServer) DeleteOrganization(ctx context.Context, req *gen.DeleteOrgan
 // nothing. The membership read is the caller's own pair, which is the only one
 // lookupMembership answers.
 func requireOrgOwner(ctx context.Context, actorID, orgID string) error {
+	if err := refuseInRoleView(ctx); err != nil {
+		return err
+	}
 	role, err := lookupMembership(ctx, orgID, actorID)
 	if err != nil {
 		return membershipLookupStatus("cannot verify membership", err)

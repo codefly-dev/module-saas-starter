@@ -132,6 +132,7 @@ func testRoleViewRefusesOrganizationMints(t *testing.T, conn grpc.ClientConnInte
 	require.Contains(t, status.Convert(err).Message(), "this session views as")
 
 	testRoleViewHoldsNoPlatformRole(t, conn, person, view, store)
+	testRoleViewHoldsNoOrganizationRole(t, conn, person, viewing)
 
 	// The session it was opened from mints as before, and Current says it views nothing.
 	_, err = contexts.StartTask(person, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(), Audience: "records",
@@ -216,4 +217,38 @@ func testRoleViewHoldsNoPlatformRole(t *testing.T, conn grpc.ClientConnInterface
 	role, err := platformRole(identityOf(unreadable, view.GetSessionId()), personID)
 	require.Error(t, err, "a core that cannot be read is an error, never the stored role")
 	require.Empty(t, role)
+}
+
+// testRoleViewHoldsNoOrganizationRole: the person is an organization administrator.
+// Outside the view they list the organization's invitations and installations;
+// inside it they are a viewer and read what a viewer reads. These reads are
+// admitted in a view (they are declared reads) and are decided by the person's
+// organization role, so before the view cleared that role an administrator
+// "viewing as a viewer" saw what no viewer can. It fails when requireOrgAdmin
+// ignores the view.
+func testRoleViewHoldsNoOrganizationRole(t *testing.T, conn grpc.ClientConnInterface, person, viewing context.Context) {
+	t.Helper()
+	invitations := gen.NewInvitationServiceClient(conn)
+	installations := gen.NewInstallationServiceClient(conn)
+	usage := gen.NewUsageServiceClient(conn)
+
+	_, err := invitations.ListInvitations(person, &gen.ListInvitationsRequest{OrgId: fixtureOrganization})
+	require.NoError(t, err, "outside the view the administrator lists the organization's invitations")
+	_, err = installations.ListOrganizationInstallations(person, &gen.ListOrganizationInstallationsRequest{OrgId: fixtureOrganization})
+	require.NoError(t, err, "outside the view the administrator lists the organization's installations")
+
+	_, err = invitations.ListInvitations(viewing, &gen.ListInvitationsRequest{OrgId: fixtureOrganization})
+	require.Equal(t, codes.PermissionDenied, status.Code(err), "inside the view: %v", err)
+	require.Contains(t, status.Convert(err).Message(), "views as")
+	_, err = installations.ListOrganizationInstallations(viewing, &gen.ListOrganizationInstallationsRequest{OrgId: fixtureOrganization})
+	require.Equal(t, codes.PermissionDenied, status.Code(err), "inside the view: %v", err)
+	require.Contains(t, status.Convert(err).Message(), "views as")
+
+	// requireOrgPermission (usage): refused inside the view, by the view. The fixture
+	// administrator holds no RBAC assignment for entitlements, so there is no
+	// outside-the-view pass to assert here; the message is the proof, because the
+	// permission check's own refusal does not say the session views.
+	_, err = usage.GetUsage(viewing, &gen.GetUsageRequest{OrganizationId: fixtureOrganization, Meter: "unknown_meter"})
+	require.Equal(t, codes.PermissionDenied, status.Code(err), "inside the view: %v", err)
+	require.Contains(t, status.Convert(err).Message(), "views as")
 }

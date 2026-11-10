@@ -384,9 +384,16 @@ func (s *Service) ConvergeFixtureOrgMember(ctx context.Context, req *gen.AddOrgM
 //     live permissions after the organization membership is gone — permission
 //     resolution matches team-subject role assignments through it — so those
 //     rows are deleted in the same transaction. Organization-scoped role
-//     assignments and installation ownership are deliberately left in place:
-//     both are gated on current organization membership at read time, so they
-//     are already ineffective for a departed member.
+//     assignments, scope grants, record shares, installation roles, delegations
+//     and API keys the member held in their own name are ended with the
+//     membership: they were gated on membership at read time, which only hid
+//     them, and a person added again would have had them back unrecorded.
+//     An installation's owner of record is the one exception: it is
+//     accountability, not data authority (the owner's own scopes are the
+//     installation agent's grants), it needs a current administrator to stand,
+//     and the owner leaving is the "owner left" signal the installation reports
+//     and has transferred. A removed owner added again as an administrator is
+//     eligible again until it is transferred.
 func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.RemoveOrgMemberRequest) error {
 	orgID, memberID, err := canonicalSubjectTenancyIDs(req.OrgId, req.UserId)
 	if err != nil {
@@ -412,11 +419,15 @@ func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.
 	// either commits before the dependent delete or waits behind this
 	// transaction, and can neither be missed by it nor land after it.
 	if err := s.narrow(ctx, func(ctx context.Context) error {
-		if err := s.removeOrgMembershipTx(ctx, actorID, orgID, memberID); err != nil {
+		ended, err := s.removeOrgMembershipTx(ctx, actorID, orgID, memberID)
+		if err != nil {
 			return err
 		}
-		return s.emitTx(ctx, actorID, "user", EventOrgMemberRemoved, "organization", orgID, orgID,
-			map[string]any{"user_id": memberID})
+		payload := map[string]any{"user_id": memberID}
+		if len(ended) > 0 {
+			payload["ended_authority"] = ended
+		}
+		return s.emitTx(ctx, actorID, "user", EventOrgMemberRemoved, "organization", orgID, orgID, payload)
 	}); err != nil {
 		return w.Wrapf(err, "cannot remove member")
 	}
@@ -434,15 +445,17 @@ func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.
 // removeOrgMembershipTx is one membership's removal, shared by an
 // administrator removing a member and a member leaving: the continuity guard,
 // the dependent team memberships, the membership row and the source
-// delegations it carried, in the caller's organization transaction. Each caller
-// records its own audit event.
-func (s *Service) removeOrgMembershipTx(ctx context.Context, actorID, orgID, userID string) error {
+// delegations it carried, in the caller's organization transaction, and every
+// grant the person held by name (EndMemberAuthority): a membership that ends
+// takes its authority with it, so a person added again starts with nothing.
+// It returns what the grants were; each caller records its own audit event.
+func (s *Service) removeOrgMembershipTx(ctx context.Context, actorID, orgID, userID string) ([]string, error) {
 	w := wool.Get(ctx).In("removeOrgMembershipTx")
 	if err := s.requireOrgAdminContinuity(ctx, orgID, userID, ""); err != nil {
-		return err
+		return nil, err
 	}
 	if err := s.store.LockOrgMembership(ctx, orgID, userID); err != nil {
-		return w.Wrapf(err, "cannot lock org membership")
+		return nil, w.Wrapf(err, "cannot lock org membership")
 	}
 	// Dependent access before the parent row: migration 127 made team_members
 	// a child of organization_members with ON DELETE CASCADE, so deleting the
@@ -451,12 +464,16 @@ func (s *Service) removeOrgMembershipTx(ctx context.Context, actorID, orgID, use
 	// truthful; the cascade stays as the backstop for any writer that does
 	// not come through here.
 	if _, err := s.store.RemoveOrgTeamMemberships(ctx, orgID, userID); err != nil {
-		return w.Wrapf(err, "cannot remove dependent team memberships")
+		return nil, w.Wrapf(err, "cannot remove dependent team memberships")
+	}
+	ended, err := s.store.EndMemberAuthority(ctx, orgID, userID)
+	if err != nil {
+		return nil, w.Wrapf(err, "cannot end the member's grants")
 	}
 	if err := s.store.RemoveOrgMember(ctx, orgID, userID); err != nil {
-		return err
+		return nil, err
 	}
-	return s.revokeSourceDelegationsTx(ctx, actorID, SourceDelegationFilter{OrgID: orgID, PrincipalID: userID}, SourceDelegationMemberRemoved)
+	return ended, s.revokeSourceDelegationsTx(ctx, actorID, SourceDelegationFilter{OrgID: orgID, PrincipalID: userID}, SourceDelegationMemberRemoved)
 }
 
 // ListOrgMembers lists all members of an organization.

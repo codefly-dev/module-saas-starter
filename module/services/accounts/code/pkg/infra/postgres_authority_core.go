@@ -202,7 +202,9 @@ func (t coreTx) People(organization string) ([]domain.Person, error) {
 	return t.members(organization, "")
 }
 
-// members reads an organization's members, or the one person named.
+// members reads an organization's members, or the one person named. A
+// suspended user is none: what they hold (roles, delegations) is theirs again
+// when the account is, and answers nothing meanwhile.
 func (t coreTx) members(organization, person string) ([]domain.Person, error) {
 	org, ok := asUUID(organization)
 	if !ok {
@@ -237,6 +239,7 @@ func (t coreTx) members(organization, person string) ([]domain.Person, error) {
 		                              WHERE tm.user_id = m.user_id AND tt.org_id = m.org_id)))), ARRAY[]::text[])
 		  FROM public.organization_members m
 		 WHERE m.org_id = $1 AND ($2::uuid IS NULL OR m.user_id = $2)
+		   AND EXISTS (SELECT 1 FROM public.users u WHERE u.uuid = m.user_id AND u.status = 'active')
 		 ORDER BY m.user_id`, org, only)
 	if err != nil {
 		return nil, err
