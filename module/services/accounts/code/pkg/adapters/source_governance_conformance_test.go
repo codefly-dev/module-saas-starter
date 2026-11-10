@@ -117,6 +117,14 @@ func testSolutionSourcesAreGovernedByTheirScope(t *testing.T, h reviewedClosureH
 		_, err := sources.DeleteSource(as, &gen.DeleteSourceRequest{OrgId: fixtureOrganization, Id: id})
 		return err
 	}
+	declare := func(as context.Context, id string) error {
+		_, err := sources.DeclareSourceOperations(as, &gen.DeclareSourceOperationsRequest{OrgId: fixtureOrganization, SourceId: id})
+		return err
+	}
+	delegate := func(as context.Context, id string) error {
+		_, err := sources.DelegateSourceTriggers(as, &gen.DelegateSourceTriggersRequest{OrgId: fixtureOrganization, SourceId: id})
+		return err
+	}
 	link := func(as context.Context, id string) error {
 		_, err := sources.BeginDatasourceAccountLink(as, &gen.BeginDatasourceAccountLinkRequest{OrgId: fixtureOrganization, Connector: "api", SourceId: id})
 		return err
@@ -204,6 +212,8 @@ func testSolutionSourcesAreGovernedByTheirScope(t *testing.T, h reviewedClosureH
 			refused(t, update(as, governed.GetId()), codes.PermissionDenied, governedRefusal)
 			refused(t, remove(as, governed.GetId()), codes.PermissionDenied, governedRefusal)
 			refused(t, link(as, governed.GetId()), codes.PermissionDenied, governedRefusal)
+			refused(t, declare(as, governed.GetId()), codes.PermissionDenied, governedRefusal)
+			refused(t, delegate(as, governed.GetId()), codes.PermissionDenied, governedRefusal)
 			require.True(t, listed(remi, governed.GetId()), "%s changed nothing", name)
 		}
 		// The editor passes the governance; what follows is the business's own
@@ -343,6 +353,41 @@ func testSolutionSourcesAreGovernedByTheirScope(t *testing.T, h reviewedClosureH
 		approved, err := connect(remi, "Governed sources: pending, approved", byWriters)
 		require.NoError(t, err)
 		require.NoError(t, remove(remi, approved.GetId()))
+	})
+
+	t.Run("a source whose governing scope an approved redelivery drops is managed by nobody, an administrator included", func(t *testing.T) {
+		const moving = "conformance-governed-moving"
+		note := moving + ".page"
+		deliver := func(generation uint64, governance []string) {
+			deliverSolution(t, h.ctx, h.conn, h.signer, conformanceSolution{alias: moving, generation: generation,
+				ceilings: []*authorityv1.WorkScopeV1{wireScope(note, "read", "write", "publish")},
+				roles: map[string][]*authorityv1.WorkScopeV1{
+					"installer": {wireScope(note, "read", "publish")},
+					"editor":    {wireScope(note, "read", "write")},
+				}, governance: governance})
+		}
+		deliver(1, []string{note + ":write"})
+		installed, err := installConformanceSolution(h.ctx, h.svc, h.core, moving, "installer", conformanceAlex)
+		require.NoError(t, err)
+		_, err = h.core.GrantRoleAsHost(h.ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: installed.ID, Role: "editor", PersonID: conformanceRemi})
+		require.NoError(t, err)
+		stale, err := connect(remi, "Governed sources: moving", &gen.SourceGovernance{InstallationId: installed.ID, ResourceKind: note, Action: "write"})
+		require.NoError(t, err)
+		// Generation 2 governs by the installer's publish instead. Approved,
+		// the stored tie to write names a scope no approved declaration
+		// governs by: refused for everyone, never the administrators' again.
+		deliver(2, []string{note + ":publish"})
+		_, err = installConformanceSolution(h.ctx, h.svc, h.core, moving, "installer", conformanceAlex)
+		require.NoError(t, err)
+		staleRefusal := "belongs to installation " + installed.ID
+		for name, as := range map[string]context.Context{"its editor": remi, "an administrator who installed it": alex, "an administrator holding no role": alice} {
+			for _, change := range []func(context.Context, string) error{sync, update, remove, declare, delegate} {
+				refused(t, change(as, stale.GetId()), codes.PermissionDenied, staleRefusal)
+			}
+			require.True(t, listed(remi, stale.GetId()), "%s changed nothing", name)
+		}
+		require.NoError(t, h.core.UninstallAsHost(h.ctx, fixtureOrganization, installed.ID))
+		require.NoError(t, remove(alice, stale.GetId()), "uninstalled, it is the organization's again")
 	})
 
 	t.Run("an editor who administers nothing removes the governed source", func(t *testing.T) {
