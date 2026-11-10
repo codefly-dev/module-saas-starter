@@ -115,6 +115,15 @@ func (s *Service) KeepAuthorityCoreCurrent(ctx context.Context) error {
 	return errors.Join(failures...)
 }
 
+// WorkContextMaxTTL is the longest any Work Context this host issues lives,
+// the authority core's own ceiling (authority.DefaultMaxTTL), not the Work
+// Context library's default of an hour. Removing a grant moves a revision and
+// ends what was issued under it at the next check; the lifetime is what bounds
+// the cases no revision reaches (a grant that expires, a token that leaks).
+// The gateway hop renews a held context before it lapses, so a person sees no
+// difference; a task that outlives it asks again.
+const WorkContextMaxTTL = authority.DefaultMaxTTL
+
 func (s *Service) newAuthorityCore(issuer, keyID string, key ed25519.PrivateKey) (*authority.Service, error) {
 	store, ok := s.store.(AuthorityCoreStore)
 	if !ok {
@@ -126,7 +135,7 @@ func (s *Service) newAuthorityCore(issuer, keyID string, key ed25519.PrivateKey)
 	public, _ := key.Public().(ed25519.PublicKey)
 	return authority.New(store.AuthorityCoreWithConsent(s.moduleConsent), authority.Config{
 		Issuer: issuer, KeyID: keyID, Signer: key, Keys: staticKeys{keyID: public},
-		Replay: store.AuthorityCoreReplay(), MaxTTL: workcontext.DefaultMaxTTL, Journal: s.journalAuthority,
+		Replay: store.AuthorityCoreReplay(), MaxTTL: WorkContextMaxTTL, Journal: s.journalAuthority,
 		HostInstallsModules: true,
 	})
 }

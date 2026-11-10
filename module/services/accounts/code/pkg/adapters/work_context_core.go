@@ -210,7 +210,7 @@ func (s *WorkContextAuthorityServer) coreAuthority(tenant, owner string) *workco
 		Key:       s.key,
 		Revisions: ownerRevisions{answers: s.seals, owner: owner},
 		Seals:     hostSealSource{answers: s.seals, tenant: tenant, owner: owner},
-		MaxTTL:    workcontext.DefaultMaxTTL,
+		MaxTTL:    business.WorkContextMaxTTL,
 		Now:       s.now,
 	}
 }
