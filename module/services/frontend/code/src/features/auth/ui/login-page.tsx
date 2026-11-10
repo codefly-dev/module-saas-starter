@@ -205,14 +205,13 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 						</span>
 					</div>
 
-					<div className="space-y-8 max-w-md">
+					<div className="my-auto space-y-8 max-w-md">
 						<div>
 							<h2 className="text-4xl font-bold tracking-tight leading-tight">
 								Welcome back to {branding.name}.
 							</h2>
 							<p className="mt-4 text-lg text-primary-foreground/80 leading-relaxed">
-								Continue to the authenticated product without coupling this
-								session to the public company site.
+								Sign in to pick up where you left off.
 							</p>
 						</div>
 
@@ -220,31 +219,31 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 							<li className="flex items-start gap-3">
 								<ShieldCheck className="h-5 w-5 mt-0.5 text-primary-foreground/90 shrink-0" />
 								<span className="text-primary-foreground/90">
-									<span className="font-medium">Server-validated access</span> —
-									authenticated requests are checked again at the service
-									boundary.
+									<span className="font-medium">
+										Access that follows your role
+									</span>{" "}
+									— you see what your organization has given you, and nothing
+									more.
 								</span>
 							</li>
 							<li className="flex items-start gap-3">
 								<Building2 className="h-5 w-5 mt-0.5 text-primary-foreground/90 shrink-0" />
 								<span className="text-primary-foreground/90">
-									<span className="font-medium">Tenant-aware navigation</span> —
-									organization context and permissions shape the product shell.
+									<span className="font-medium">
+										One place per organization
+									</span>{" "}
+									— switch organizations and everything follows.
 								</span>
 							</li>
 							<li className="flex items-start gap-3">
 								<Sparkles className="h-5 w-5 mt-0.5 text-primary-foreground/90 shrink-0" />
 								<span className="text-primary-foreground/90">
-									<span className="font-medium">Independent public site</span> —
-									company content and pricing can release on their own cadence.
+									<span className="font-medium">Every request checked</span> —
+									each action is checked again against what you may do.
 								</span>
 							</li>
 						</ul>
 					</div>
-
-					<p className="text-xs text-primary-foreground/60">
-						Production claims require current evidence for your environment.
-					</p>
 				</div>
 			</div>
 

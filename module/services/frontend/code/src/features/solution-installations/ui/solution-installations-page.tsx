@@ -235,15 +235,15 @@ function SolutionInstallationsForOrganization({
 					</h1>
 					<p className="text-muted-foreground">
 						{showModules
-							? "Modules are part of the platform: each is installed in every organization by composition and retired only by its withdrawal. This page shows them; nothing here installs or uninstalls one."
+							? "Modules are part of the platform: every organization has each one, kept up to date by the platform. This page shows which release each is at and whether it is healthy; nothing here installs or removes one."
 							: "The solutions this organization can install, and the module pages whose access it sets up. Install a solution after reviewing what each role can do and its supporting modules; a module page is already part of the platform, and nobody can use it until its roles are given to teams."}
 					</p>
 					{!showModules && (
 						<Link
 							href="/admin/modules"
-							className="text-sm text-muted-foreground hover:underline"
+							className="text-sm text-muted-foreground underline-offset-4 hover:underline"
 						>
-							Supporting module administration
+							See the supporting modules and their health →
 						</Link>
 					)}
 				</div>
@@ -457,7 +457,7 @@ function AvailableSection({
 	pageAccess,
 	title = showModules ? "Available" : "Solutions",
 	description = showModules
-		? "What this host offers this organization right now, at the release it has applied."
+		? "What the platform offers this organization right now, at the release in use."
 		: "The solutions your organization can install.",
 	hideWhenEmpty = false,
 }: {
@@ -622,6 +622,28 @@ function AvailableSection({
 	);
 }
 
+/**
+ * Who an uninstall takes access from, in one phrase ("expenses-editor and
+ * expenses-viewer": the teams or people holding a role), from the role holders the table already shows. Empty when
+ * nobody holds a role or the holders are not read yet. The dialog said only
+ * "Access through this installation is revoked", which names nobody.
+ */
+export function uninstallLosers(row: InstalledRow, access: AccessView): string {
+	const grants = access.grants.get(row.installationId);
+	if (!grants) return "";
+	const names = grants.map((grant) => ({
+		name: access.name(grant),
+		id: grant.teamId || grant.personId,
+	}));
+	// A holder whose name is not read yet would be shown as its id: say the
+	// general sentence rather than name anyone by an id.
+	if (names.some(({ name, id }) => !name || name === id)) return "";
+	const holders = [...new Set(names.map(({ name }) => name))].sort();
+	if (holders.length === 0) return "";
+	if (holders.length === 1) return `${holders[0]} loses`;
+	return `${holders.slice(0, -1).join(", ")} and ${holders[holders.length - 1]} lose`;
+}
+
 function InstalledSection({
 	showModules,
 	unclassified,
@@ -663,6 +685,7 @@ function InstalledSection({
 
 	const name = (row: InstalledRow) =>
 		row.solution.kind === "value" ? row.solution.text : "this installation";
+	const losers = confirming ? uninstallLosers(confirming, access) : "";
 
 	const runRetry = (row: InstalledRow) => {
 		setRefusal(null);
@@ -930,13 +953,17 @@ function InstalledSection({
 							Uninstall {confirming ? name(confirming) : ""}
 						</AlertDialogTitle>
 						<AlertDialogDescription>
-							Access through this installation is revoked. Its record and audit
-							trail remain. Shared supporting module installations are kept.
+							{losers
+								? `${losers} access to ${confirming ? name(confirming) : ""} at once. `
+								: "Everyone who holds one of its roles loses access at once. "}
+							Its record and audit trail remain. Shared supporting module
+							installations are kept.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
 						<AlertDialogCancel>Cancel</AlertDialogCancel>
 						<AlertDialogAction
+							variant="destructive"
 							onClick={() => {
 								if (confirming) runUninstall(confirming);
 								setConfirming(null);

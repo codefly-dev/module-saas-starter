@@ -8,8 +8,8 @@ users:
   - {id: 00000000-0000-7000-8000-0000000000a1, email: admin@acme.com, name: Sarah Chen, role: super_admin, provider: email, provider_id: dev-admin}
   - {id: 00000000-0000-7000-8000-0000000000a2, email: alice@acme.com, name: Alice Johnson, role: admin, provider: email, provider_id: dev-alice}
   - {id: 00000000-0000-7000-8000-0000000000a3, email: bob@acme.com, name: Bob Williams, role: member, provider: email, provider_id: dev-bob}
-  - {id: 00000000-0000-7000-8000-0000000000b1, email: maya@acme.test, name: Maya Viewer, role: member, provider: email, provider_id: fixture-maya}
-  - {id: 00000000-0000-7000-8000-0000000000b2, email: remi@acme.test, name: Remi Editor, role: member, provider: email, provider_id: fixture-remi}
+  - {id: 00000000-0000-7000-8000-0000000000b1, email: maya@acme.test, name: Maya Rossi, role: member, provider: email, provider_id: fixture-maya}
+  - {id: 00000000-0000-7000-8000-0000000000b2, email: remi@acme.test, name: Remi Laurent, role: member, provider: email, provider_id: fixture-remi}
   - {id: 00000000-0000-7000-8000-0000000000b3, email: alex@acme.test, name: Alex Admin, role: member, provider: email, provider_id: fixture-alex}
   - {id: 00000000-0000-7000-8000-0000000000b4, email: dev@acme.test, name: Dev Developer, role: member, provider: email, provider_id: fixture-dev}
   - {id: 00000000-0000-7000-8000-0000000000b5, email: zoe@globex.test, name: Zoe Admin, role: member, provider: email, provider_id: fixture-zoe}

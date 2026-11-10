@@ -34,6 +34,7 @@ import type { AuditEvent } from "@/features/audit/model/types";
 import {
 	useAuditLog,
 	usePrincipalDirectory,
+	useTeamNames,
 } from "@/features/audit/service/queries";
 import { useAuth } from "@/lib/auth";
 
@@ -66,20 +67,30 @@ export function ActivityFeed({
 	const { data, isLoading } = useAuditLog(
 		{
 			orgId: resolvedOrgId,
-			pageSize: limit,
+			// Read past the system's own rows, which this feed leaves out, so
+			// a busy minute of background work does not leave it empty.
+			pageSize: limit * SYSTEM_ROW_HEADROOM,
 		},
 		{
 			enabled: resolvedOrgId !== "",
 		},
 	);
 
-	const events: AuditEvent[] = data?.events ?? [];
+	// People's actions only. Background work the system attributes to itself
+	// ("System SYSTEM work context task started", six times a minute) buried
+	// what people did; the Audit Log behind "View all" still holds every row.
+	const events: AuditEvent[] = (data?.events ?? [])
+		.filter((e) => !isSystemRow(e))
+		.slice(0, limit);
 	const { directory: actorNames } = usePrincipalDirectory(
 		resolvedOrgId,
 		events.map((e) => e.actorId),
 	);
+	const teamNames = useTeamNames(resolvedOrgId, events);
 
-	if (!isLoading && events.length === 0) return null;
+	// Hidden only for an organization with no activity at all. When every row
+	// read was the system's, the card stays with its way to the Audit Log.
+	if (!isLoading && (data?.events ?? []).length === 0) return null;
 
 	return (
 		<Card>
@@ -105,6 +116,10 @@ export function ActivityFeed({
 						<Skeleton className="h-9 w-full" />
 						<Skeleton className="h-9 w-full" />
 					</div>
+				) : events.length === 0 ? (
+					<p className="text-sm text-muted-foreground">
+						No recent activity by people. The Audit Log has the system&apos;s own.
+					</p>
 				) : (
 					<ul className="space-y-2.5">
 						{events.map((e) => {
@@ -134,10 +149,13 @@ export function ActivityFeed({
 											<span className="text-muted-foreground">
 												{humanize(e.eventType)}
 											</span>
-											{e.resource && (
-												<span className="text-muted-foreground">
+											{/* The object by its name when one is known ("joined a
+											    team · Design"); never the raw resource type, which
+											    read "joined a team (team)". */}
+											{resourceName(e, teamNames) && (
+												<span className="font-medium">
 													{" "}
-													({e.resource})
+													· {resourceName(e, teamNames)}
 												</span>
 											)}
 										</div>
@@ -153,6 +171,26 @@ export function ActivityFeed({
 			</CardContent>
 		</Card>
 	);
+}
+
+/** How many rows are read for each one shown, to leave room for system rows. */
+const SYSTEM_ROW_HEADROOM = 4;
+
+/** A row the system attributed to itself rather than to a person or a key. */
+export function isSystemRow(
+	e: Pick<AuditEvent, "actorId" | "actorType">,
+): boolean {
+	return e.actorType === "system" || (!e.actorId && e.actorType !== "api_key");
+}
+
+// The name of what a row acted on, when this feed can tell: a team by its
+// name. Anything else says nothing rather than its resource type.
+export function resourceName(
+	e: Pick<AuditEvent, "resource" | "resourceId">,
+	teamNames: ReadonlyMap<string, string>,
+): string {
+	if (e.resource === "team") return teamNames.get(e.resourceId) ?? "";
+	return "";
 }
 
 // The verb phrase each registered event type renders as. Exported alongside

@@ -79,7 +79,10 @@ export function useRoleGrants(
 				if (result.data) grants.set(installationIds[i], result.data);
 				else if (result.isError) failed.add(installationIds[i]);
 			});
-			return { grants, failed };
+			// Still being read: a consumer must not read an absent installation
+			// as one nobody holds a role on while its answer is on the way.
+			const pending = results.some((result) => result.isPending);
+			return { grants, failed, pending };
 		},
 	});
 }

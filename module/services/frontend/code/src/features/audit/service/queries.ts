@@ -1,8 +1,9 @@
-import { assertAuditScopeContract } from "@codefly-dev/saas-sdk";
 import type { MessageInitShape } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
+import { assertAuditScopeContract } from "@codefly-dev/saas-sdk";
 import type { Client } from "@connectrpc/connect";
 import { useQuery } from "@tanstack/react-query";
+import { teamQueries } from "@/features/teams/service/queries";
 import type {
 	AggregateAuditLogRequestSchema,
 	AggregateAuditLogResponse,
@@ -100,6 +101,25 @@ export function usePrincipalDirectory(
 		staleTime: 5 * 60 * 1000,
 	});
 	return { directory: data ?? EMPTY_DIRECTORY, failed: isError };
+}
+
+/**
+ * The names of the teams a set of audit rows acts on, by id. A team row
+ * carries only the team's id, and the dashboard printed "joined a team (team)"
+ * eight times without saying which. One ListTeams read, only when a row names
+ * a team; a team that is gone is simply absent.
+ */
+export function useTeamNames(
+	orgId: string,
+	resources: readonly { resource: string }[],
+): ReadonlyMap<string, string> {
+	const wanted = resources.some((r) => r.resource === "team");
+	const { data } = useQuery({
+		...teamQueries.list(orgId),
+		enabled: orgId !== "" && wanted,
+		staleTime: 60 * 1000,
+	});
+	return new Map((data?.teams ?? []).map((team) => [team.id, team.name]));
 }
 
 // auditEventTypesQuery is the single react-query descriptor for the server-owned
