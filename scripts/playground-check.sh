@@ -6,8 +6,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 scope=()
-[[ "${1:-}" == "--naming-scope" ]] && scope=(--naming-scope "$2")
-base=$(codefly endpoint saas-starter/frontend "${scope[@]}" --require-up)
+if [[ "${1:-}" == "--naming-scope" ]]; then
+  [[ -n "${2:-}" ]] || { echo "--naming-scope needs a value" >&2; exit 2; }
+  scope=(--naming-scope "$2")
+fi
+base=$(codefly endpoint saas-starter/frontend ${scope[@]+"${scope[@]}"} --require-up)
 fixture=module/fixtures/dev-admin.yaml
 org=$(awk '/^organizations:/{o=1} o&&/id:/{print $3; exit}' "$fixture")
 fails=0
@@ -48,9 +51,14 @@ scopepath=$(api $owner PermissionService/ListCollectionAccess "{\"orgId\":\"$org
 carol=$(awk '$1=="-"&&$2=="id:"{id=$3} $1=="email:"&&$2=="carol@acme.com"{print id; exit}' "$fixture")
 grant="{\"orgId\":\"$org\",\"subjectId\":\"$carol\",\"subjectKind\":\"SUBJECT_KIND_PRINCIPAL\",\"scopePath\":\"$scopepath\",\"roleId\":\"$role\"}"
 granted=
-revoke() { [[ -n "$granted" ]] && api $owner PermissionService/RevokeScope "$grant" >/dev/null 2>&1; granted=; }
+revoke() {
+  [[ -n "$granted" ]] || return 0
+  if api $owner PermissionService/RevokeScope "$grant" >/dev/null; then granted=
+  else echo "FAIL  the grant to carol could not be revoked: revoke it by hand (RevokeScope)" >&2; fails=1; fi
+}
 trap revoke EXIT
-api $owner PermissionService/GrantScope "$grant" >/dev/null && granted=1
+granted=1 # set first: a grant that lands while the reply is lost must still be revoked
+api $owner PermissionService/GrantScope "$grant" >/dev/null
 expect "after an explicit grant, carol reads the collection"            carol@acme.com ACCESS_BASIS_GRANT
 revoke
 expect "after the grant is revoked, carol reads nothing again"          carol@acme.com ""

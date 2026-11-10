@@ -27,7 +27,7 @@ export function AdminRouteShell({ children }: { children: ReactNode }) {
 			router.replace("/auth/login");
 			return;
 		}
-	}, [isLoading, isAuthenticated, allowed, router]);
+	}, [isLoading, isAuthenticated, router]);
 
 	if (isLoading) {
 		return (
@@ -41,12 +41,15 @@ export function AdminRouteShell({ children }: { children: ReactNode }) {
 	// dashboard unexplained looks like the page does not exist.
 	if (!allowed) {
 		return (
-			<EmptyState
-				icon={ShieldOff}
-				title="You don't have access to Admin"
-				description={`Admin is for organization and platform administrators. Your role in this organization is ${orgRole ?? "none"}. Ask an administrator of this organization to give you the role you need.`}
-				action={<Link href="/">Back to the dashboard</Link>}
-			/>
+			<>
+				<ImpersonationBanner />
+				<EmptyState
+					icon={ShieldOff}
+					title="You don't have access to Admin"
+					description={`Admin is for organization and platform administrators. Your role in this organization is ${orgRole ?? "none"}. Ask an administrator of this organization to give you the role you need.`}
+					action={<Link href="/">Back to the dashboard</Link>}
+				/>
+			</>
 		);
 	}
 

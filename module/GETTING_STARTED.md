@@ -59,6 +59,9 @@ the origin to Accounts. No local port is copied into configuration. For a
 hosted environment set `WEBAUTHN_RP_ID` to the application host without
 scheme/port.
 
+The journeys to try on this run, and the check that asserts them, are in
+[PLAYGROUND.md](./PLAYGROUND.md).
+
 ## Accessing the development frontend through another hostname
 
 When a private reverse proxy uses another hostname, explicitly allow that

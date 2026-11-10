@@ -1,5 +1,4 @@
-import { cleanup, screen, waitFor } from "@testing-library/react";
-import { render } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AdminRouteShell } from "../admin-route-shell";
@@ -67,6 +66,14 @@ it.each(["/admin/users", "/admin/teams-other", "/admin/billing"])(
 		expect(state.replace).not.toHaveBeenCalled();
 	},
 );
+it("names a role that is absent", () => {
+	state.pathname = "/admin/users";
+	state.orgRole = undefined;
+	render(<AdminRouteShell>Restricted</AdminRouteShell>);
+	expect(
+		screen.getByText(/Your role in this organization is none/),
+	).toBeTruthy();
+});
 it("still requires authentication", async () => {
 	state.isAuthenticated = false;
 	render(<AdminRouteShell>Team roster</AdminRouteShell>);
