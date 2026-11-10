@@ -15,7 +15,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"io"
 	"maps"
 	"os"
@@ -24,6 +23,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 
 	"github.com/codefly-dev/core/composition"
 	modulecontract "github.com/codefly-dev/core/contracts/module"

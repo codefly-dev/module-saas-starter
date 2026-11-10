@@ -307,7 +307,7 @@ export function unreachedHeadline(conditions: readonly string[]): string {
 /**
  * One unreached condition (`Installation.unreached`) in words: the core says
  * "role R reaches nothing of K:a, K:b through B: …"; this reads "A viewer can't
- * use profiles through robin right now". A condition in another form is shown
+ * use profiles through example-agent right now". A condition in another form is shown
  * as the core wrote it.
  */
 export function unreachedText(condition: string): string {

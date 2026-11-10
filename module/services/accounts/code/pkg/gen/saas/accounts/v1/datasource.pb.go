@@ -1386,7 +1386,10 @@ type SourceGovernance struct {
 	// The governing scope: one resource kind and one action. Without binding it
 	// is one of the solution's own kinds, as its roles grant it on the
 	// installation's data; with binding, one its roles reach through that
-	// operation binding (a kind of the module the binding addresses).
+	// operation binding (a kind of the module the binding addresses). Either
+	// way it is a scope only the solution's fullest roles hold: one a role is
+	// granted without everything the solution's roles grant (a viewer's read
+	// beside an editor's write) governs no source and is refused.
 	ResourceKind string `protobuf:"bytes,2,opt,name=resource_kind,json=resourceKind,proto3" json:"resource_kind,omitempty"`
 	// The governing action on resource_kind, as the solution declares it.
 	Action string `protobuf:"bytes,3,opt,name=action,proto3" json:"action,omitempty"`
@@ -8315,7 +8318,7 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x16CompleteGitHubAppSetup\x12/.saas.accounts.v1.CompleteGitHubAppSetupRequest\x1a0.saas.accounts.v1.CompleteGitHubAppSetupResponse\"R\xc2\xf3\x18N\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:.\n" +
 	"*saas.datasource.github_app.setup_completed\x10\x02@\x01H\x04P\x04X\x03`\x01\x12\xcd\x01\n" +
-	"\x18MigrateGitHubSourceToApp\x121.saas.accounts.v1.MigrateGitHubSourceToAppRequest\x1a2.saas.accounts.v1.MigrateGitHubSourceToAppResponse\"J\xc2\xf3\x18F\b\x02\x10\x03*\f\n" +
+	"\x18MigrateGitHubSourceToApp\x121.saas.accounts.v1.MigrateGitHubSourceToAppRequest\x1a2.saas.accounts.v1.MigrateGitHubSourceToAppResponse\"J\xc2\xf3\x18F\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:&\n" +
 	"\"saas.datasource.credential.updated\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\xd5\x01\n" +
 	"\x1aBeginDatasourceAccountLink\x123.saas.accounts.v1.BeginDatasourceAccountLinkRequest\x1a4.saas.accounts.v1.BeginDatasourceAccountLinkResponse\"L\xc2\xf3\x18H\b\x02\x10\x03*\f\n" +

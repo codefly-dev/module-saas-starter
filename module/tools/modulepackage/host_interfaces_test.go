@@ -2,6 +2,7 @@ package modulepackage
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,8 +31,9 @@ func publishedFixture(t *testing.T, versions map[string]string) string {
 
 // The real tree: accounts declares the authority interface, pins the shared
 // suite at one revision, and its document names what the manifest declares.
-// This half of the gate needs no network, so it runs with the package tests;
-// the published half runs in CI against authority's tree at the pin.
+// A tagged authority library is resolved through the go command, from the
+// module cache or the module proxy; the published half runs in CI against
+// authority's tree at the pin.
 func TestAccountsDeclaresHostInterfacesItPinsOneSuiteFor(t *testing.T) {
 	moduleRoot := findModuleRoot(t)
 	declared, err := DeclaredHostInterfaces(moduleRoot)
@@ -47,7 +49,7 @@ func TestAccountsDeclaresHostInterfacesItPinsOneSuiteFor(t *testing.T) {
 	if authority == nil {
 		t.Fatalf("accounts declares no codefly.dev/authority interface; declared %+v", declared)
 	}
-	pin, err := ReadAuthorityPin(filepath.Join(moduleRoot, "services", "accounts", "code", "go.mod"))
+	pin, err := ReadAuthorityPin(filepath.Join(moduleRoot, "services", "accounts", "code", "go.mod"), ResolveTagOrigin)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,10 +73,16 @@ func TestAccountsDeclaresHostInterfacesItPinsOneSuiteFor(t *testing.T) {
 	}
 }
 
-func TestReadAuthorityPinRequiresOnePseudoVersionedRevision(t *testing.T) {
+// tagAt resolves every tag to commit.
+func tagAt(commit string) ResolveTag {
+	return func(string, string, string) (string, error) { return commit, nil }
+}
+
+func TestReadAuthorityPinRequiresOneRevision(t *testing.T) {
 	cases := map[string]struct {
-		goMod string
-		want  string // substring of the error, or "" for success
+		goMod   string
+		resolve ResolveTag
+		want    string // substring of the error, or "" for success
 	}{
 		"one revision": {goMod: `module accounts
 
@@ -113,10 +121,33 @@ require (
 	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261026111022-6870db87da8b
 )
 `, want: "two revisions, 6870db87da8b (conformance) and dea37afac9ad (authority-core)"},
-		"a tag": {goMod: `module accounts
+		"a tag no one resolves": {goMod: `module accounts
 
 require github.com/codefly-dev/authority/libraries/conformance/go v0.1.0
-`, want: "names no commit"},
+`, want: "names no commit without resolving its tag"},
+		"a tag cut from the pinned commit": {goMod: `module accounts
+
+require (
+	github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261030222015-dea37afac9ad
+	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261030222015-dea37afac9ad
+	github.com/codefly-dev/authority/libraries/authority-client/go v0.2.0
+)
+`, resolve: tagAt("dea37afac9ad1234567890abcdef1234567890ab")},
+		"a tag cut from another commit": {goMod: `module accounts
+
+require (
+	github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261030222015-dea37afac9ad
+	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261030222015-dea37afac9ad
+	github.com/codefly-dev/authority/libraries/authority-client/go v0.2.0
+)
+`, resolve: tagAt("6870db87da8b1234567890abcdef1234567890ab"), want: "two revisions, 6870db87da8b (authority-client) and dea37afac9ad (authority-core, conformance)"},
+		"a tag that does not resolve": {goMod: `module accounts
+
+require (
+	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261030222015-dea37afac9ad
+	github.com/codefly-dev/authority/libraries/authority-client/go v0.2.0
+)
+`, resolve: func(string, string, string) (string, error) { return "", errors.New("unknown revision v0.2.0") }, want: "whose commit cannot be resolved: unknown revision v0.2.0"},
 		"no suite": {goMod: `module accounts
 
 require github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261030222015-dea37afac9ad
@@ -127,7 +158,7 @@ require github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-2026
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "go.mod")
 			writeFile(t, path, tc.goMod)
-			pin, err := ReadAuthorityPin(path)
+			pin, err := ReadAuthorityPin(path, tc.resolve)
 			if tc.want == "" {
 				if err != nil {
 					t.Fatal(err)

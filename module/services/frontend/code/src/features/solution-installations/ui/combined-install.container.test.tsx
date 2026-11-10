@@ -473,7 +473,7 @@ describe("combined reviewed installation", () => {
 				},
 			},
 		});
-		const module = (name: string, reused: boolean) => ({
+		const supportingModule = (name: string, reused: boolean) => ({
 			principal: `module:${name}`,
 			target: name,
 			required: true,
@@ -490,9 +490,9 @@ describe("combined reviewed installation", () => {
 		});
 		modules = [
 			...["Alpha", "Bravo", "Charlie", "Delta"].map((name) =>
-				module(name, false),
+				supportingModule(name, false),
 			),
-			...["Echo", "Foxtrot", "Golf", "Hotel"].map((name) => module(name, true)),
+			...["Echo", "Foxtrot", "Golf", "Hotel"].map((name) => supportingModule(name, true)),
 		];
 		renderInApp(<Page />);
 		const dialog = await open();

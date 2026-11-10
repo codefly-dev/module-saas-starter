@@ -118,7 +118,7 @@ export function ActivityFeed({
 					</div>
 				) : events.length === 0 ? (
 					<p className="text-sm text-muted-foreground">
-						No recent activity by people. The Audit Log has the system's own.
+						No recent activity by people. The Audit Log has the system&apos;s own.
 					</p>
 				) : (
 					<ul className="space-y-2.5">

@@ -2,7 +2,7 @@
 
 accounts implements the host interfaces published by `codefly-dev/authority`:
 `codefly.dev/artifact@0.1.0`, `codefly.dev/authority@0.3.6`,
-`codefly.dev/composition@0.2.0`, `codefly.dev/installation@0.4.0` and
+`codefly.dev/composition@0.2.1`, `codefly.dev/installation@0.5.0` and
 `codefly.dev/session@0.2.1`, as `module/module.codefly.yaml` declares them. The
 local authority implements the same five on a laptop. The shared conformance
 suite (`libraries/conformance/go`) proves that the two agree, and the
