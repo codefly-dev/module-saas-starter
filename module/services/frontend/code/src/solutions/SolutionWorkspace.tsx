@@ -58,9 +58,12 @@ export function SolutionWorkspace({
 
 export function SolutionSettings({
 	title,
+	kind,
 	children,
 }: {
 	title: string;
+	/** What the host declared the page as; absent reads as a solution. */
+	kind?: "module" | "solution";
 	children: ReactNode;
 }) {
 	return (
@@ -71,7 +74,7 @@ export function SolutionSettings({
 						variant="ghost"
 						size="icon-sm"
 						aria-label={`Settings for ${title}`}
-						title="Solution settings"
+						title={kind === "module" ? "Module page settings" : "Solution settings"}
 					/>
 				}
 			>

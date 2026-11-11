@@ -4,23 +4,21 @@ import { EmptyState } from "@/components/empty-state";
 import { buttonVariants } from "@/shared/ui";
 
 /**
- * A solution slug the registry does not know: none registered under that id, or
- * one registered but not serving. The same state is also shown to a viewer
- * for a page they are not entitled to (SolutionLivePage's `denied`), but that
- * answer is not indistinguishable: it arrives in a 200 whose server render
- * carries the registered record's public declaration, where an unknown id is a
- * 404. Rendered inside the product shell, so the
- * navigation — which lists every solution that IS available — stays in reach.
- * A registry this host cannot read is not this page: that is an error, because
- * the solution may well exist.
+ * An address nothing is registered at: no solution and no module page under
+ * that id, or one registered but not serving. A real 404. A registered page the
+ * viewer is not admitted to is a different answer with its own state
+ * (PageNotAdmitted), never this one. Rendered inside the product shell, so the
+ * navigation, which lists every page that IS available, stays in reach. A
+ * registry this host cannot read is not this page: that is an error, because
+ * the page may well exist.
  */
 export default function SolutionNotFound() {
 	return (
 		<div className="p-6">
 			<EmptyState
 				icon={PackageX}
-				title="Solution not found"
-				description="No solution is available at this address. It may not be installed here, or it may not be running right now."
+				title="Page not found"
+				description="No solution or module page is served at this address."
 				action={
 					<Link href="/" className={buttonVariants({ variant: "outline" })}>
 						Go to the dashboard

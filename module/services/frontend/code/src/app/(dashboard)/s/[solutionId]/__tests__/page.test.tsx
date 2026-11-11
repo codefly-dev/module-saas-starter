@@ -68,8 +68,12 @@ vi.mock("@/solutions/SolutionLivePage", () => ({
 // provider, so give the client wrapper the smallest router seam it needs.
 vi.mock("next/navigation", () => ({
 	useRouter: () => ({ refresh: vi.fn() }),
+	notFound: () => {
+		throw new Error("NEXT_NOT_FOUND");
+	},
 }));
 
+import SolutionNotFound from "../not-found";
 import SolutionPage from "../page";
 
 afterEach(() => {
@@ -200,16 +204,38 @@ describe("the solution page", () => {
 		expect(screen.getByTestId("remote")).toBeTruthy();
 	});
 
-	// A viewer the projection does not list gets the page's not-found state,
-	// and nothing the page mounts.
-	it("hands the live gate the not-found state for a viewer it does not list", async () => {
-		live.entitled = false;
-		findSolution.mockResolvedValue(solution());
-		await renderPage();
-		expect(screen.getByText("Solution not found")).toBeTruthy();
-		expect(screen.queryByTestId("remote")).toBeNull();
-		expect(
-			screen.queryByRole("button", { name: "Settings for Example" }),
-		).toBeNull();
+	// A viewer the projection does not list is refused, and told so: the page
+	// is named, as what it is, and nothing it mounts is rendered. It is never
+	// the not-found state, which is for an address nothing is registered at.
+	it.each([
+		["solution", "solution"],
+		["module", "module page"],
+	] as const)(
+		"tells a viewer the projection does not list that they are not admitted to the %s, never that it is not found",
+		async (kind, noun) => {
+			live.entitled = false;
+			findSolution.mockResolvedValue(solution(undefined, kind));
+			await renderPage();
+			const refusal = screen.getByRole("alert");
+			expect(refusal.textContent).toContain("You are not admitted to Example");
+			expect(refusal.textContent).toContain(
+				`Example is a ${noun} registered here, but you are not admitted to it`,
+			);
+			expect(screen.queryByText(/not found/i)).toBeNull();
+			expect(screen.queryByTestId("remote")).toBeNull();
+			expect(
+				screen.queryByRole("button", { name: "Settings for Example" }),
+			).toBeNull();
+		},
+	);
+
+	// An address nothing is registered at is a real 404, and says nothing about
+	// admission: there is no page to be admitted to.
+	it("answers an id nothing is registered under with not found, not a refusal", async () => {
+		findSolution.mockResolvedValue(null);
+		await expect(renderPage()).rejects.toThrow("NEXT_NOT_FOUND");
+		render(<SolutionNotFound />);
+		expect(screen.getByText("Page not found")).toBeTruthy();
+		expect(screen.queryByText(/not admitted/i)).toBeNull();
 	});
 });

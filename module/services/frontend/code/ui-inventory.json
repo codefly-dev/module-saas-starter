@@ -2323,6 +2323,21 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/app/(dashboard)/s/[solutionId]/not-admitted.tsx",
+      "imports": [
+        "lucide-react",
+        "next/link",
+        "@/components/empty-state",
+        "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "The page route's refusal state for a registered page the viewer is not admitted to; it names the page and its kind, which only this route holds. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/app/(dashboard)/s/[solutionId]/not-found.tsx",
       "imports": [
         "lucide-react",

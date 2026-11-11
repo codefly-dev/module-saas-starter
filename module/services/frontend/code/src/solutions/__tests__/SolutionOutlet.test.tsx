@@ -15,10 +15,10 @@ vi.mock("@module-federation/runtime", () => ({
 }));
 
 // The outlet also asks the host for the solution's installation; these tests
-// are about loading, so the host answers that it has none.
+// are about loading, so the host answers one. (A refused placement mounts no
+// remote at all: SolutionOutlet.installation.test.tsx.)
 vi.mock("@/lib/connect/token-store", () => ({
-	authedFetch: async () =>
-		Response.json({ error: "not_installed" }, { status: 404 }),
+	authedFetch: async () => Response.json({ installationId: "inst-load" }),
 	getToken: () => null,
 	refreshToken: async () => null,
 	subscribeToken: () => () => {},
@@ -61,6 +61,18 @@ afterEach(() => {
 });
 
 describe("SolutionOutlet remote loading", () => {
+	// A failed load says why, and names a module page as one: "failed to load"
+	// alone left an operator nothing to act on.
+	it("gives the reason a module page's remote failed to load", async () => {
+		loadRemoteImpl = () => Promise.reject(new Error("remote exposed no default"));
+
+		renderOutlet({ ...freshRemote(), kind: "module" });
+
+		const alert = await screen.findByRole("alert");
+		expect(alert.textContent).toContain("This module page failed to load.");
+		expect(alert.textContent).toContain("Reason: remote exposed no default");
+	});
+
 	it("does NOT retry a deterministic failure — loads once, then surfaces it", async () => {
 		// A remote that exposes no default (or whose module throws) fails
 		// identically on every attempt. Retrying it 6× just strands the user on the

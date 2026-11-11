@@ -33,6 +33,7 @@ import {
 	type ReactNode,
 	Suspense,
 	useEffect,
+	useMemo,
 	useState,
 	useSyncExternalStore,
 } from "react";
@@ -377,6 +378,18 @@ export interface SolutionRemote {
 	manifestUrl: string;
 	/** Exposed module key, e.g. `./Page`. */
 	exposedModule: string;
+	/** What the host declared the record as; absent reads as a solution. */
+	kind?: PageKind;
+}
+
+export type PageKind = "module" | "solution";
+
+/**
+ * What a person is told the page is. A module page is a module's own page, not
+ * a solution, and every state this host renders for one names it as such.
+ */
+export function pageNoun(kind?: PageKind): "module page" | "solution" {
+	return kind === "module" ? "module page" : "solution";
 }
 
 /**
@@ -409,20 +422,26 @@ export interface SolutionPageProps extends SaasUi.SolutionBinding {
  * dashboard route; here it degrades to a localized "failed to load" panel.
  */
 class SolutionErrorBoundary extends Component<
-	{ children: ReactNode },
-	{ failed: boolean }
+	{ noun: string; children: ReactNode },
+	{ failure: string | null }
 > {
-	state = { failed: false };
+	state: { failure: string | null } = { failure: null };
 
-	static getDerivedStateFromError(): { failed: boolean } {
-		return { failed: true };
+	static getDerivedStateFromError(error: unknown): { failure: string } {
+		return {
+			failure:
+				error instanceof Error && error.message
+					? error.message
+					: "the remote gave no reason",
+		};
 	}
 
 	render() {
-		if (this.state.failed) {
+		if (this.state.failure !== null) {
 			return (
-				<div className="p-6 text-sm opacity-70">
-					This solution failed to load.
+				<div role="alert" className="p-6 text-sm">
+					<p>This {this.props.noun} failed to load.</p>
+					<p className="opacity-70">Reason: {this.state.failure}</p>
 				</div>
 			);
 		}
@@ -447,38 +466,90 @@ function useInBrowser(): boolean {
 	);
 }
 
-const LOADING = <div className="p-6 text-sm opacity-70">Loading solution…</div>;
+function Loading({ noun }: { noun: string }) {
+	return <div className="p-6 text-sm opacity-70">Loading {noun}…</div>;
+}
 
 /** What the host resolved about where, and for whom, the mounted page acts. */
 type SolutionPlacement = Pick<SolutionPageProps, "installationId" | "organizationId" | "viewerKey" | "reach">;
 
 /**
+ * Why the host's projection route handed this page no placement, in the words
+ * a person can act on, ending with the status and code the route answered so
+ * an operator can find it. `status` 0 is a request that never got an answer.
+ */
+export function placementRefusal(
+	noun: string,
+	status: number,
+	code: string,
+): string {
+	const said = status === 0 ? code : `HTTP ${status}${code ? `, ${code}` : ""}`;
+	const why =
+		status === 0
+			? "the request did not reach the host"
+			: status === 401
+				? "your session was refused; sign in again"
+				: status === 403
+					? code === "no_organization"
+						? "your session names no organization"
+						: "the host refused to read your access"
+					: status === 404
+						? `the host found no installation of this ${noun} that admits you`
+						: status === 429
+							? "your organization's read budget is spent; try again shortly"
+							: status === 503
+								? "the host could not read its registry or its authority right now"
+								: status >= 200 && status < 300
+									? "the host answered without an installation"
+									: "the host refused";
+	return `${why} (${said})`;
+}
+
+type PlacementState =
+	| { key: string; placement: SolutionPlacement }
+	| { key: string; refusal: string };
+
+/**
  * The viewer organization's installation of this page, the organization, the
  * viewer's key and the modules it reaches, read from the host's own projection
  * route, which resolves them from the gateway-verified viewer's entitlements
- * and the record's declared consumption. Empty until it answers, and on any
- * refusal: the remote then has nothing to act in, which is the honest state,
- * rather than one this outlet guessed.
+ * and the record's declared consumption. Empty until it answers. A refusal is
+ * never an empty placement: it comes back as `refusal`, with its reason, and
+ * the outlet shows it in place of a page that would have nothing to act in.
  */
-function useSolutionPlacement(solutionId: string | null): SolutionPlacement {
-	const [resolved, setResolved] = useState<{ solutionId: string; placement: SolutionPlacement } | null>(null);
+function useSolutionPlacement(
+	solutionId: string | null,
+	noun: string,
+): { placement: SolutionPlacement; refusal: string | null; retry: () => void } {
+	const [resolved, setResolved] = useState<PlacementState | null>(null);
+	const [attempt, setAttempt] = useState(0);
+	const key = `${solutionId}:${attempt}`;
 	useEffect(() => {
 		if (!solutionId) return;
 		let live = true;
+		const refuse = (status: number, code: string) => {
+			if (live) setResolved({ key, refusal: placementRefusal(noun, status, code) });
+		};
 		authedFetch(`/api/solutions/${encodeURIComponent(solutionId)}/installation`, { cache: "no-store" })
 			.then(async (response) => {
-				if (!response.ok) return;
-				const body = (await response.json()) as Record<string, unknown>;
-				if (live && nonEmpty(body.installationId)) {
-					setResolved({ solutionId, placement: placementOf(body) });
+				const body = ((await response.json().catch(() => null)) ?? {}) as Record<string, unknown>;
+				if (!response.ok || !nonEmpty(body.installationId)) {
+					refuse(response.status, nonEmpty(body.error) ? body.error : "");
+					return;
 				}
+				if (live) setResolved({ key, placement: placementOf(body) });
 			})
-			.catch(() => {});
+			.catch((error: unknown) => refuse(0, error instanceof Error ? error.message : "no answer"));
 		return () => {
 			live = false;
 		};
-	}, [solutionId]);
-	return resolved && resolved.solutionId === solutionId ? resolved.placement : {};
+	}, [solutionId, noun, key]);
+	const current = resolved && resolved.key === key ? resolved : null;
+	return {
+		placement: current && "placement" in current ? current.placement : {},
+		refusal: current && "refusal" in current ? current.refusal : null,
+		retry: () => setAttempt((n) => n + 1),
+	};
 }
 
 function nonEmpty(value: unknown): value is string {
@@ -521,12 +592,41 @@ export function SolutionOutlet({
 	authoring: DashboardAuthoring;
 }) {
 	const inBrowser = useInBrowser();
-	const Remote = inBrowser ? remoteComponent(remote) : null;
-	const placement = useSolutionPlacement(inBrowser ? pageProps.solutionId : null);
+	const noun = pageNoun(remote.kind);
+	// Resolved once per mounted remote, not on every render. A failed load
+	// evicts its cached component so a REMOUNT retries; a re-render of this same
+	// outlet (the placement answering) must not read that eviction as a reason
+	// to load the failed remote a second time behind the error it already shows.
+	const { id, manifestUrl, exposedModule } = remote;
+	const Remote = useMemo(
+		() => (inBrowser ? remoteComponent({ id, manifestUrl, exposedModule }) : null),
+		[inBrowser, id, manifestUrl, exposedModule],
+	);
+	const { placement, refusal, retry } = useSolutionPlacement(
+		inBrowser ? pageProps.solutionId : null,
+		noun,
+	);
+	// The host resolved no placement for this viewer. The page would mount with
+	// no installation, no organization and no reach, and could only guess why;
+	// the host knows why, so it says so here and mounts nothing.
+	if (refusal !== null) {
+		return (
+			<div role="alert" className="flex flex-col items-start gap-2 p-6 text-sm">
+				<p>This {noun} cannot open for you.</p>
+				<p className="opacity-70">Reason: {refusal}</p>
+				<button type="button" className="underline" onClick={retry}>
+					Try again
+				</button>
+			</div>
+		);
+	}
 
 	return (
-		<SolutionErrorBoundary key={`${remote.id}:${remote.manifestUrl}:${remote.exposedModule}`}>
-			<Suspense fallback={LOADING}>
+		<SolutionErrorBoundary
+			key={`${remote.id}:${remote.manifestUrl}:${remote.exposedModule}`}
+			noun={noun}
+		>
+			<Suspense fallback={<Loading noun={noun} />}>
 				{Remote ? (
 					// eslint-disable-next-line react-hooks/static-components -- a solution's ./Page is a Module Federation remote loaded at runtime; it cannot be a static component. It is cached at module scope (remoteComponent) so it stays stable across renders.
 					<Remote
@@ -542,7 +642,7 @@ export function SolutionOutlet({
 						dashboardAuthoring={authoring}
 					/>
 				) : (
-					LOADING
+					<Loading noun={noun} />
 				)}
 			</Suspense>
 		</SolutionErrorBoundary>

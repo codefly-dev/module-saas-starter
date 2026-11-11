@@ -282,6 +282,11 @@ export function SolutionsMenu({
 	);
 }
 
+/** Why a granted entry is not a link, naming a module page as one. */
+function unavailableTitle(entry: SolutionNav): string {
+	return `This ${entry.kind === "module" ? "module page" : "solution"} is installed but not available right now.`;
+}
+
 function SolutionLinks({
 	solutions,
 	variant,
@@ -300,7 +305,7 @@ function SolutionLinks({
 						<div
 							key={solution.id}
 							aria-disabled="true"
-							title="This solution is installed but not available right now."
+							title={unavailableTitle(solution)}
 							className="rounded-xl border p-4 opacity-50"
 						>
 							<div className="text-sm font-medium">{solution.nav.title}</div>
@@ -329,7 +334,7 @@ function SolutionLinks({
 					<span
 						key={solution.id}
 						aria-disabled="true"
-						title="This solution is installed but not available right now."
+						title={unavailableTitle(solution)}
 						className="rounded-md px-3 py-2 text-sm opacity-50"
 					>
 						{solution.nav.title}
