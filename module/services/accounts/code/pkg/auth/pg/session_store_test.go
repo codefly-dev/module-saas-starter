@@ -1317,3 +1317,31 @@ func TestSessionStore_ImpersonationDoesNotDisturbTheDeviceLimit(t *testing.T) {
 		require.Nilf(t, active.RevokedAt, "login %d must survive the impersonation windows", i)
 	}
 }
+
+// An organization exchange is keyed by the access token's sid too. After
+// another tab rotated the family, that sid names a rotated row while the token
+// is still honoured at the perimeter: the exchange follows the rotation to the
+// family's live row, as a client authorization does, instead of refusing it.
+func TestSessionStore_ExchangeOrganizationFollowsTheRotatedSession(t *testing.T) {
+	ctx := context.Background()
+	store := pgauth.NewSessionStore(testStore)
+	userID := seedUser(t)
+	targetOrgID := seedOrganizationMembership(t, userID, "member", time.Now())
+	original := newRecord(userID)
+	require.NoError(t, store.Insert(ctx, original))
+
+	var successor *auth.SessionRecord
+	require.NoError(t, store.RotateRefresh(ctx, original.RefreshHash, func(current *auth.SessionRecord, authorization auth.RefreshAuthorization) (*auth.SessionRecord, error) {
+		successor = replacementRecord(current, authorization)
+		return successor, nil
+	}))
+
+	require.NoError(t, store.ExchangeOrganization(ctx, userID, original.ID, targetOrgID, func(current *auth.SessionRecord, _ auth.RefreshAuthorization) error {
+		require.Equal(t, successor.ID, current.ID, "the exchange is resolved on the family's live row")
+		return nil
+	}))
+	after, err := store.FindByRefreshHash(ctx, successor.RefreshHash)
+	require.NoError(t, err)
+	require.Equal(t, targetOrgID, after.OrgID, "the live row carries the exchanged organization")
+	require.Nil(t, after.RevokedAt)
+}

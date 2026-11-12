@@ -115,3 +115,40 @@ func TestClientSessionsAreBoundedAndDoNotEvictDevices(t *testing.T) {
 	require.True(t, hostAlive,
 		"authorizing a client must never evict the browser session that authorized it")
 }
+
+// A refresh rotates the host session's row: the family's live row is a new one
+// and the presented row is revoked "rotated", while the access token minted
+// from it is honoured at the perimeter until it expires (rotation revokes no
+// access token). A browser whose cookie another tab or document just rotated
+// is in exactly that state, so an authorization keyed by that token's session
+// id (a client's session, a role view, a team cast) must follow the rotation
+// to the family's live row, not refuse the person as if they had signed out.
+func TestAuthorizeClientSessionFollowsTheRotatedHostSession(t *testing.T) {
+	ctx := context.Background()
+	store := pgauth.NewSessionStore(testStore)
+	userID := seedUser(t)
+	host := newRecord(userID)
+	require.NoError(t, store.Insert(ctx, host))
+
+	var successor *auth.SessionRecord
+	require.NoError(t, store.RotateRefresh(ctx, host.RefreshHash, func(current *auth.SessionRecord, authorization auth.RefreshAuthorization) (*auth.SessionRecord, error) {
+		successor = replacementRecord(current, authorization)
+		return successor, nil
+	}))
+
+	var authorizedFrom uuid.UUID
+	err := store.AuthorizeClientSession(ctx, userID, host.ID, func(current *auth.SessionRecord, _ auth.RefreshAuthorization) (*auth.SessionRecord, error) {
+		authorizedFrom = current.ID
+		return clientSuccessor(current, "example-addin"), nil
+	})
+	require.NoError(t, err, "the access token still works everywhere else; the cast must not be refused for a rotation it did not see")
+	require.Equal(t, successor.ID, authorizedFrom, "the authorization is resolved from the family's live row")
+	require.Equal(t, 1, countSessions(t, userID, "example-addin"))
+
+	// A family that is gone (signed out) is still refused through its old id.
+	require.NoError(t, store.RevokeFamily(ctx, host.FamilyID, "logout"))
+	err = store.AuthorizeClientSession(ctx, userID, host.ID, func(current *auth.SessionRecord, _ auth.RefreshAuthorization) (*auth.SessionRecord, error) {
+		return clientSuccessor(current, "example-addin"), nil
+	})
+	require.ErrorIs(t, err, auth.ErrSessionUnavailable)
+}
