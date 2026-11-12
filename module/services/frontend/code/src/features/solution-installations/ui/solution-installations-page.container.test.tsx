@@ -637,7 +637,12 @@ describe("organization administration boundary", () => {
 		{ orgRole: "member", platformRole: "billing", allowed: false },
 		{ orgRole: "admin", platformRole: undefined, allowed: true },
 		{ orgRole: "owner", platformRole: undefined, allowed: true },
-		{ orgRole: "member", platformRole: "super_admin", allowed: true },
+		// A platform role confers no organization permission (permissions.ts,
+		// and the host's requireOrgAdmin says the same): a platform administrator
+		// who is only a member administers this organization's installations no
+		// more than any member. To act for it they join it as an administrator,
+		// or cast onto one of its teams.
+		{ orgRole: "member", platformRole: "super_admin", allowed: false },
 	] as const)(
 		"uses the same navigation and route capability for $orgRole / $platformRole",
 		async ({ orgRole, platformRole, allowed }) => {
