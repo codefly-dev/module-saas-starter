@@ -213,7 +213,8 @@ func testReviewedClosures(t *testing.T, h reviewedClosureHarness) {
 		require.Equal(t, authority.StablePrincipalID(pageInst.Organization, pageInst.Target), pageInst.PrincipalID, "owning its page's data (RBAC-1)")
 		_, err = installConformanceSolution(h.ctx, h.svc, h.core, page, "", conformanceAlex)
 		code, _ := domain.CodeOf(err)
-		require.Equal(t, domain.NotFound, code, "a module page is never installed through a review: %v", err)
+		require.Equal(t, domain.Denied, code, "a module page is never installed again through a review; its installation is held by composition: %v", err)
+		require.ErrorContains(t, err, "already installed")
 
 		review, err = h.review(t, alex, after)
 		require.NoError(t, err)

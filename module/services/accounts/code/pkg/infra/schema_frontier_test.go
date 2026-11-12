@@ -23,7 +23,7 @@ func TestSchemaRefusal(t *testing.T) {
 	}{
 		{"current", requiredSchemaVersion, false, nil, ""},
 		{"store ahead of the binary (accounts rolled back)", requiredSchemaVersion + 3, false, nil, ""},
-		{"behind names the missing range", requiredSchemaVersion - 2, false, nil, "migrations 75 through 76 are not applied"},
+		{"behind names the missing range", requiredSchemaVersion - 2, false, nil, "migrations 76 through 77 are not applied"},
 		{"mid-migration (dirty at the required version)", requiredSchemaVersion, true, nil, "marked dirty"},
 		{"failed migration (dirty below)", requiredSchemaVersion - 1, true, nil, "marked dirty"},
 		{"unmigrated", 0, false, pgx.ErrNoRows, "has not been migrated"},

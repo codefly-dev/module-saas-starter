@@ -1204,10 +1204,16 @@ func runHostInterfaceFixture(t *testing.T) {
 		withRoles := conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{note}, page: page, installationRole: domain.NoInstallationRole,
 			roles: map[string][]*authorityv1.WorkScopeV1{"installer": {note}, "viewer": {note}}}
 		deliverModule(t, ctx, conn, signer, withRoles)
+		require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module))
+		// Installed by composition and held by its receipt (taken as the
+		// pass leaves it), the page's installation is reviewed as a
+		// solution's is, for the upgrade it offers; approving the offer it
+		// already holds installs nothing.
+		require.NoError(t, core.AdoptLegacyReach(ctx))
 		_, err := installConformanceSolution(ctx, svc, core, module, "", conformanceAlex)
 		code, _ := domain.CodeOf(err)
-		require.Equal(t, domain.NotFound, code, "a module page is never reviewed or installed as a solution: %v", err)
-		require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module))
+		require.Equal(t, domain.Denied, code, "a module page is never installed again through a review: %v", err)
+		require.ErrorContains(t, err, "already installed")
 		all, err := core.Installations(ctx, alex, fixtureOrganization)
 		require.NoError(t, err)
 		i := slices.IndexFunc(all, func(inst domain.Installation) bool { return inst.Target == module && inst.Status == domain.Active })

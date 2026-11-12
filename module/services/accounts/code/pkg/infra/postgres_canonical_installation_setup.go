@@ -3,6 +3,7 @@ package infra
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -18,8 +19,15 @@ func (s *PostgresStore) SolutionInstallationPlan(ctx context.Context, org, id st
 	err := s.WithControlPlane(ctx, func(ctx context.Context) error {
 		var raw []byte
 		var revision uint64
-		if err := s.getQueryExecutor(ctx).QueryRow(ctx, `SELECT consent,revision FROM public.authority_core_installations
- WHERE id=$1 AND organization_id=$2::uuid AND status IN ('pending','active')`, id, org).Scan(&raw, &revision); err != nil {
+		err := s.getQueryExecutor(ctx).QueryRow(ctx, `SELECT consent,revision FROM public.authority_core_installations
+ WHERE id=$1 AND organization_id=$2::uuid AND status IN ('pending','active')`, id, org).Scan(&raw, &revision)
+		if errors.Is(err, pgx.ErrNoRows) {
+			// No reviewed plan is recorded on it: a module page's installation
+			// is accounts' own record, and its upgrade in flight carries the
+			// plan reviewed for it (business.reviewedPlanFor).
+			return domain.Missing("installation %s records no reviewed plan", id)
+		}
+		if err != nil {
 			return err
 		}
 		var receipt solutionConsent

@@ -287,14 +287,35 @@ Deploy notes (Blue, checked 2026-11-08): Blue has a committed module envelope
 Blue has no non-revoked installation of a module with a principal in the
 core's records (a module page installed through the retired review path), so
 nothing is stranded by the change. The core
-refuses a module at `ReviewOffer`, `Review` and `Install` (`NotFound`, "a module
-is installed by composition"). A **module page** (a module declaring a page and
-roles) holds no standing authority (`installation_role: none`; the module
+refuses a module declaring no role at `ReviewOffer`, `Review` and `Install`
+(`NotFound`, "a module is installed by composition"), and refuses to install a
+module page by hand the same way. A **module page** (a module declaring a page
+and roles) holds no standing authority (`installation_role: none`; the module
 install path refuses any other, `modulePageHoldsNothing`), and its roles
 decide who may use it through grants on that composition installation: it
 arrives with no access, and an administrator sets it up in one act
 (`SetUpModulePage`, the same assignment an install makes, below), with no
-install and no consent. `ListAvailableSolutions` names a module page's roles
+install. Its installation is **held at an approved reach exactly as a
+solution's is**: the core takes composition's consent receipt on it
+(`ConsentReceipt.operation_id` `composition`, journaled
+`installation.reach_adopted` with `held_by: composition`) at the reach the
+page has when it is composed, or when accounts starts (`AdoptLegacyReach`,
+under `KeepAuthorityCoreCurrent`) for a record that holds none yet; the
+receipt is accounts' own record's, kept beside the revision the core raises
+(`authority_core_module_revisions.consent`, migration 77). A delivery, of
+the page or of a module it reaches, that widens what one of its roles reaches
+leaves the installation on that receipt, active, every grant kept at the
+approved reach, with `upgrade_available` on the installation read and
+`installation.upgrade_available` naming what widened; **no grant is revoked
+and none is widened** (Blue, 2026-11-11: the Directory page's generations 9
+and 10 would have left its three teams working at generation 8's reach). The
+upgrade is approved as a solution's is, `ReviewSolutionInstall` then
+`InstallReviewedSolution` on the same installation (the admin "Review
+update" action on `/admin/solutions` and `/admin/modules`, and the
+installation's own page), by an organization administrator; the core also
+admits a holder of the page's installer role on that installation through
+the host interface's `Review` and `Install`, which this host still gates on
+an organization administrator. `ListAvailableSolutions` names a module page's roles
 (`AvailableSolution.roles`), so the frontend lists it beside the solutions as a
 "Set up access" entry and never offers to install it. A module that gains or
 loses roles keeps its installations as they are; the earlier refusals of a
@@ -402,6 +423,8 @@ read lists those roles (`installationToWire` over the core's own rule,
 `authority.ApprovedDeclaration`), until an administrator reviews the target again and installs the reviewed release on the same
 installation (`InstallReviewedSolution` with a fresh review: the core's
 upgrade, its step converging the closure of the new review, its grants kept).
+A module page's installation is held and upgraded the same way (above); its
+upgrade runs the closure-converging step and no setup job.
 The write that records an upgrade is fenced as an activation is, but for the
 setup job: the delivered target and every supporting module the step
 converged are read and locked again in that transaction and held to the

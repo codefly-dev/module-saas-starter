@@ -1797,6 +1797,110 @@ describe("an installation survives delivery: the host offers an update, and the 
 		);
 	});
 
+	it("offers a module page's update the same way: held at its approved reach, reviewed and installed on the same installation", async () => {
+		// A module page (kind module) is held at the reach it had, as a
+		// solution is; the host offers its update on the same row.
+		const expenses = {
+			...available.solutions[0],
+			appliedGeneration: "4",
+			roles: ["installer", "viewer"],
+		};
+		let installedWith: unknown;
+		serve({
+			availableBody: { solutions: [expenses] },
+			installationsBody: {
+				installations: [
+					{
+						...installations.installations[0],
+						installation: {
+							...installations.installations[0].installation,
+							rootScopeNodeId: "",
+							approvedGeneration: "3",
+							upgradeAvailable: true,
+						},
+						target: expenses,
+						rootScopePath: "",
+						grantedTeams: [],
+						inheritedTeams: [],
+					},
+				],
+			},
+		});
+		const pageApproval = { ...approval, targetId: "module:expenses", generation: "4" };
+		server.use(
+			http.post(
+				rpc("InstallationService", "ReviewSolutionInstall"),
+				async ({ request }) => {
+					await assertBody(request, { orgId: "org-1", targetId: EXPENSES_TARGET });
+					return HttpResponse.json({
+						...review,
+						targetId: EXPENSES_TARGET,
+						target: "expenses",
+						approval: pageApproval,
+						approvedRoles: [{ name: "installer" }, { name: "viewer" }],
+					});
+				},
+			),
+			http.post(REVIEW_OFFER, () =>
+				HttpResponse.json({
+					target: "expenses",
+					installationRole: "none",
+					approval: { ...pageApproval, operationId: "" },
+					roles: [
+						{ name: "viewer", reach: [collections(["read"])] },
+						{ name: "installer", scopes: [] },
+					],
+					rolesDeclared: true,
+					page: true,
+					installation: {
+						id: EXPENSES_INSTALLATION,
+						status: "STATUS_ACTIVE",
+						approvedGeneration: "3",
+						upgradeAvailable: true,
+					},
+				}),
+			),
+			http.post(
+				rpc("InstallationService", "InstallReviewedSolution"),
+				async ({ request }) => {
+					installedWith = await request.json();
+					return HttpResponse.json({
+						id: EXPENSES_INSTALLATION,
+						orgId: "org-1",
+						targetId: EXPENSES_TARGET,
+						status: "INSTALLATION_STATUS_ACTIVE",
+						approvedGeneration: "4",
+					});
+				},
+			),
+		);
+		renderInApp(<SolutionsPage />);
+		const installedTable = await screen.findByRole("table", {
+			name: "Installed solutions",
+		});
+		await within(installedTable).findByText("Update available");
+		fireEvent.click(
+			within(installedTable).getByRole("button", { name: "Update expenses" }),
+		);
+		const dialog = await screen.findByRole("dialog");
+		await within(dialog).findByText("Update expenses");
+		fireEvent.click(within(dialog).getByRole("checkbox"));
+		fireEvent.click(within(dialog).getByRole("button", { name: "Update" }));
+		await waitFor(() => expect(installedWith).toBeTruthy());
+		expect(installedWith).toMatchObject({
+			orgId: "org-1",
+			review: {
+				targetId: EXPENSES_TARGET,
+				approval: { operationId: approval.operationId },
+			},
+		});
+		await waitFor(() =>
+			expect(toast.success).toHaveBeenCalledWith(
+				"expenses updated. Its team access is kept.",
+			),
+		);
+	});
+
 	it("offers no update while the release in place is the approved one", async () => {
 		serve({
 			availableBody: { solutions: [payroll] },

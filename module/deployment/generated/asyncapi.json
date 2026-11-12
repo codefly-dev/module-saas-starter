@@ -306,17 +306,6 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
-    "saas.authority.installation_role_reach_widened": {
-      "address": "saas.authority.installation_role_reach_widened",
-      "title": "saas.authority.installation_role_reach_widened",
-      "messages": {
-        "envelope": {
-          "$ref": "#/components/messages/saas.authority.installation_role_reach_widened"
-        }
-      },
-      "x-visibility": "external",
-      "x-retention": "30d"
-    },
     "saas.authority.installation_uninstalled": {
       "address": "saas.authority.installation_uninstalled",
       "title": "saas.authority.installation_uninstalled",
@@ -2542,13 +2531,6 @@
       },
       "title": "saas publishes saas.authority.installation_requested"
     },
-    "send:saas.authority.installation_role_reach_widened": {
-      "action": "send",
-      "channel": {
-        "$ref": "#/channels/saas.authority.installation_role_reach_widened"
-      },
-      "title": "saas publishes saas.authority.installation_role_reach_widened"
-    },
     "send:saas.authority.installation_uninstalled": {
       "action": "send",
       "channel": {
@@ -4025,13 +4007,6 @@
       "saas.authority.installation_requested": {
         "name": "saas.authority.installation_requested",
         "title": "saas.authority.installation_requested",
-        "payload": {
-          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
-        }
-      },
-      "saas.authority.installation_role_reach_widened": {
-        "name": "saas.authority.installation_role_reach_widened",
-        "title": "saas.authority.installation_role_reach_widened",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

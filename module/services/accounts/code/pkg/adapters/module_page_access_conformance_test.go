@@ -147,10 +147,17 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		}
 		target := available(page)
 		require.Equal(t, "module", target.Kind)
-		_, err = h.svc.ReviewSolutionInstall(h.ctx, alex, fixtureOrganization, target.TargetID)
-		require.Error(t, err, "a module page is never reviewed for install")
+		// A module page's installation, held by composition at its approved
+		// reach, is reviewed for the upgrade it offers, as a solution's is;
+		// the offer it already holds installs nothing again.
+		require.NoError(t, h.core.AdoptLegacyReach(h.ctx))
+		review, err := h.svc.ReviewSolutionInstall(h.ctx, alex, fixtureOrganization, target.TargetID)
+		require.NoError(t, err, "a module page's installation is reviewed for its upgrade")
+		require.Equal(t, page, review.Target)
+		_, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{})
 		code, _ := domain.CodeOf(err)
-		require.Equal(t, domain.NotFound, code)
+		require.Equal(t, domain.Denied, code, "%v", err)
+		require.ErrorContains(t, err, "already installed")
 		const solutionAlias = "conformance-access-own"
 		_, err = h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(solutionAlias).TargetID, business.InstallAccess{})
 		require.ErrorContains(t, err, "is not a module page", "a solution's access is assigned at its install")
@@ -398,8 +405,10 @@ func testADeliveryTheCoreRefusesIsNeverApplied(t *testing.T, h reviewedClosureHa
 	installation, _ = h.coreInstallation(t, alex, page)
 
 	// agree holds both records to generation, and the page's installation to
-	// its grants and revision.
-	agree := func(generation uint64) {
+	// its grants and to revision: its own while the core refuses every
+	// delivery, one above it once a delivery asking nothing new re-converges
+	// the installation on the new generation, as a solution's does.
+	agree := func(generation, revision uint64) {
 		t.Helper()
 		composed, err := h.core.Composed(h.ctx, page)
 		require.NoError(t, err)
@@ -412,21 +421,24 @@ func testADeliveryTheCoreRefusesIsNeverApplied(t *testing.T, h reviewedClosureHa
 		require.Equal(t, generation, records[i].Applied.Generation, "accounts applied generation %d", generation)
 		now, ok := h.coreInstallation(t, alex, page)
 		require.True(t, ok)
-		require.Equal(t, installation.Revision, now.Revision, "the installation's revision did not move")
+		require.Equal(t, revision, now.Revision, "the installation's revision")
 		kept, err := h.core.ListRoleGrants(h.ctx, alex, fixtureOrganization, installation.ID)
 		require.NoError(t, err)
 		require.ElementsMatch(t, grants, kept, "every grant is kept")
 	}
-	agree(7)
+	agree(7, installation.Revision)
 
 	for _, generation := range []uint64{8, 8, 9} {
 		err := tryDeliverModule(t, h.ctx, h.conn, h.signer, pageAt(generation, true))
 		require.ErrorContains(t, err, `role "viewer" of `+page+` names `+item+`:write through binding "legacy", which reaches it nowhere in the composition`, "generation %d", generation)
-		agree(7)
+		agree(7, installation.Revision)
 	}
 
 	deliverModule(t, h.ctx, h.conn, h.signer, pageAt(10, false))
-	agree(10)
+	agree(10, installation.Revision+1)
+	now, _ := h.coreInstallation(t, alex, page)
+	require.Equal(t, uint64(10), now.Consent.Generation, "the installation re-converged on 10, held by composition")
+	require.Equal(t, domain.ComposedConsent, now.Consent.OperationID)
 }
 
 // testPagesReachThroughTheAgent holds the host to what a solution's page

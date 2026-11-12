@@ -143,9 +143,14 @@ func (s *Service) completeAuthorityCoreBoot(ctx context.Context) error {
 // KeepAuthorityCoreCurrent is what boot and every delivery pass run once the
 // applied deliveries are composed: every declaration a live consent approved
 // that the store does not keep yet is written where it can be rebuilt and is
-// what was consented to (keepApprovedDeclarations), and every composed module
+// what was consented to (keepApprovedDeclarations), every composed module
 // is installed in every organization that does not hold it yet
-// (InstallComposedModules). Both are idempotent.
+// (InstallComposedModules), and every module page's installation the host
+// just made takes composition's receipt (AdoptLegacyReach), so it is held at
+// the reach the page has now, as the core's own composition holds one, and
+// a later delivery that widens a role offers an upgrade instead of giving
+// the wider reach to the grants made under this one. All three are
+// idempotent.
 func (s *Service) KeepAuthorityCoreCurrent(ctx context.Context) error {
 	var failures []error
 	if err := s.keepApprovedDeclarations(ctx); err != nil {
@@ -153,6 +158,11 @@ func (s *Service) KeepAuthorityCoreCurrent(ctx context.Context) error {
 	}
 	if err := s.InstallComposedModules(ctx); err != nil {
 		failures = append(failures, err)
+	}
+	if core, err := s.AuthorityCore(); err == nil {
+		if err := core.AdoptLegacyReach(ctx); err != nil {
+			failures = append(failures, fmt.Errorf("authority core: hold the composed module pages at their reach: %w", err))
+		}
 	}
 	return errors.Join(failures...)
 }
