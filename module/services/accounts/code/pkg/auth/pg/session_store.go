@@ -574,26 +574,9 @@ func (s *SessionStore) ExchangeOrganization(
 	var outcome error
 	err := s.rls.WithControlPlane(ctx, func(ctx context.Context) error {
 		tx := txFromCtx(ctx)
-		current, err := scanSession(tx.QueryRow(ctx, `
-			SELECT
-				id, user_id, family_id,
-				created_at, last_active_at, idle_expires_at, expires_at, revoked_at, revoked_reason,
-				device_info, ip_address,
-				org_id, org_role, platform_role, mfa_satisfied,
-				authentication_methods, auth_time, assurance_level, mfa_verified_at,
-				email, display_name, acting_as_user_id, client_id, resource
-			FROM sessions
-			WHERE id = $1 AND user_id = $2
-			LIMIT 1
-			FOR UPDATE`, sessionID, userID), nil)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return auth.ErrSessionUnavailable
-		}
+		current, err := lockAuthorizingSession(ctx, tx, sessionID, userID)
 		if err != nil {
 			return err
-		}
-		if current.RevokedAt != nil {
-			return auth.ErrSessionUnavailable
 		}
 		// An impersonation window is not a device session to exchange. Reissuing
 		// from it would drop the acting claim and re-arm the ordinary access-token
@@ -653,7 +636,7 @@ func (s *SessionStore) ExchangeOrganization(
 			 WHERE id = $1
 			   AND user_id = $2
 			   AND revoked_at IS NULL`,
-			sessionID, userID, authorization.OrgID, authorization.OrgRole, authorization.PlatformRole,
+			current.ID, userID, authorization.OrgID, authorization.OrgRole, authorization.PlatformRole,
 		)
 		if err != nil {
 			return err

@@ -60,7 +60,9 @@ hosted environment set `WEBAUTHN_RP_ID` to the application host without
 scheme/port.
 
 The journeys to try on this run, and the check that asserts them, are in
-[PLAYGROUND.md](./PLAYGROUND.md).
+[PLAYGROUND.md](./PLAYGROUND.md); its "The five people, everywhere" section
+names the fixture's five people, what each holds on every target a
+composition delivers, and how to act as a team.
 
 ## Accessing the development frontend through another hostname
 

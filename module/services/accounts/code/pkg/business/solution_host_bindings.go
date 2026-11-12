@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/codefly-dev/core/wool"
 	"gopkg.in/yaml.v3"
@@ -379,27 +380,7 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 			// to change.
 			continue
 		}
-		if err := r.service.applySolutionHostBinding(ctx, applied.Delivered, r.coordinate, r.now()); err != nil {
-			// One binding's apply failing leaves every other binding's progress
-			// intact: each apply is its own transaction, because each binding is
-			// independent desired state. The reason is recorded as this
-			// binding's pending state so it is visible rather than log-only.
-			if recordErr := r.service.recordSolutionHostBindingRefusal(
-				ctx, applied.Document.Binding, err.Error(), r.now(),
-			); recordErr != nil {
-				failures = append(failures, recordErr)
-			}
-			failures = append(failures, fmt.Errorf("apply binding %q generation %d: %w",
-				applied.Document.Binding, applied.Document.Generation, err))
-			continue
-		}
-		// The applied generation is composed in the authority core at once,
-		// whichever path delivered it: a solution the host's delivery endpoint
-		// took is then one the core installs and the host interfaces decide.
-		if err := r.service.composeAppliedBinding(ctx, applied.Document.Binding); err != nil {
-			failures = append(failures, fmt.Errorf("compose binding %q generation %d in the authority core: %w",
-				applied.Document.Binding, applied.Document.Generation, err))
-		}
+		failures = append(failures, r.applyAdmitted(ctx, applied, withheldAuthority[applied.Document.Binding])...)
 	}
 
 	// THE MODULE REGISTRY, last: it reads the manifests this pass just
@@ -536,6 +517,47 @@ func (r *SolutionHostBindingReconciler) Shutdown(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// applyAdmitted applies one generation the pass admitted. The authority core
+// composes it first, whichever path delivered it, and accounts applies it
+// only once the core holds it: a generation the core refuses is recorded as
+// refused and applied nowhere, so accounts' applied record and the core's
+// composition never part (composeDelivered). A refusal of the core's is the
+// generation's verdict, in its trail; any other failure to compose is this
+// pass's, recorded as the pending reason alone. authorityReason is the
+// module registry's reason for the binding, if any, kept beside it.
+func (r *SolutionHostBindingReconciler) applyAdmitted(ctx context.Context, applied SolutionHostBindingDecision, authorityReason string) []error {
+	var failures []error
+	if err := r.service.composeDelivered(ctx, applied.Delivered, applied.Document); err != nil {
+		var recordErr error
+		if _, refusal := domain.CodeOf(err); refusal {
+			reason := fmt.Sprintf("the authority core refused generation %d: %v", applied.Document.Generation, err)
+			recordErr = r.service.recordSolutionHostBindingDesired(ctx, applied.Document, reason, authorityReason, false, r.now())
+		} else {
+			reason := fmt.Sprintf("generation %d is not composed in the authority core: %v", applied.Document.Generation, err)
+			recordErr = r.service.recordSolutionHostBindingRefusal(ctx, applied.Document.Binding, reason, r.now())
+		}
+		if recordErr != nil {
+			failures = append(failures, recordErr)
+		}
+		return append(failures, fmt.Errorf("compose binding %q generation %d in the authority core: %w",
+			applied.Document.Binding, applied.Document.Generation, err))
+	}
+	if err := r.service.applySolutionHostBinding(ctx, applied.Delivered, r.coordinate, r.now()); err != nil {
+		// One binding's apply failing leaves every other binding's progress
+		// intact: each apply is its own transaction, because each binding is
+		// independent desired state. The reason is recorded as this
+		// binding's pending state so it is visible rather than log-only.
+		if recordErr := r.service.recordSolutionHostBindingRefusal(
+			ctx, applied.Document.Binding, err.Error(), r.now(),
+		); recordErr != nil {
+			failures = append(failures, recordErr)
+		}
+		failures = append(failures, fmt.Errorf("apply binding %q generation %d: %w",
+			applied.Document.Binding, applied.Document.Generation, err))
+	}
+	return failures
 }
 
 // verifySolutionHostBindingDocuments verifies every delivered carrier, keeping

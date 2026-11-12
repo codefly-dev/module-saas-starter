@@ -41,7 +41,7 @@ func signedModulePage(t *testing.T, page bool) (*solutionhost.ModuleManifest, *c
 	signer := deliverytest.Signer(t, testDeliveryKey)
 	envelope, err := delivery.Sign(payload, signer.KeyID(), signer.Sign)
 	require.NoError(t, err)
-	svc := &Service{}
+	svc := &Service{authorityCore: &authorityCoreState{core: pairCore(t)}}
 	svc.SetAuthorityDocumentVerifier(func(doc, envelope []byte) (string, error) {
 		return delivery.Verify(doc, envelope, map[string]crypto.PublicKey{signer.KeyID(): signer.Public()})
 	})

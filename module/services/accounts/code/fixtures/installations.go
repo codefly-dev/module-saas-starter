@@ -37,6 +37,15 @@ import (
 // declaring no installation role), and the role `teams` are granted. A
 // declaration that selects one (`installation_role: none` included) is never
 // overridden.
+//
+// A row whose target is EveryTarget stands for every role-gated target the
+// composition delivers to this host (a solution, a module page declaring
+// roles), whatever the composition is: it is expanded, at every delivery
+// pass, into one row per such target the fixture does not name itself, with
+// the `members` of the roles that target declares. It names no role, teams or
+// installer roles, since those are one target's. It is how one fixture seeds
+// the same people onto every composition without naming a target this host
+// cannot know.
 type fixtureInstallation struct {
 	Org    string `yaml:"org"`
 	Target string `yaml:"target"`
@@ -55,6 +64,10 @@ type fixtureInstallation struct {
 	Members map[string][]string `yaml:"members,omitempty"`
 }
 
+// EveryTarget is the target of a row standing for every role-gated target
+// the composition delivers.
+const EveryTarget = "*"
+
 func (i fixtureInstallation) describe() string {
 	return fmt.Sprintf("%q at %q by %s", i.Target, i.Org, i.Owner)
 }
@@ -69,6 +82,9 @@ func validateInstallations(f *fixtureFile) error {
 	for i, installation := range f.Installations {
 		if strings.TrimSpace(installation.Org) == "" || strings.TrimSpace(installation.Target) == "" || strings.TrimSpace(installation.Owner) == "" {
 			return fmt.Errorf("installation[%d]: org, target and owner are required", i)
+		}
+		if installation.Target == EveryTarget && (installation.Role != "" || len(installation.Teams) > 0 || len(installation.InstallerRoles) > 0) {
+			return fmt.Errorf("installation[%d] (%s): a row standing for every target names only its members: a role, teams and installer roles are one target's", i, installation.describe())
 		}
 		if strings.TrimSpace(installation.Role) == "" && len(installation.Teams) > 0 {
 			return fmt.Errorf("installation[%d] (%s): teams are granted the installation's role, so a row naming teams names a role", i, installation.describe())
@@ -147,6 +163,12 @@ type Installations struct {
 
 	mu      sync.Mutex
 	pending []pendingInstallation
+	// every are the rows standing for every role-gated target (EveryTarget),
+	// expanded at each pass into pending rows for the targets delivered since;
+	// expanded records, by organisation and target, each row so made or
+	// declared, so a target is expanded once and a declared row is kept.
+	every    []pendingInstallation
+	expanded map[[2]string]struct{}
 }
 
 type pendingInstallation struct {
@@ -166,7 +188,7 @@ func newInstallations(service *business.Service, declared []fixtureInstallation,
 	if len(declared) == 0 {
 		return nil, nil
 	}
-	installations := &Installations{service: service}
+	installations := &Installations{service: service, expanded: map[[2]string]struct{}{}}
 	for _, installation := range declared {
 		orgID, ok := orgIDs[installation.Org]
 		if !ok {
@@ -197,9 +219,73 @@ func newInstallations(service *business.Service, declared []fixtureInstallation,
 				row.memberIDs[role] = append(row.memberIDs[role], userID)
 			}
 		}
+		if installation.Target == EveryTarget {
+			installations.every = append(installations.every, row)
+			continue
+		}
 		installations.pending = append(installations.pending, row)
+		installations.expanded[[2]string{row.orgID, installation.Target}] = struct{}{}
 	}
 	return installations, nil
+}
+
+// expandEvery turns each row standing for every target into one pending row
+// per role-gated target the composition has delivered to the row's
+// organisation and no row names yet. A target delivered later is expanded by
+// a later pass; a refusal to list is reported and tried again next pass.
+func (i *Installations) expandEvery(ctx context.Context) error {
+	if len(i.every) == 0 {
+		return nil
+	}
+	core, err := i.service.AuthorityCore()
+	if err != nil {
+		return nil // Without the core there is no role-gated target to stand for.
+	}
+	var failures []error
+	for _, template := range i.every {
+		for token := ""; ; {
+			available, next, err := i.service.ListAvailableSolutions(ctx, template.orgID, token, 0)
+			if err != nil {
+				failures = append(failures, fmt.Errorf("fixture installation %s: list the composition's targets: %w", template.declared.describe(), err))
+				break
+			}
+			for _, target := range available {
+				key := [2]string{template.orgID, target.RouteAlias}
+				if _, done := i.expanded[key]; done {
+					continue
+				}
+				m, err := core.Composed(ctx, target.RouteAlias)
+				if err != nil || (m.Kind != domain.KindSolution && len(m.Roles) == 0) {
+					continue // Not composed yet, or role-gated by nothing: no team to seed.
+				}
+				i.pending = append(i.pending, everyRow(template, m))
+				i.expanded[key] = struct{}{}
+			}
+			if token = next; token == "" {
+				break
+			}
+		}
+	}
+	return errors.Join(failures...)
+}
+
+// everyRow is the row a template standing for every target makes for one: the
+// template's organisation, owner and members, the members cut to the roles
+// the target declares (a role it does not declare has no team to join).
+func everyRow(template pendingInstallation, m domain.Module) pendingInstallation {
+	row := template
+	row.declared.Target = m.Name
+	row.memberIDs = nil
+	for role, people := range template.memberIDs {
+		if _, declared := m.Roles[role]; !declared {
+			continue
+		}
+		if row.memberIDs == nil {
+			row.memberIDs = map[string][]string{}
+		}
+		row.memberIDs[role] = people
+	}
+	return row
 }
 
 // Converge installs every declared installation whose target this host now
@@ -220,6 +306,9 @@ func (i *Installations) Converge(ctx context.Context) error {
 	ctx = business.WithoutSetupWait(ctx)
 	w := wool.Get(ctx).In("fixtures.Installations")
 	var failures []error
+	if err := i.expandEvery(ctx); err != nil {
+		failures = append(failures, err)
+	}
 	remaining := i.pending[:0]
 	for _, row := range i.pending {
 		if active, err := i.coreInstall(ctx, row); active || err != nil {
@@ -534,6 +623,9 @@ func (i *Installations) ConvergeAuthority(ctx context.Context) error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	var failures []error
+	if err := i.expandEvery(ctx); err != nil {
+		failures = append(failures, err)
+	}
 	for _, row := range i.pending {
 		_, err := i.coreInstall(ctx, row)
 		if code, ok := domain.CodeOf(err); errors.Is(err, errCoreTargetNotComposed) || ok && code == domain.NotFound {

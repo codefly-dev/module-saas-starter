@@ -136,6 +136,9 @@ type conformanceModule struct {
 	// page is core's manifest's frontend, and roles the roles a page declares.
 	page  *solutionhost.Frontend
 	roles map[string][]*authorityv1.WorkScopeV1
+	// through are the scopes a page's role names through each of the
+	// module's bindings, by role name, then binding id.
+	through map[string]map[string][]*authorityv1.WorkScopeV1
 	// methods are what each operation the module serves requires.
 	methods []*compositionv1.MethodPolicyV1
 	// ownerUnaware: the module checks no owner (owner_aware false);
@@ -148,6 +151,13 @@ type conformanceModule struct {
 // release key, carried by the module's own delivery credential, and the
 // authority's document bound to it by module, generation and digest.
 func deliverModule(t *testing.T, ctx context.Context, conn grpc.ClientConnInterface, signer *solutionhost.InMemorySigner, m conformanceModule) {
+	t.Helper()
+	require.NoError(t, tryDeliverModule(t, ctx, conn, signer, m), "deliver module %s", m.alias)
+}
+
+// tryDeliverModule is deliverModule answering the composition's refusal
+// instead of failing on it.
+func tryDeliverModule(t *testing.T, ctx context.Context, conn grpc.ClientConnInterface, signer *solutionhost.InMemorySigner, m conformanceModule) error {
 	t.Helper()
 	generation := max(m.generation, 1)
 	version := m.releaseVersion
@@ -168,7 +178,11 @@ func deliverModule(t *testing.T, ctx context.Context, conn grpc.ClientConnInterf
 		CoreManifestDigest: "sha256:" + hex.EncodeToString(sum[:]), ScopeCeilings: m.ceilings, Methods: m.methods, OwnerAware: !m.ownerUnaware, InstallationRole: m.installationRole,
 		SharedKinds: m.sharedKinds}
 	for _, name := range slices.Sorted(maps.Keys(m.roles)) {
-		document.Roles = append(document.Roles, &compositionv1.RoleV1{Name: name, Scopes: m.roles[name]})
+		role := &compositionv1.RoleV1{Name: name, Scopes: m.roles[name]}
+		for _, binding := range slices.Sorted(maps.Keys(m.through[name])) {
+			role.Through = append(role.Through, &compositionv1.RoleThroughV1{Binding: binding, Scopes: m.through[name][binding]})
+		}
+		document.Roles = append(document.Roles, role)
 	}
 	doc, err := (proto.MarshalOptions{Deterministic: true}).Marshal(document)
 	require.NoError(t, err)
@@ -178,7 +192,7 @@ func deliverModule(t *testing.T, ctx context.Context, conn grpc.ClientConnInterf
 		Carrier:   &compositionv1.SignedManifestV1{Document: raw, Envelope: deliverytest.Envelope(t, raw, signer.KeyID())},
 		Authority: &compositionv1.SignedManifestV1{Document: doc, Envelope: envelope}, Credential: "delivery:" + m.alias,
 	})
-	require.NoError(t, err, "deliver module %s", m.alias)
+	return err
 }
 
 // teamNamed is the id of the organisation's team called name.

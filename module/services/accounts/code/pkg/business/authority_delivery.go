@@ -39,8 +39,10 @@ func (s *Service) ApplyComposition(ctx context.Context, req *compositionv1.Apply
 	if s.compositionReconcile == nil {
 		return nil, fmt.Errorf("%w: composition reconciler is not wired", ErrSolutionDeliveryHostState)
 	}
-	// A delivery the authority core would refuse to compose is refused before
-	// anything is recorded, so accounts' record and the core's never part.
+	// A delivery the authority core would refuse to compose is refused here
+	// with the core's reason, before anything is recorded. The pass then
+	// composes what it takes in the core before accounts records it as
+	// applied (composeDelivered), so the two records never part.
 	if err := s.precheckCoreModule(ctx, req); err != nil {
 		return nil, coreDeliveryError(err)
 	}
@@ -77,16 +79,14 @@ func (s *Service) ApplyComposition(ctx context.Context, req *compositionv1.Apply
 		if err != nil {
 			return nil, err
 		}
-		// The applied, verified delivery is what the core composes.
-		ids, err := s.applyCoreModule(ctx, manifest, req.GetCarrier().GetDocument(), req.GetAuthority())
-		if err != nil {
-			return nil, coreDeliveryError(err)
-		}
+		// Applied is composed: the pass composed this generation in the core
+		// before it recorded it. The host installs every module itself
+		// (HostInstallsModules), so the core names no installation here.
 		principal := manifest.Alias
 		if manifest.Authority != nil && manifest.Authority.Principal != "" {
 			principal = manifest.Authority.Principal
 		}
-		return &compositionv1.ApplyManifestResponse{Principal: principal, Generation: record.Generation, InstallationIds: ids}, nil
+		return &compositionv1.ApplyManifestResponse{Principal: principal, Generation: record.Generation}, nil
 	}
 	return nil, fmt.Errorf("%w: binding %s has no applied record", ErrSolutionDeliveryHostState, record.Binding)
 }

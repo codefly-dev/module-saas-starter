@@ -46,26 +46,9 @@ func (s *SessionStore) AuthorizeClientSession(
 
 	var outcome error
 	authorize := func(ctx context.Context, tx pgx.Tx) error {
-		current, err := scanSession(tx.QueryRow(ctx, `
-			SELECT
-				id, user_id, family_id,
-				created_at, last_active_at, idle_expires_at, expires_at, revoked_at, revoked_reason,
-				device_info, ip_address,
-				org_id, org_role, platform_role, mfa_satisfied,
-				authentication_methods, auth_time, assurance_level, mfa_verified_at,
-				email, display_name, acting_as_user_id, client_id, resource
-			FROM sessions
-			WHERE id = $1 AND user_id = $2
-			LIMIT 1
-			FOR UPDATE`, authorizingSessionID, userID), nil)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return auth.ErrSessionUnavailable
-		}
+		current, err := lockAuthorizingSession(ctx, tx, authorizingSessionID, userID)
 		if err != nil {
 			return err
-		}
-		if current.RevokedAt != nil {
-			return auth.ErrSessionUnavailable
 		}
 		// An impersonation window may not hand a client a credential. The
 		// window is access-only and capped precisely so no rotatable session
@@ -75,7 +58,7 @@ func (s *SessionStore) AuthorizeClientSession(
 		}
 		// A role view is read here so a client's own session, which holds every role
 		// its person does, is never minted from one: MintForClient refuses it.
-		if err := tx.QueryRow(ctx, `SELECT role_view FROM sessions WHERE id = $1`, authorizingSessionID).Scan(&current.AccessOnly); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT role_view FROM sessions WHERE id = $1`, current.ID).Scan(&current.AccessOnly); err != nil {
 			return err
 		}
 		// One client cannot authorize another, and a client session cannot
@@ -165,4 +148,60 @@ func (s *SessionStore) AuthorizeClientSession(
 		return err
 	}
 	return outcome
+}
+
+// lockAuthorizingSession resolves and locks the host session an access token
+// names by its sid, for the authorizations keyed by it (a client's session, a
+// role view, a team cast, an organization exchange).
+//
+// A refresh rotates the family: the presented row is revoked "rotated" and a
+// new row becomes the family's live one, while the access token minted from
+// the old row stays honoured at the perimeter until it expires (rotation
+// revokes no access token; VerifyAccess checks the family). A browser whose
+// cookie another tab or document rotated a moment ago therefore presents a
+// valid token whose sid names a rotated row, and it is the family's live row
+// that answers for it: same person, same sign-in, authorization re-resolved
+// from it exactly as a refresh would. Any other revocation (sign-out, reuse
+// detection, an administrator's kill) leaves the family no live row, and the
+// session is unavailable.
+func lockAuthorizingSession(ctx context.Context, tx pgx.Tx, sessionID, userID uuid.UUID) (*auth.SessionRecord, error) {
+	const columns = `
+			id, user_id, family_id,
+			created_at, last_active_at, idle_expires_at, expires_at, revoked_at, revoked_reason,
+			device_info, ip_address,
+			org_id, org_role, platform_role, mfa_satisfied,
+			authentication_methods, auth_time, assurance_level, mfa_verified_at,
+			email, display_name, acting_as_user_id, client_id, resource`
+	current, err := scanSession(tx.QueryRow(ctx, `
+		SELECT `+columns+`
+		FROM sessions
+		WHERE id = $1 AND user_id = $2
+		LIMIT 1
+		FOR UPDATE`, sessionID, userID), nil)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, auth.ErrSessionUnavailable
+	}
+	if err != nil {
+		return nil, err
+	}
+	if current.RevokedAt == nil {
+		return current, nil
+	}
+	if current.RevokedReason != "rotated" {
+		return nil, auth.ErrSessionUnavailable
+	}
+	live, err := scanSession(tx.QueryRow(ctx, `
+		SELECT `+columns+`
+		FROM sessions
+		WHERE family_id = $1 AND user_id = $2 AND revoked_at IS NULL
+		ORDER BY created_at DESC
+		LIMIT 1
+		FOR UPDATE`, current.FamilyID, userID), nil)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, auth.ErrSessionUnavailable
+	}
+	if err != nil {
+		return nil, err
+	}
+	return live, nil
 }

@@ -1429,5 +1429,5 @@ func authorityChangeFields() []PayloadField {
 	return optionalFields([]PayloadField{str("organization"), str("actor"), str("subject"), str("target"), str("role"), str("person"), str("team"),
 		str("principal"), str("installed_by"), str("revision"), str("operation"), str("module"), str("purpose"), str("kind"), str("resource"),
 		str("from"), str("to"), str("store"), str("generation"), str("approved_generation"), str("widened"), str("agent_role_undeclared"),
-		str("delivered"), str("reach"), str("reach_unadopted"), str("unreached"), str("roles")})
+		str("delivered"), str("reach"), str("reach_unadopted"), str("unreached"), str("roles"), str("session"), str("cast_team")})
 }
