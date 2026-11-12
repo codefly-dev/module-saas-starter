@@ -2,7 +2,9 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	authedFetch,
+	markNarrowed,
 	refreshToken,
+	setNarrowedSessionEndedHandler,
 	setRefreshHandler,
 	setToken,
 } from "../token-store";
@@ -11,7 +13,53 @@ import { authInterceptor } from "../transport";
 afterEach(() => {
 	setToken(null);
 	setRefreshHandler(null);
+	setNarrowedSessionEndedHandler(null);
 	vi.unstubAllGlobals();
+});
+
+// A narrowed session (a role view or a team cast) has no refresh half: the
+// only token a repair can produce is the person's own, and a request sent as
+// the narrowed session is never retried with it. Decided from the bearer the
+// request carried, so it holds after the installed token moved on.
+describe("a narrowed bearer is never repaired", () => {
+	it("refreshToken answers null for it without an exchange, and reports the end, whatever token is installed now", async () => {
+		const handler = vi.fn(async () => "fresh-token");
+		const ended = vi.fn();
+		setRefreshHandler(handler);
+		setNarrowedSessionEndedHandler(ended);
+		markNarrowed("cast-bearer");
+		setToken("cast-bearer");
+		await expect(refreshToken()).resolves.toBeNull(); // the installed token, by default
+		setToken("own-bearer"); // the person went back to their own session
+		await expect(refreshToken("cast-bearer")).resolves.toBeNull(); // a late 401 sent as the cast
+		await expect(refreshToken("own-bearer")).resolves.toBe("fresh-token");
+		expect(handler).toHaveBeenCalledTimes(1);
+		expect(ended).toHaveBeenCalledTimes(2);
+		expect(ended).toHaveBeenCalledWith("cast-bearer");
+	});
+
+	it("the Connect interceptor rethrows a narrowed call's Unauthenticated without a retry", async () => {
+		markNarrowed("view-bearer");
+		setToken("view-bearer");
+		const handler = vi.fn(async () => "fresh-token");
+		setRefreshHandler(handler);
+		const next = vi.fn().mockRejectedValue(unauthenticated);
+		await expect(intercept(next)(fakeRequest())).rejects.toBe(unauthenticated);
+		expect(next).toHaveBeenCalledTimes(1);
+		expect(handler).not.toHaveBeenCalled();
+	});
+
+	it("authedFetch returns a narrowed request's 401 without a retry", async () => {
+		markNarrowed("view-bearer");
+		setToken("view-bearer");
+		const handler = vi.fn(async () => "fresh-token");
+		setRefreshHandler(handler);
+		const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 401 }));
+		vi.stubGlobal("fetch", fetchMock);
+		expect((await authedFetch("/write", { method: "POST" })).status).toBe(401);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(handler).not.toHaveBeenCalled();
+	});
 });
 
 describe("token-store refresh coordination", () => {

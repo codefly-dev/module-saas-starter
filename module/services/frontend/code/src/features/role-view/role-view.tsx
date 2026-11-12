@@ -45,7 +45,9 @@ export function useNarrowedSession(): Narrowed {
 		sessions
 			.current({})
 			.then((s) => current && setNarrowed({ view: s.roleView, castTeamId: s.castTeamId }))
-			.catch(() => current && setNarrowed(whole));
+			// A failed read says nothing about what the session is: an expired
+			// cast's Current fails, and the bar must still say what it was.
+			.catch(() => undefined);
 		return () => {
 			current = false;
 		};
@@ -76,7 +78,7 @@ export function ActAsTeam({ teamId, teamName }: { teamId: string; teamName: stri
 		setAsking(true);
 		setRefusal("");
 		try {
-			enterRoleView((await sessions.openTeamCast({ teamId })).bearer);
+			enterRoleView((await sessions.openTeamCast({ teamId })).bearer, `team ${teamName}`);
 		} catch (error) {
 			setRefusal(`${hostRefusal(error)} (${Code[ConnectError.from(error).code]})`);
 		} finally {
@@ -90,7 +92,8 @@ export function ActAsTeam({ teamId, teamName }: { teamId: string; teamName: stri
 				<>
 					<p>
 						You are <strong>{user?.email ?? "signed in"}</strong>, acting as team <strong>{teamName}</strong>. This session
-						holds what the team holds and nothing of your own, and what you do in it is attributed to the team.
+						holds what the team holds and nothing of your own, and what you do in it is attributed to the team. (Data
+						sources and scopes you hold personally are still read as you.)
 					</p>
 					<Link href="/" className="text-primary underline">
 						See what this team sees
@@ -142,13 +145,14 @@ export function RoleViewSelector() {
 		async (installationId: string, roles: string[]) => {
 			try {
 				const opened = await sessions.openRoleView({ installationId, roles });
-				enterRoleView(opened.bearer);
+				const target = heldRaw.find((h) => h.id === installationId)?.target ?? installationId;
+				enterRoleView(opened.bearer, `${roles.join(", ")} on ${target}`);
 				toast.success(`Viewing as ${roles.join(", ")}`);
 			} catch (error) {
 				toast.error(error instanceof Error ? error.message : "Could not open the role view.");
 			}
 		},
-		[enterRoleView],
+		[enterRoleView, heldRaw],
 	);
 
 	const choices = held.filter((h) => h.roles.length > 1 || view.some((v) => v.installationId === h.id));
@@ -181,12 +185,16 @@ export function RoleViewSelector() {
 
 /**
  * The bar that says, whatever the page shows, that this session acts as less
- * than the person holds. A cast is the stronger statement and is said first: who
+ * than the person holds. A narrowed session that ENDED without the person
+ * asking is said before anything else, by name, with the one way on: an
+ * expired one is left for them to leave (their own session is not installed
+ * behind their back), a reloaded one is acknowledged. Otherwise a cast is the
+ * stronger statement and is said first: who
  * the person is, which team they act as, and how to stop. The team is named by
  * the host's roster when the cast may read it, and by its id when it may not.
  */
 export function RoleViewBanner() {
-	const { user, organizationId, exitRoleView } = useAuth();
+	const { user, organizationId, exitRoleView, narrowedSessionEnd, dismissNarrowedSessionEnd } = useAuth();
 	const { view, castTeamId } = useNarrowedSession();
 	const [named, setNamed] = useState({ id: "", name: "" });
 	useEffect(() => {
@@ -200,6 +208,24 @@ export function RoleViewBanner() {
 			current = false;
 		};
 	}, [castTeamId, organizationId]);
+	if (narrowedSessionEnd) {
+		const expired = narrowedSessionEnd.reason === "expired";
+		return (
+			<div role="alert" className="fixed bottom-0 left-0 right-0 z-[9999] border-t-2 border-red-700 bg-red-200 px-4 py-2 text-sm text-red-950">
+				<span className="font-bold">Your session acting as {narrowedSessionEnd.as} has ended</span> &mdash;{" "}
+				{expired
+					? "its credential expired. Nothing more is done as them, and you are not back in your own session until you choose to be."
+					: "reloading the page ended it. You are back in your own session, with all of your own access."}
+				<button
+					type="button"
+					className="ml-3 rounded bg-red-900 px-3 py-1 text-red-50"
+					onClick={expired ? back(exitRoleView) : dismissNarrowedSessionEnd}
+				>
+					{expired ? "Return to my own session" : "Understood"}
+				</button>
+			</div>
+		);
+	}
 	if (view.length === 0 && !castTeamId) return null;
 	const viewed = view.map((v) => `${v.roles.join(", ")} on ${v.installationId}`).join("; ");
 	return (
@@ -210,8 +236,9 @@ export function RoleViewBanner() {
 			{castTeamId ? (
 				<>
 					<span className="font-bold">Acting as team {(named.id === castTeamId && named.name) || castTeamId}</span> &mdash; you
-					are {user?.email ?? "signed in"}, holding what this team holds and nothing of your own. What you do here is
-					attributed to the team.{viewed && ` Viewing as ${viewed}.`}
+					are {user?.email ?? "signed in"}, holding what this team holds and nothing of your own (data sources and
+					scopes you hold personally are still read as you). What you do here is attributed to the team.
+					{viewed && ` Viewing as ${viewed}.`}
 				</>
 			) : (
 				<>

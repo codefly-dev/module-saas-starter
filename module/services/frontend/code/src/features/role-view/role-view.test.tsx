@@ -15,6 +15,8 @@ const auth = vi.hoisted(() => ({
 	user: { id: "user-example", email: "ada@example.com" },
 	enterRoleView: vi.fn(),
 	exitRoleView: vi.fn(() => Promise.resolve()),
+	narrowedSessionEnd: null as { reason: "expired" | "reloaded"; as: string } | null,
+	dismissNarrowedSessionEnd: vi.fn(),
 }));
 vi.mock("@/lib/auth", () => ({ useAuth: () => auth }));
 
@@ -27,6 +29,8 @@ beforeEach(() => {
 	asked = [];
 	auth.enterRoleView.mockClear();
 	auth.exitRoleView.mockClear();
+	auth.dismissNarrowedSessionEnd.mockClear();
+	auth.narrowedSessionEnd = null;
 	server.use(
 		http.post(session("Current"), () => HttpResponse.json(current)),
 		http.post(rpc("TeamService", "ListTeams"), () =>
@@ -49,7 +53,7 @@ describe("act as this team", () => {
 		);
 		render(<ActAsTeam teamId="team-stewards" teamName="Stewards" />);
 		fireEvent.click(screen.getByRole("button", { name: "Act as this team" }));
-		await waitFor(() => expect(auth.enterRoleView).toHaveBeenCalledWith("cast-bearer"));
+		await waitFor(() => expect(auth.enterRoleView).toHaveBeenCalledWith("cast-bearer", "team Stewards"));
 		expect(asked).toEqual([{ teamId: "team-stewards" }]);
 		expect(screen.queryByRole("alert")).toBeNull();
 	});
@@ -134,6 +138,30 @@ describe("the bar that says a session is narrowed", () => {
 		const bar = await screen.findByRole("status");
 		expect(bar.textContent).toContain("Acting as team");
 		expect(bar.textContent).toContain("Viewing as viewer on inst-a.");
+	});
+
+	it("an expired cast is said by name, and the only way on is to ask for your own session back", async () => {
+		auth.narrowedSessionEnd = { reason: "expired", as: "team Stewards" };
+		current = { castTeamId: "team-stewards" };
+		render(<RoleViewBanner />);
+		const bar = await screen.findByRole("alert");
+		expect(bar.textContent).toContain("Your session acting as team Stewards has ended");
+		expect(bar.textContent).toContain("you are not back in your own session until you choose to be");
+		expect(screen.queryByRole("status")).toBeNull();
+		fireEvent.click(screen.getByRole("button", { name: "Return to my own session" }));
+		expect(auth.exitRoleView).toHaveBeenCalledTimes(1);
+		expect(auth.dismissNarrowedSessionEnd).not.toHaveBeenCalled();
+	});
+
+	it("a cast a reload ended is said by name, with the person told they are themselves again", async () => {
+		auth.narrowedSessionEnd = { reason: "reloaded", as: "viewer on records" };
+		render(<RoleViewBanner />);
+		const bar = await screen.findByRole("alert");
+		expect(bar.textContent).toContain("Your session acting as viewer on records has ended");
+		expect(bar.textContent).toContain("You are back in your own session");
+		fireEvent.click(screen.getByRole("button", { name: "Understood" }));
+		expect(auth.dismissNarrowedSessionEnd).toHaveBeenCalledTimes(1);
+		expect(auth.exitRoleView).not.toHaveBeenCalled();
 	});
 
 	it("still says a role view is one", async () => {

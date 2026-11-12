@@ -57,13 +57,64 @@ export function subscribeToken(listener: () => void): () => void {
 let refreshHandler: (() => Promise<string | null>) | null = null;
 let inflightRefresh: Promise<string | null> | null = null;
 
+/**
+ * Every bearer this page has installed as a NARROWED session: a role view or a
+ * team cast. Such a session is access-only and has no refresh half, so the only
+ * token a refresh can produce is the person's own, full session. A request that
+ * was sent with a narrowed bearer and came back 401 must therefore never be
+ * retried with what a refresh returns: that would execute, as the person, an
+ * action they took as less than themselves.
+ *
+ * The decision is made per request, from the bearer THAT request carried
+ * (`refreshToken(sentWith)`), never from "is the page narrowed right now". A
+ * flag of the page's state is what the first repair resets, so a second 401
+ * from the same narrowed bearer, landing after that repair settled, would read
+ * the page as no longer narrowed and be replayed with the full token. A bearer
+ * stays here for the life of the page, so a late 401 after the person returned
+ * to their own session is refused the same way.
+ */
+const narrowedBearers = new Set<string>();
+let narrowedSessionEndedHandler: ((bearer: string) => void) | null = null;
+
+export function markNarrowed(token: string) {
+	narrowedBearers.add(token);
+}
+
+export function isNarrowed(token: string | null): boolean {
+	return token !== null && narrowedBearers.has(token);
+}
+
+/**
+ * Told, with the bearer, when a request sent under a narrowed session came
+ * back 401: that session is over (its credential expired or was revoked), and
+ * the AuthProvider says so to the person instead of silently handing them back
+ * their own session.
+ */
+export function setNarrowedSessionEndedHandler(
+	handler: ((bearer: string) => void) | null,
+) {
+	narrowedSessionEndedHandler = handler;
+}
+
 export function setRefreshHandler(
 	handler: (() => Promise<string | null>) | null,
 ) {
 	refreshHandler = handler;
 }
 
-export function refreshToken(): Promise<string | null> {
+/**
+ * `sentWith` is the bearer the failed request carried; it defaults to the
+ * installed token for a caller that has nothing else. A narrowed bearer is
+ * answered null before any exchange and outside the single-flight: it must not
+ * share a full-session refresh another caller is waiting on either.
+ */
+export function refreshToken(
+	sentWith: string | null = currentToken,
+): Promise<string | null> {
+	if (isNarrowed(sentWith)) {
+		narrowedSessionEndedHandler?.(sentWith as string);
+		return Promise.resolve(null);
+	}
 	if (!refreshHandler) return Promise.resolve(null);
 	if (!inflightRefresh) {
 		inflightRefresh = refreshHandler()
@@ -99,7 +150,7 @@ export async function authedFetch(
 	const retry = request.clone();
 	const res = await fetch(request);
 	if (res.status !== 401 || !token) return res;
-	const fresh = await refreshToken();
+	const fresh = await refreshToken(token);
 	if (!fresh) return res;
 	retry.headers.set("Authorization", `Bearer ${fresh}`);
 	return fetch(retry);
