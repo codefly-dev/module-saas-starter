@@ -1,7 +1,7 @@
 import { AccessibleScopeService } from "@codefly-dev/saas-sdk";
 import { createClient, Code } from "@connectrpc/connect";
 import { moduleTransport, requestBinding } from "@codefly-dev/saas-ui/solution";
-import { HOST_SETUP_PROCEDURES } from "@/lib/host-setup-procedures";
+import { HOST_SETUP_PROCEDURES } from "@/lib/host-browser-procedures";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));

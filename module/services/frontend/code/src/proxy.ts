@@ -19,7 +19,7 @@ import {
 	type CodeflyGatewayContext,
 	resolveCodeflyGatewayContext,
 } from "@/lib/codefly-gateway-context";
-import { isHostSetupProcedure } from "@/lib/host-setup-procedures";
+import { isHostBrowserProcedure } from "@/lib/host-browser-procedures";
 import {
 	expectedInternalToken,
 	INTERNAL_TOKEN_HEADER,
@@ -98,8 +98,9 @@ function isProductAPI(pathname: string): boolean {
 	if (PRODUCT_API_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
 		return true;
 	}
-	// The solution Setup tab's host procedures, and only those.
-	if (isHostSetupProcedure(pathname)) return true;
+	// The host procedures a browser of this app calls — the Setup tab's and the
+	// chrome's session reads — and only those.
+	if (isHostBrowserProcedure(pathname)) return true;
 	return oauthSurfaceUpstreamPath(pathname) !== undefined;
 }
 
