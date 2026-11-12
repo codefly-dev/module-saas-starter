@@ -1,12 +1,13 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminRouteShell } from "../admin-route-shell";
 
 const state = vi.hoisted(() => ({
 	pathname: "/admin/teams/team-example",
 	isAuthenticated: true,
 	orgRole: "member" as string | undefined,
+	castTeamId: "",
 	sessionRead: "confirmed" as string,
 	replace: vi.fn(),
 }));
@@ -18,6 +19,7 @@ vi.mock("@/lib/auth", () => ({
 	useAuth: () => ({
 		isAuthenticated: state.isAuthenticated,
 		orgRole: state.orgRole,
+		castTeamId: state.castTeamId,
 		sessionRead: state.sessionRead,
 		isLoading: false,
 	}),
@@ -50,6 +52,7 @@ beforeEach(() => {
 	state.pathname = "/admin/teams/team-example";
 	state.isAuthenticated = true;
 	state.orgRole = "member";
+	state.castTeamId = "";
 	state.sessionRead = "confirmed";
 	state.replace.mockClear();
 });
@@ -109,4 +112,32 @@ it("says it could not confirm the session, not that the role is none", () => {
 	render(<AdminRouteShell>Team roster</AdminRouteShell>);
 	expect(screen.getByText("Could not confirm what this session is")).toBeTruthy();
 	expect(screen.queryByText(/is none/)).toBeNull();
+});
+
+// A cast holds no organization role, so useAuth reads orgRole as none. It is
+// still a member of the team it acts as: the team pages admit it, and every
+// other admin page refuses it by naming the cast, not the person's role.
+describe("a cast session", () => {
+	beforeEach(() => {
+		state.orgRole = undefined;
+		state.castTeamId = "team-example";
+	});
+
+	it("is admitted to team details", () => {
+		render(<AdminRouteShell>Team roster</AdminRouteShell>);
+		expect(screen.getByText("Team roster")).toBeTruthy();
+		expect(screen.queryByText(/You don't have access/)).toBeNull();
+	});
+
+	it.each(["/admin/users", "/admin/billing", "/admin/organizations"])(
+		"is refused %s by naming the cast, never a role of its own",
+		(path) => {
+			state.pathname = path;
+			render(<AdminRouteShell>Restricted</AdminRouteShell>);
+			expect(screen.queryByText("Restricted")).toBeNull();
+			expect(screen.getByText("You don't have access to Admin")).toBeTruthy();
+			expect(screen.getByText(/This session acts as a team/)).toBeTruthy();
+			expect(screen.queryByText(/Your role in this organization/)).toBeNull();
+		},
+	);
 });

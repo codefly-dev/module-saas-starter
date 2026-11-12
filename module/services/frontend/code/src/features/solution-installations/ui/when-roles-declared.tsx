@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
+import { isAdmin } from "@/lib/permissions";
 import { hostRefusal, isModulePage } from "../model/installations";
 import { useAvailableSolutions } from "../service/queries";
 
@@ -15,18 +16,26 @@ import { useAvailableSolutions } from "../service/queries";
  * failed catalogue read is no answer: `declared` stays undefined and `error`
  * says why, so a transient failure never passes a module page off as one
  * without roles.
+ *
+ * The catalogue is an administrator's read, and a module's Setup is an
+ * administrator's act. A session that holds no administrator role — a member,
+ * a cast (useAuth reads a cast as holding none), or one not yet confirmed — is
+ * offered no Setup and does not ask: the host would refuse the read by name,
+ * and the chrome shows only what the session holds.
  */
 export function useRolesDeclaredReview(
 	target: string,
 	kind?: string,
 ): { declared: boolean | undefined; error: unknown; retry: () => void } {
-	const { organizationId = "" } = useAuth();
+	const { organizationId = "", platformRole, orgRole } = useAuth();
+	const admin = isAdmin(platformRole, orgRole);
 	const available = useAvailableSolutions(
-		kind === "module" ? organizationId : "",
+		kind === "module" && admin ? organizationId : "",
 	);
 	const retry = () => void available.refetch();
 	if (kind !== "module")
 		return { declared: kind === "solution", error: undefined, retry };
+	if (!admin) return { declared: false, error: undefined, retry };
 	if (available.isError)
 		return { declared: undefined, error: available.error, retry };
 	if (!available.data) return { declared: undefined, error: undefined, retry };
