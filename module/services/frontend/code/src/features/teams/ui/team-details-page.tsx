@@ -82,7 +82,8 @@ function TeamDetailsForOrganization({
 }
 
 function TeamDetails({ team }: { team: Team }) {
-	const { user, orgRole, platformRole, castTeamId } = useAuth();
+	const { user, orgRole, platformRole, castTeamId, sessionRead } = useAuth();
+	const unconfirmed = sessionRead === "reading" || sessionRead === "failed";
 	const queryClient = useQueryClient();
 	const [editing, setEditing] = useState(false);
 	const members = useQuery(teamQueries.members(team.id));
@@ -93,7 +94,7 @@ function TeamDetails({ team }: { team: Team }) {
 		(member) => member.userId === user?.id,
 	);
 	// A cast holds what its team holds, not the person's own team role.
-	const myRole = membership && !castTeamId ? toTeamRole(membership.role) : undefined;
+	const myRole = membership && !castTeamId && !unconfirmed ? toTeamRole(membership.role) : undefined;
 	const teamAdmin = myRole === "admin" || myRole === "owner";
 	const orgAdmin = orgRole === "admin" || orgRole === "owner";
 	const canManage =
@@ -144,6 +145,14 @@ function TeamDetails({ team }: { team: Team }) {
 							"your role in this team",
 							"",
 						)}
+					</p>
+				) : unconfirmed ? (
+					<p>
+						{sessionRead === "reading"
+							? "Confirming what this session is."
+							: "Could not confirm what this session is."}{" "}
+						Your access here is not shown until the host says; it decides every
+						action.
 					</p>
 				) : castTeamId ? (
 					<>

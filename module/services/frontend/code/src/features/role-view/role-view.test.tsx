@@ -15,13 +15,19 @@ const auth = vi.hoisted(() => ({
 	user: { id: "user-example", email: "ada@example.com" },
 	enterRoleView: vi.fn(),
 	exitRoleView: vi.fn(() => Promise.resolve()),
+	sessionRead: "confirmed" as "reading" | "failed" | "confirmed",
 	narrowedSessionEnd: null as { reason: "expired" | "reloaded"; as: string } | null,
 	dismissNarrowedSessionEnd: vi.fn(),
 }));
 // The cast is the provider's reading of the host's Session.cast_team_id; the
 // bar reads it from the same place the menus do.
 vi.mock("@/lib/auth", () => ({
-	useAuth: () => ({ ...auth, castTeamId: (current.castTeamId as string) ?? "" }),
+	useAuth: () => ({
+		...auth,
+		sessionRead: auth.sessionRead,
+		castTeamId: (current.castTeamId as string) ?? "",
+		roleView: (current.roleView as { installationId: string; roles: string[] }[]) ?? [],
+	}),
 }));
 
 const session = (method: string) => `http://localhost:3000/host.session.v1.SessionService/${method}`;
@@ -35,6 +41,7 @@ beforeEach(() => {
 	auth.exitRoleView.mockClear();
 	auth.dismissNarrowedSessionEnd.mockClear();
 	auth.narrowedSessionEnd = null;
+	auth.sessionRead = "confirmed";
 	server.use(
 		http.post(session("Current"), () => HttpResponse.json(current)),
 		http.post(rpc("TeamService", "ListTeams"), () =>
@@ -175,5 +182,18 @@ describe("the bar that says a session is narrowed", () => {
 		expect(bar.textContent).toContain("Role view");
 		expect(bar.textContent).toContain("viewer on inst-a");
 		expect(screen.getByRole("button", { name: "Back to all my roles" })).toBeTruthy();
+	});
+});
+
+describe("a session the host has not confirmed", () => {
+	it.each([
+		["reading", "Confirming what this session is"],
+		["failed", "Could not confirm what this session is"],
+	] as const)("the bar says it is %s, never 'not a cast'", (state, words) => {
+		auth.sessionRead = state;
+		render(<RoleViewBanner />);
+		const bar = screen.getByRole("status");
+		expect(bar.textContent).toContain(words);
+		expect(bar.textContent).toContain("no administrator access is offered");
 	});
 });

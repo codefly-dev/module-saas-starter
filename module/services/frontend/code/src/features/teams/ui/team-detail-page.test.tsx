@@ -17,6 +17,7 @@ const session = vi.hoisted(() => ({
 	orgRole: "owner" as OrgRole | undefined,
 	platformRole: undefined as PlatformRole | undefined,
 	castTeamId: "",
+	sessionRead: "confirmed" as "reading" | "failed" | "confirmed",
 	switchOrganization: vi.fn(async () => undefined),
 }));
 
@@ -88,6 +89,7 @@ beforeEach(() => {
 	session.orgRole = "owner";
 	session.platformRole = undefined;
 	session.castTeamId = "";
+	session.sessionRead = "confirmed";
 });
 
 afterEach(cleanup);
@@ -169,5 +171,17 @@ describe("TeamDetailsPage (org-selection and access states)", () => {
 		expect(await within(access).findByText("Acting as this team")).toBeTruthy();
 		expect(within(access).queryByText(/administrator access allows/)).toBeNull();
 		expect(screen.queryByRole("button", { name: "Edit team" })).toBeNull();
+	});
+
+	it("claims no access while the host has not confirmed what the session is", async () => {
+		serveTeam();
+		session.orgRole = undefined;
+		session.sessionRead = "failed";
+
+		renderInApp(<TeamDetailsPage teamId="team-1" />);
+
+		const access = await screen.findByLabelText("Your team access");
+		expect(await within(access).findByText(/Could not confirm what this session is/)).toBeTruthy();
+		expect(within(access).queryByText(/team administrator/)).toBeNull();
 	});
 });

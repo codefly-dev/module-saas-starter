@@ -27,33 +27,19 @@ export interface Narrowed {
 	view: RoleViewEntry[];
 	/** The team the session is cast onto: it acts as that team and nothing else. */
 	castTeamId: string;
+	/** False while the host's answer is on the way or could not be read: the session is then unconfirmed, neither narrowed nor whole. */
+	confirmed: boolean;
 }
-const whole: Narrowed = { view: [], castTeamId: "" };
 
 /**
- * What the host says this session is narrowed to, read from the host and not
- * kept here: the authority recorded the view or the cast, so the answer follows
- * the token the browser holds. A token that lapsed back to the person's own
- * session says so.
+ * What the host says this session is narrowed to, read once by the auth
+ * provider and consumed here, not read again: one read, one state. A session
+ * the host could not be asked about is `confirmed: false`, never "whole".
  */
 export function useNarrowedSession(): Narrowed {
-	const { accessToken, isAuthenticated, castTeamId } = useAuth();
-	const [view, setView] = useState<RoleViewEntry[]>([]);
-	useEffect(() => {
-		if (!isAuthenticated || !accessToken) return;
-		let current = true;
-		sessions
-			.current({})
-			.then((s) => current && setView(s.roleView))
-			// A failed read says nothing about what the session is: an expired
-			// cast's Current fails, and the bar must still say what it was.
-			.catch(() => undefined);
-		return () => {
-			current = false;
-		};
-	}, [accessToken, isAuthenticated]);
-	// Signed out, there is nothing to show; derived here, not set from the effect.
-	return isAuthenticated && accessToken ? { view, castTeamId } : whole;
+	const { isAuthenticated, accessToken, sessionRead, castTeamId, roleView } = useAuth();
+	if (!isAuthenticated || !accessToken) return { view: [], castTeamId: "", confirmed: true };
+	return { view: roleView, castTeamId, confirmed: sessionRead === "confirmed" };
 }
 
 export function useRoleView(): RoleViewEntry[] {
@@ -195,7 +181,8 @@ export function RoleViewSelector() {
  */
 export function RoleViewBanner() {
 	const { user, organizationId, exitRoleView, narrowedSessionEnd, dismissNarrowedSessionEnd } = useAuth();
-	const { view, castTeamId } = useNarrowedSession();
+	const { view, castTeamId, confirmed } = useNarrowedSession();
+	const { sessionRead } = useAuth();
 	const [named, setNamed] = useState({ id: "", name: "" });
 	useEffect(() => {
 		if (!castTeamId || !organizationId) return;
@@ -226,6 +213,13 @@ export function RoleViewBanner() {
 			</div>
 		);
 	}
+	if (!confirmed)
+		return (
+			<div role="status" className="fixed bottom-0 left-0 right-0 z-[9999] border-t-2 border-amber-600 bg-amber-200 px-4 py-2 text-sm text-amber-950">
+				<span className="font-bold">{sessionRead === "reading" ? "Confirming what this session is" : "Could not confirm what this session is"}</span>{" "}
+				&mdash; it may be acting as less than you hold, so no administrator access is offered until the host says. The host decides every action.
+			</div>
+		);
 	if (view.length === 0 && !castTeamId) return null;
 	const viewed = view.map((v) => `${v.roles.join(", ")} on ${v.installationId}`).join("; ");
 	return (

@@ -13,7 +13,7 @@ import {
 	useState,
 } from "react";
 import { completePendingClientAuthorization } from "@/features/auth/model/client-authorization";
-import { SessionService } from "@/gen/host/session/v1/session_pb";
+import { type RoleViewEntry, SessionService } from "@/gen/host/session/v1/session_pb";
 import { AuthService } from "@/gen/saas/accounts/v1/authentication_pb";
 import { PlatformAdminService } from "@/gen/saas/accounts/v1/platform_admin_pb";
 import { authErrorFromResponse } from "@/lib/auth-errors";
@@ -394,12 +394,18 @@ interface AuthState {
 
 interface AuthContextType extends AuthState {
 	/**
-	 * The team this session is cast onto, as the host says (`Session.cast_team_id`),
-	 * empty when it is not a cast. For a cast, `platformRole` and `orgRole` are
-	 * undefined: the token still carries the person's roles, but the cast holds
-	 * none of them, and the chrome must not offer what the host would refuse.
+	 * What the host says this session is (`Session.Current`). "reading" (in
+	 * flight, including after every token swap) and "failed" both mean the
+	 * session is NOT confirmed: `platformRole` and `orgRole` are then undefined
+	 * and `castTeamId` is empty, because an unconfirmed session is never
+	 * presented as the widest thing it might be. Only "confirmed" says the
+	 * rest of this block is the host's answer.
 	 */
+	sessionRead: "reading" | "failed" | "confirmed";
+	/** The team a confirmed session is cast onto (`cast_team_id`), else empty. A cast holds none of the person's roles: they read as undefined. */
 	castTeamId: string;
+	/** The role view a confirmed session was opened with, else empty. */
+	roleView: RoleViewEntry[];
 	// Dev / fixture path — caller supplies an already-trusted identity.
 	// Used by the dev-admin fixture and local-only tooling. In production
 	// the OAuth redirect flow (signInWith) is the only path.
@@ -470,6 +476,8 @@ interface AuthContextType extends AuthState {
 	dismissNarrowedSessionEnd: () => void;
 	getToken: () => string | null;
 }
+
+const NO_VIEW: RoleViewEntry[] = [];
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
@@ -1210,32 +1218,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		[beginMFA, setTokens],
 	);
 
-	// What the host says this session is cast onto, keyed by the token it was
-	// read for so a token swap never shows the previous token's answer. A
-	// failed read says nothing about the session, so it leaves the chrome as
-	// the token describes it; the host refuses by name whatever is offered.
-	const [cast, setCast] = useState({ token: "", teamId: "" });
+	// What the host says this session is, keyed by the token it was read for
+	// so a token swap never shows the previous token's answer. Until the read
+	// for THIS token succeeds the session is unconfirmed, never the token's
+	// roles: the host refuses by name whatever is offered, but the chrome must
+	// not claim what it could not confirm.
+	const [read, setRead] = useState<
+		| { token: string; failed: true }
+		| { token: string; failed?: false; castTeamId: string; roleView: RoleViewEntry[] }
+	>({ token: "", failed: true });
 	useEffect(() => {
 		const token = state.accessToken;
 		if (!token) return;
 		let current = true;
 		sessionClient
 			.current({})
-			.then((s) => current && setCast({ token, teamId: s.castTeamId }))
-			.catch(() => undefined);
+			.then(
+				(s) =>
+					current &&
+					setRead({ token, castTeamId: s.castTeamId, roleView: s.roleView }),
+			)
+			.catch(() => current && setRead({ token, failed: true }));
 		return () => {
 			current = false;
 		};
 	}, [state.accessToken]);
-	const castTeamId = cast.token === state.accessToken ? cast.teamId : "";
+	const answered = read.token === state.accessToken ? read : null;
+	const sessionRead: AuthContextType["sessionRead"] = !state.accessToken
+		? "confirmed"
+		: !answered
+			? "reading"
+			: answered.failed
+				? "failed"
+				: "confirmed";
+	const castTeamId = answered && !answered.failed ? answered.castTeamId : "";
+	const roleView = answered && !answered.failed ? answered.roleView : NO_VIEW;
+	const rolesHidden = !!state.accessToken && (sessionRead !== "confirmed" || !!castTeamId);
 
 	const value = useMemo<AuthContextType>(
 		() => ({
 			...state,
+			sessionRead,
 			castTeamId,
-			...(castTeamId
-				? { platformRole: undefined, orgRole: undefined }
-				: {}),
+			roleView,
+			...(rolesHidden ? { platformRole: undefined, orgRole: undefined } : {}),
 			login,
 			loginWithHeaderInjected,
 			signInWith,
@@ -1255,7 +1281,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		}),
 		[
 			state,
+			sessionRead,
 			castTeamId,
+			roleView,
+			rolesHidden,
 			login,
 			loginWithHeaderInjected,
 			signInWith,

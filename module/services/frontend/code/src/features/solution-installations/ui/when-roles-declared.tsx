@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
-import { isModulePage } from "../model/installations";
+import { hostRefusal, isModulePage } from "../model/installations";
 import { useAvailableSolutions } from "../service/queries";
 
 /**
@@ -41,7 +41,8 @@ export function useRolesDeclaredReview(
 
 /**
  * Renders its children only for a target that declares installation roles,
- * the only target a Setup tab can answer for (`useRolesDeclared`).
+ * the only target a Setup tab can answer for (`useRolesDeclaredReview`). A
+ * failed read is said, in the host's words, never passed off as "none".
  */
 export function WhenRolesDeclared({
 	target,
@@ -52,5 +53,13 @@ export function WhenRolesDeclared({
 	kind?: "module" | "solution";
 	children: ReactNode;
 }) {
-	return useRolesDeclaredReview(target, kind).declared ? children : null;
+	const { declared, error } = useRolesDeclaredReview(target, kind);
+	if (error)
+		return (
+			<p role="alert" className="text-sm text-muted-foreground">
+				Could not read whether this page has roles to set up:{" "}
+				{hostRefusal(error)}
+			</p>
+		);
+	return declared ? children : null;
 }

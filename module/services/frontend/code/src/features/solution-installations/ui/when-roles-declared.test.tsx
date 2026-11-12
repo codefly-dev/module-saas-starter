@@ -83,6 +83,16 @@ describe("WhenRolesDeclared", () => {
 		expect(screen.queryByText("Setup")).toBeNull();
 	});
 
+	it("says why when the catalogue could not be read, instead of showing nothing", () => {
+		catalogue.result = {
+			isError: true,
+			error: new ConnectError("registry is down", Code.Unavailable),
+		};
+		renderGate("module");
+		expect(screen.queryByText("Setup")).toBeNull();
+		expect(screen.getByRole("alert").textContent).toContain("registry is down");
+	});
+
 	// A refused read is not "declares none": it stays unknown and says why.
 	it("reads a failed catalogue as no answer, with its error", () => {
 		const refusal = new ConnectError("try later", Code.Unavailable);
