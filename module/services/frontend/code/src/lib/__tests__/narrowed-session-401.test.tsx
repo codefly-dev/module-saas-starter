@@ -166,8 +166,8 @@ it("an expired cast is left until the person asks: returning installs their own 
 	expect(screen.getByTestId("authed").textContent).toBe("yes");
 });
 
-it("a reload ends the narrowed session, and the boot says so by name; acknowledging clears it", async () => {
-	sessionStorage.setItem("codefly_narrowed_session", "team Stewards");
+it("a reload after the narrowed bearer lapsed ends the session, and the boot says so by name; acknowledging clears it", async () => {
+	sessionStorage.setItem("codefly_narrowed_session", JSON.stringify({ as: "team Stewards" }));
 	await boot();
 	expect(screen.getByTestId("authed").textContent).toBe("yes ended:reloaded:team Stewards");
 	expect(sessionStorage.getItem("codefly_narrowed_session")).toBeNull();

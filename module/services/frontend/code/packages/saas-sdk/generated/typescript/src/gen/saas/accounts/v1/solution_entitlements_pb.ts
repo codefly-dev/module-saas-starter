@@ -11,7 +11,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/solution_entitlements.proto.
  */
 export const file_saas_accounts_v1_solution_entitlements: GenFile = /*@__PURE__*/
-  fileDesc("CixzYWFzL2FjY291bnRzL3YxL3NvbHV0aW9uX2VudGl0bGVtZW50cy5wcm90bxIQc2Fhcy5hY2NvdW50cy52MSKnAQoTU29sdXRpb25FbnRpdGxlbWVudBIhCg9pbnN0YWxsYXRpb25faWQYAiABKAlCCLpIBXIDsAEBEiQKEnJvb3Rfc2NvcGVfbm9kZV9pZBgDIAEoCUIIukgFcgOwAQESDwoHaGVhbHRoeRgEIAEoCBIbCgl0YXJnZXRfaWQYBSABKAlCCLpIBXIDsAEBSgQIARACUhNzb2x1dGlvbl9pZGVudGlmaWVyIq4BCh9MaXN0U29sdXRpb25FbnRpdGxlbWVudHNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESHAoKc3ViamVjdF9pZBgCIAEoCUIIukgFcgOwAQESHQoJcGFnZV9zaXplGAMgASgFQgq6SAcaBRj0AygAEhIKCnBhZ2VfdG9rZW4YBCABKAkSIAoYaW5jbHVkZV9jb21wb3NlZF9tb2R1bGVzGAUgASgIIsABCiBMaXN0U29sdXRpb25FbnRpdGxlbWVudHNSZXNwb25zZRI7CgxlbnRpdGxlbWVudHMYASADKAsyJS5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uRW50aXRsZW1lbnQSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJEkYKEGNvbXBvc2VkX21vZHVsZXMYAyADKAsyLC5zYWFzLmFjY291bnRzLnYxLkNvbXBvc2VkTW9kdWxlSW5zdGFsbGF0aW9uIlwKGkNvbXBvc2VkTW9kdWxlSW5zdGFsbGF0aW9uEhsKCXRhcmdldF9pZBgBIAEoCUIIukgFcgOwAQESIQoPaW5zdGFsbGF0aW9uX2lkGAIgASgJQgi6SAVyA7ABAWIGcHJvdG8z", [file_buf_validate_validate]);
+  fileDesc("CixzYWFzL2FjY291bnRzL3YxL3NvbHV0aW9uX2VudGl0bGVtZW50cy5wcm90bxIQc2Fhcy5hY2NvdW50cy52MSKnAQoTU29sdXRpb25FbnRpdGxlbWVudBIhCg9pbnN0YWxsYXRpb25faWQYAiABKAlCCLpIBXIDsAEBEiQKEnJvb3Rfc2NvcGVfbm9kZV9pZBgDIAEoCUIIukgFcgOwAQESDwoHaGVhbHRoeRgEIAEoCBIbCgl0YXJnZXRfaWQYBSABKAlCCLpIBXIDsAEBSgQIARACUhNzb2x1dGlvbl9pZGVudGlmaWVyIs8BCh9MaXN0U29sdXRpb25FbnRpdGxlbWVudHNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESHAoKc3ViamVjdF9pZBgCIAEoCUIIukgFcgOwAQESHQoJcGFnZV9zaXplGAMgASgFQgq6SAcaBRj0AygAEhIKCnBhZ2VfdG9rZW4YBCABKAkSIAoYaW5jbHVkZV9jb21wb3NlZF9tb2R1bGVzGAUgASgIEh8KCnNlc3Npb25faWQYBiABKAlCC7pICNgBAXIDsAEBIsABCiBMaXN0U29sdXRpb25FbnRpdGxlbWVudHNSZXNwb25zZRI7CgxlbnRpdGxlbWVudHMYASADKAsyJS5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uRW50aXRsZW1lbnQSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJEkYKEGNvbXBvc2VkX21vZHVsZXMYAyADKAsyLC5zYWFzLmFjY291bnRzLnYxLkNvbXBvc2VkTW9kdWxlSW5zdGFsbGF0aW9uIlwKGkNvbXBvc2VkTW9kdWxlSW5zdGFsbGF0aW9uEhsKCXRhcmdldF9pZBgBIAEoCUIIukgFcgOwAQESIQoPaW5zdGFsbGF0aW9uX2lkGAIgASgJQgi6SAVyA7ABAWIGcHJvdG8z", [file_buf_validate_validate]);
 
 /**
  * SolutionEntitlement is one installed solution a subject may use. It is
@@ -125,6 +125,19 @@ export type ListSolutionEntitlementsRequest = Message<"saas.accounts.v1.ListSolu
    * @generated from field: bool include_composed_modules = 5;
    */
   includeComposedModules: boolean;
+
+  /**
+   * The session the subject asked from, when the caller verified one. The
+   * role view that session was opened with narrows the answer exactly as it
+   * narrows every other decision the authority makes for it: a session cast
+   * onto a team lists what the team holds and nothing of the person's own.
+   * Without it the subject is answered as themselves, which for a cast is the
+   * one thing the cast exists not to be. Empty for a caller that
+   * authenticated no session.
+   *
+   * @generated from field: string session_id = 6;
+   */
+  sessionId: string;
 };
 
 /**

@@ -135,8 +135,16 @@ type ListSolutionEntitlementsRequest struct {
 	// only: the navigation and the solution proxy decide on entitlements alone,
 	// and do not pay for a read they never use.
 	IncludeComposedModules bool `protobuf:"varint,5,opt,name=include_composed_modules,json=includeComposedModules,proto3" json:"include_composed_modules,omitempty"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
+	// The session the subject asked from, when the caller verified one. The
+	// role view that session was opened with narrows the answer exactly as it
+	// narrows every other decision the authority makes for it: a session cast
+	// onto a team lists what the team holds and nothing of the person's own.
+	// Without it the subject is answered as themselves, which for a cast is the
+	// one thing the cast exists not to be. Empty for a caller that
+	// authenticated no session.
+	SessionId     string `protobuf:"bytes,6,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListSolutionEntitlementsRequest) Reset() {
@@ -202,6 +210,13 @@ func (x *ListSolutionEntitlementsRequest) GetIncludeComposedModules() bool {
 		return x.IncludeComposedModules
 	}
 	return false
+}
+
+func (x *ListSolutionEntitlementsRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
 }
 
 type ListSolutionEntitlementsResponse struct {
@@ -338,7 +353,7 @@ const file_saas_accounts_v1_solution_entitlements_proto_rawDesc = "" +
 	"\x0finstallation_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0einstallationId\x125\n" +
 	"\x12root_scope_node_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0frootScopeNodeId\x12\x18\n" +
 	"\ahealthy\x18\x04 \x01(\bR\ahealthy\x12%\n" +
-	"\ttarget_id\x18\x05 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\btargetIdJ\x04\b\x01\x10\x02R\x13solution_identifier\"\xed\x01\n" +
+	"\ttarget_id\x18\x05 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\btargetIdJ\x04\b\x01\x10\x02R\x13solution_identifier\"\x99\x02\n" +
 	"\x1fListSolutionEntitlementsRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12'\n" +
 	"\n" +
@@ -347,7 +362,9 @@ const file_saas_accounts_v1_solution_entitlements_proto_rawDesc = "" +
 	"\xbaH\a\x1a\x05\x18\xf4\x03(\x00R\bpageSize\x12\x1d\n" +
 	"\n" +
 	"page_token\x18\x04 \x01(\tR\tpageToken\x128\n" +
-	"\x18include_composed_modules\x18\x05 \x01(\bR\x16includeComposedModules\"\xee\x01\n" +
+	"\x18include_composed_modules\x18\x05 \x01(\bR\x16includeComposedModules\x12*\n" +
+	"\n" +
+	"session_id\x18\x06 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\tsessionId\"\xee\x01\n" +
 	" ListSolutionEntitlementsResponse\x12I\n" +
 	"\fentitlements\x18\x01 \x03(\v2%.saas.accounts.v1.SolutionEntitlementR\fentitlements\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12W\n" +

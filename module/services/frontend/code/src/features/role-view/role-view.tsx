@@ -174,7 +174,8 @@ export function RoleViewSelector() {
  * than the person holds. A narrowed session that ENDED without the person
  * asking is said before anything else, by name, with the one way on: an
  * expired one is left for them to leave (their own session is not installed
- * behind their back), a reloaded one is acknowledged. Otherwise a cast is the
+ * behind their back), one that had lapsed by a reload is acknowledged (a live
+ * one survives the reload: the tab keeps it). Otherwise a cast is the
  * stronger statement and is said first: who
  * the person is, which team they act as, and how to stop. The team is named by
  * the host's roster when the cast may read it, and by its id when it may not.
@@ -202,7 +203,7 @@ export function RoleViewBanner() {
 				<span className="font-bold">Your session acting as {narrowedSessionEnd.as} has ended</span> &mdash;{" "}
 				{expired
 					? "its credential expired. Nothing more is done as them, and you are not back in your own session until you choose to be."
-					: "reloading the page ended it. You are back in your own session, with all of your own access."}
+					: "its credential had lapsed when the page reloaded. You are back in your own session, with all of your own access."}
 				<button
 					type="button"
 					className="ml-3 rounded bg-red-900 px-3 py-1 text-red-50"

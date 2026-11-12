@@ -90,6 +90,17 @@ message ListSolutionEntitlementsRequest {
   // only: the navigation and the solution proxy decide on entitlements alone,
   // and do not pay for a read they never use.
   bool include_composed_modules = 5;
+  // The session the subject asked from, when the caller verified one. The
+  // role view that session was opened with narrows the answer exactly as it
+  // narrows every other decision the authority makes for it: a session cast
+  // onto a team lists what the team holds and nothing of the person's own.
+  // Without it the subject is answered as themselves, which for a cast is the
+  // one thing the cast exists not to be. Empty for a caller that
+  // authenticated no session.
+  string session_id = 6 [
+    (buf.validate.field).string.uuid = true,
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE
+  ];
 }
 
 message ListSolutionEntitlementsResponse {

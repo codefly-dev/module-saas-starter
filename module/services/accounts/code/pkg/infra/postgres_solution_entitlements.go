@@ -31,7 +31,7 @@ import (
 // listing itself returns as node_id, for the reason CanReadScopeNode compares
 // there: it keeps membership and listing reading one set by construction.
 func (s *PostgresStore) ListSolutionEntitlements(
-	ctx context.Context, orgID, subjectID string, pageToken string, limit int,
+	ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, pageToken string, limit int,
 ) ([]*gen.SolutionEntitlement, error) {
 	w := wool.Get(ctx).In("ListSolutionEntitlements", wool.Field("org_id", orgID))
 	executor := s.getQueryExecutor(ctx)
@@ -56,8 +56,11 @@ func (s *PostgresStore) ListSolutionEntitlements(
 	// solution's authority root is the one node per install of kind `solution`, so
 	// asking the union for accessible solution nodes is the question, and it needs
 	// no array of ids assembled by a prior query.
-	admitted, err := accessibleScopesQuery(
-		gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "node_id", "n.kind = $5")
+	//
+	// The subject kind is the caller's: a principal reaches through their own
+	// grants and their teams', a team through its own alone — what a session
+	// cast onto it is answered as.
+	admitted, err := accessibleScopesQuery(subjectKind, "node_id", "n.kind = $5")
 	if err != nil {
 		return nil, err
 	}

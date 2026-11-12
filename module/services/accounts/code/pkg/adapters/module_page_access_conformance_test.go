@@ -10,6 +10,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/solutionhost"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 
@@ -137,6 +138,37 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		require.NoError(t, err)
 		require.Empty(t, again.AccessProblems)
 		require.Len(t, teamsNamed(t, h, page+"-viewer"), 1, "setting it up again creates nothing")
+	})
+
+	// A session cast onto a team (OpenTeamCast) is listed what the team holds
+	// and nothing of its person's own: the listing is read under the session's
+	// view, as every decision for that session is. Red before the session
+	// reached the listing: a cast was answered as its person, so its dashboard
+	// listed every page the administrator held and none of the team's.
+	t.Run("a session cast onto a team lists the team's pages, not its person's", func(t *testing.T) {
+		inst := composed()
+		installer := teamsNamed(t, h, page+"-installer")
+		require.Len(t, installer, 1)
+		require.Empty(t, teamMembers(t, h, installer[0]), "the administrator is not in the installer team")
+		own := entitled(conformanceAlex)
+		require.Contains(t, own, inst.ID, "as themselves, through the viewer team they joined")
+		require.Greater(t, len(own), 1, "and more of their own, which a cast must not list")
+		parent, cast := uuid.NewString(), uuid.NewString()
+		_, err := h.core.OpenTeamCast(h.ctx, authority.Person{ID: conformanceAlex, Organization: fixtureOrganization, SessionID: parent},
+			authority.TeamCastRequest{Organization: fixtureOrganization, Team: installer[0], SessionID: cast})
+		require.NoError(t, err, "an administrator casts onto a team they could grant")
+		out, err := h.svc.ListSolutionEntitlements(h.ctx, &gen.ListSolutionEntitlementsRequest{OrgId: fixtureOrganization, SubjectId: conformanceAlex, SessionId: cast})
+		require.NoError(t, err)
+		var listed []string
+		for _, e := range out.GetEntitlements() {
+			listed = append(listed, e.GetInstallationId())
+		}
+		require.Equal(t, []string{inst.ID}, listed, "the page the installer team holds, and nothing the person holds as themselves")
+		asked, err := h.svc.ListSolutionEntitlements(h.ctx, &gen.ListSolutionEntitlementsRequest{OrgId: fixtureOrganization, SubjectId: conformanceAlex, SessionId: parent})
+		require.NoError(t, err)
+		require.Len(t, asked.GetEntitlements(), len(own), "the session the cast was opened from lists the person's own, as before")
+		_, err = h.svc.ListSolutionEntitlements(h.ctx, &gen.ListSolutionEntitlementsRequest{OrgId: fixtureOrganization, SubjectId: conformanceAlice, SessionId: cast})
+		require.Error(t, err, "another person asking under the cast is refused, never answered as the team")
 	})
 
 	t.Run("Admin → Solutions lists solutions; module pages appear only as set-up entries", func(t *testing.T) {

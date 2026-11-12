@@ -21,6 +21,7 @@ import { safePostLoginDestination } from "@/lib/public-handoff";
 import type { OrgRole, PlatformRole } from "./auth-session";
 import {
 	clearRefreshToken,
+	decodeJWTPayload,
 	detectImpersonation,
 	extractSessionContext,
 	type ImpersonationInfo,
@@ -365,9 +366,10 @@ function base64urlEncode(bytes: Uint8Array): string {
  *   - expired: the narrowed credential stopped being accepted. Nothing more is
  *     done in that session, and the person's own session is NOT installed until
  *     they ask for it (exitRoleView).
- *   - reloaded: the narrowed bearer lived only in memory; a reload or a new tab
- *     boots from the refresh cookie, which is the person's own. They are back
- *     in their own session and are told so.
+ *   - reloaded: the narrowed bearer this tab kept had lapsed by the time the
+ *     page booted again, so there was nothing left to act as. The boot falls
+ *     back to the refresh cookie, which is the person's own: they are back in
+ *     their own session and are told so.
  * `as` is what the session acted as, in the words it was opened with.
  */
 export interface NarrowedSessionEnd {
@@ -375,9 +377,58 @@ export interface NarrowedSessionEnd {
 	as: string;
 }
 
-// The narrowed session this tab had open, kept across a reload so the boot can
-// say that the reload ended it. The bearer itself is never stored.
+/**
+ * The narrowed session this tab has open, kept PER TAB (sessionStorage) so a
+ * reload or a hard navigation keeps the person acting as what they chose,
+ * until they stop (exitRoleView) or the credential lapses. A narrowed session
+ * is access-only by design — it has no refresh half — so this bearer is the
+ * only thing that can carry it across a boot: the refresh cookie would mint
+ * the person's own session, silently widening them back to everything they
+ * hold, which is the one thing a cast exists not to do. The bearer is kept
+ * for the tab's life only, never in localStorage, never shared across tabs.
+ */
 const NARROWED_SESSION_KEY = "codefly_narrowed_session";
+
+interface KeptNarrowedSession {
+	/** The narrowed bearer; absent once it lapsed, leaving only what it acted as, for the notice. */
+	bearer?: string;
+	as: string;
+}
+
+function keepNarrowedSession(kept: KeptNarrowedSession) {
+	sessionStorage.setItem(NARROWED_SESSION_KEY, JSON.stringify(kept));
+}
+
+function forgetNarrowedSession() {
+	sessionStorage.removeItem(NARROWED_SESSION_KEY);
+}
+
+/**
+ * What this tab kept, split by whether its bearer is still within its own
+ * `exp`: a live one is installed again by the boot, a lapsed one (or one kept
+ * with no bearer at all) is only named, in the notice that the reload ended
+ * it. The clock check is a courtesy to avoid booting into a credential the
+ * host will refuse anyway; the host still decides, and a refused bearer ends
+ * the session the way any expiry does (the token store reports it).
+ */
+export function readKeptNarrowedSession(): { live?: { bearer: string; as: string }; lapsed?: string } {
+	const raw = sessionStorage.getItem(NARROWED_SESSION_KEY);
+	if (!raw) return {};
+	let kept: KeptNarrowedSession;
+	try {
+		const parsed: unknown = JSON.parse(raw);
+		kept =
+			typeof parsed === "object" && parsed !== null && typeof (parsed as KeptNarrowedSession).as === "string"
+				? (parsed as KeptNarrowedSession)
+				: { as: raw };
+	} catch {
+		kept = { as: raw };
+	}
+	if (!kept.bearer) return { lapsed: kept.as };
+	const exp = decodeJWTPayload(kept.bearer).exp;
+	if (typeof exp !== "number" || exp * 1000 <= Date.now()) return { lapsed: kept.as };
+	return { live: { bearer: kept.bearer, as: kept.as } };
+}
 
 interface AuthState {
 	user: { id: string; email?: string; name?: string } | null;
@@ -915,7 +966,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 	const logout = useCallback(async (): Promise<SignOutResult> => {
 		narrowedAsRef.current = "";
-		sessionStorage.removeItem(NARROWED_SESSION_KEY);
+		forgetNarrowedSession();
 		// Always hit logout so the server clears the httpOnly refresh cookie, even
 		// if we have no access token in memory. The refresh token is read from the
 		// cookie server-side (no body token needed).
@@ -981,7 +1032,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			markNarrowed(accessToken);
 			applyAccessToken(accessToken);
 			narrowedAsRef.current = as;
-			sessionStorage.setItem(NARROWED_SESSION_KEY, as);
+			keepNarrowedSession({ bearer: accessToken, as });
 		},
 		[applyAccessToken],
 	);
@@ -992,7 +1043,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			throw new Error("Could not restore your session — please try again.");
 		}
 		narrowedAsRef.current = "";
-		sessionStorage.removeItem(NARROWED_SESSION_KEY);
+		forgetNarrowedSession();
 		setTokens(outcome.accessToken, outcome.refreshToken);
 	}, [setTokens]);
 
@@ -1112,11 +1163,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		// only suppresses this effect's state writes after unmount — it does not
 		// cancel the shared exchange, which a still-mounted caller may be awaiting.
 		let cancelled = false;
-		// A narrowed session open before this boot ended with it: its bearer was
-		// never stored. The person is told, by name, rather than finding the bar
-		// gone and themselves acting with all of their own access.
-		const interrupted = sessionStorage.getItem(NARROWED_SESSION_KEY);
-		sessionStorage.removeItem(NARROWED_SESSION_KEY);
+		// The narrowed session this tab has open, if any, comes first: while its
+		// bearer is live it is what the person chose to act as, and the refresh
+		// cookie — their own session — is NOT exchanged, which would widen them
+		// back to everything they hold without their asking. Stopping (exitRoleView)
+		// is the way back, as it was before the reload.
+		const kept = readKeptNarrowedSession();
+		if (kept.live) {
+			const { bearer, as } = kept.live;
+			// Marked before it is installed, as enterRoleView does, so no request
+			// can be sent with it while the store does not yet know it is narrowed.
+			markNarrowed(bearer);
+			void Promise.resolve().then(() => {
+				if (cancelled) return;
+				narrowedAsRef.current = as;
+				applyAccessToken(bearer);
+			});
+			return () => {
+				cancelled = true;
+			};
+		}
+		// One that lapsed ended with this boot: the person is told, by name,
+		// rather than finding the bar gone and themselves acting with all of their
+		// own access.
+		const interrupted = kept.lapsed ?? null;
+		forgetNarrowedSession();
 		void exchangeRefreshCookie().then((outcome) => {
 			if (cancelled) return;
 			if (outcome.status === "ok") {
@@ -1136,7 +1207,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		return () => {
 			cancelled = true;
 		};
-	}, [setTokens]);
+	}, [setTokens, applyAccessToken]);
 
 	useEffect(() => {
 		// Mid-session recovery: the Connect transport (and the solutions'
@@ -1154,6 +1225,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			// nothing about the session they are in now.
 			if (bearer !== getConnectToken()) return;
 			const as = narrowedAsRef.current;
+			// A lapsed bearer is not booted into again; what it acted as is kept so
+			// a reload still says, by name, that it ended.
+			keepNarrowedSession({ as });
 			setState((s) => (s.narrowedSessionEnd ? s : { ...s, narrowedSessionEnd: { reason: "expired", as } }));
 		});
 		setRefreshHandler(async () => {

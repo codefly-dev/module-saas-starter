@@ -595,3 +595,27 @@ func TestGatewaySolutionProxy_TheResolvedBindingIsTheOneReachedWhenTheAliasMoves
 	require.Nil(t, replacement.lastHeaders,
 		"and never the binding that took the alias after this request had resolved it")
 }
+
+// The proxy's admission is the same question as the listing, asked under the
+// same session: a cast reaching a page its team holds is admitted, and the
+// person's own pages are refused to it, because the authority decides both
+// from the session's view. Red before: the admission carried no session, so
+// /s/<page> refused a cast the page's team holds ("not admitted").
+func TestGatewaySolutionProxy_AdmissionIsDecidedUnderTheVerifiedSession(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	registerSolutionUpstream(t, gw, "audit")
+	authority := &entitledTo{ids: []string{fakeSolutionTarget("audit")}}
+	gw.solutionEntitlements = authority
+
+	token := signValidToken(t, priv)
+	req := httptest.NewRequest(http.MethodGet, "/solutions/audit/v1/audit/logs", nil)
+	req.Header.Set("authorization", "Bearer "+token)
+	req.Header.Set("X-Session-Id", "33333333-3333-3333-3333-333333333333")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Len(t, authority.calls, 1)
+	require.Equal(t, sessionOf(t, token), authority.calls[0].GetSessionId(),
+		"admission is decided under the session the token carries, not one the caller wrote")
+}

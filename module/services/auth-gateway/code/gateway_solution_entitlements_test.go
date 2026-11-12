@@ -364,3 +364,37 @@ func TestGatewaySolutionEntitlements_ComposedModulesOnlyWhenAsked(t *testing.T) 
 	require.Equal(t, []solutionEntitlementEntry{{TargetID: fakeSolutionTarget("people"), Healthy: true, InstallationID: "install-people"}}, body.Usable,
 		"a composed module is never listed as an entitlement")
 }
+
+// sessionOf is the `sid` a token carries, read without verifying: the test
+// signed it and only needs to know which session ext_authz will stamp.
+func sessionOf(t *testing.T, token string) string {
+	t.Helper()
+	var claims accessClaims
+	_, _, err := jwt.NewParser().ParseUnverified(token, &claims)
+	require.NoError(t, err)
+	require.NotEmpty(t, claims.SessionID)
+	return claims.SessionID
+}
+
+// The authority narrows an answer by the session it is asked from: a session
+// cast onto a team is the team's pages and none of the person's own, and only
+// the authority knows which sessions are cast. So the listing is asked under the
+// session ext_authz verified — the token's `sid`, never a value the caller
+// wrote. Red before: the request carried no session, so a cast was answered as
+// its person, and a cast's dashboard listed nothing of the team's.
+func TestGatewaySolutionEntitlements_AsksUnderTheVerifiedSession(t *testing.T) {
+	gw, authority, priv := entitlementGateway(t)
+	token := signValidToken(t, priv)
+	req := entitlementRequest("test-internal-token", token)
+	req.Header.Set("X-Session-Id", "33333333-3333-3333-3333-333333333333")
+
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Len(t, authority.calls, 1)
+	require.Equal(t, sessionOf(t, token), authority.calls[0].GetSessionId(),
+		"the authority is asked under the session the token carries")
+	require.NotEqual(t, "33333333-3333-3333-3333-333333333333", authority.calls[0].GetSessionId(),
+		"a caller-written session header is stripped before ext_authz stamps its own")
+}

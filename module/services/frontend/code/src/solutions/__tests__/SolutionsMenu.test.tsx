@@ -5,11 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // with its own token and fetch stubs.
 const tokenState = vi.hoisted(() => ({
 	token: null as string | null,
+	narrowed: new Set<string>(),
 	fetch: vi.fn<(input: string) => Promise<Response>>(),
 }));
 
 vi.mock("@/lib/connect/token-store", () => ({
 	getToken: () => tokenState.token,
+	isNarrowed: (token: string | null) => token !== null && tokenState.narrowed.has(token),
 	authedFetch: (input: string) => tokenState.fetch(input),
 	subscribeToken: (listener: () => void) => {
 		window.addEventListener("codefly:auth-changed", listener);
@@ -57,6 +59,7 @@ describe("SolutionsMenu ownership (#949)", () => {
 	beforeEach(() => {
 		vi.resetModules();
 		tokenState.token = token(ALICE);
+		tokenState.narrowed.clear();
 		tokenState.fetch.mockReset();
 	});
 
@@ -260,6 +263,37 @@ describe("SolutionsMenu ownership (#949)", () => {
 		await settle();
 		expect(screen.queryByText("AUDIT")).not.toBeNull();
 		expect(tokenState.fetch).toHaveBeenCalledTimes(1);
+	});
+
+	// A cast is the team's pages and none of the person's own: the server
+	// narrows on the session, so the menu is the cast's list, read at once,
+	// never the person's list kept until the next poll. Red before: the cast
+	// bearer carried the same subject and organization, so the person's list
+	// stayed on screen for up to one poll after "Act as this team".
+	it("re-reads the list at once for a session cast onto a team, and again when the person stops", async () => {
+		tokenState.fetch.mockResolvedValueOnce(listing("audit"));
+		await mountMenu();
+		await settle();
+		expect(screen.queryByText("AUDIT")).not.toBeNull();
+
+		const cast = token({ ...ALICE, jti: "cast" });
+		tokenState.narrowed.add(cast);
+		tokenState.fetch.mockResolvedValueOnce(listing("directory"));
+		await act(async () => {
+			tokenState.token = cast;
+			window.dispatchEvent(new Event("codefly:auth-changed"));
+		});
+		await settle();
+		expect(screen.queryByText("AUDIT")).toBeNull();
+		expect(screen.queryByText("DIRECTORY")).not.toBeNull();
+		expect(tokenState.fetch).toHaveBeenCalledTimes(2);
+
+		tokenState.fetch.mockResolvedValueOnce(listing("audit"));
+		await act(async () => signIn({ ...ALICE, jti: "own-again" }));
+		await settle();
+		expect(screen.queryByText("DIRECTORY")).toBeNull();
+		expect(screen.queryByText("AUDIT")).not.toBeNull();
+		expect(tokenState.fetch).toHaveBeenCalledTimes(3);
 	});
 	it("publishes a generation change even when navigation and availability are unchanged", async () => {
 		vi.useFakeTimers();

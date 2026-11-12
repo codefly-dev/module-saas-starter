@@ -237,6 +237,7 @@ func (g *Gateway) handleSolutionEntitlements(w http.ResponseWriter, r *http.Requ
 	// the request as it arrived.
 	org := r.Header.Get("X-Org-Id")
 	viewer := effectiveViewer(r)
+	session := verifiedSession(r)
 	if org == "" || viewer == "" {
 		// Authenticated, but carrying no organization: a session that has not
 		// selected one cannot have an org-scoped entitlement set. That is a
@@ -261,7 +262,7 @@ func (g *Gateway) handleSolutionEntitlements(w http.ResponseWriter, r *http.Requ
 		RateLimitClass: edgeRateLimitClassStandardRead,
 	}
 	answer := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		entries, composed, err := g.collectSolutionEntitlements(r.Context(), org, viewer, r.URL.Query().Get(composedModulesQuery) == "true")
+		entries, composed, err := g.collectSolutionEntitlements(r.Context(), org, viewer, session, r.URL.Query().Get(composedModulesQuery) == "true")
 		if err != nil {
 			// The authority could not answer. 503, never an empty list: the
 			// frontend distinguishes the two and holds its last projection rather
@@ -279,6 +280,17 @@ func (g *Gateway) handleSolutionEntitlements(w http.ResponseWriter, r *http.Requ
 	}
 	g.rateLimiter.Middleware(limiterFailureModeFor(entry), rateLimitClassFor(entry),
 		entry.AuthenticationFactorAttempt, answer).ServeHTTP(w, r)
+}
+
+// verifiedSession is the session the viewer asked from, as ext_authz stamped it
+// from the token's `sid`. It travels with the viewer so the authority answers
+// under the role view that session was opened with: a session cast onto a team
+// (SessionService OpenTeamCast) is the team's pages and none of the person's
+// own, which the core decides per session and this gateway cannot. Without it
+// the authority answered a cast as the person — every page they hold, and
+// not the team's — the one thing a cast exists not to be.
+func verifiedSession(r *http.Request) string {
+	return r.Header.Get("X-Session-Id")
 }
 
 // effectiveViewer is whose entitlements the menu is for: the impersonated user
@@ -302,8 +314,9 @@ func effectiveViewer(r *http.Request) string {
 // partial answer is not returned as a short list: the caller cannot tell it from
 // a genuinely smaller set, and would narrow a menu on it. With composed, it also
 // reads the organization's composed modules, which accounts answers on the
-// first page.
-func (g *Gateway) collectSolutionEntitlements(ctx context.Context, org, viewer string, composed bool) ([]solutionEntitlementEntry, []composedModuleEntry, error) {
+// first page. session is the viewer's verified session (verifiedSession), under
+// whose view the authority answers.
+func (g *Gateway) collectSolutionEntitlements(ctx context.Context, org, viewer, session string, composed bool) ([]solutionEntitlementEntry, []composedModuleEntry, error) {
 	entries := make([]solutionEntitlementEntry, 0)
 	var modules []composedModuleEntry
 	token := ""
@@ -311,6 +324,7 @@ func (g *Gateway) collectSolutionEntitlements(ctx context.Context, org, viewer s
 		resp, err := g.solutionEntitlements.List(ctx, &accountsv1.ListSolutionEntitlementsRequest{
 			OrgId:                  org,
 			SubjectId:              viewer,
+			SessionId:              session,
 			PageSize:               solutionEntitlementPageSize,
 			PageToken:              token,
 			IncludeComposedModules: composed,
@@ -393,6 +407,10 @@ const (
 // It also returns WHICH installation admitted the viewer, empty on any answer
 // other than admitted.
 //
+// session is the viewer's verified session (verifiedSession): the admission is
+// decided under its role view, as the listing is, so a cast is admitted to its
+// team's pages and refused the person's own.
+//
 // It comes from the entitlement that matched, on the same answer that decided
 // admission — never from a second read. The installation is the consent an
 // organization gave this one target: it is what a confined mint is held to
@@ -400,7 +418,7 @@ const (
 // audiences and standing grants), and asking for it again could resolve a
 // different installation from the one that admitted the request.
 func (g *Gateway) admitViewerSolutionInstallation(
-	ctx context.Context, org, viewer string, routing *solutionRouting,
+	ctx context.Context, org, viewer, session string, routing *solutionRouting,
 ) (viewerSolutionAdmission, string) {
 	targetID := routing.GetTargetID()
 	if targetID == "" {
@@ -422,6 +440,7 @@ func (g *Gateway) admitViewerSolutionInstallation(
 		resp, err := g.solutionEntitlements.List(ctx, &accountsv1.ListSolutionEntitlementsRequest{
 			OrgId:     org,
 			SubjectId: viewer,
+			SessionId: session,
 			PageSize:  solutionEntitlementPageSize,
 			PageToken: token,
 		})

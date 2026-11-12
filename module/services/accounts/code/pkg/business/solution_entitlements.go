@@ -11,6 +11,8 @@ import (
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/core/wool"
 )
 
@@ -24,7 +26,56 @@ type SolutionEntitlementStore interface {
 	// authority-root scope node subjectID may act on, ordered on the keyset the
 	// cursor advances. limit is the wanted page size PLUS one: the extra row is how
 	// the caller detects a further page, as in ListAccessibleScopes.
-	ListSolutionEntitlements(ctx context.Context, orgID, subjectID string, pageToken string, limit int) ([]*gen.SolutionEntitlement, error)
+	//
+	// subjectKind says what subjectID is: a principal, whose own grants and
+	// teams the union resolves, or a team, whose grants alone it reads — the
+	// subject a session cast onto that team is answered as.
+	ListSolutionEntitlements(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, pageToken string, limit int) ([]*gen.SolutionEntitlement, error)
+}
+
+// entitlementViewer is who one entitlement listing is read for. The core half
+// reads Person under the role view of the session they asked from, as every
+// decision for that session is (authority personAs: a cast acts as its team
+// and nothing else). This host's own grant half cannot read a view, so it is
+// told the subject the view amounts to: the team a cast acts as, else the
+// person — the same narrowing, at the one seam that cannot apply it itself.
+type entitlementViewer struct {
+	Person      authority.Person
+	Subject     string
+	SubjectKind gen.SubjectKind
+}
+
+// entitlementViewerOf resolves subject, asking from session, to the viewer both
+// halves answer. No session answers the person as themselves. A session
+// another person opened is refused rather than answered as the subject: the
+// core refuses it too, and answering it would widen past the view it fixes.
+func (s *Service) entitlementViewerOf(ctx context.Context, org, subject, session string) (entitlementViewer, error) {
+	v := entitlementViewer{
+		Person:      authority.Person{ID: subject, Organization: org, SessionID: session},
+		Subject:     subject,
+		SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
+	}
+	if session == "" {
+		return v, nil
+	}
+	core, err := s.AuthorityCore()
+	if err != nil {
+		return v, err
+	}
+	view, err := core.RoleViewOf(ctx, session)
+	if errors.Is(err, domain.ErrNotFound) {
+		return v, nil
+	}
+	if err != nil {
+		return v, err
+	}
+	if view.Person != subject || view.Organization != org {
+		return v, status.Errorf(codes.PermissionDenied, "session %s holds another person's role view", session)
+	}
+	if view.Team != "" {
+		v.Subject, v.SubjectKind = view.Team, gen.SubjectKind_SUBJECT_KIND_TEAM
+	}
+	return v, nil
 }
 
 func (s *Service) solutionEntitlementStore() SolutionEntitlementStore {
@@ -56,7 +107,11 @@ func (s *Service) ListSolutionEntitlements(ctx context.Context, req *gen.ListSol
 	defer releaseAuthority()
 
 	w := wool.Get(ctx).In("ListSolutionEntitlements",
-		wool.Field("org_id", req.GetOrgId()), wool.Field("subject_id", req.GetSubjectId()))
+		wool.Field("org_id", req.GetOrgId()), wool.Field("subject_id", req.GetSubjectId()), wool.Field("session_id", req.GetSessionId()))
+	viewer, err := s.entitlementViewerOf(ctx, req.GetOrgId(), req.GetSubjectId(), req.GetSessionId())
+	if err != nil {
+		return nil, w.Wrapf(err, "cannot resolve whom the entitlements are read for")
+	}
 	pageSize := int(req.GetPageSize())
 	if pageSize <= 0 {
 		pageSize = listSolutionEntitlementsDefaultPageSize
@@ -76,7 +131,7 @@ func (s *Service) ListSolutionEntitlements(ctx context.Context, req *gen.ListSol
 		states := map[string]*InstallationAuthorityState{}
 		if err := s.store.WithOrgTx(ctx, req.GetOrgId(), func(ctx context.Context) error {
 			var err error
-			rows, err = s.solutionEntitlementStore().ListSolutionEntitlements(ctx, req.GetOrgId(), req.GetSubjectId(), cursor, pageSize+1)
+			rows, err = s.solutionEntitlementStore().ListSolutionEntitlements(ctx, req.GetOrgId(), viewer.Subject, viewer.SubjectKind, cursor, pageSize+1)
 			if err != nil {
 				return err
 			}
@@ -109,7 +164,7 @@ func (s *Service) ListSolutionEntitlements(ctx context.Context, req *gen.ListSol
 		cursor = rows[len(rows)-1].GetInstallationId()
 	}
 
-	canonical, err := s.canonicalSolutionEntitlements(ctx, snapshot, req.GetOrgId(), req.GetSubjectId())
+	canonical, err := s.canonicalSolutionEntitlements(ctx, snapshot, viewer.Person)
 	if err != nil {
 		return nil, w.Wrapf(err, "cannot read canonical solution entitlements")
 	}

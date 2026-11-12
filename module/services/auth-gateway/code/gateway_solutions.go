@@ -351,7 +351,7 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// free. The entitlement LISTING already wrapped its work this way; the proxy
 	// did not.
 	g.rateLimitThenServe(w, r, entry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		admission, installation := g.admitViewerSolutionInstallation(r.Context(), org, viewer, routing)
+		admission, installation := g.admitViewerSolutionInstallation(r.Context(), org, viewer, verifiedSession(r), routing)
 		switch admission {
 		case viewerSolutionNotEntitled:
 			// A verdict on this organization's admission, named so a client can
@@ -609,7 +609,7 @@ func (g *Gateway) confineResourceMintToItsConsumer(w http.ResponseWriter, r *htt
 	}
 	org := r.Header.Get("X-Org-Id")
 	viewer := r.Header.Get("X-User-Id")
-	admission, installation := g.admitViewerSolutionInstallation(r.Context(), org, viewer, routing)
+	admission, installation := g.admitViewerSolutionInstallation(r.Context(), org, viewer, verifiedSession(r), routing)
 	switch admission {
 	case viewerSolutionAdmitted:
 		if installation == "" {

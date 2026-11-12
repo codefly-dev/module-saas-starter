@@ -6,6 +6,7 @@ import { decodeJWTPayload } from "@/lib/auth-session";
 import {
 	authedFetch,
 	getToken,
+	isNarrowed,
 	subscribeToken,
 } from "@/lib/connect/token-store";
 import {
@@ -52,7 +53,11 @@ let snapshotViewer: string | null = null;
 /**
  * The viewer the current token speaks for: the effective subject (the
  * impersonated user during an impersonation, as the server narrows on) in its
- * organization, or null when signed out.
+ * organization, or null when signed out — and, under a narrowed session (a role
+ * view or a team cast), that session itself: the server answers a cast the
+ * team's pages and none of the person's own, so the list is the cast's, not the
+ * person's, and entering or leaving one is a change of viewer. A routine
+ * refresh of the person's own session is not narrowed and changes nothing.
  *
  * This reads the token's claims without verifying them, which is deliberate and
  * safe HERE: the answer only decides whether to throw away a client-side copy of a
@@ -71,7 +76,8 @@ function currentViewer(): string | null {
 				? claims.sub
 				: "";
 	const org = typeof claims.org === "string" ? claims.org : "";
-	return `${subject}\u0000${org}`;
+	const narrowed = isNarrowed(token) ? token : "";
+	return `${subject}\u0000${org}\u0000${narrowed}`;
 }
 
 function publish(next: SolutionNav[], loaded = true): void {
