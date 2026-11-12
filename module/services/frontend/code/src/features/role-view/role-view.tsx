@@ -37,14 +37,14 @@ const whole: Narrowed = { view: [], castTeamId: "" };
  * session says so.
  */
 export function useNarrowedSession(): Narrowed {
-	const { accessToken, isAuthenticated } = useAuth();
-	const [narrowed, setNarrowed] = useState(whole);
+	const { accessToken, isAuthenticated, castTeamId } = useAuth();
+	const [view, setView] = useState<RoleViewEntry[]>([]);
 	useEffect(() => {
 		if (!isAuthenticated || !accessToken) return;
 		let current = true;
 		sessions
 			.current({})
-			.then((s) => current && setNarrowed({ view: s.roleView, castTeamId: s.castTeamId }))
+			.then((s) => current && setView(s.roleView))
 			// A failed read says nothing about what the session is: an expired
 			// cast's Current fails, and the bar must still say what it was.
 			.catch(() => undefined);
@@ -53,7 +53,7 @@ export function useNarrowedSession(): Narrowed {
 		};
 	}, [accessToken, isAuthenticated]);
 	// Signed out, there is nothing to show; derived here, not set from the effect.
-	return isAuthenticated && accessToken ? narrowed : whole;
+	return isAuthenticated && accessToken ? { view, castTeamId } : whole;
 }
 
 export function useRoleView(): RoleViewEntry[] {

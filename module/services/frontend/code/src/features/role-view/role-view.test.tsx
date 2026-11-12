@@ -18,7 +18,11 @@ const auth = vi.hoisted(() => ({
 	narrowedSessionEnd: null as { reason: "expired" | "reloaded"; as: string } | null,
 	dismissNarrowedSessionEnd: vi.fn(),
 }));
-vi.mock("@/lib/auth", () => ({ useAuth: () => auth }));
+// The cast is the provider's reading of the host's Session.cast_team_id; the
+// bar reads it from the same place the menus do.
+vi.mock("@/lib/auth", () => ({
+	useAuth: () => ({ ...auth, castTeamId: (current.castTeamId as string) ?? "" }),
+}));
 
 const session = (method: string) => `http://localhost:3000/host.session.v1.SessionService/${method}`;
 let current: Record<string, unknown> = {};

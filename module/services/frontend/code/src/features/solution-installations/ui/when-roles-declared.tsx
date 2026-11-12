@@ -1,50 +1,42 @@
 "use client";
 
-import { Code, ConnectError, createClient } from "@connectrpc/connect";
-import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { OfferService } from "@/gen/host/installation/v1/installation_pb";
 import { useAuth } from "@/lib/auth";
-import { apiTransport } from "@/lib/connect/transport";
-
-const offers = createClient(OfferService, apiTransport);
+import { isModulePage } from "../model/installations";
+import { useAvailableSolutions } from "../service/queries";
 
 /**
- * Whether a target declares installation roles, with the read's own failure,
- * from the authority's review of the one offer a page is about: a solution
- * always does; a module does only when it declares a page and roles, which
- * the review states (`rolesDeclared`), and the authority's NotFound (a module
- * that declares no roles) means it does not. Any other failure is not an
- * answer: `declared` stays undefined and `error` says why, so a transient
- * refusal never passes a module page off as one without roles. A listing of
- * several targets never asks this per module: it reads the authority's
- * offers once (`useOfferedTargets`).
+ * Whether a target declares installation roles, with the read's own failure.
+ * A solution always does. A module does only when the host's catalogue row
+ * for it carries roles (`isModulePage`), the same read the Solutions page
+ * classifies its module pages by. The offer review is not asked here: for a
+ * module it answers NotFound ("not a composed solution; a module is
+ * installed by composition"), a refusal that says nothing about roles. A
+ * failed catalogue read is no answer: `declared` stays undefined and `error`
+ * says why, so a transient failure never passes a module page off as one
+ * without roles.
  */
 export function useRolesDeclaredReview(
 	target: string,
 	kind?: string,
 ): { declared: boolean | undefined; error: unknown; retry: () => void } {
 	const { organizationId = "" } = useAuth();
-	const review = useQuery({
-		queryKey: ["solution-declares-roles", organizationId, target],
-		queryFn: async () =>
-			(await offers.reviewOffer({ organizationId, target })).rolesDeclared,
-		retry: false,
-		refetchOnWindowFocus: false,
-		enabled: kind === "module" && organizationId !== "",
-	});
-	const retry = () => void review.refetch();
+	const available = useAvailableSolutions(
+		kind === "module" ? organizationId : "",
+	);
+	const retry = () => void available.refetch();
 	if (kind !== "module")
 		return { declared: kind === "solution", error: undefined, retry };
-	if (review.isError) {
-		const declaresNone = ConnectError.from(review.error).code === Code.NotFound;
-		return {
-			declared: declaresNone ? false : undefined,
-			error: declaresNone ? undefined : review.error,
-			retry,
-		};
-	}
-	return { declared: review.data, error: undefined, retry };
+	if (available.isError)
+		return { declared: undefined, error: available.error, retry };
+	if (!available.data) return { declared: undefined, error: undefined, retry };
+	return {
+		declared: available.data.some(
+			(row) => row.routeAlias === target && isModulePage(row),
+		),
+		error: undefined,
+		retry,
+	};
 }
 
 /**

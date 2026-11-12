@@ -1,19 +1,30 @@
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError } from "@connectrpc/connect";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-	OfferRoleSchema,
-	ReviewedOfferSchema,
-} from "@/gen/host/installation/v1/installation_pb";
+	type AvailableSolution,
+	AvailableSolutionSchema,
+} from "@/gen/saas/accounts/v1/installations_pb";
 
-const reviewOffer = vi.hoisted(() => vi.fn());
-vi.mock("@connectrpc/connect", async (importOriginal) => ({
-	...(await importOriginal<typeof import("@connectrpc/connect")>()),
-	createClient: () => ({ reviewOffer }),
+// A module page's roles are the host's catalogue row (ListAvailableSolutions),
+// the read the Solutions page classifies module pages by. The offer review
+// answers NotFound for every module ("a module is installed by composition"),
+// so it is never asked here.
+const catalogue = vi.hoisted(() => ({
+	result: {} as {
+		data?: unknown[];
+		isError?: boolean;
+		error?: unknown;
+	},
+	asked: [] as string[],
 }));
-vi.mock("@/lib/connect/transport", () => ({ apiTransport: {} }));
+vi.mock("../service/queries", () => ({
+	useAvailableSolutions: (orgId: string) => {
+		catalogue.asked.push(orgId);
+		return { ...catalogue.result, refetch: vi.fn() };
+	},
+}));
 vi.mock("@/lib/auth", () => ({
 	useAuth: () => ({ organizationId: "example-org" }),
 }));
@@ -25,88 +36,70 @@ import {
 
 afterEach(() => {
 	cleanup();
-	reviewOffer.mockReset();
+	catalogue.result = {};
+	catalogue.asked = [];
 });
 
+const row = (alias: string, roles: string[]): AvailableSolution =>
+	create(AvailableSolutionSchema, {
+		routeAlias: alias,
+		kind: "module",
+		roles: roles.map((name) => ({ name })),
+	} as never);
+
 function renderGate(kind: "module" | "solution") {
-	const client = new QueryClient();
 	render(
-		<QueryClientProvider client={client}>
-			<WhenRolesDeclared target="example-target" kind={kind}>
-				<span>Setup</span>
-			</WhenRolesDeclared>
-		</QueryClientProvider>,
+		<WhenRolesDeclared target="example-target" kind={kind}>
+			<span>Setup</span>
+		</WhenRolesDeclared>,
 	);
 }
 
 describe("WhenRolesDeclared", () => {
 	// Every solution declares roles; nothing is asked.
-	it("shows a solution's children without asking the authority", () => {
+	it("shows a solution's children without reading the catalogue", () => {
 		renderGate("solution");
 		expect(screen.getByText("Setup")).toBeTruthy();
-		expect(reviewOffer).not.toHaveBeenCalled();
+		expect(catalogue.asked).toEqual([""]);
 	});
 
-	// A module page's offer says it declares roles.
-	it("shows a module's children once its offer says it declares roles", async () => {
-		reviewOffer.mockResolvedValue(
-			create(ReviewedOfferSchema, {
-				rolesDeclared: true,
-				roles: [
-					create(OfferRoleSchema, { name: "installer" }),
-					create(OfferRoleSchema, { name: "viewer" }),
-				],
-			}),
-		);
+	it("shows a module's children when the catalogue lists it with roles", () => {
+		catalogue.result = {
+			data: [row("other", []), row("example-target", ["installer", "viewer"])],
+		};
 		renderGate("module");
-		expect(await screen.findByText("Setup")).toBeTruthy();
-		expect(reviewOffer).toHaveBeenCalledWith({
-			organizationId: "example-org",
-			target: "example-target",
-		});
+		expect(screen.getByText("Setup")).toBeTruthy();
+		expect(catalogue.asked).toEqual(["example-org"]);
 	});
 
-	// The authority refuses the offer of a module that declares no roles.
-	it("shows nothing for a module whose offer the authority refuses", async () => {
-		reviewOffer.mockRejectedValue(
-			new ConnectError(
-				"not a composed solution or a module page declaring roles",
-				Code.NotFound,
-			),
-		);
+	it("shows nothing for a module the catalogue lists without roles", () => {
+		catalogue.result = { data: [row("example-target", [])] };
 		renderGate("module");
-		await vi.waitFor(() => expect(reviewOffer).toHaveBeenCalled());
 		expect(screen.queryByText("Setup")).toBeNull();
 	});
 
-	// Only NotFound means "declares no roles"; any other failure is no answer.
-	it.each([
-		["NotFound", Code.NotFound, "declared: false"],
-		["Unavailable", Code.Unavailable, "declared: unknown, error: try later"],
-	])(
-		"reads %s as an answer only when it is NotFound",
-		async (_name, code, expected) => {
-			reviewOffer.mockRejectedValue(new ConnectError("try later", code));
-			function Probe() {
-				const { declared, error } = useRolesDeclaredReview(
-					"example-target",
-					"module",
-				);
-				if (declared === undefined && !error) return <span>reading</span>;
-				return (
-					<span>
-						{declared === undefined
-							? `declared: unknown, error: ${ConnectError.from(error).rawMessage}`
-							: `declared: ${declared}`}
-					</span>
-				);
-			}
-			render(
-				<QueryClientProvider client={new QueryClient()}>
-					<Probe />
-				</QueryClientProvider>,
+	it("shows nothing while the catalogue is being read", () => {
+		renderGate("module");
+		expect(screen.queryByText("Setup")).toBeNull();
+	});
+
+	// A refused read is not "declares none": it stays unknown and says why.
+	it("reads a failed catalogue as no answer, with its error", () => {
+		const refusal = new ConnectError("try later", Code.Unavailable);
+		catalogue.result = { isError: true, error: refusal };
+		function Probe() {
+			const { declared, error } = useRolesDeclaredReview(
+				"example-target",
+				"module",
 			);
-			expect(await screen.findByText(expected)).toBeTruthy();
-		},
-	);
+			return (
+				<span>
+					{declared === undefined ? "unknown" : String(declared)}:
+					{ConnectError.from(error).rawMessage}
+				</span>
+			);
+		}
+		render(<Probe />);
+		expect(screen.getByText("unknown:try later")).toBeTruthy();
+	});
 });

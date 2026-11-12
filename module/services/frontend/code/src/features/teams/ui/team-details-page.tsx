@@ -82,7 +82,7 @@ function TeamDetailsForOrganization({
 }
 
 function TeamDetails({ team }: { team: Team }) {
-	const { user, orgRole, platformRole } = useAuth();
+	const { user, orgRole, platformRole, castTeamId } = useAuth();
 	const queryClient = useQueryClient();
 	const [editing, setEditing] = useState(false);
 	const members = useQuery(teamQueries.members(team.id));
@@ -92,7 +92,8 @@ function TeamDetails({ team }: { team: Team }) {
 	const membership = members.data?.members.find(
 		(member) => member.userId === user?.id,
 	);
-	const myRole = membership ? toTeamRole(membership.role) : undefined;
+	// A cast holds what its team holds, not the person's own team role.
+	const myRole = membership && !castTeamId ? toTeamRole(membership.role) : undefined;
 	const teamAdmin = myRole === "admin" || myRole === "owner";
 	const orgAdmin = orgRole === "admin" || orgRole === "owner";
 	const canManage =
@@ -144,6 +145,19 @@ function TeamDetails({ team }: { team: Team }) {
 							"",
 						)}
 					</p>
+				) : castTeamId ? (
+					<>
+						<Badge variant="outline">
+							{castTeamId === team.id
+								? "Acting as this team"
+								: "Acting as another team"}
+						</Badge>
+						<p className="text-sm text-muted-foreground">
+							This session holds what the team it acts as holds and nothing of
+							your own: not your team role, not your administrator access. The
+							host decides what it may do here and refuses the rest by name.
+						</p>
+					</>
 				) : (
 					<>
 						<Badge variant={teamAdmin ? "default" : "outline"}>

@@ -13,6 +13,7 @@ import {
 	useState,
 } from "react";
 import { completePendingClientAuthorization } from "@/features/auth/model/client-authorization";
+import { SessionService } from "@/gen/host/session/v1/session_pb";
 import { AuthService } from "@/gen/saas/accounts/v1/authentication_pb";
 import { PlatformAdminService } from "@/gen/saas/accounts/v1/platform_admin_pb";
 import { authErrorFromResponse } from "@/lib/auth-errors";
@@ -40,6 +41,7 @@ import { apiTransport } from "./connect/transport";
 
 const authClient = createClient(AuthService, apiTransport);
 const platformAdminClient = createClient(PlatformAdminService, apiTransport);
+const sessionClient = createClient(SessionService, apiTransport);
 
 // Browser REST is always same-origin. Next/gateway resolves the accounts
 // service server-side from Codefly bindings (CONV-004).
@@ -391,6 +393,13 @@ interface AuthState {
 }
 
 interface AuthContextType extends AuthState {
+	/**
+	 * The team this session is cast onto, as the host says (`Session.cast_team_id`),
+	 * empty when it is not a cast. For a cast, `platformRole` and `orgRole` are
+	 * undefined: the token still carries the person's roles, but the cast holds
+	 * none of them, and the chrome must not offer what the host would refuse.
+	 */
+	castTeamId: string;
 	// Dev / fixture path — caller supplies an already-trusted identity.
 	// Used by the dev-admin fixture and local-only tooling. In production
 	// the OAuth redirect flow (signInWith) is the only path.
@@ -1201,9 +1210,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		[beginMFA, setTokens],
 	);
 
+	// What the host says this session is cast onto, keyed by the token it was
+	// read for so a token swap never shows the previous token's answer. A
+	// failed read says nothing about the session, so it leaves the chrome as
+	// the token describes it; the host refuses by name whatever is offered.
+	const [cast, setCast] = useState({ token: "", teamId: "" });
+	useEffect(() => {
+		const token = state.accessToken;
+		if (!token) return;
+		let current = true;
+		sessionClient
+			.current({})
+			.then((s) => current && setCast({ token, teamId: s.castTeamId }))
+			.catch(() => undefined);
+		return () => {
+			current = false;
+		};
+	}, [state.accessToken]);
+	const castTeamId = cast.token === state.accessToken ? cast.teamId : "";
+
 	const value = useMemo<AuthContextType>(
 		() => ({
 			...state,
+			castTeamId,
+			...(castTeamId
+				? { platformRole: undefined, orgRole: undefined }
+				: {}),
 			login,
 			loginWithHeaderInjected,
 			signInWith,
@@ -1223,6 +1255,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		}),
 		[
 			state,
+			castTeamId,
 			login,
 			loginWithHeaderInjected,
 			signInWith,
