@@ -62,7 +62,9 @@ func configurePermissionServerKeys() error {
 	// The host interfaces are decided by the shared authority core, which signs
 	// with the same Work Context key Keys publishes. A core that is built but
 	// whose boot reconciliation did not complete serves; the delivery pass
-	// retries what did not complete.
+	// retries what did not complete. On a host whose reconcile pass derives
+	// the module registry, the reconciliation waits for that pass and is not
+	// run here (ConfigureAuthorityCore).
 	if service != nil {
 		if err := service.ConfigureAuthorityCore(context.Background(), plugin.WorkContextIssuer(), plugin.WorkContextKeyID(), plugin.Ed25519Key()); err != nil {
 			log := wool.Get(context.Background()).In("configurePermissionServerKeys")

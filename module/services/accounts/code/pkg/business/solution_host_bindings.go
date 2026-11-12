@@ -411,6 +411,12 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 		}
 	}
 
+	// The authority core's boot reconciliation, if it is still waiting: it
+	// reads module consents through the registry, which is derived now.
+	if err := r.service.completeAuthorityCoreBoot(ctx); err != nil {
+		failures = append(failures, err)
+	}
+
 	// The authority core's own upkeep, once this pass's deliveries are
 	// composed: an approved declaration whose documents have arrived is
 	// written, and a module installation needing its review is reported.
