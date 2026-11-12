@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/resources"
 	codefly "github.com/codefly-dev/sdk-go"
@@ -279,5 +280,57 @@ func TestWorkspaceGrantsKeepDistinctLookupIdentities(t *testing.T) {
 	}
 	if len(f.Roles) != 3 || len(f.Assignments) != 6 || len(f.Installations) != 3 {
 		t.Fatal("distinct keys were lost from combined fixture")
+	}
+}
+
+// A row standing for every target (`target: "*"`) seeds the same people onto
+// every role-gated target the composition delivers, naming none: it carries
+// members only, and is expanded per target to the roles that target declares.
+func TestARowMayStandForEveryTarget(t *testing.T) {
+	f := baseFixture()
+	f.Users = append(f.Users, fixtureUser{Email: "omar@acme.test", Provider: "email", ProviderID: "fixture-omar"})
+	f.Organizations[0].Members = []fixtureOrgMember{{Email: "omar@acme.test", Role: "member"}}
+	grants, err := readWorkspaceGrants(grantsReader(`installations:
+  - org: Acme Corp
+    target: "*"
+    owner: remi@acme.test
+    members: {viewer: [omar@acme.test], editor: [remi@acme.test]}
+`, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := withWorkspaceGrants(f, grants); err != nil {
+		t.Fatal(err)
+	}
+	if f.Installations[0].Target != EveryTarget {
+		t.Fatalf("the row did not read: %+v", f.Installations[0])
+	}
+	for document, want := range map[string]string{
+		`installations: [{org: Acme Corp, target: "*", role: viewer, owner: remi@acme.test}]`:              "names only its members",
+		`installations: [{org: Acme Corp, target: "*", owner: remi@acme.test, installer_roles: [viewer]}]`: "names only its members",
+	} {
+		grants, err := readWorkspaceGrants(grantsReader(document, nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := withWorkspaceGrants(baseFixture(), grants); err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("%s: want a refusal naming %q, got %v", document, want, err)
+		}
+	}
+
+	template := pendingInstallation{
+		declared: fixtureInstallation{Org: "Acme Corp", Target: EveryTarget, Owner: "remi@acme.test"},
+		orgID:    "org", ownerID: "remi",
+		memberIDs: map[string][]string{"viewer": {"omar"}, "editor": {"remi"}, "installer": {"remi"}},
+	}
+	row := everyRow(template, domain.Module{Name: "notes", Kind: domain.KindSolution, Roles: map[string][]*basev0.WorkScopeV1{"viewer": nil, "editor": nil}})
+	if row.declared.Target != "notes" || row.declared.Org != "Acme Corp" || row.ownerID != "remi" {
+		t.Fatalf("the row is not the template's for the target: %+v", row)
+	}
+	if len(row.memberIDs) != 2 || row.memberIDs["viewer"][0] != "omar" || row.memberIDs["editor"][0] != "remi" {
+		t.Fatalf("members are cut to the roles the target declares: %+v", row.memberIDs)
+	}
+	if len(template.memberIDs) != 3 {
+		t.Fatal("the template is left whole for the next target")
 	}
 }

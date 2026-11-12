@@ -16,11 +16,45 @@ fails at boot with `no configuration found for egress`. Add `--naming-scope
 <name>` to every command to keep a run disjoint from another. Sign in from the
 picker as one of the fixture people; accept the terms each person is shown.
 
+## The five people, everywhere
+
+`dev-admin` is the one fixture every composition seeds — this host alone, a
+module playground, a module page or a solution run locally with the authority
+— and the same five people are in it everywhere:
+
+| Sign in as | Who they are | What they hold on every delivered target |
+|---|---|---|
+| Sarah Chen (`admin@acme.com`) | the platform admin (`super_admin`), owner of Acme Corp | nothing of her own; she may act as any team |
+| Alice Johnson (`alice@acme.com`) | the organisation admin of Acme Corp | the installer of record; she may act as any team |
+| Bob Williams (`bob@acme.com`) | a member | the `<target>-viewer` team |
+| Carol Davis (`carol@acme.com`) | a member | the `<target>-editor` team |
+| Dana Lee (`dana@example.com`) | a member | the `<target>-installer` team |
+
+Every role-gated target the composition delivers (a solution, a module page
+declaring roles) is installed at Acme Corp by Alice, each declared role to its
+`<target>-<role>` team, and Bob, Carol and Dana join the team of their role —
+the fixture's `installations` row whose target is `"*"` says so once, and the
+host expands it per target as each delivery lands, so a composition opts in by
+seeding `dev-admin` and nothing else. A target declaring other roles gets its
+teams and no member for a role it does not declare; a composing workspace's
+`configurations/local/fixture-grants.yaml` may still name a target explicitly,
+and that row is kept.
+
+**To test team casting:** sign in as Alice (or Sarah), open **Admin → Teams**,
+pick a `<target>-<role>` team and press **Act as this team**. The session is
+now that team and nothing else — not Alice's roles, not her other teams, not
+her administrator access — and the bar at the top says so; **See what this
+team sees** shows the product as a member of that team sees it, and **Stop
+acting as this team** restores her own session from her refresh cookie. Signed
+in as Bob, Carol or Dana, the product shows that one team's reach directly.
+The host alone composes no target, so on this host-only playground the row
+expands to nothing and the casting walk needs a composed target (below).
+
 ## Journeys that need no solution
 
 | Journey | Where | What proves it |
 |---|---|---|
-| Create an organization | manual: sign in as Dana Lee (no organization yet), onboarding | she becomes its owner; the workspace slug follows the name |
+| Create an organization | manual: sign in as Sarah Chen, Platform → Organizations → Create | the new organization lists with its owner; the workspace slug follows the name (Dana Lee is a member of Acme Corp now, so the onboarding wizard of a person with no organization has no fixture person) |
 | Create a team | manual: Admin, Teams, as Sarah Chen | the team lists |
 | Grant a person a role explicitly, access follows | checked: `playground-check.sh` | Carol reads the example collection after the grant and not after it is revoked |
 | Refusal names its reason | manual: Bob Williams opens Admin | "You don't have access to Admin", with his role and who can change it |

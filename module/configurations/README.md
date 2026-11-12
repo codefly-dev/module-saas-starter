@@ -32,6 +32,15 @@ their teams; `members` maps a declared role to the people, each a member of the
 organisation, who join that role's team, as an administrator adds a person to a
 team:
 
+A row whose `target` is `"*"` stands for every role-gated target the
+composition delivers, whatever the composition is: the host expands it at each
+delivery pass into one row per such target no row names, with the `members`
+of the roles that target declares, and nothing else (no `role`, `teams` or
+`installer_roles`, which are one target's). The module's `dev-admin` fixture
+carries one, so its five people hold the same teams on every composition
+without the workspace naming a target; a workspace row naming a target
+explicitly is kept and that target is not expanded.
+
 ```yaml
 installations:
   - org: Acme Corp
