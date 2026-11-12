@@ -8,10 +8,11 @@ import (
 	"sort"
 	"strings"
 
+	coredecide "github.com/codefly-dev/authority/libraries/authority-core/go/decide"
+	coredelivered "github.com/codefly-dev/authority/libraries/authority-core/go/delivered"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/solutionhost"
 
-	authorityv1 "accounts/pkg/gen/host/authority/v1"
 	compositionv1 "accounts/pkg/gen/host/composition/v1"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
@@ -75,15 +76,24 @@ func (s *Service) deliveredTargetAuthority(ctx context.Context, target *Availabl
 
 // solutionAuthorityOf is the role declaration of a solution, or of a module
 // that declares a page (the core's rule: a module page may declare roles, and
-// then they decide what a person holds there, as a solution's do).
+// then they decide what a person holds there, as a solution's do). The roles
+// are the core's composition of the delivery (coredelivered.Module): a module
+// page delivered with none has the standard three the core derives from what
+// it serves, so this host offers the teams the core gates by.
 func (s *Service) solutionAuthorityOf(doc *compositionv1.AuthorityManifestV1, manifest *solutionhost.ModuleManifest) *SolutionAuthority {
-	if doc == nil || len(doc.GetRoles()) == 0 || (manifest.Kind != solutionhost.KindSolution && manifest.Frontend == nil) {
+	if doc == nil || manifest.Authority == nil {
+		return nil
+	}
+	composed, err := coredelivered.Module(manifest, documentOf(doc))
+	if err != nil || len(composed.Roles) == 0 || !coredecide.RoleGated(composed) || coredecide.ValidateModule(composed) != nil {
+		// The core's own verdict: roles it would refuse (a module declaring
+		// roles and no page) decide nothing here either.
 		return nil
 	}
 	principal := manifest.Authority.Principal
 	out := &SolutionAuthority{Principal: principal, Roles: map[string][]*basev0.WorkScopeV1{}, Kinds: slices.Clone(manifest.Authority.ResourceKinds), Ceilings: map[string][]string{}}
-	for _, role := range doc.GetRoles() {
-		out.Roles[role.GetName()] = hostScopes(role.GetScopes())
+	for name, scopes := range composed.Roles {
+		out.Roles[name] = slices.Clone(scopes)
 	}
 	for _, ceiling := range doc.GetScopeCeilings() {
 		out.Ceilings[ceiling.GetResourceKind()] = append(out.Ceilings[ceiling.GetResourceKind()], ceiling.GetActions()...)
@@ -321,14 +331,6 @@ func intersectIDs(a, b []string) ([]string, bool) {
 		}
 	}
 	return both, len(both) > 0
-}
-
-func hostScopes(in []*authorityv1.WorkScopeV1) []*basev0.WorkScopeV1 {
-	out := make([]*basev0.WorkScopeV1, 0, len(in))
-	for _, scope := range in {
-		out = append(out, &basev0.WorkScopeV1{ResourceKind: scope.GetResourceKind(), Actions: slices.Clone(scope.GetActions()), ResourceIds: slices.Clone(scope.GetResourceIds())})
-	}
-	return out
 }
 
 func cloneWorkScope(scope *basev0.WorkScopeV1) *basev0.WorkScopeV1 {

@@ -1195,7 +1195,7 @@ func runHostInterfaceFixture(t *testing.T) {
 	// authority; it reaches the navigation of a person holding one of its
 	// roles on that installation, and of no other member of the organization;
 	// its page's audience answers the same way. Redelivered without roles, it
-	// leaves the role holder's navigation. Nobody reviews or installs it as a
+	// is gated by the standard roles the core derives. Nobody reviews or installs it as a
 	// solution, and a module page selecting a standing role is refused.
 	t.Run("a module page's roles decide who is listed for it", func(t *testing.T) {
 		const module = "conformance-module-page"
@@ -1248,10 +1248,15 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, inst.ID, sealed, "the host's seal resolves the module page's installation as any module's")
 
+		// Redelivered without roles, the page is gated by the standard three
+		// the core derives from what it serves (decide.StandardRoles): the
+		// viewer's grant outlives the declaration that first named it, and
+		// another member is still not listed.
 		withoutRoles := withRoles
 		withoutRoles.roles, withoutRoles.generation = nil, 2
 		deliverModule(t, ctx, conn, signer, withoutRoles)
-		require.False(t, listed(nora), "a module page without roles is listed by no role")
+		require.True(t, listed(nora), "the derived viewer keeps the module page listed")
+		require.False(t, listed(remi), "another member's navigation still does not list it")
 
 		// A module page holds no standing authority: a declaration selecting
 		// one of its roles is refused by the host's module install path.

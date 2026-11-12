@@ -6,6 +6,7 @@ import (
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
+	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,4 +33,19 @@ func TestSolutionManifestGroupsOnlyDeclaredSolutions(t *testing.T) {
 		_, ok = solutionManifest(record, false)
 		require.False(t, ok, "group membership cannot manufacture a frontend")
 	}
+}
+
+// A page the host bundles is built into the host's own frontend: it has no
+// remote to load, so it projects no remote manifest (one would name an empty
+// exposed module the frontend cannot mount), and asks for no preparation.
+func TestABundledPageProjectsNoRemoteManifest(t *testing.T) {
+	block, err := json.Marshal(solutionhost.Frontend{Title: "Installed models", Order: 60,
+		Bundled: &solutionhost.FrontendBundled{Package: "@example/models-ui", Export: "modelsPlugin"}})
+	require.NoError(t, err)
+	record := &accountsv1.SolutionRegistration{SolutionId: "models",
+		Declared: &accountsv1.SolutionDeclaredBinding{Kind: accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_MODULE},
+		Frontend: &accountsv1.SolutionFrontendBinding{Manifest: string(block)}}
+	_, ok := solutionManifest(record, true)
+	require.False(t, ok)
+	require.False(t, frontendRequiresPreparation(record))
 }
