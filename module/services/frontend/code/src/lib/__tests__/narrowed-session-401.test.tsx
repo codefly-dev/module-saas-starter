@@ -19,11 +19,16 @@ const FULL2 = jwt({ sub: "user-1", who: "full-2" });
 const FULL3 = jwt({ sub: "user-1", who: "full-3" });
 
 // The provider's handles, read off the rendered tree after each commit.
-const handles = {
-	enter: (..._: [string, string]): void => {},
-	exit: async (): Promise<void> => {},
-	dismiss: (): void => {},
-	ended: null as NarrowedSessionEnd | null,
+const handles: {
+	enter: (bearer: string, as: string) => void;
+	exit: () => Promise<void>;
+	dismiss: () => void;
+	ended: NarrowedSessionEnd | null;
+} = {
+	enter: () => {},
+	exit: async () => {},
+	dismiss: () => {},
+	ended: null,
 };
 function Probe() {
 	const { isAuthenticated, isLoading, enterRoleView, exitRoleView, dismissNarrowedSessionEnd, narrowedSessionEnd } =
