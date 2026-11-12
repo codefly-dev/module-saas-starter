@@ -15,7 +15,7 @@ import (
 // a rollback of accounts, which the ledger's forward-only rule allows). The
 // lockstep test fails when a migration is added without moving this number, so
 // a binary can never be released that does not know the schema it needs.
-const requiredSchemaVersion = 75
+const requiredSchemaVersion = 76
 
 // schemaVersionReadMigration is the migration that lets the control plane read
 // the version table; a store that refuses the read has not applied it.

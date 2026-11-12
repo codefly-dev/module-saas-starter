@@ -61,7 +61,7 @@ var personMintEntryPoints = map[string]map[string]string{
 		"Current": core, "Install": core, "Review": core, "GrantRole": core, "RevokeRole": core, "ListRoleGrants": core, "List": core, "ListHeld": core,
 	},
 	"OfferService":   {"ListOffers": core, "ReviewOffer": core},
-	"SessionService": {"SignIn": none, "Current": none, "OpenRoleView": core, "ListFixturePeople": none},
+	"SessionService": {"SignIn": none, "Current": none, "OpenRoleView": core, "OpenTeamCast": core, "ListFixturePeople": none},
 }
 
 func TestEveryPersonMintEntryPointHonoursOrRefusesARoleView(t *testing.T) {
@@ -146,6 +146,76 @@ func testRoleViewRefusesOrganizationMints(t *testing.T, conn grpc.ClientConnInte
 	_, err = sessionv1.NewSessionServiceClient(conn).OpenRoleView(metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer not-a-token"),
 		&sessionv1.OpenRoleViewRequest{InstallationId: one.GetInstallation().GetId(), Roles: one.GetRoles()[:1]})
 	require.Error(t, err)
+}
+
+// testTeamCastHoldsNothingOfItsPerson casts the administrator person calls as
+// onto team, which they do not belong to, and holds the cast to what the host
+// itself decides: the session says it is that team alone, and everything the
+// host decides by the person's organization or platform role is refused by
+// name, as it is in a role view. A cast names a team and may name no role, so a
+// gate that asked "does the view name roles" would let all of it through; it
+// fails when narrows() forgets the team. What the cast holds at a module is the
+// core's, and the conformance suite's teamCast holds it there.
+func testTeamCastHoldsNothingOfItsPerson(t *testing.T, conn grpc.ClientConnInterface, person context.Context, team string, store *infra.PostgresStore) {
+	sessions, installations := sessionv1.NewSessionServiceClient(conn), installationv1.NewInstallationServiceClient(conn)
+	held, err := installations.ListHeld(person, &installationv1.ListHeldRequest{OrganizationId: fixtureOrganization})
+	require.NoError(t, err)
+	require.NotEmpty(t, held.GetInstallations(), "the person holds a role somewhere")
+	one := held.GetInstallations()[0]
+
+	// A team granted nothing is not found, with the reason, never an empty session.
+	_, err = sessions.OpenTeamCast(person, &sessionv1.OpenTeamCastRequest{TeamId: team})
+	require.Equal(t, codes.NotFound, status.Code(err), "%v", err)
+	require.Contains(t, status.Convert(err).Message(), "nothing to act as")
+
+	grant := &installationv1.GrantRoleRequest{OrganizationId: fixtureOrganization, InstallationId: one.GetInstallation().GetId(), Role: one.GetRoles()[0], TeamId: team}
+	_, err = installations.GrantRole(person, grant)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = installations.RevokeRole(person, &installationv1.RevokeRoleRequest{OrganizationId: grant.OrganizationId, InstallationId: grant.InstallationId, Role: grant.Role, TeamId: team})
+	})
+	own, err := sessions.Current(person, &sessionv1.CurrentRequest{})
+	require.NoError(t, err)
+	require.NotContains(t, own.GetTeamIds(), team, "the administrator is not a member of the team they cast onto")
+
+	cast, err := sessions.OpenTeamCast(person, &sessionv1.OpenTeamCastRequest{TeamId: team})
+	require.NoError(t, err)
+	require.NotEmpty(t, cast.GetBearer())
+	casting := metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer "+cast.GetBearer())
+	current, err := sessions.Current(casting, &sessionv1.CurrentRequest{})
+	require.NoError(t, err)
+	for _, said := range []*sessionv1.Session{cast, current} {
+		require.Equal(t, team, said.GetCastTeamId(), "the session says which team it acts as")
+		require.Equal(t, []string{team}, said.GetTeamIds(), "and names no team of its person's")
+		require.Empty(t, said.GetRoles(), "and no organization role")
+	}
+	require.Equal(t, own.GetPersonId(), current.GetPersonId(), "it is still the person who is acting")
+
+	_, err = gen.NewWorkContextServiceClient(conn).StartTask(casting, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(), Audience: "records",
+		AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "example-entries", Actions: []string{"read"}}}})
+	require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
+	require.Contains(t, status.Convert(err).Message(), "this session acts as team "+team)
+	require.Contains(t, status.Convert(err).Message(), "use the session the cast was opened from")
+	for _, policy := range business.RPCPolicies() {
+		if !strings.HasPrefix(policy.FullMethod, "/saas.accounts.v1.") || roleViewAdmits(policy.FullMethod, policy, true) ||
+			policy.MethodPolicy.GetExposure() != policyv1.Exposure_EXPOSURE_AUTHENTICATED {
+			continue
+		}
+		err := conn.Invoke(casting, policy.FullMethod, &emptypb.Empty{}, &emptypb.Empty{})
+		require.Equal(t, codes.PermissionDenied, status.Code(err), "%s: %v", policy.FullMethod, err)
+		require.Contains(t, status.Convert(err).Message(), "acts as team", policy.FullMethod)
+	}
+	_, err = gen.NewInvitationServiceClient(conn).ListInvitations(casting, &gen.ListInvitationsRequest{OrgId: fixtureOrganization})
+	require.Equal(t, codes.PermissionDenied, status.Code(err), "an administrator cast onto a team lists no invitation: %v", err)
+	require.Contains(t, status.Convert(err).Message(), "acts as team")
+	testRoleViewHoldsNoPlatformRole(t, conn, person, cast, store)
+
+	// A cast is never recast, and the session it was opened from is untouched.
+	_, err = sessions.OpenTeamCast(casting, &sessionv1.OpenTeamCastRequest{TeamId: team})
+	require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
+	require.Contains(t, status.Convert(err).Message(), "already cast")
+	_, err = gen.NewInvitationServiceClient(conn).ListInvitations(person, &gen.ListInvitationsRequest{OrgId: fixtureOrganization})
+	require.NoError(t, err, "the session the cast was opened from administers as before")
 }
 
 // The closed list of what a view may do must stay true to the descriptors: every

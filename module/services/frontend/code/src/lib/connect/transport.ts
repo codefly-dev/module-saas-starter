@@ -26,7 +26,9 @@ export const authInterceptor: Interceptor = (next) => async (req) => {
 		if (!token || ConnectError.from(error).code !== Code.Unauthenticated) {
 			throw error;
 		}
-		const fresh = await refreshToken();
+		// Decided from the bearer THIS call carried: a narrowed session's call is
+		// never retried with the person's full session (token-store).
+		const fresh = await refreshToken(token);
 		if (!fresh) throw error;
 		req.header.set("Authorization", `Bearer ${fresh}`);
 		return next(req);

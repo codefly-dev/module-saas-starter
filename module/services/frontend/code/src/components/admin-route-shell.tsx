@@ -8,6 +8,7 @@ import { AdminLayout } from "@/components/admin-layout";
 import { EmptyState } from "@/components/empty-state";
 import { ImpersonationBanner } from "@/components/impersonation-banner";
 import { Skeleton } from "@/components/ui/skeleton";
+import { RoleViewBanner } from "@/features/role-view/role-view";
 import { useAuth } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
 
@@ -43,6 +44,7 @@ export function AdminRouteShell({ children }: { children: ReactNode }) {
 		return (
 			<>
 				<ImpersonationBanner />
+				<RoleViewBanner />
 				<EmptyState
 					icon={ShieldOff}
 					title="You don't have access to Admin"
@@ -56,6 +58,9 @@ export function AdminRouteShell({ children }: { children: ReactNode }) {
 	return (
 		<>
 			<ImpersonationBanner />
+			{/* A view or a cast is said on every page, the admin ones included:
+			    this shell had left it to the dashboard's. */}
+			<RoleViewBanner />
 			<AdminLayout>{children}</AdminLayout>
 		</>
 	);

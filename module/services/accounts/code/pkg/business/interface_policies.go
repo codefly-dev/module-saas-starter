@@ -254,6 +254,16 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 			p.RateLimit = policyv1.RateLimitClass_RATE_LIMIT_CLASS_STANDARD_WRITE
 			return p
 		}(),
+		// OpenTeamCast mints a session too, and is journalled by the core as the
+		// same event with the team it names. The perimeter adds no tenant floor:
+		// who may act as a team is the core's one rule (whoever could grant its
+		// roles), and a floor here would be a second place that decides it.
+		"/host.session.v1.SessionService/OpenTeamCast": func() *policyv1.MethodPolicy {
+			p := authenticatedMint(string(EventAuthorityRoleViewOpened))
+			p.Tenant = policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE
+			p.RateLimit = policyv1.RateLimitClass_RATE_LIMIT_CLASS_STANDARD_WRITE
+			return p
+		}(),
 		// The sign-in page reads it before anyone signs in; it answers none
 		// unless fixture sign-in is enabled, and then the tokens SignIn takes.
 		"/host.session.v1.SessionService/ListFixturePeople": {
@@ -342,6 +352,7 @@ var interfaceDescriptions = map[string]string{
 	"AuthorityService/GetDelegation":        "Read whether one delegation still stands, for its module or its grantor.",
 	"SessionService/SignIn":                 "Open a session for a fixture person by their fixture token.",
 	"SessionService/OpenRoleView":           "Open a session that acts as some of the roles the caller holds on one installation; it only narrows.",
+	"SessionService/OpenTeamCast":           "Open a session that acts as one team and nothing else, for a caller who could grant that team's roles.",
 	"SessionService/Current":                "Answer the session the caller's bearer belongs to, without the bearer.",
 	"SessionService/ListFixturePeople":      "List the people fixture sign-in admits, in the fixture's order; none where it is not enabled.",
 }

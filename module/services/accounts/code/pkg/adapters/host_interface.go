@@ -842,6 +842,44 @@ func (s *HostSessionServer) OpenRoleView(ctx context.Context, req *sessionv1.Ope
 	return session, s.describe(ctx, session)
 }
 
+// OpenTeamCast opens a session that acts as a member of one team and of
+// nothing else. Whether the caller may is the authority core's decision, by
+// its one rule (a person acts as a team whose roles they could grant); this
+// host asks, and on a yes mints the session the core recorded the cast under,
+// exactly as it mints a role view: access-only, holding no platform role, from
+// the session the person called with, which stays the way back. A refusal is
+// the core's, handed back with its reason.
+func (s *HostSessionServer) OpenTeamCast(ctx context.Context, req *sessionv1.OpenTeamCastRequest) (*sessionv1.Session, error) {
+	person, err := signedInPerson(ctx, "act as a team")
+	if err != nil {
+		return nil, err
+	}
+	core, err := authorityCore()
+	if err != nil {
+		return nil, err
+	}
+	minter := s.service.JWTMinter()
+	if minter == nil {
+		return nil, status.Error(codes.Unavailable, "this host mints no sessions")
+	}
+	userID, err := uuid.Parse(person.ID)
+	parent, perr := uuid.Parse(person.SessionID)
+	if err != nil || perr != nil {
+		return nil, status.Error(codes.PermissionDenied, "a cast is opened from a session of a person")
+	}
+	castID := business.NewID()
+	if _, err := core.OpenTeamCast(ctx, person, authority.TeamCastRequest{
+		Organization: person.Organization, Team: req.GetTeamId(), SessionID: castID.String()}); err != nil {
+		return nil, coreStatus(err)
+	}
+	pair, err := minter.MintRoleView(ctx, userID, parent, castID)
+	if err != nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "the cast could not be opened as a session: %v", err)
+	}
+	session := &sessionv1.Session{SessionId: castID.String(), PersonId: person.ID, OrganizationId: person.Organization, Bearer: pair.AccessToken}
+	return session, s.describe(ctx, session)
+}
+
 // describe names, on session, what Current and OpenRoleView answer of the
 // organisation it is in: the person's role, display names, teams, and the role
 // view it was opened with.
@@ -875,6 +913,11 @@ func (s *HostSessionServer) describe(ctx context.Context, session *sessionv1.Ses
 	}
 	for _, id := range slices.Sorted(maps.Keys(view.Roles)) {
 		session.RoleView = append(session.RoleView, &sessionv1.RoleViewEntry{InstallationId: id, Roles: view.Roles[id]})
+	}
+	if view.Team != "" {
+		// A cast is that team and nothing else: it holds no organization role
+		// and belongs to no other team, whatever its person does.
+		session.CastTeamId, session.Roles, session.TeamIds = view.Team, nil, []string{view.Team}
 	}
 	return nil
 }
