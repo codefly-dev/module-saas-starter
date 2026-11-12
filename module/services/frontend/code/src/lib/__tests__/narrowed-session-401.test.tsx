@@ -175,6 +175,47 @@ it("a reload ends the narrowed session, and the boot says so by name; acknowledg
 	expect(screen.getByTestId("authed").textContent).toBe("yes");
 });
 
+it("a request sent as the person BEFORE the cast, whose 401 lands inside it, neither replaces the cast nor is replayed", async () => {
+	refreshAnswers([FULL, FULL2]);
+	let release: () => void = () => {};
+	const gate = new Promise<void>((r) => (release = r));
+	const seen: string[] = [];
+	server.use(
+		http.get("/slow", async ({ request }) => {
+			seen.push(request.headers.get("authorization") ?? "");
+			if (request.headers.get("authorization") === `Bearer ${FULL}`) {
+				await gate;
+				return new HttpResponse(null, { status: 401 });
+			}
+			return HttpResponse.json({ ok: true });
+		}),
+	);
+	render(
+		<AuthProvider>
+			<Probe />
+		</AuthProvider>,
+	);
+	await waitFor(() => expect(screen.getByTestId("authed").textContent).toBe("yes"));
+	const cast = jwt({ sub: "user-1", who: "narrowed", n: ++n });
+	let res: Response | undefined;
+	await act(async () => {
+		const p = authedFetch("/slow"); // sent as the person, before the cast
+		handles.enter(cast, "team Stewards"); // the person opens a cast
+		expect(getToken()).toBe(cast);
+		release(); // the old request now 401s
+		res = await p;
+	});
+	// The cast the person chose stays installed, nothing was exchanged or
+	// installed behind their back, and the pre-cast request is not replayed.
+	expect({ installed: getToken() === cast ? "cast" : "other", notice: handles.ended, replayed: res?.status, attempts: seen }).toEqual({
+		installed: "cast",
+		notice: null,
+		replayed: 401,
+		attempts: [`Bearer ${FULL}`],
+	});
+	expect(screen.getByTestId("authed").textContent).toBe("yes");
+});
+
 it("a 401 of the person's own session is still repaired, and says no narrowed session ended", async () => {
 	await boot();
 	let fresh: string | null = null;

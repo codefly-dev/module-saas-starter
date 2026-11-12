@@ -38,6 +38,18 @@ describe("a narrowed bearer is never repaired", () => {
 		expect(ended).toHaveBeenCalledWith("cast-bearer");
 	});
 
+	it("while a narrowed bearer is installed, a 401 of the person's own earlier bearer is not exchanged either", async () => {
+		const handler = vi.fn(async () => "fresh-token");
+		const ended = vi.fn();
+		setRefreshHandler(handler);
+		setNarrowedSessionEndedHandler(ended);
+		markNarrowed("cast-bearer");
+		setToken("cast-bearer");
+		await expect(refreshToken("own-bearer")).resolves.toBeNull();
+		expect(handler).not.toHaveBeenCalled();
+		expect(ended).not.toHaveBeenCalled(); // the cast is not over
+	});
+
 	it("the Connect interceptor rethrows a narrowed call's Unauthenticated without a retry", async () => {
 		markNarrowed("view-bearer");
 		setToken("view-bearer");

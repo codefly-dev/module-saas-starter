@@ -115,6 +115,12 @@ export function refreshToken(
 		narrowedSessionEndedHandler?.(sentWith as string);
 		return Promise.resolve(null);
 	}
+	// A request sent with the person's OWN token before they narrowed, whose
+	// 401 lands while the narrowed session is installed: no exchange. The only
+	// token one could produce is the person's own, and installing it would put
+	// them back in their own session with nothing said; the request fails
+	// instead, and the narrowed session stays exactly as they chose it.
+	if (isNarrowed(currentToken)) return Promise.resolve(null);
 	if (!refreshHandler) return Promise.resolve(null);
 	if (!inflightRefresh) {
 		inflightRefresh = refreshHandler()
