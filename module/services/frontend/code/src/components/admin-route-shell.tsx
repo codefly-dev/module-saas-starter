@@ -13,14 +13,17 @@ import { useAuth } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
 
 export function AdminRouteShell({ children }: { children: ReactNode }) {
-	const { isAuthenticated, isLoading, platformRole, orgRole, sessionRead } = useAuth();
+	const { isAuthenticated, isLoading, platformRole, orgRole, sessionRead, castTeamId } =
+		useAuth();
 	const router = useRouter();
 	const pathname = usePathname();
 	const admin = isAdmin(platformRole, orgRole);
 	// Team rosters are tenant-visible; team administrators need not be org admins.
+	// A cast holds no organization role (useAuth reads it as none) but is a
+	// member of the team it acts as, so the team pages are its own to read.
 	const teamRoute =
 		pathname === "/admin/teams" || pathname.startsWith("/admin/teams/");
-	const allowed = admin || (teamRoute && !!orgRole);
+	const allowed = admin || (teamRoute && (!!orgRole || !!castTeamId));
 
 	useEffect(() => {
 		if (isLoading) return;
@@ -71,7 +74,11 @@ export function AdminRouteShell({ children }: { children: ReactNode }) {
 				<EmptyState
 					icon={ShieldOff}
 					title="You don't have access to Admin"
-					description={`Admin is for organization and platform administrators. Your role in this organization is ${orgRole ?? "none"}. Ask an administrator of this organization to give you the role you need.`}
+					description={
+						castTeamId
+							? "Admin is for organization and platform administrators. This session acts as a team and holds what that team holds, none of your own roles. Stop acting as the team to use your own access."
+							: `Admin is for organization and platform administrators. Your role in this organization is ${orgRole ?? "none"}. Ask an administrator of this organization to give you the role you need.`
+					}
 					action={<Link href="/">Back to the dashboard</Link>}
 				/>
 			</>

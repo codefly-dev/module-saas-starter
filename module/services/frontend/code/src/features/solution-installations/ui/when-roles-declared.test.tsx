@@ -19,6 +19,12 @@ const catalogue = vi.hoisted(() => ({
 	},
 	asked: [] as string[],
 }));
+// The session the page is read as: an organization administrator unless a
+// test says otherwise. A cast reads as holding no role (useAuth hides them).
+const session = vi.hoisted(() => ({
+	orgRole: "admin" as string | undefined,
+	platformRole: undefined as string | undefined,
+}));
 vi.mock("../service/queries", () => ({
 	useAvailableSolutions: (orgId: string) => {
 		catalogue.asked.push(orgId);
@@ -26,7 +32,7 @@ vi.mock("../service/queries", () => ({
 	},
 }));
 vi.mock("@/lib/auth", () => ({
-	useAuth: () => ({ organizationId: "example-org" }),
+	useAuth: () => ({ organizationId: "example-org", ...session }),
 }));
 
 import {
@@ -38,6 +44,8 @@ afterEach(() => {
 	cleanup();
 	catalogue.result = {};
 	catalogue.asked = [];
+	session.orgRole = "admin";
+	session.platformRole = undefined;
 });
 
 const row = (alias: string, roles: string[]): AvailableSolution =>
@@ -76,6 +84,30 @@ describe("WhenRolesDeclared", () => {
 		catalogue.result = { data: [row("example-target", [])] };
 		renderGate("module");
 		expect(screen.queryByText("Setup")).toBeNull();
+	});
+
+	// Setup on a module page is an administrator's act and the catalogue an
+	// administrator's read: a session holding no administrator role — a member,
+	// or a cast, which holds none of the person's roles — is offered no Setup
+	// and never asks for a read the host would refuse.
+	it.each([
+		["a member", "member"],
+		["a cast session", undefined],
+	])("offers %s no Setup on a module page and does not read the catalogue", (_, role) => {
+		session.orgRole = role;
+		catalogue.result = { data: [row("example-target", ["installer"])] };
+		renderGate("module");
+		expect(screen.queryByText("Setup")).toBeNull();
+		expect(screen.queryByRole("alert")).toBeNull();
+		expect(catalogue.asked.every((org) => org === "")).toBe(true);
+	});
+
+	it("shows a module's Setup to a platform administrator", () => {
+		session.orgRole = undefined;
+		session.platformRole = "super_admin";
+		catalogue.result = { data: [row("example-target", ["installer"])] };
+		renderGate("module");
+		expect(screen.getByText("Setup")).toBeTruthy();
 	});
 
 	it("shows nothing while the catalogue is being read", () => {
