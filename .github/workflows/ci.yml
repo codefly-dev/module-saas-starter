@@ -62,6 +62,10 @@ jobs:
     name: Base manifest integrity
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # The record check below reads the pull request's live title and body.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -181,22 +185,33 @@ jobs:
       # base branch gained once it moves; and `merge_group` is not checked, because its range
       # spans every pull request batched into the entry, each already gated on its own run.
       #
-      # This job's `pull_request` trigger takes the default types, so it does not see a title or
-      # body EDITED after the last push. naming-records.yml covers that event; this step stays
-      # because it is the copy that runs inside a required context.
+      # This job's `pull_request` trigger takes the default types, so it never re-fires on a title
+      # or body EDITED after the last push. naming-records.yml listens for that event and reports
+      # in seconds, but it is not a required context, so it cannot be the only copy that sees an
+      # edit: this step is the one the ruleset requires. It therefore reads the record LIVE rather
+      # than from the event payload, which is a snapshot of the body as it was when the run was
+      # queued and is wrong in both directions. Green about a snapshot is the dangerous direction —
+      # a forbidden name added after the push would merge with this gate green, and the squash
+      # title is written into main's permanent history. Red about a snapshot is the visible one: a
+      # body corrected after the push leaves this gate red with nothing but an unrelated commit to
+      # clear it. Reading the live record also means a re-run is a real re-judgement.
       - name: Enforce generic placeholder names in the pull request and its commits
         if: github.event_name == 'pull_request'
         env:
-          # Through the environment, never interpolated into the script: both are
-          # attacker-controlled text.
-          NAMING_PR_TITLE: ${{ github.event.pull_request.title }}
-          NAMING_PR_BODY: ${{ github.event.pull_request.body }}
+          GH_TOKEN: ${{ github.token }}
+          NAMING_PR_NUMBER: ${{ github.event.pull_request.number }}
           NAMING_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           # HEAD^1 is the current base tip only while HEAD is the merge ref. Assert the second
           # parent rather than let a `ref:` override silently narrow the range to one commit.
           git rev-parse -q --verify HEAD^2 >/dev/null ||
             { echo "expected refs/pull/N/merge as HEAD; the checkout ref must not be overridden"; exit 1; }
+          # Assigned through the environment, never interpolated into the script: both are
+          # attacker-controlled text. A failed read exits non-zero under `set -e` rather than
+          # scanning an empty record and reporting it clean.
+          NAMING_PR_TITLE="$(gh pr view "$NAMING_PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json title --jq .title)"
+          NAMING_PR_BODY="$(gh pr view "$NAMING_PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json body --jq .body)"
+          export NAMING_PR_TITLE NAMING_PR_BODY
           node module/tools/naming-gate.mjs records "$(git rev-parse HEAD^1)" "$NAMING_HEAD"
 
   authz-coverage:
