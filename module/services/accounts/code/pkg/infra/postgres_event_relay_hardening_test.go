@@ -26,7 +26,7 @@ func newRelayTransport(t *testing.T, name string) (*pgxpool.Pool, *infra.Postgre
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	store := infra.NewPostgresJobStore(pool)
-	return pool, infra.NewPostgresEventTransport(store, pool, name+"-"+uuid.NewString(), time.Second)
+	return pool, infra.NewPostgresEventTransport(store, pool, name+"-"+uuid.NewString(), relayTestLease)
 }
 
 func relayTestEvent(eventType, source, tenant string, n int) *events.EventEnvelope {
