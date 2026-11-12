@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { HOST_SETUP_PROCEDURES } from "@/lib/host-setup-procedures";
+import { HOST_BROWSER_PROCEDURES } from "@/lib/host-browser-procedures";
 import { isPublic } from "./proxy";
 
 describe("public paths", () => {
@@ -62,24 +62,36 @@ describe("public paths", () => {
 		expect(isPublic("/host.installation.v1.InstallationService/ListHeldExtra")).toBe(false);
 	});
 
-	it("forwards the Setup tab's installation procedures to the gateway, and no other host procedure", () => {
+	it("forwards the host procedures a browser of this app calls, and no other", () => {
 		// The solution Setup tab reads and changes role grants through the host
-		// installation interface, as the signed-in person: the gateway decides.
-		for (const pathname of HOST_SETUP_PROCEDURES) {
+		// installation interface, and the chrome reads the session interface's
+		// browser edge, both as the signed-in person: the gateway decides.
+		for (const pathname of HOST_BROWSER_PROCEDURES) {
 			expect(isPublic(pathname), pathname).toBe(true);
 		}
-		// What the local authority's edge does not serve a browser is not
-		// forwarded here either: installing stays behind the host's consent
-		// form, Current is a module's call, and nothing else of the package or
-		// the session interface gains a route.
+		// What no browser of this app calls is not forwarded: installing stays
+		// behind the host's consent form, the installation interface's Current
+		// is a module's call, a person signs in through /v1/auth/*, and nothing
+		// else of the package gains a route.
 		for (const pathname of [
 			"/host.installation.v1.InstallationService/Install",
 			"/host.installation.v1.InstallationService/Current",
 			"/host.installation.v1.InstallableService/Install",
 			"/host.session.v1.SessionService/SignIn",
+			"/host.session.v1.SessionService/ListFixturePeople",
 			"/host.authority.v1.AuthorityService/Issue",
 		]) {
 			expect(isPublic(pathname), pathname).toBe(false);
 		}
+	});
+
+	it("reads the session interface's browser edge, which decides whether admin actions are offered", () => {
+		// The regression this names: the auth provider reads Current to learn
+		// whether the bearer is a cast, and an unconfirmed session is never
+		// presented as the person. With no route, Current answers 404 from this
+		// app and every administrator action is withheld from everyone.
+		expect(isPublic("/host.session.v1.SessionService/Current")).toBe(true);
+		expect(isPublic("/host.session.v1.SessionService/OpenRoleView")).toBe(true);
+		expect(isPublic("/host.session.v1.SessionService/OpenTeamCast")).toBe(true);
 	});
 });

@@ -1,4 +1,4 @@
-import { isHostSetupProcedure } from "@/lib/host-setup-procedures";
+import { isHostSetupProcedure } from "@/lib/host-browser-procedures";
 import { gatewayBase } from "@/lib/gateway-endpoint";
 
 import {
