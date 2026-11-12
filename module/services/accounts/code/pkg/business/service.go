@@ -1079,10 +1079,15 @@ func (s *Service) createOrganization(ctx context.Context, actorID, ownerID strin
 		return nil, err
 	}
 	// The new organization holds every composed module at once, installed by
-	// composition; one that fails is installed by the next delivery pass.
+	// composition, each module page held at its reach as a delivery pass holds
+	// what it installs (KeepAuthorityCoreCurrent); one that fails is installed
+	// by the next delivery pass.
 	s.composing.Lock()
-	err := s.installComposedModulesAt(ctx, org.Id, ownerID)
+	installed, err := s.installComposedModulesAt(ctx, org.Id, ownerID)
 	s.composing.Unlock()
+	if core, coreErr := s.AuthorityCore(); coreErr == nil && installed > 0 {
+		err = errors.Join(err, core.AdoptLegacyReach(ctx))
+	}
 	if err != nil {
 		wool.Get(ctx).In("CreateOrganization").Warn("the composed modules are not all installed in the new organization yet", wool.Field("org_id", org.Id), wool.ErrField(err))
 	}

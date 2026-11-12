@@ -14,13 +14,16 @@ import (
 // Setup UI, for every installation whose roles decide: a solution's, and a
 // module page's that declares roles. Installation ownership and its machine role grant nobody access.
 // The caller here is the gateway's authenticated effective subject, admitted by
-// SolutionEntitlementServer's internal credential guard, not browser input.
-func (s *Service) canonicalSolutionEntitlements(ctx context.Context, snapshot *installedModuleRegistry, org, subject string) ([]*gen.SolutionEntitlement, error) {
+// SolutionEntitlementServer's internal credential guard, not browser input,
+// asking from the session the gateway verified: the core reads them under that
+// session's role view, so a cast is answered as its team (entitlementViewerOf).
+func (s *Service) canonicalSolutionEntitlements(ctx context.Context, snapshot *installedModuleRegistry, who authority.Person) ([]*gen.SolutionEntitlement, error) {
+	org := who.Organization
 	core, err := s.AuthorityCore()
 	if err != nil {
 		return nil, err
 	}
-	held, err := core.HeldInstallations(ctx, authority.Person{ID: subject, Organization: org}, org)
+	held, err := core.HeldInstallations(ctx, who, org)
 	if err != nil {
 		return nil, err
 	}

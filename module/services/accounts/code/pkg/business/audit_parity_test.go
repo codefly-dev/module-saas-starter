@@ -34,9 +34,6 @@ var eventsEmittedOutsideRPC = []EventType{
 	// left unreached, or reached again, in the composition transaction.
 	EventAuthorityInstallationReachUnreached,
 	EventAuthorityInstallationReachRestored,
-	// A delivery that widens what a module page's role reaches ends that
-	// role's grants and journals what widened, in the same transaction.
-	EventAuthorityInstallationRoleReachWidened,
 	// The declared-presence reconcile pass emits this: delivery declares a
 	// generation and the host applies it, with no request behind it (#952).
 	EventSolutionHostBindingApplied,

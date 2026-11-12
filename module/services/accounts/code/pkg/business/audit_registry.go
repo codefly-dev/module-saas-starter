@@ -397,10 +397,6 @@ const (
 	EventAuthorityInstallationReachAdopted     EventType = "saas.authority.installation_reach_adopted"
 	EventAuthorityInstallationReachUnreached   EventType = "saas.authority.installation_reach_unreached"
 	EventAuthorityInstallationReachRestored    EventType = "saas.authority.installation_reach_restored"
-	// A delivery widened what a module page's role reaches and ended that
-	// role's grants on the installation: the record that names what widened,
-	// beside the role_revoked rows the same delivery writes.
-	EventAuthorityInstallationRoleReachWidened EventType = "saas.authority.installation_role_reach_widened"
 	EventAuthorityRoleGranted                  EventType = "saas.authority.role_granted"
 	EventAuthorityRoleViewOpened               EventType = "saas.authority.role_view_opened"
 	EventAuthorityRoleRevoked                  EventType = "saas.authority.role_revoked"
@@ -728,12 +724,11 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventAuthorityInstallationActivated, CategoryAccess, "An installation's install step converged and it became active.", authorityChangeFields()...),
 	mutation(EventAuthorityInstallationUninstalled, CategoryAccess, "An installation was uninstalled: its grants cleared and every capability sealed to it ended.", authorityChangeFields()...),
 	mutation(EventAuthorityInstallationReconverged, CategoryAccess, "A redelivery asked nothing new of an installation's consent, which now stands at the delivered generation; its grants are kept.", authorityChangeFields()...),
-	mutation(EventAuthorityInstallationUpgradeAvailable, CategoryAccess, "A redelivery asks more than an installation's consent approved; it stands on that consent until an administrator approves the new offer.", authorityChangeFields()...),
-	mutation(EventAuthorityInstallationUpgraded, CategoryAccess, "An administrator approved a newer offer on an active installation, which keeps its grants.", authorityChangeFields()...),
-	mutation(EventAuthorityInstallationReachAdopted, CategoryAccess, "A consent recorded before its reach was kept adopted, once, what its approved roles reach in the composition as it stood; nothing issued ended.", authorityChangeFields()...),
+	mutation(EventAuthorityInstallationUpgradeAvailable, CategoryAccess, "A redelivery asks more than an installation's consent approved, a solution's or a module page's; it stands on that consent, its grants kept at the approved reach, until an administrator or the page's installer approves the new offer.", authorityChangeFields()...),
+	mutation(EventAuthorityInstallationUpgraded, CategoryAccess, "An administrator, or a module page's installer, approved a newer offer on an active installation, which keeps its grants.", authorityChangeFields()...),
+	mutation(EventAuthorityInstallationReachAdopted, CategoryAccess, "A consent recorded before its reach was kept adopted, once, what its approved roles reach in the composition as it stood; or a module page's installation took composition's receipt (held_by composition), holding it at the reach the page had. Nothing issued ended.", authorityChangeFields()...),
 	mutation(EventAuthorityInstallationReachUnreached, CategoryAccess, "A delivery left what an installation's target names through a binding unreached; the delivery stands and it grants nothing there until a delivery reaches it again.", authorityChangeFields()...),
 	mutation(EventAuthorityInstallationReachRestored, CategoryAccess, "A delivery reached again everything an installation's target names through a binding.", authorityChangeFields()...),
-	mutation(EventAuthorityInstallationRoleReachWidened, CategoryAccess, "A delivery widened what a module page's roles reach, so the grants of those roles on this installation ended: no administrator approved the wider meaning. An administrator grants them again to give it.", authorityChangeFields()...),
 	mutation(EventAuthorityRoleViewOpened, CategoryAccess, "A person fixed a session to act as some of the roles they hold on an installation; the session only narrows and is never widened.", authorityChangeFields()...),
 	mutation(EventAuthorityRoleGranted, CategoryAccess, "A solution role was granted on an installation to a person or a team.", authorityChangeFields()...),
 	mutation(EventAuthorityRoleRevoked, CategoryAccess, "A solution role grant was revoked; its subject's capabilities through the installation ended.", authorityChangeFields()...),
@@ -1429,5 +1424,5 @@ func authorityChangeFields() []PayloadField {
 	return optionalFields([]PayloadField{str("organization"), str("actor"), str("subject"), str("target"), str("role"), str("person"), str("team"),
 		str("principal"), str("installed_by"), str("revision"), str("operation"), str("module"), str("purpose"), str("kind"), str("resource"),
 		str("from"), str("to"), str("store"), str("generation"), str("approved_generation"), str("widened"), str("agent_role_undeclared"),
-		str("delivered"), str("reach"), str("reach_unadopted"), str("unreached"), str("roles"), str("session"), str("cast_team")})
+		str("delivered"), str("reach"), str("reach_unadopted"), str("unreached"), str("roles"), str("session"), str("cast_team"), str("held_by")})
 }

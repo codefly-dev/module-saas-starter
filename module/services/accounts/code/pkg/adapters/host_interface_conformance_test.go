@@ -163,10 +163,15 @@ func runHostInterfaceFixture(t *testing.T) {
 	// owner and composes its module in the authority core.
 	signer := deliverytest.Signer(t, "conformance-release")
 	verifier := deliverytest.Verifier(t, map[string][]string{signer.KeyID(): {"acme"}})
-	// The suite's reach case delivers conformance-reach and acts as its
-	// workload with the credential it delivered it with: that one delivery
-	// credential is the workload's own, and the carrier accepts it for it.
-	deliveryWorkloads := map[string]string{"conformance-reach": credential("conformance-reach")}
+	// The suite's reach cases deliver these modules and act as their
+	// workloads with the credentials they delivered them with: each one
+	// delivery credential is the workload's own, and the carrier accepts it
+	// for it. conformance-reach is the reach case's actor; the reach-through
+	// case's (reachThroughConsent) hops are conformance-through and its relay.
+	deliveryWorkloads := map[string]string{}
+	for _, module := range []string{"conformance-reach", "conformance-through", "conformance-through-relay"} {
+		deliveryWorkloads[module] = credential(module)
+	}
 	deliveryCredential := func(module string) string {
 		if workload, ok := deliveryWorkloads[module]; ok {
 			return workload
@@ -1195,7 +1200,7 @@ func runHostInterfaceFixture(t *testing.T) {
 	// authority; it reaches the navigation of a person holding one of its
 	// roles on that installation, and of no other member of the organization;
 	// its page's audience answers the same way. Redelivered without roles, it
-	// leaves the role holder's navigation. Nobody reviews or installs it as a
+	// is gated by the standard roles the core derives. Nobody reviews or installs it as a
 	// solution, and a module page selecting a standing role is refused.
 	t.Run("a module page's roles decide who is listed for it", func(t *testing.T) {
 		const module = "conformance-module-page"
@@ -1204,10 +1209,16 @@ func runHostInterfaceFixture(t *testing.T) {
 		withRoles := conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{note}, page: page, installationRole: domain.NoInstallationRole,
 			roles: map[string][]*authorityv1.WorkScopeV1{"installer": {note}, "viewer": {note}}}
 		deliverModule(t, ctx, conn, signer, withRoles)
+		require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module))
+		// Installed by composition and held by its receipt (taken as the
+		// pass leaves it), the page's installation is reviewed as a
+		// solution's is, for the upgrade it offers; approving the offer it
+		// already holds installs nothing.
+		require.NoError(t, core.AdoptLegacyReach(ctx))
 		_, err := installConformanceSolution(ctx, svc, core, module, "", conformanceAlex)
 		code, _ := domain.CodeOf(err)
-		require.Equal(t, domain.NotFound, code, "a module page is never reviewed or installed as a solution: %v", err)
-		require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module))
+		require.Equal(t, domain.Denied, code, "a module page is never installed again through a review: %v", err)
+		require.ErrorContains(t, err, "already installed")
 		all, err := core.Installations(ctx, alex, fixtureOrganization)
 		require.NoError(t, err)
 		i := slices.IndexFunc(all, func(inst domain.Installation) bool { return inst.Target == module && inst.Status == domain.Active })
@@ -1242,10 +1253,15 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, inst.ID, sealed, "the host's seal resolves the module page's installation as any module's")
 
+		// Redelivered without roles, the page is gated by the standard three
+		// the core derives from what it serves (decide.StandardRoles): the
+		// viewer's grant outlives the declaration that first named it, and
+		// another member is still not listed.
 		withoutRoles := withRoles
 		withoutRoles.roles, withoutRoles.generation = nil, 2
 		deliverModule(t, ctx, conn, signer, withoutRoles)
-		require.False(t, listed(nora), "a module page without roles is listed by no role")
+		require.True(t, listed(nora), "the derived viewer keeps the module page listed")
+		require.False(t, listed(remi), "another member's navigation still does not list it")
 
 		// A module page holds no standing authority: a declaration selecting
 		// one of its roles is refused by the host's module install path.
@@ -1264,6 +1280,9 @@ func runHostInterfaceFixture(t *testing.T) {
 	testInstallAssignsAccess(t, closures)
 	testModulePagesAndReach(t, closures)
 	testModulePageRoleReachesThroughItsBinding(t, closures)
+	t.Run("a page delivered before a module it reaches holds that module's reach once it is composed, on the host's own delivery path", func(t *testing.T) {
+		testAPageDeliveredBeforeItsReachHoldsItOnceComposed(t, closures)
+	})
 	testADeliveryTheCoreRefusesIsNeverApplied(t, closures)
 	testPagesReachThroughTheAgent(t, closures)
 	testAnEditorSavesAndIsOfferedTheRunnablesTheirRoleAllows(t, closures)
@@ -1395,6 +1414,89 @@ installations:
 			slices.Sort(held)
 			require.Equal(t, roles, held, "%s: each declared role to its one team", target)
 		}
+	})
+
+	// A composition is delivered one module at a time, and the fixture
+	// converges after each delivery: it sets a target up once every module
+	// the target reaches through a binding is composed, so what it sets up
+	// is held at the whole reach from the first pass that installs it.
+	t.Run("a fixture sets up a module page once every module it reaches is composed, so what it sets up holds the whole reach", func(t *testing.T) {
+		const page, store, org = "conformance-fixture-reach-page", "conformance-fixture-reach-store", "00000000-0000-7000-8000-0000000002e1"
+		const owner, viewer = "00000000-0000-7000-8000-0000000002e2", "00000000-0000-7000-8000-0000000002e3"
+		entry, row := wireScope(page+".entry", "read"), wireScope(store+".row", "read")
+		deliverModule(t, ctx, conn, signer, conformanceModule{alias: page, ceilings: []*authorityv1.WorkScopeV1{entry}, installationRole: domain.NoInstallationRole,
+			page:     &solutionhost.Frontend{Title: "Reach fixture page", ExposedModule: "./Page", HostContract: 1, Payload: pagePayload},
+			bindings: []solutionhost.AuthorityBinding{{ID: "rows", Audience: store, Operations: map[string][]string{"invoke": {store + ".row:read"}}}},
+			roles:    map[string][]*authorityv1.WorkScopeV1{"installer": {entry, row}, "viewer": {entry, row}},
+			through:  map[string]map[string][]*authorityv1.WorkScopeV1{"installer": {"rows": {row}}, "viewer": {"rows": {row}}}})
+		path := filepath.Join(t.TempDir(), "reach-fixture.yaml")
+		require.NoError(t, os.WriteFile(path, []byte(`users:
+  - {id: `+owner+`, email: owner@reach-fixture.example.test, name: Reach Fixture Owner, role: member, provider: email, provider_id: fixture-reach-fixture-owner}
+  - {id: `+viewer+`, email: viewer@reach-fixture.example.test, name: Reach Fixture Viewer, role: member, provider: email, provider_id: fixture-reach-fixture-viewer}
+organizations:
+  - id: `+org+`
+    name: Example Reach Fixture
+    owner: owner@reach-fixture.example.test
+    members:
+      - {email: viewer@reach-fixture.example.test, role: member}
+installations:
+  - org: Example Reach Fixture
+    target: `+page+`
+    owner: owner@reach-fixture.example.test
+    installer_roles: [installer]
+    members: {viewer: [viewer@reach-fixture.example.test]}
+`), 0o600))
+		t.Setenv("DEV_FIXTURE_PATH", path)
+		rows, err := fixtures.SeedWithInstallations(ctx, svc, "reach-fixture")
+		require.NoError(t, err)
+		teams := func() []string {
+			t.Helper()
+			var teams []*gen.Team
+			require.NoError(t, svc.Store().WithControlPlane(ctx, func(ctx context.Context) error {
+				var err error
+				teams, err = svc.Store().ListTeams(ctx, org, "")
+				return err
+			}))
+			var names []string
+			for _, team := range teams {
+				names = append(names, team.GetName())
+			}
+			slices.Sort(names)
+			return names
+		}
+		require.NoError(t, rows.Converge(ctx), "a page reaching a module not composed yet is waited on, not refused")
+		require.Empty(t, teams(), "nothing is set up while the page's roles reach a module the composition does not hold")
+
+		deliverModule(t, ctx, conn, signer, conformanceModule{alias: store, ceilings: []*authorityv1.WorkScopeV1{row},
+			methods: []*compositionv1.MethodPolicyV1{{Method: "/" + store + ".Store/Read", Requires: []*authorityv1.WorkScopeV1{row}}}})
+		require.NoError(t, rows.Converge(ctx))
+		require.Equal(t, []string{page + "-installer", page + "-viewer"}, teams(), "set up once the store is composed: one team per declared role")
+		installer := authority.Person{ID: owner, Organization: org}
+		id, err := svc.WorkContextAudienceInstallation(ctx, org, page)
+		require.NoError(t, err)
+		granted := func() []string {
+			t.Helper()
+			grants, err := core.ListRoleGrants(ctx, installer, org, id)
+			require.NoError(t, err)
+			var held []string
+			for _, grant := range grants {
+				held = append(held, grant.Role)
+			}
+			slices.Sort(held)
+			return held
+		}
+		require.Equal(t, []string{"installer", "viewer"}, granted(), "each role to its team, given against the reach the page is composed with")
+
+		deliverModule(t, ctx, conn, signer, conformanceModule{alias: store, generation: 2, ceilings: []*authorityv1.WorkScopeV1{row},
+			methods: []*compositionv1.MethodPolicyV1{{Method: "/" + store + ".Store/Read", Requires: []*authorityv1.WorkScopeV1{row}}}})
+		require.NoError(t, rows.Converge(ctx))
+		require.Equal(t, []string{"installer", "viewer"}, granted(), "the store delivered again, reaching the same, ends no grant")
+
+		team := teamNamed(t, ctx, svc, org, page+"-viewer")
+		cast, err := core.OpenTeamCast(ctx, authority.Person{ID: owner, Organization: org, SessionID: "reach-fixture-session"},
+			authority.TeamCastRequest{Organization: org, Team: team, SessionID: "reach-fixture-cast"})
+		require.NoError(t, err, "the organization's administrator acts as the viewer team the fixture set up")
+		require.Equal(t, team, cast.Team)
 	})
 
 	// Beyond the suite: accounts' own person Work Context mints, beside the

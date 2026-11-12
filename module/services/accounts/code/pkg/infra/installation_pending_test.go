@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"accounts/pkg/business"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/infra/storetx"
 	"accounts/pkg/jobs"
 
@@ -45,7 +46,7 @@ func TestPendingInstallationEnforcementReaders(t *testing.T) {
 				exposure, err := testStore.ListInstallationExposure(ctx, i.org, []string{i.installation.Id})
 				require.NoError(t, err)
 				require.Empty(t, exposure)
-				entitlements, err := testStore.ListSolutionEntitlements(ctx, i.org, i.owner, "", 100)
+				entitlements, err := testStore.ListSolutionEntitlements(ctx, i.org, i.owner, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "", 100)
 				require.NoError(t, err)
 				require.Empty(t, entitlements, "gateway projection must omit unacknowledged consent")
 				stamp, err := json.Marshal(jobs.ModuleAuthority{PrincipalID: i.principal, OrganizationID: i.org,

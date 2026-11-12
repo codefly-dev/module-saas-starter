@@ -22,11 +22,20 @@ import (
 // and a viewer role.
 func signedModulePage(t *testing.T, page bool) (*solutionhost.ModuleManifest, *compositionv1.ApplyManifestRequest, *solutionhost.Delivered, *Service) {
 	t.Helper()
+	var frontend *solutionhost.Frontend
+	if page {
+		frontend = &solutionhost.Frontend{Title: "Example", ExposedModule: "./Page", HostContract: 1}
+	}
+	return signedModulePageWith(t, frontend, true)
+}
+
+// signedModulePageWith is signedModulePage with the page as given (nil for
+// none) and the roles declared or left to the core to derive.
+func signedModulePageWith(t *testing.T, frontend *solutionhost.Frontend, declared bool) (*solutionhost.ModuleManifest, *compositionv1.ApplyManifestRequest, *solutionhost.Delivered, *Service) {
+	t.Helper()
 	manifest := fixtureManifest(t, "example", 1)
 	manifest.Authority = &solutionhost.Authority{Principal: "example", ResourceKinds: []string{"example.note"}}
-	if page {
-		manifest.Frontend = &solutionhost.Frontend{Title: "Example", ExposedModule: "./Page", HostContract: 1}
-	}
+	manifest.Frontend = frontend
 	raw, err := solutionhost.SignedPayload(manifest)
 	require.NoError(t, err)
 	carrier := &solutionhost.Signed{Document: raw, Envelope: deliverytest.Envelope(t, raw, testDeliveryKey)}
@@ -35,8 +44,12 @@ func signedModulePage(t *testing.T, page bool) (*solutionhost.ModuleManifest, *c
 	note := func(actions ...string) []*authorityv1.WorkScopeV1 {
 		return []*authorityv1.WorkScopeV1{{ResourceKind: "example.note", Actions: actions}}
 	}
-	payload, err := proto.Marshal(&compositionv1.AuthorityManifestV1{Module: manifest.Alias, Generation: manifest.Generation, CoreManifestDigest: delivery.Digest(raw),
-		Roles: []*compositionv1.RoleV1{{Name: InstallerRole, Scopes: note("read", "write")}, {Name: "viewer", Scopes: note("read")}}})
+	document := &compositionv1.AuthorityManifestV1{Module: manifest.Alias, Generation: manifest.Generation, CoreManifestDigest: delivery.Digest(raw),
+		ScopeCeilings: note("read", "write")}
+	if declared {
+		document.Roles = []*compositionv1.RoleV1{{Name: InstallerRole, Scopes: note("read", "write")}, {Name: "viewer", Scopes: note("read")}}
+	}
+	payload, err := proto.Marshal(document)
 	require.NoError(t, err)
 	signer := deliverytest.Signer(t, testDeliveryKey)
 	envelope, err := delivery.Sign(payload, signer.KeyID(), signer.Sign)
@@ -88,4 +101,54 @@ func TestAModuleInstallationRoleNamesADeclaredRole(t *testing.T) {
 	code, ok := domain.CodeOf(err)
 	require.True(t, ok)
 	require.Equal(t, domain.NotFound, code)
+}
+
+// A page the host bundles into its own frontend (solutionhost.Frontend.Bundled)
+// is a page: its roles are accepted by the core and read here, exactly as a
+// remote's. This is the manifest shape of a module contributing a package
+// this host builds in, which before was headless to both.
+func TestAPageTheHostBundlesDeclaresRolesLikeARemote(t *testing.T) {
+	bundled := &solutionhost.Frontend{Title: "Installed models", Order: 60, Bundled: &solutionhost.FrontendBundled{Package: "@example/models-ui", Export: "modelsPlugin"}}
+	manifest, req, verified, svc := signedModulePageWith(t, bundled, true)
+	require.NoError(t, svc.precheckCoreModule(context.Background(), req))
+	doc, err := svc.verifyAuthorityDocument(req.GetAuthority(), verified)
+	require.NoError(t, err)
+	authority := svc.solutionAuthorityOf(doc, manifest)
+	require.NotNil(t, authority)
+	require.Equal(t, []string{InstallerRole, "viewer"}, authority.RoleNames())
+}
+
+// A module page delivered with no roles is read with the standard three the
+// core derives from what it serves (the viewer reads, the editor reads and
+// writes, the installer holds every action served): one rule, the core's,
+// so the teams this host offers are the roles the core gates by. A module
+// without a page still has none.
+func TestAModulePageWithoutRolesIsReadWithTheStandardOnes(t *testing.T) {
+	manifest, req, verified, svc := signedModulePageWith(t, &solutionhost.Frontend{Title: "Example", ExposedModule: "./Page", HostContract: 1}, false)
+	require.NoError(t, svc.precheckCoreModule(context.Background(), req))
+	doc, err := svc.verifyAuthorityDocument(req.GetAuthority(), verified)
+	require.NoError(t, err)
+	authority := svc.solutionAuthorityOf(doc, manifest)
+	require.NotNil(t, authority)
+	require.Equal(t, []string{"editor", InstallerRole, "viewer"}, authority.RoleNames())
+	require.Equal(t, []string{"read"}, authority.RoleActions("example.note")[:1])
+	require.ElementsMatch(t, []string{"read"}, actionsOf(authority.Roles["viewer"], "example.note"))
+	require.ElementsMatch(t, []string{"read", "write"}, actionsOf(authority.Roles["editor"], "example.note"))
+	require.ElementsMatch(t, []string{"read", "write"}, actionsOf(authority.Roles[InstallerRole], "example.note"))
+
+	manifest, req, verified, svc = signedModulePageWith(t, nil, false)
+	require.NoError(t, svc.precheckCoreModule(context.Background(), req))
+	doc, err = svc.verifyAuthorityDocument(req.GetAuthority(), verified)
+	require.NoError(t, err)
+	require.Nil(t, svc.solutionAuthorityOf(doc, manifest), "a module without a page derives no roles")
+}
+
+func actionsOf(scopes []*basev0.WorkScopeV1, kind string) []string {
+	var out []string
+	for _, sc := range scopes {
+		if sc.GetResourceKind() == kind {
+			out = append(out, sc.GetActions()...)
+		}
+	}
+	return out
 }

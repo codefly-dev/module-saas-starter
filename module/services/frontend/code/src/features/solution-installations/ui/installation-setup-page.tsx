@@ -175,10 +175,10 @@ function InstallationSetup({
 	const offers = reachOffers(row.reachedModules);
 	const retry = useRetryInstallation(orgId);
 	const grant = useGrantInstallationToTeam(orgId);
-	// An update the authority offers: what it asks, and its review here.
+	// An update the authority offers, on a solution or on a module page (held
+	// at its approved reach the same way): what it asks, and its review here.
 	const upgradeAvailable =
-		row.installation?.upgradeAvailable === true &&
-		row.target?.kind === "solution";
+		row.installation?.upgradeAvailable === true && row.target !== undefined;
 	const asks = useUpdateAsks(
 		orgId,
 		row.target?.targetId ?? "",

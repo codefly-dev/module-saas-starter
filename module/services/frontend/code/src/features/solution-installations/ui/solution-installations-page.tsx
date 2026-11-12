@@ -910,7 +910,6 @@ function InstalledSection({
 												)}
 												{row.upgradeAvailable &&
 													row.target &&
-													row.target.kind !== "module" &&
 													row.status === InstallationStatus.ACTIVE && (
 														<Button
 															size="sm"

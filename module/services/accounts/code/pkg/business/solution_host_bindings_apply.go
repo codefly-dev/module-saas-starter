@@ -218,8 +218,10 @@ func (s *Service) applySolutionHostBinding(
 	}
 	// Complete preparation precedes database locks. A slow or corrupt source
 	// never withdraws the previous generation or holds its installation locks.
+	// A page the host bundles (Frontend.Bundled) is built into this host's own
+	// frontend from the release's package: nothing to prepare, no payload.
 	var prepared *frontendpayload.Bundle
-	if !document.Removed && document.Frontend != nil {
+	if !document.Removed && document.Frontend != nil && document.Frontend.Bundled == nil {
 		if document.Frontend.Payload == nil {
 			return fmt.Errorf("%w: frontend declares no signed payload", ErrSolutionFrontendNotPrepared)
 		}

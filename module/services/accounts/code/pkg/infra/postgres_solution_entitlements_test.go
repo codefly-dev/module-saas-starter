@@ -170,7 +170,7 @@ func entitledIdentifiers(t *testing.T, orgID, subjectID string) []string {
 	var out []*gen.SolutionEntitlement
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
 		var err error
-		out, err = testStore.ListSolutionEntitlements(ctx, orgID, subjectID, "", 100)
+		out, err = testStore.ListSolutionEntitlements(ctx, orgID, subjectID, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "", 100)
 		return err
 	}))
 	identifiers := make([]string, 0, len(out))
@@ -336,7 +336,7 @@ func TestListSolutionEntitlements_UnhealthyStaysEntitled(t *testing.T) {
 		var out []*gen.SolutionEntitlement
 		require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
 			var err error
-			out, err = testStore.ListSolutionEntitlements(ctx, orgID, member, "", 100)
+			out, err = testStore.ListSolutionEntitlements(ctx, orgID, member, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "", 100)
 			return err
 		}))
 		return out
@@ -380,7 +380,7 @@ func TestListSolutionEntitlements_IsTenantIsolated(t *testing.T) {
 func TestListSolutionEntitlements_RejectsAForeignCursor(t *testing.T) {
 	orgID, _, _ := entitlementOrg(t)
 	err := testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		_, e := testStore.ListSolutionEntitlements(ctx, orgID, business.NewIDString(), "not-a-cursor", 10)
+		_, e := testStore.ListSolutionEntitlements(ctx, orgID, business.NewIDString(), gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "not-a-cursor", 10)
 		return e
 	})
 	require.Error(t, err)

@@ -10,6 +10,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/solutionhost"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 
@@ -139,6 +140,37 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		require.Len(t, teamsNamed(t, h, page+"-viewer"), 1, "setting it up again creates nothing")
 	})
 
+	// A session cast onto a team (OpenTeamCast) is listed what the team holds
+	// and nothing of its person's own: the listing is read under the session's
+	// view, as every decision for that session is. Red before the session
+	// reached the listing: a cast was answered as its person, so its dashboard
+	// listed every page the administrator held and none of the team's.
+	t.Run("a session cast onto a team lists the team's pages, not its person's", func(t *testing.T) {
+		inst := composed()
+		installer := teamsNamed(t, h, page+"-installer")
+		require.Len(t, installer, 1)
+		require.Empty(t, teamMembers(t, h, installer[0]), "the administrator is not in the installer team")
+		own := entitled(conformanceAlex)
+		require.Contains(t, own, inst.ID, "as themselves, through the viewer team they joined")
+		require.Greater(t, len(own), 1, "and more of their own, which a cast must not list")
+		parent, cast := uuid.NewString(), uuid.NewString()
+		_, err := h.core.OpenTeamCast(h.ctx, authority.Person{ID: conformanceAlex, Organization: fixtureOrganization, SessionID: parent},
+			authority.TeamCastRequest{Organization: fixtureOrganization, Team: installer[0], SessionID: cast})
+		require.NoError(t, err, "an administrator casts onto a team they could grant")
+		out, err := h.svc.ListSolutionEntitlements(h.ctx, &gen.ListSolutionEntitlementsRequest{OrgId: fixtureOrganization, SubjectId: conformanceAlex, SessionId: cast})
+		require.NoError(t, err)
+		var listed []string
+		for _, e := range out.GetEntitlements() {
+			listed = append(listed, e.GetInstallationId())
+		}
+		require.Equal(t, []string{inst.ID}, listed, "the page the installer team holds, and nothing the person holds as themselves")
+		asked, err := h.svc.ListSolutionEntitlements(h.ctx, &gen.ListSolutionEntitlementsRequest{OrgId: fixtureOrganization, SubjectId: conformanceAlex, SessionId: parent})
+		require.NoError(t, err)
+		require.Len(t, asked.GetEntitlements(), len(own), "the session the cast was opened from lists the person's own, as before")
+		_, err = h.svc.ListSolutionEntitlements(h.ctx, &gen.ListSolutionEntitlementsRequest{OrgId: fixtureOrganization, SubjectId: conformanceAlice, SessionId: cast})
+		require.Error(t, err, "another person asking under the cast is refused, never answered as the team")
+	})
+
 	t.Run("Admin → Solutions lists solutions; module pages appear only as set-up entries", func(t *testing.T) {
 		offers, err := h.core.Offers(h.ctx, alex, fixtureOrganization)
 		require.NoError(t, err)
@@ -147,10 +179,17 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		}
 		target := available(page)
 		require.Equal(t, "module", target.Kind)
-		_, err = h.svc.ReviewSolutionInstall(h.ctx, alex, fixtureOrganization, target.TargetID)
-		require.Error(t, err, "a module page is never reviewed for install")
+		// A module page's installation, held by composition at its approved
+		// reach, is reviewed for the upgrade it offers, as a solution's is;
+		// the offer it already holds installs nothing again.
+		require.NoError(t, h.core.AdoptLegacyReach(h.ctx))
+		review, err := h.svc.ReviewSolutionInstall(h.ctx, alex, fixtureOrganization, target.TargetID)
+		require.NoError(t, err, "a module page's installation is reviewed for its upgrade")
+		require.Equal(t, page, review.Target)
+		_, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{})
 		code, _ := domain.CodeOf(err)
-		require.Equal(t, domain.NotFound, code)
+		require.Equal(t, domain.Denied, code, "%v", err)
+		require.ErrorContains(t, err, "already installed")
 		const solutionAlias = "conformance-access-own"
 		_, err = h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(solutionAlias).TargetID, business.InstallAccess{})
 		require.ErrorContains(t, err, "is not a module page", "a solution's access is assigned at its install")
@@ -205,6 +244,72 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		require.Contains(t, approvedAtStore, "/conformance.reach.Store/Get", "the review names what the viewer was approved to reach")
 		require.NotContains(t, approvedAtStore, "/conformance.reach.Store/Purge", "and not what the update asks beyond it")
 	})
+
+	// A module page whose upgrade an administrator approved is still
+	// composition's installation: the core records the administrator's
+	// operation as its receipt and leaves its installer as it was (none). Red
+	// before Set up told composition's installation by its installer alone:
+	// it asked for composition's receipt too, so after the first approved
+	// upgrade the page was answered "not installed in this organization yet".
+	t.Run("a module page set up after its approved upgrade is set up on the same installation", func(t *testing.T) {
+		const store, upgraded = "conformance-upgraded-page-store", "conformance-upgraded-page"
+		item, entry := store+".item", wireScope(upgraded+".entry", "read")
+		deliverStore := func(generation uint64, purge string) {
+			deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: store, generation: generation, installationRole: domain.NoInstallationRole,
+				ceilings: []*authorityv1.WorkScopeV1{wireScope(item, "admin", "read", "write")},
+				methods: []*compositionv1.MethodPolicyV1{
+					{Method: "/conformance.upgraded.Store/Get", Requires: []*authorityv1.WorkScopeV1{wireScope(item, "read")}},
+					{Method: "/conformance.upgraded.Store/Purge", Requires: []*authorityv1.WorkScopeV1{wireScope(item, purge)}},
+				}})
+			require.NoError(t, consentModule(h.ctx, h.svc, h.store, fixtureOrganization, conformanceAlex, store))
+		}
+		deliverStore(1, "admin")
+		reach := []*authorityv1.WorkScopeV1{entry, wireScope(item, "read", "write")}
+		deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: upgraded, ceilings: []*authorityv1.WorkScopeV1{entry}, installationRole: domain.NoInstallationRole,
+			page:     &solutionhost.Frontend{Title: "Upgraded page", ExposedModule: "./Page", HostContract: 1, Payload: h.pagePayload},
+			bindings: []solutionhost.AuthorityBinding{{ID: "store", Audience: store, Operations: map[string][]string{"invoke": {item + ":read", item + ":write"}}}},
+			roles:    map[string][]*authorityv1.WorkScopeV1{"installer": reach, "viewer": reach}})
+		require.NoError(t, consentModule(h.ctx, h.svc, h.store, fixtureOrganization, conformanceAlex, upgraded))
+		require.NoError(t, h.core.AdoptLegacyReach(h.ctx), "composition holds the page at its reach")
+		installation := func() domain.Installation {
+			t.Helper()
+			all, err := h.core.Installations(h.ctx, alex, fixtureOrganization)
+			require.NoError(t, err)
+			i := slices.IndexFunc(all, func(inst domain.Installation) bool { return inst.Target == upgraded && inst.Status == domain.Active })
+			require.GreaterOrEqual(t, i, 0, "the module page is installed by composition")
+			return all[i]
+		}
+		held := installation()
+		require.Equal(t, domain.ComposedConsent, held.Consent.OperationID, "held by composition")
+		// The store widens Purge to write, which the page's roles reach
+		// through its binding: an update is offered, and approved.
+		deliverStore(2, "write")
+		upgrade, err := h.core.UpgradeAvailable(h.ctx, installation())
+		require.NoError(t, err)
+		require.True(t, upgrade, "the page's reach widened, so an update is offered on it")
+		review, err := h.svc.ReviewSolutionInstall(h.ctx, alex, fixtureOrganization, available(upgraded).TargetID)
+		require.NoError(t, err)
+		approved, err := h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{})
+		require.NoError(t, err, "an administrator approves the page's update")
+		require.Equal(t, held.ID, approved.ID, "on composition's installation")
+		require.Empty(t, approved.InstalledBy, "whose installer stays none")
+		require.Equal(t, review.GetApproval().GetOperationId(), approved.Consent.OperationID, "its receipt now the administrator's")
+		set, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(upgraded).TargetID, business.InstallAccess{InstallerRoles: []string{"viewer"}})
+		require.NoError(t, err, "the upgraded page is set up")
+		require.Empty(t, set.AccessProblems)
+		require.Equal(t, held.ID, set.ID, "on the installation composition made")
+		viewer := teamsNamed(t, h, upgraded+"-viewer")
+		require.Len(t, viewer, 1)
+		require.Equal(t, []string{conformanceAlex}, teamMembers(t, h, viewer[0]))
+		require.Contains(t, entitled(conformanceAlex), held.ID, "navigation lists it for them")
+
+		// The same review sent again, as a retry whose answer was lost, is
+		// answered the installation, as the core replays it.
+		again, err := h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{})
+		require.NoError(t, err, "an exact resend of the approved update replays it")
+		require.Equal(t, approved.ID, again.ID)
+		require.Equal(t, approved.Revision, again.Revision, "and records nothing again")
+	})
 }
 
 // reachOperations are the operations role reaches at module in offer.
@@ -238,6 +343,74 @@ func approvedOperations(t *testing.T, h reviewedClosureHarness, inst domain.Inst
 		}
 	}
 	return out
+}
+
+// testAPageDeliveredBeforeItsReachHoldsItOnceComposed holds the host's own
+// delivery path to a module page delivered BEFORE the module it reaches
+// through a binding, the order a fresh composition may take: the host's pass
+// (KeepAuthorityCoreCurrent) installs the page by composition and holds it at
+// the reach it has then, without the module; once the module is composed, the
+// page's holders reach it through the binding at once, with no update offered
+// for an administrator to approve, since composition growing approves nothing
+// anyone declared. Red at authority 05e4e62f: the page's receipt froze the
+// module's absence, so its viewer was refused "holds nothing at <store>
+// through binding" and no update was offered either.
+func testAPageDeliveredBeforeItsReachHoldsItOnceComposed(t *testing.T, h reviewedClosureHarness) {
+	const page, store = "conformance-page-first", "conformance-page-first-store"
+	entry, row := page+".entry", store+".row"
+	deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: page, ceilings: []*authorityv1.WorkScopeV1{wireScope(entry, "read", "write")}, installationRole: domain.NoInstallationRole,
+		page:     &solutionhost.Frontend{Title: "Page first", ExposedModule: "./Page", HostContract: 1, Payload: h.pagePayload},
+		bindings: []solutionhost.AuthorityBinding{{ID: "rows", Audience: store, Operations: map[string][]string{"invoke": {row + ":read", row + ":write"}}}},
+		roles: map[string][]*authorityv1.WorkScopeV1{
+			"installer": {wireScope(entry, "read", "write"), wireScope(row, "read", "write")},
+			"viewer":    {wireScope(entry, "read"), wireScope(row, "read")},
+		}})
+	pass := func() {
+		t.Helper()
+		// The host's pass. What the harness holds back elsewhere is reported
+		// by it; nothing about this page or its store may be.
+		if err := h.svc.KeepAuthorityCoreCurrent(h.ctx); err != nil {
+			require.NotContains(t, err.Error(), page)
+		}
+	}
+	pass()
+	alex := authority.Person{ID: conformanceAlex, Organization: fixtureOrganization}
+	installation := func() domain.Installation {
+		t.Helper()
+		all, err := h.core.Installations(h.ctx, alex, fixtureOrganization)
+		require.NoError(t, err)
+		i := slices.IndexFunc(all, func(inst domain.Installation) bool { return inst.Target == page && inst.Status == domain.Active })
+		require.GreaterOrEqual(t, i, 0, "the module page is installed by composition")
+		return all[i]
+	}
+	held := installation()
+	require.Equal(t, domain.ComposedConsent, held.Consent.OperationID, "held by composition, at a reach without the store")
+	_, err := h.core.GrantRoleAsHost(h.ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: held.ID, Role: "viewer", PersonID: conformanceMaya})
+	require.NoError(t, err)
+	maya := authority.Person{ID: conformanceMaya, Organization: fixtureOrganization}
+	through := func() (authority.Issued, error) {
+		t.Helper()
+		parent, err := h.core.IssueForPerson(h.ctx, maya, authority.IssueRequest{Audience: page})
+		require.NoError(t, err, "the viewer is issued at the page")
+		return h.core.IssueChild(h.ctx, parent.Token, authority.Workload{Module: page}, authority.IssueRequest{Binding: "rows"})
+	}
+	_, err = through()
+	require.Error(t, err, "the store is not composed yet: the binding reaches nothing")
+
+	deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: store, ceilings: []*authorityv1.WorkScopeV1{wireScope(row, "read", "write")}})
+	pass()
+	upgrade, err := h.core.UpgradeAvailable(h.ctx, installation())
+	require.NoError(t, err)
+	require.False(t, upgrade, "the store composed for the first time widens nothing anyone declared: no update to approve")
+	child, err := through()
+	require.NoError(t, err, "the viewer reaches the store through the page's binding once it is composed")
+	chain := child.Context.GetActorChain()
+	require.NotEmpty(t, chain)
+	granted := chain[len(chain)-1].GetGrantedScopes()
+	require.Len(t, granted, 1)
+	require.Equal(t, row, granted[0].GetResourceKind())
+	require.Equal(t, []string{"read"}, granted[0].GetActions(), "the viewer's role, cut to the binding")
+	require.Equal(t, store, child.Context.GetAudience())
 }
 
 // testModulePageRoleReachesThroughItsBinding holds the host to a module
@@ -398,8 +571,10 @@ func testADeliveryTheCoreRefusesIsNeverApplied(t *testing.T, h reviewedClosureHa
 	installation, _ = h.coreInstallation(t, alex, page)
 
 	// agree holds both records to generation, and the page's installation to
-	// its grants and revision.
-	agree := func(generation uint64) {
+	// its grants and to revision: its own while the core refuses every
+	// delivery, one above it once a delivery asking nothing new re-converges
+	// the installation on the new generation, as a solution's does.
+	agree := func(generation, revision uint64) {
 		t.Helper()
 		composed, err := h.core.Composed(h.ctx, page)
 		require.NoError(t, err)
@@ -412,21 +587,24 @@ func testADeliveryTheCoreRefusesIsNeverApplied(t *testing.T, h reviewedClosureHa
 		require.Equal(t, generation, records[i].Applied.Generation, "accounts applied generation %d", generation)
 		now, ok := h.coreInstallation(t, alex, page)
 		require.True(t, ok)
-		require.Equal(t, installation.Revision, now.Revision, "the installation's revision did not move")
+		require.Equal(t, revision, now.Revision, "the installation's revision")
 		kept, err := h.core.ListRoleGrants(h.ctx, alex, fixtureOrganization, installation.ID)
 		require.NoError(t, err)
 		require.ElementsMatch(t, grants, kept, "every grant is kept")
 	}
-	agree(7)
+	agree(7, installation.Revision)
 
 	for _, generation := range []uint64{8, 8, 9} {
 		err := tryDeliverModule(t, h.ctx, h.conn, h.signer, pageAt(generation, true))
 		require.ErrorContains(t, err, `role "viewer" of `+page+` names `+item+`:write through binding "legacy", which reaches it nowhere in the composition`, "generation %d", generation)
-		agree(7)
+		agree(7, installation.Revision)
 	}
 
 	deliverModule(t, h.ctx, h.conn, h.signer, pageAt(10, false))
-	agree(10)
+	agree(10, installation.Revision+1)
+	now, _ := h.coreInstallation(t, alex, page)
+	require.Equal(t, uint64(10), now.Consent.Generation, "the installation re-converged on 10, held by composition")
+	require.Equal(t, domain.ComposedConsent, now.Consent.OperationID)
 }
 
 // testPagesReachThroughTheAgent holds the host to what a solution's page

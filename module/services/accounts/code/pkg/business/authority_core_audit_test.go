@@ -25,7 +25,7 @@ func TestAuthorityChangesAreRecordedAsRegisteredMutations(t *testing.T) {
 	for _, kind := range []domain.EventKind{domain.InstallationRequested, domain.InstallationActivated, domain.InstallationUninstalled,
 		domain.InstallationReconverged, domain.InstallationUpgradeAvailable, domain.InstallationUpgraded,
 		domain.InstallationReachAdopted, domain.InstallationReachUnreached, domain.InstallationReachRestored,
-		domain.InstallationRoleReachWidened, domain.RoleGranted, domain.RoleViewOpened, domain.RoleRevoked,
+		domain.RoleGranted, domain.RoleViewOpened, domain.RoleRevoked,
 		domain.DelegationGranted, domain.DelegationRevoked, domain.ResourceAttached, domain.ResourceDetached, domain.ResourceTransferred} {
 		_, recorded := authorityEvents[kind]
 		require.True(t, recorded, "%s is a change of authority this host records", kind)
@@ -45,21 +45,31 @@ func TestAuthorityChangesAreRecordedAsRegisteredMutations(t *testing.T) {
 	require.Equal(t, ActorTypeSystem, actorType)
 }
 
-// A delivery that widens what a module page's roles reach ends their grants
-// (role_revoked, actor delivery:<module>) and journals what widened. Without
-// that record an administrator reads only the revocations, and a designed
-// end of an unapproved widening looks like a delivery destroying grants.
-func TestARoleReachWideningIsRecordedWithWhatWidened(t *testing.T) {
-	mapped, recorded := authorityEvents[domain.InstallationRoleReachWidened]
+// A module page's installation is held at its approved reach as a solution's
+// is: the record of a widening is installation_upgrade_available naming what
+// widened and the generation held (never a revocation), and the receipt
+// composition takes is recorded as installation_reach_adopted held by
+// composition. Without those records an administrator reads a page whose
+// roles reach less than its delivered declaration says, with nothing saying
+// why.
+func TestAPageHeldAtItsApprovedReachIsRecordedWithWhatItWaits(t *testing.T) {
+	mapped, recorded := authorityEvents[domain.InstallationUpgradeAvailable]
 	require.True(t, recorded)
-	require.Equal(t, EventAuthorityInstallationRoleReachWidened, mapped.event)
-	require.Equal(t, "installation", mapped.resource)
-	// The detail the core journals (authority-core page_reach.go).
-	e := domain.Event{Kind: domain.InstallationRoleReachWidened, Organization: "00000000-0000-7000-8000-0000000000a1", Subject: "00000000-0000-7000-8000-0000000000c1",
-		Detail: map[string]string{"target": "org-directory", "delivered": "org-directory", "roles": "editor,installer,viewer",
-			"widened": "role editor reaches org-directory > runtime (binding)", "revision": "2"}}
+	require.Equal(t, EventAuthorityInstallationUpgradeAvailable, mapped.event)
+	// The detail the core journals (authority-core lifecycle.go reconverge).
+	e := domain.Event{Kind: domain.InstallationUpgradeAvailable, Organization: "00000000-0000-7000-8000-0000000000a1", Subject: "00000000-0000-7000-8000-0000000000c1",
+		Detail: map[string]string{"target": "org-directory", "approved_generation": "9", "generation": "10",
+			"widened": "role editor reaches further; role editor reaches further at org-directory > records"}}
 	payload, err := authorityPayload(nil, e)
 	require.NoError(t, err)
-	require.Equal(t, "editor,installer,viewer", payload["roles"])
+	require.Equal(t, "9", payload["approved_generation"])
 	require.NoError(t, ValidatePayload(mapped.event, payload))
+
+	adopted := authorityEvents[domain.InstallationReachAdopted]
+	e = domain.Event{Kind: domain.InstallationReachAdopted, Organization: "00000000-0000-7000-8000-0000000000a1", Subject: "00000000-0000-7000-8000-0000000000c1",
+		Detail: map[string]string{"target": "org-directory", "approved_generation": "9", "reach": "sha256:reach", "held_by": domain.ComposedConsent}}
+	payload, err = authorityPayload(nil, e)
+	require.NoError(t, err)
+	require.Equal(t, "composition", payload["held_by"])
+	require.NoError(t, ValidatePayload(adopted.event, payload))
 }

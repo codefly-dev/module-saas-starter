@@ -4,7 +4,7 @@ import {
 	authedFetch,
 	markNarrowed,
 	refreshToken,
-	setNarrowedSessionEndedHandler,
+	setNarrowedRequestRefusedHandler,
 	setRefreshHandler,
 	setToken,
 } from "../token-store";
@@ -13,7 +13,7 @@ import { authInterceptor } from "../transport";
 afterEach(() => {
 	setToken(null);
 	setRefreshHandler(null);
-	setNarrowedSessionEndedHandler(null);
+	setNarrowedRequestRefusedHandler(null);
 	vi.unstubAllGlobals();
 });
 
@@ -26,7 +26,7 @@ describe("a narrowed bearer is never repaired", () => {
 		const handler = vi.fn(async () => "fresh-token");
 		const ended = vi.fn();
 		setRefreshHandler(handler);
-		setNarrowedSessionEndedHandler(ended);
+		setNarrowedRequestRefusedHandler(ended);
 		markNarrowed("cast-bearer");
 		setToken("cast-bearer");
 		await expect(refreshToken()).resolves.toBeNull(); // the installed token, by default
@@ -42,7 +42,7 @@ describe("a narrowed bearer is never repaired", () => {
 		const handler = vi.fn(async () => "fresh-token");
 		const ended = vi.fn();
 		setRefreshHandler(handler);
-		setNarrowedSessionEndedHandler(ended);
+		setNarrowedRequestRefusedHandler(ended);
 		markNarrowed("cast-bearer");
 		setToken("cast-bearer");
 		await expect(refreshToken("own-bearer")).resolves.toBeNull();

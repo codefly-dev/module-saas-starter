@@ -32,8 +32,8 @@ const (
 	solutionPagePathPrefix = "/s/"
 )
 
-// solutionManifest builds a record's manifest from the frontend block its
-// applied presence declared, or reports that the record has none to render. A
+// solutionManifest builds a record's remote manifest from the frontend block
+// its applied presence declared, or reports that the record has none to load. A
 // block this host cannot read is "none" too: the projection then omits the
 // manifest rather than publishing one the frontend would refuse for a reason
 // it cannot name, and the cause is logged here, where it is readable.
@@ -48,6 +48,12 @@ func solutionManifest(record *accountsv1.SolutionRegistration, prepared bool) (s
 		return "", false
 	}
 	if frontend.Payload != nil && !prepared {
+		return "", false
+	}
+	// A page the host bundles (Frontend.Bundled) is built into this host's
+	// own frontend from the release's package: there is no remote to load,
+	// so no remote manifest describes it. It is still a page, for its roles.
+	if frontend.Bundled != nil {
 		return "", false
 	}
 	alias := record.GetSolutionId()
