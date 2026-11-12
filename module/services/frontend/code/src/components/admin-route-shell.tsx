@@ -13,7 +13,7 @@ import { useAuth } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
 
 export function AdminRouteShell({ children }: { children: ReactNode }) {
-	const { isAuthenticated, isLoading, platformRole, orgRole } = useAuth();
+	const { isAuthenticated, isLoading, platformRole, orgRole, sessionRead } = useAuth();
 	const router = useRouter();
 	const pathname = usePathname();
 	const admin = isAdmin(platformRole, orgRole);
@@ -38,6 +38,29 @@ export function AdminRouteShell({ children }: { children: ReactNode }) {
 		);
 	}
 	if (!isAuthenticated) return null;
+	// "No role" is only an answer once the host has confirmed the session:
+	// while it is being read, or could not be read, the shell says so and does
+	// not call it a denial.
+	if (sessionRead === "reading" || sessionRead === "failed") {
+		return (
+			<>
+				<ImpersonationBanner />
+				<RoleViewBanner />
+				{sessionRead === "reading" ? (
+					<div className="min-h-screen flex items-center justify-center">
+						<Skeleton className="h-8 w-48" />
+					</div>
+				) : (
+					<EmptyState
+						icon={ShieldOff}
+						title="Could not confirm what this session is"
+						description="The host could not say what this session is, so Admin is not shown. This is not a statement about your role. Reload to try again."
+						action={<Link href="/">Back to the dashboard</Link>}
+					/>
+				)}
+			</>
+		);
+	}
 	// A refusal says why and who can change it; sending the person to the
 	// dashboard unexplained looks like the page does not exist.
 	if (!allowed) {

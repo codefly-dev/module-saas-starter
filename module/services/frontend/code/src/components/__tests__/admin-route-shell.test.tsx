@@ -7,6 +7,7 @@ const state = vi.hoisted(() => ({
 	pathname: "/admin/teams/team-example",
 	isAuthenticated: true,
 	orgRole: "member" as string | undefined,
+	sessionRead: "confirmed" as string,
 	replace: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({
@@ -17,6 +18,7 @@ vi.mock("@/lib/auth", () => ({
 	useAuth: () => ({
 		isAuthenticated: state.isAuthenticated,
 		orgRole: state.orgRole,
+		sessionRead: state.sessionRead,
 		isLoading: false,
 	}),
 }));
@@ -48,6 +50,7 @@ beforeEach(() => {
 	state.pathname = "/admin/teams/team-example";
 	state.isAuthenticated = true;
 	state.orgRole = "member";
+	state.sessionRead = "confirmed";
 	state.replace.mockClear();
 });
 
@@ -86,4 +89,24 @@ it("still requires authentication", async () => {
 	await waitFor(() =>
 		expect(state.replace).toHaveBeenCalledWith("/auth/login"),
 	);
+});
+
+// "No role" is not "unconfirmed": while the host is being asked the shell
+// waits, and when it could not be asked it says so. Neither is a denial, and
+// neither says the person's role is none.
+it("shows no denial while the session is being confirmed", () => {
+	state.orgRole = undefined;
+	state.sessionRead = "reading";
+	render(<AdminRouteShell>Team roster</AdminRouteShell>);
+	expect(screen.queryByText(/You don't have access/)).toBeNull();
+	expect(screen.queryByText(/is none/)).toBeNull();
+	expect(screen.getByText("narrowed session bar")).toBeTruthy();
+});
+
+it("says it could not confirm the session, not that the role is none", () => {
+	state.orgRole = undefined;
+	state.sessionRead = "failed";
+	render(<AdminRouteShell>Team roster</AdminRouteShell>);
+	expect(screen.getByText("Could not confirm what this session is")).toBeTruthy();
+	expect(screen.queryByText(/is none/)).toBeNull();
 });
