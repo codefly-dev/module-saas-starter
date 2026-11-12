@@ -58,15 +58,27 @@ func roleViewOf(ctx context.Context) (domain.RoleView, error) {
 	return view, nil
 }
 
+// narrows reports whether a session acts as less than its person: a role view
+// names the roles it acts as, and a cast names the team it acts as, which may
+// name no role at all. Every gate here asks this and never len(view.Roles): a
+// cast read as "no view" would keep its person's organization and platform
+// roles behind a session that says it is only a team.
+func narrows(view domain.RoleView) bool { return len(view.Roles) > 0 || view.Team != "" }
+
 // refuseInRoleView refuses the call when the session it is made from views as
-// some of its roles.
+// some of its roles, or is cast onto a team.
 func refuseInRoleView(ctx context.Context) error {
 	view, err := roleViewOf(ctx)
 	if err != nil {
 		return err
 	}
-	if len(view.Roles) == 0 {
+	if !narrows(view) {
 		return nil
+	}
+	if view.Team != "" {
+		return status.Errorf(codes.PermissionDenied,
+			"this session acts as team %s and as nothing else; this operation is decided by organization roles, which a team does not hold, so it is unavailable while acting as a team: use the session the cast was opened from",
+			view.Team)
 	}
 	var viewed []string
 	for _, roles := range view.Roles {

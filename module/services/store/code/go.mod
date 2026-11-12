@@ -1,6 +1,6 @@
 module store-migrator
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/codefly-dev/sdk-go v0.4.1

@@ -345,6 +345,22 @@ describe("OnboardingController", () => {
 	});
 });
 
+describe("workspace slug follows the organization name", () => {
+	it("keeps following while typed, and stops once the person edits it", () => {
+		const controller = new OnboardingController({
+			backend: new RecordingBackend(),
+		});
+		for (const typed of ["D", "Da", "Dana", "Dana S", "Dana Studio"]) {
+			controller.setOrganizationName(typed);
+		}
+		expect(controller.getSnapshot().draft.slug).toBe("dana-studio");
+
+		controller.setOrganizationSlug("studio");
+		controller.setOrganizationName("Dana Studio Two");
+		expect(controller.getSnapshot().draft.slug).toBe("studio");
+	});
+});
+
 describe("organization slug rules", () => {
 	it("matches the backend normalization and validation contract", () => {
 		expect(slugifyOrganizationName(" Hello, Déus! ")).toBe("hello-d-us");

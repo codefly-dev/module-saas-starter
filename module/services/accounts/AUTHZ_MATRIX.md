@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **304 RPCs** across **42 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **305 RPCs** across **42 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -36,6 +36,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/host.session.v1.SessionService/Current` | unary | `GET /v1/session` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Answer the session the caller's bearer belongs to, without the bearer. |
 | `/host.session.v1.SessionService/ListFixturePeople` | unary | `GET /v1/session/fixture-people` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / AUTHENTICATION | PUBLIC → SECRET | List the people fixture sign-in admits, in the fixture's order; none where it is not enabled. |
 | `/host.session.v1.SessionService/OpenRoleView` | unary | `POST /v1/session:open-role-view` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | SUCCESS: saas.authority.role_view_opened | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → SECRET | Open a session that acts as some of the roles the caller holds on one installation; it only narrows. |
+| `/host.session.v1.SessionService/OpenTeamCast` | unary | `POST /v1/session:open-team-cast` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | SUCCESS: saas.authority.role_view_opened | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → SECRET | Open a session that acts as one team and nothing else, for a caller who could grant that team's roles. |
 | `/host.session.v1.SessionService/SignIn` | unary | `POST /v1/session:sign-in` | `public` | exposure=PUBLIC; tenant=NONE | — | — | SUCCESS: saas.auth.login | FORBIDDEN / AUTHENTICATION | SECRET → SECRET | Open a session for a fixture person by their fixture token. |
 | `/saas.accounts.v1.APIKeyService/CreateAPIKey` | unary | `POST /v1/api-keys` | `mfa` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; mfa=IF_ENROLLED_RECENT_STEP_UP; impersonation=FORBIDDEN | perm=api_keys:write | organization_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.api_key.created | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → SECRET | Mint an API key for an administered organization. |
 | `/saas.accounts.v1.APIKeyService/ListAPIKeys` | unary | `GET /v1/api-keys` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=api_keys:read; scope=api_keys:read | organization_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List org's API keys. |
@@ -315,7 +316,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 
 ## Tier totals
 
-- `auth`: 53
+- `auth`: 54
 - `internal`: 55
 - `mfa`: 5
 - `org_admin`: 64

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import { OrgSelector } from "@/components/org-selector";
+import { ActAsTeam } from "@/features/role-view/role-view";
 import type { Team } from "@/gen/saas/accounts/v1/common_pb";
 import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
 import { useAuth } from "@/lib/auth";
@@ -81,7 +82,8 @@ function TeamDetailsForOrganization({
 }
 
 function TeamDetails({ team }: { team: Team }) {
-	const { user, orgRole, platformRole } = useAuth();
+	const { user, orgRole, platformRole, castTeamId, sessionRead } = useAuth();
+	const unconfirmed = sessionRead === "reading" || sessionRead === "failed";
 	const queryClient = useQueryClient();
 	const [editing, setEditing] = useState(false);
 	const members = useQuery(teamQueries.members(team.id));
@@ -91,7 +93,8 @@ function TeamDetails({ team }: { team: Team }) {
 	const membership = members.data?.members.find(
 		(member) => member.userId === user?.id,
 	);
-	const myRole = membership ? toTeamRole(membership.role) : undefined;
+	// A cast holds what its team holds, not the person's own team role.
+	const myRole = membership && !castTeamId && !unconfirmed ? toTeamRole(membership.role) : undefined;
 	const teamAdmin = myRole === "admin" || myRole === "owner";
 	const orgAdmin = orgRole === "admin" || orgRole === "owner";
 	const canManage =
@@ -143,6 +146,27 @@ function TeamDetails({ team }: { team: Team }) {
 							"",
 						)}
 					</p>
+				) : unconfirmed ? (
+					<p>
+						{sessionRead === "reading"
+							? "Confirming what this session is."
+							: "Could not confirm what this session is."}{" "}
+						Your access here is not shown until the host says; it decides every
+						action.
+					</p>
+				) : castTeamId ? (
+					<>
+						<Badge variant="outline">
+							{castTeamId === team.id
+								? "Acting as this team"
+								: "Acting as another team"}
+						</Badge>
+						<p className="text-sm text-muted-foreground">
+							This session holds what the team it acts as holds and nothing of
+							your own: not your team role, not your administrator access. The
+							host decides what it may do here and refuses the rest by name.
+						</p>
+					</>
 				) : (
 					<>
 						<Badge variant={teamAdmin ? "default" : "outline"}>
@@ -167,6 +191,7 @@ function TeamDetails({ team }: { team: Team }) {
 					</>
 				)}
 			</section>
+			<ActAsTeam teamId={team.id} teamName={team.name} />
 			<TeamMembersPanel
 				orgId={team.orgId}
 				teamId={team.id}

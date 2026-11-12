@@ -16,6 +16,8 @@ const session = vi.hoisted(() => ({
 	organizationId: "org-1" as string | undefined,
 	orgRole: "owner" as OrgRole | undefined,
 	platformRole: undefined as PlatformRole | undefined,
+	castTeamId: "",
+	sessionRead: "confirmed" as "reading" | "failed" | "confirmed",
 	switchOrganization: vi.fn(async () => undefined),
 }));
 
@@ -86,6 +88,8 @@ beforeEach(() => {
 	session.organizationId = "org-1";
 	session.orgRole = "owner";
 	session.platformRole = undefined;
+	session.castTeamId = "";
+	session.sessionRead = "confirmed";
 });
 
 afterEach(cleanup);
@@ -150,5 +154,34 @@ describe("TeamDetailsPage (org-selection and access states)", () => {
 
 		await waitFor(() => expect(removals).toHaveLength(1));
 		expect(removals[0]).toEqual({ teamId: "team-1", userId: "user-1" });
+	});
+
+	// The auth context hands a cast no org role (the host says what the
+	// session is); the panel says what the cast holds, not what the person
+	// holds, and offers no management the host would refuse.
+	it("says a cast session acts as the team and offers no team management", async () => {
+		serveTeam();
+		session.orgRole = undefined;
+		session.castTeamId = "team-1";
+
+		renderInApp(<TeamDetailsPage teamId="team-1" />);
+
+		await screen.findByRole("heading", { name: "platform" });
+		const access = await screen.findByLabelText("Your team access");
+		expect(await within(access).findByText("Acting as this team")).toBeTruthy();
+		expect(within(access).queryByText(/administrator access allows/)).toBeNull();
+		expect(screen.queryByRole("button", { name: "Edit team" })).toBeNull();
+	});
+
+	it("claims no access while the host has not confirmed what the session is", async () => {
+		serveTeam();
+		session.orgRole = undefined;
+		session.sessionRead = "failed";
+
+		renderInApp(<TeamDetailsPage teamId="team-1" />);
+
+		const access = await screen.findByLabelText("Your team access");
+		expect(await within(access).findByText(/Could not confirm what this session is/)).toBeTruthy();
+		expect(within(access).queryByText(/team administrator/)).toBeNull();
 	});
 });

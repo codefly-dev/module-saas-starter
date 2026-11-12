@@ -13,6 +13,7 @@ import {
 	useState,
 } from "react";
 import { completePendingClientAuthorization } from "@/features/auth/model/client-authorization";
+import { type RoleViewEntry, SessionService } from "@/gen/host/session/v1/session_pb";
 import { AuthService } from "@/gen/saas/accounts/v1/authentication_pb";
 import { PlatformAdminService } from "@/gen/saas/accounts/v1/platform_admin_pb";
 import { authErrorFromResponse } from "@/lib/auth-errors";
@@ -30,6 +31,9 @@ import {
 	storeUserName,
 } from "./auth-session";
 import {
+	getToken as getConnectToken,
+	markNarrowed,
+	setNarrowedSessionEndedHandler,
 	setToken as setConnectToken,
 	setRefreshHandler,
 } from "./connect/token-store";
@@ -37,6 +41,7 @@ import { apiTransport } from "./connect/transport";
 
 const authClient = createClient(AuthService, apiTransport);
 const platformAdminClient = createClient(PlatformAdminService, apiTransport);
+const sessionClient = createClient(SessionService, apiTransport);
 
 // Browser REST is always same-origin. Next/gateway resolves the accounts
 // service server-side from Codefly bindings (CONV-004).
@@ -352,8 +357,31 @@ function base64urlEncode(bytes: Uint8Array): string {
 	return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+/**
+ * How a narrowed session (a role view or a team cast) ended, when it ended
+ * without the person asking. A person acting as less than themselves must
+ * never find themselves silently acting as themselves again, so the end is
+ * said, named, and (for an expiry) left for them to act on.
+ *   - expired: the narrowed credential stopped being accepted. Nothing more is
+ *     done in that session, and the person's own session is NOT installed until
+ *     they ask for it (exitRoleView).
+ *   - reloaded: the narrowed bearer lived only in memory; a reload or a new tab
+ *     boots from the refresh cookie, which is the person's own. They are back
+ *     in their own session and are told so.
+ * `as` is what the session acted as, in the words it was opened with.
+ */
+export interface NarrowedSessionEnd {
+	reason: "expired" | "reloaded";
+	as: string;
+}
+
+// The narrowed session this tab had open, kept across a reload so the boot can
+// say that the reload ended it. The bearer itself is never stored.
+const NARROWED_SESSION_KEY = "codefly_narrowed_session";
+
 interface AuthState {
 	user: { id: string; email?: string; name?: string } | null;
+	narrowedSessionEnd: NarrowedSessionEnd | null;
 	accessToken: string | null;
 	organizationId?: string;
 	platformRole?: PlatformRole;
@@ -365,6 +393,19 @@ interface AuthState {
 }
 
 interface AuthContextType extends AuthState {
+	/**
+	 * What the host says this session is (`Session.Current`). "reading" (in
+	 * flight, including after every token swap) and "failed" both mean the
+	 * session is NOT confirmed: `platformRole` and `orgRole` are then undefined
+	 * and `castTeamId` is empty, because an unconfirmed session is never
+	 * presented as the widest thing it might be. Only "confirmed" says the
+	 * rest of this block is the host's answer.
+	 */
+	sessionRead: "reading" | "failed" | "confirmed";
+	/** The team a confirmed session is cast onto (`cast_team_id`), else empty. A cast holds none of the person's roles: they read as undefined. */
+	castTeamId: string;
+	/** The role view a confirmed session was opened with, else empty. */
+	roleView: RoleViewEntry[];
 	// Dev / fixture path — caller supplies an already-trusted identity.
 	// Used by the dev-admin fixture and local-only tooling. In production
 	// the OAuth redirect flow (signInWith) is the only path.
@@ -421,15 +462,22 @@ interface AuthContextType extends AuthState {
 	// trace of the target; a cookie that no longer works logs out rather than
 	// leaving the impersonation token installed.
 	exitImpersonation: () => Promise<void>;
-	// Installs the session of a role view the host opened (SessionService
-	// OpenRoleView) as the active one. The authority recorded the view, not
-	// this browser; it narrows what the session is issued and is never widened.
-	enterRoleView: (accessToken: string) => void;
+	// Installs the session of a role view or a team cast the host opened
+	// (SessionService OpenRoleView / OpenTeamCast) as the active one. The
+	// authority recorded it, not this browser; it narrows what the session is
+	// issued and is never widened. `as` says what it acts as, in words, for the
+	// notice if it ends without the person asking.
+	enterRoleView: (accessToken: string, as: string) => void;
 	// Returns to all of the person's roles by re-exchanging the refresh cookie,
-	// which a role view never touched.
+	// which a narrowed session never touched. Also the way out of an expired
+	// narrowed session: the full session is installed only by this.
 	exitRoleView: () => Promise<void>;
+	// Acknowledges a narrowed session that a reload ended.
+	dismissNarrowedSessionEnd: () => void;
 	getToken: () => string | null;
 }
+
+const NO_VIEW: RoleViewEntry[] = [];
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
@@ -457,16 +505,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		user: null,
 		accessToken: null,
 		impersonation: { isImpersonating: false },
+		narrowedSessionEnd: null,
 		isLoading: true,
 		isAuthenticated: false,
 	});
 
 	const getToken = useCallback(() => state.accessToken, [state.accessToken]);
 
-	// True while the installed token is a role view's. A view has no refresh half
-	// of its own, so a 401 repair below would swap in the person's FULL session
-	// and replay the failed request with it: the one thing a view must never do.
-	const roleViewRef = useRef(false);
+	// What the installed narrowed session acts as, for the notice when it ends.
+	// Whether a 401 may be repaired is NOT decided from here: the token store
+	// decides per request, from the bearer that request carried.
+	const narrowedAsRef = useRef("");
+
+	// The host's answer to Session.Current, keyed by the token it was read for
+	// (see sessionRead below).
+	const [read, setRead] = useState<
+		| { token: string; failed: true }
+		| { token: string; failed?: false; castTeamId: string; roleView: RoleViewEntry[] }
+	>({ token: "", failed: true });
 
 	const applyAccessToken = useCallback(
 		(accessToken: string, userId?: string, email?: string) => {
@@ -497,6 +553,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			setState({
 				user: sessionUser,
 				accessToken,
+				// Installing any token answers an expired narrowed session: either the
+				// person asked for their own back (exitRoleView), or they opened
+				// another narrowed one. A reload's notice is set after this by boot.
+				narrowedSessionEnd: null,
 				organizationId,
 				platformRole,
 				orgRole,
@@ -565,6 +625,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 					: null,
 				accessToken: null,
 				impersonation: { isImpersonating: false },
+				narrowedSessionEnd: null,
 				isLoading: false,
 				isAuthenticated: false,
 				mfaRequired: true,
@@ -853,7 +914,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	}, []);
 
 	const logout = useCallback(async (): Promise<SignOutResult> => {
-		roleViewRef.current = false;
+		narrowedAsRef.current = "";
+		sessionStorage.removeItem(NARROWED_SESSION_KEY);
 		// Always hit logout so the server clears the httpOnly refresh cookie, even
 		// if we have no access token in memory. The refresh token is read from the
 		// cookie server-side (no body token needed).
@@ -895,6 +957,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			user: null,
 			accessToken: null,
 			impersonation: { isImpersonating: false },
+			narrowedSessionEnd: null,
 			isLoading: false,
 			isAuthenticated: false,
 		});
@@ -911,10 +974,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	);
 
 	const enterRoleView = useCallback(
-		(accessToken: string) => {
+		(accessToken: string, as: string) => {
 			if (!accessToken) throw new Error("Opening a role view returned no session");
+			// Marked before it is installed, so no request can be sent with it
+			// while the store does not yet know it is narrowed.
+			markNarrowed(accessToken);
 			applyAccessToken(accessToken);
-			roleViewRef.current = true;
+			narrowedAsRef.current = as;
+			sessionStorage.setItem(NARROWED_SESSION_KEY, as);
 		},
 		[applyAccessToken],
 	);
@@ -924,9 +991,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		if (outcome.status !== "ok") {
 			throw new Error("Could not restore your session — please try again.");
 		}
-		roleViewRef.current = false;
+		narrowedAsRef.current = "";
+		sessionStorage.removeItem(NARROWED_SESSION_KEY);
 		setTokens(outcome.accessToken, outcome.refreshToken);
 	}, [setTokens]);
+
+	const dismissNarrowedSessionEnd = useCallback(() => {
+		setState((s) => (s.narrowedSessionEnd ? { ...s, narrowedSessionEnd: null } : s));
+	}, []);
 
 	const exitImpersonation = useCallback(async () => {
 		// Ending the window server-side is what makes the impersonation bearer
@@ -1040,10 +1112,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		// only suppresses this effect's state writes after unmount — it does not
 		// cancel the shared exchange, which a still-mounted caller may be awaiting.
 		let cancelled = false;
+		// A narrowed session open before this boot ended with it: its bearer was
+		// never stored. The person is told, by name, rather than finding the bar
+		// gone and themselves acting with all of their own access.
+		const interrupted = sessionStorage.getItem(NARROWED_SESSION_KEY);
+		sessionStorage.removeItem(NARROWED_SESSION_KEY);
 		void exchangeRefreshCookie().then((outcome) => {
 			if (cancelled) return;
 			if (outcome.status === "ok") {
 				setTokens(outcome.accessToken, outcome.refreshToken);
+				if (interrupted) {
+					setState((s) => ({ ...s, narrowedSessionEnd: { reason: "reloaded", as: interrupted } }));
+				}
 				return;
 			}
 			if (outcome.status === "expired") {
@@ -1063,16 +1143,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		// `authedFetch`) call this when a request hits 401 — the short-lived
 		// access token expired (or was revoked) while the page stayed open. This
 		// single handler is where every dead-session 401 converges.
+		//
+		// A request sent with a NARROWED bearer (a role view or a team cast)
+		// never reaches this handler: the token store answers it null from the
+		// bearer the request carried, and reports the end below. Deciding it
+		// here from a flag was the defect: the first repair cleared the flag, and
+		// the next 401 from the same narrowed bearer was replayed as the person.
+		setNarrowedSessionEndedHandler((bearer) => {
+			// A late 401 from a narrowed session the person already left says
+			// nothing about the session they are in now.
+			if (bearer !== getConnectToken()) return;
+			const as = narrowedAsRef.current;
+			setState((s) => (s.narrowedSessionEnd ? s : { ...s, narrowedSessionEnd: { reason: "expired", as } }));
+		});
 		setRefreshHandler(async () => {
 			const wasImpersonating = impersonatingRef.current;
-			const wasViewing = roleViewRef.current;
 			const outcome = await exchangeRefreshCookie();
 			if (outcome.status === "ok") {
-				roleViewRef.current = false;
+				// A routine refresh of the SAME session is not a change of what
+				// the session is: the last confirmed answer carries to the new
+				// token until its own read lands (and is replaced, or marked
+				// failed, by it). Impersonation ending, a cast or a role view
+				// are identity changes and are never carried.
+				if (!wasImpersonating) {
+					const next = outcome.accessToken;
+					setRead((prev) =>
+						prev.failed || prev.castTeamId || prev.roleView.length
+							? prev
+							: { ...prev, token: next },
+					);
+				}
 				setTokens(outcome.accessToken, outcome.refreshToken);
-				// Same reasoning as impersonation: the request was issued under the
-				// view, so it fails rather than replaying with all of the person's roles.
-				if (wasViewing) return null;
 				// An impersonation token carries no refresh half of its own, so
 				// this cookie is the admin's and the session just restored is the
 				// admin's too. The request that triggered the refresh was issued
@@ -1104,6 +1205,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				user: null,
 				accessToken: null,
 				impersonation: { isImpersonating: false },
+				narrowedSessionEnd: null,
 				isLoading: false,
 				isAuthenticated: false,
 			});
@@ -1113,7 +1215,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			}
 			return null;
 		});
-		return () => setRefreshHandler(null);
+		return () => {
+			setRefreshHandler(null);
+			setNarrowedSessionEndedHandler(null);
+		};
 	}, [setTokens]);
 
 	const setTokensFromMagicLink = useCallback(
@@ -1133,9 +1238,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		[beginMFA, setTokens],
 	);
 
+	// What the host says this session is, keyed by the token it was read for
+	// so a token swap never shows the previous token's answer. Until the read
+	// for THIS token succeeds the session is unconfirmed, never the token's
+	// roles: the host refuses by name whatever is offered, but the chrome must
+	// not claim what it could not confirm.
+	useEffect(() => {
+		const token = state.accessToken;
+		if (!token) return;
+		let current = true;
+		sessionClient
+			.current({})
+			.then(
+				(s) =>
+					current &&
+					setRead({ token, castTeamId: s.castTeamId, roleView: s.roleView }),
+			)
+			.catch(() => current && setRead({ token, failed: true }));
+		return () => {
+			current = false;
+		};
+	}, [state.accessToken]);
+	const answered = read.token === state.accessToken ? read : null;
+	const sessionRead: AuthContextType["sessionRead"] = !state.accessToken
+		? "confirmed"
+		: !answered
+			? "reading"
+			: answered.failed
+				? "failed"
+				: "confirmed";
+	const castTeamId = answered && !answered.failed ? answered.castTeamId : "";
+	const roleView = answered && !answered.failed ? answered.roleView : NO_VIEW;
+	const rolesHidden = !!state.accessToken && (sessionRead !== "confirmed" || !!castTeamId);
+
 	const value = useMemo<AuthContextType>(
 		() => ({
 			...state,
+			sessionRead,
+			castTeamId,
+			roleView,
+			...(rolesHidden ? { platformRole: undefined, orgRole: undefined } : {}),
 			login,
 			loginWithHeaderInjected,
 			signInWith,
@@ -1150,10 +1292,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			exitImpersonation,
 			enterRoleView,
 			exitRoleView,
+			dismissNarrowedSessionEnd,
 			getToken,
 		}),
 		[
 			state,
+			sessionRead,
+			castTeamId,
+			roleView,
+			rolesHidden,
 			login,
 			loginWithHeaderInjected,
 			signInWith,
@@ -1168,6 +1315,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			exitImpersonation,
 			enterRoleView,
 			exitRoleView,
+			dismissNarrowedSessionEnd,
 			getToken,
 		],
 	);

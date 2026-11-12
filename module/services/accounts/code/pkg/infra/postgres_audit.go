@@ -122,6 +122,9 @@ func auditWhere(q business.AuditQuery, startArg int) (string, []any, error) {
 	if q.OrgID != "" {
 		add("org_id = $%d", q.OrgID)
 	}
+	if q.PlatformEventsOnly {
+		conditions = append(conditions, "org_id IS NULL")
+	}
 	if q.ActorID != "" {
 		add("actor_id = $%d", q.ActorID)
 	}

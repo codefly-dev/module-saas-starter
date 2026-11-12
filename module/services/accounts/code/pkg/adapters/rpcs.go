@@ -336,15 +336,10 @@ func (s *OrgServer) GetOrganization(ctx context.Context, req *gen.GetOrganizatio
 	if err != nil {
 		return nil, err
 	}
-	// Cross-org read leak fix: only members of the target org (or platform
-	// admins) can view its data.
+	// Only members of the target org can view its data; a platform role is not
+	// membership.
 	if err := requireOrgMember(ctx, actorID, req.Id); err != nil {
-		if !IsPermissionDenied(err) {
-			return nil, err
-		}
-		if paErr := requirePlatformAdmin(ctx, actorID); paErr != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 	return service.GetOrganization(ctx, req)
 }
@@ -708,15 +703,10 @@ func (s *PermServer) ListRoleAssignments(ctx context.Context, req *gen.ListRoleA
 	if err != nil {
 		return nil, err
 	}
+	// A platform role is not membership: support reads an org's assignments only
+	// through a grant that organization gives it.
 	if err := requireOrgMember(ctx, actorID, req.OrgId); err != nil {
-		// Platform admins can read any org's assignments for support
-		// ops. Fall through to that check before refusing.
-		if !IsPermissionDenied(err) {
-			return nil, err
-		}
-		if paErr := requirePlatformAdmin(ctx, actorID); paErr != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 	return service.ListRoleAssignments(ctx, req)
 }
@@ -1449,6 +1439,9 @@ func (s *AuditServer) QueryAuditLog(ctx context.Context, req *gen.QueryAuditLogR
 		ClientID:   req.ClientId,
 		PageSize:   req.PageSize,
 		PageToken:  req.PageToken,
+		// An empty org_id that reached here is the platform-wide read of the
+		// platform's own events, never a cross-tenant one.
+		PlatformEventsOnly: req.OrgId == "",
 	}
 	if len(req.PayloadContains) > 0 {
 		q.PayloadContains = make(map[string]any, len(req.PayloadContains))
@@ -1502,26 +1495,24 @@ func (s *AuditServer) AggregateAuditLog(ctx context.Context, req *gen.AggregateA
 		}
 	} else {
 		if err := requireOrgMember(ctx, actorID, req.OrgId); err != nil {
-			if !IsPermissionDenied(err) {
-				return nil, err
-			}
-			if paErr := requirePlatformAdmin(ctx, actorID); paErr != nil {
-				return nil, err
-			}
+			return nil, err
 		}
 	}
 
 	q := business.AuditQuery{
-		OrgID:        req.OrgId,
-		ActorID:      req.ActorId,
-		EventType:    req.EventType,
-		EventTypes:   req.EventTypes,
-		Category:     req.Category,
-		Namespace:    req.Namespace,
-		Resource:     req.Resource,
-		ResourceID:   req.ResourceId,
-		ClientID:     req.ClientId,
-		CollectionID: req.CollectionId,
+		OrgID: req.OrgId,
+		// No organization is the platform-wide aggregate of the platform's own
+		// events, never a cross-tenant one.
+		PlatformEventsOnly: req.OrgId == "",
+		ActorID:            req.ActorId,
+		EventType:          req.EventType,
+		EventTypes:         req.EventTypes,
+		Category:           req.Category,
+		Namespace:          req.Namespace,
+		Resource:           req.Resource,
+		ResourceID:         req.ResourceId,
+		ClientID:           req.ClientId,
+		CollectionID:       req.CollectionId,
 	}
 	q.PayloadContains = make(map[string]any, len(req.PayloadContains))
 	for k, v := range req.PayloadContains {

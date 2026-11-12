@@ -17,7 +17,7 @@ import {
 	SolutionSettings,
 	SolutionWorkspace,
 } from "@/solutions/SolutionWorkspace";
-import SolutionNotFound from "./not-found";
+import { PageNotAdmitted } from "./not-admitted";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +42,7 @@ export default async function SolutionPage({
 		<SolutionRuntime
 			remote={{
 				id: solution.id,
+				kind: solution.kind,
 				// A backend-relative registration is served through this host's
 				// own origin; the browser is never handed a pod-local address.
 				manifestUrl: browserManifestUrl(solution),
@@ -73,13 +74,13 @@ export default async function SolutionPage({
 		<SolutionLivePage
 			id={solution.id}
 			assetVersion={solution.assetVersion}
-			denied={<SolutionNotFound />}
+			denied={<PageNotAdmitted title={solution.nav.title} kind={solution.kind} />}
 		>
 			<SolutionWorkspace
 				title={solution.nav.title}
 				settings={
 					<WhenRolesDeclared target={solution.id} kind={solution.kind}>
-						<SolutionSettings title={solution.nav.title}>
+						<SolutionSettings title={solution.nav.title} kind={solution.kind}>
 							<SolutionSetupPanel target={solution.id} />
 						</SolutionSettings>
 					</WhenRolesDeclared>

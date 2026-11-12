@@ -57,6 +57,12 @@ func seedSubscriptionRow(t *testing.T, typePattern, queue string, delivery event
 	return seededSubscription{ID: id, Queue: queue, Delivery: delivery}
 }
 
+// relayTestLease is the claim lease every relay test holds. These tests claim and
+// ack in a loop and none exercises expiry, so the lease is long enough that a
+// stalled runner between a claim and its ack cannot lose it ("events: lease
+// lost"); the tests that do exercise expiry set their own short lease.
+const relayTestLease = time.Minute
+
 // TestPostgresRelayFansOutOnePerSubscription is the relay acceptance case: one
 // published event lands exactly one inbox job on every non-revoked subscription
 // that matches its type — no more, no fewer — and a queue nobody subscribed
@@ -69,7 +75,7 @@ func TestPostgresRelayFansOutOnePerSubscription(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	store := infra.NewPostgresJobStore(pool)
-	transport := infra.NewPostgresEventTransport(store, pool, "relay-fanout-"+uuid.NewString(), time.Second)
+	transport := infra.NewPostgresEventTransport(store, pool, "relay-fanout-"+uuid.NewString(), relayTestLease)
 
 	eventType := "relay.fanout." + relayToken()
 	subA := seedSubscriptionRow(t, eventType, "relay.fanout.a."+relayToken(), events.DeliveryUnordered)
@@ -135,7 +141,7 @@ func TestPostgresRelayOrderedPartitionUnderConcurrentClaimers(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	store := infra.NewPostgresJobStore(pool)
-	transport := infra.NewPostgresEventTransport(store, pool, "relay-ordered-"+uuid.NewString(), time.Second)
+	transport := infra.NewPostgresEventTransport(store, pool, "relay-ordered-"+uuid.NewString(), relayTestLease)
 
 	eventType := "relay.ordered." + relayToken()
 	sub := seedSubscriptionRow(t, eventType, "relay.ordered.q."+relayToken(), events.DeliveryOrdered)
@@ -222,7 +228,7 @@ func TestPostgresRelayOrderedPartitionPreservesBatchEnqueueOrder(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	store := infra.NewPostgresJobStore(pool)
-	transport := infra.NewPostgresEventTransport(store, pool, "relay-batch-order-"+uuid.NewString(), time.Second)
+	transport := infra.NewPostgresEventTransport(store, pool, "relay-batch-order-"+uuid.NewString(), relayTestLease)
 
 	eventType := "relay.batchorder." + relayToken()
 	sub := seedSubscriptionRow(t, eventType, "relay.batchorder.q."+relayToken(), events.DeliveryOrdered)
@@ -316,7 +322,7 @@ func TestPostgresRelayIsolatesPoisonEventPreservingOrdering(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	store := infra.NewPostgresJobStore(pool)
-	transport := infra.NewPostgresEventTransport(store, pool, "relay-poison-"+uuid.NewString(), time.Second)
+	transport := infra.NewPostgresEventTransport(store, pool, "relay-poison-"+uuid.NewString(), relayTestLease)
 
 	eventType := "relay.poison." + relayToken()
 	sub := seedSubscriptionRow(t, eventType, "relay.poison.q."+relayToken(), events.DeliveryOrdered)
@@ -390,7 +396,7 @@ func TestPostgresRelaySuppressesInternalVisibilityFanOut(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	store := infra.NewPostgresJobStore(pool)
-	transport := infra.NewPostgresEventTransport(store, pool, "relay-visibility-"+uuid.NewString(), time.Second)
+	transport := infra.NewPostgresEventTransport(store, pool, "relay-visibility-"+uuid.NewString(), relayTestLease)
 
 	// installation.created is declared internal in the composed catalog;
 	// scope.granted is tenant-visible (module/.../eventcatalog/catalog_gen.go).

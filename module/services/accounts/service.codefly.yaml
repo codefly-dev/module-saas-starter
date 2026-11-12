@@ -15,7 +15,7 @@ agent:
     # 0.1.72 hands a native process each environment variable once
     # (service-go-grpc#220); through 0.1.71 the inherited environment was
     # appended twice, so accounts refused to start with a ~1 MB environment.
-    version: 0.1.72
+    version: 0.1.74
     publisher: codefly.dev
 service-dependencies:
     - name: cache

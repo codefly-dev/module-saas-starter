@@ -129,6 +129,10 @@ WHERE n.nspname='public' AND r.rolname<>'postgres') x;"""))
         dump = re.sub(r'^--\n-- Name: schema_migrations;.*?\n\n\n', '', dump, flags=re.S | re.M)
         dump = re.sub(r'^--\n-- Data for Name: schema_migrations;.*?\n\n\n', '', dump, flags=re.S | re.M)
         dump = re.sub(r'^--\n-- Name: schema_migrations schema_migrations_pkey;.*?\n\n\n', '', dump, flags=re.S | re.M)
+        # The ledger table does not exist when the dump's statements would run, so
+        # the control plane's read of it (accounts' startup schema check) is
+        # granted in the suffix, after the migration engine has created it.
+        dump = re.sub(r'^--\n-- Name: TABLE schema_migrations; Type: ACL;.*?\n\n\n', '', dump, flags=re.S | re.M)
         # A regenerated baseline keeps version 1, and golang-migrate would leave a
         # database installed by the previous one untouched. The baseline stamps its
         # identity on the schema; the runner refuses a database stamped by another.
@@ -198,6 +202,7 @@ DO $owner_policy$ DECLARE owner_role name; BEGIN
 END $owner_policy$;
 '''
         suffix += 'GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.job_state_transitions_sequence_seq TO CURRENT_USER;\n'
+        suffix += "DO $ledger_grant$ BEGIN\n IF to_regclass('public.schema_migrations') IS NOT NULL THEN\n  GRANT SELECT ON TABLE public.schema_migrations TO app_control_plane;\n END IF;\nEND $ledger_grant$;\n"
         suffix += f"COMMENT ON SCHEMA public IS 'codefly store baseline {baseline_id}';\n"
         suffix += 'SET row_security = on;\nSET check_function_bodies = on;\n'
         text = prefix + dump + suffix

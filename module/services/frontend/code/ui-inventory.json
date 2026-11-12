@@ -2323,6 +2323,21 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/app/(dashboard)/s/[solutionId]/not-admitted.tsx",
+      "imports": [
+        "lucide-react",
+        "next/link",
+        "@/components/empty-state",
+        "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "The page route's refusal state for a registered page the viewer is not admitted to; it names the page and its kind, which only this route holds. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/app/(dashboard)/s/[solutionId]/not-found.tsx",
       "imports": [
         "lucide-react",
@@ -4989,16 +5004,19 @@
       "source": "src/features/role-view/role-view.tsx",
       "imports": [
         "@connectrpc/connect",
+        "next/link",
         "react",
         "sonner",
+        "@/features/solution-installations/model/installations",
         "@/gen/host/installation/v1/installation_pb",
         "@/gen/host/session/v1/session_pb",
+        "@/gen/saas/accounts/v1/teams_pb",
         "@/lib/auth",
         "@/lib/connect/transport"
       ],
       "owner": "SaaS application",
       "disposition": "keep feature-local",
-      "reason": "Owns the role-view workflow: asks the host which roles the person holds, opens a view, and states that one is active. It holds no authority; the host decides.",
+      "reason": "Owns the narrowed-session workflow: asks the host which roles the person holds and opens a view, asks the host to act as a team (a cast) and shows its refusal in the host's words, and states on every page that a view or a cast is active, as whom, and how to stop. It holds no authority; the host decides.",
       "stories": [],
       "coverage": "missing",
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."

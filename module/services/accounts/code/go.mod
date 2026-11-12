@@ -1,20 +1,20 @@
 module accounts
 
-go 1.27.3
+go 1.27.4
 
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2
 	buf.build/go/protovalidate v1.4.0
 	connectrpc.com/connect v1.21.1
 	connectrpc.com/otelconnect v0.9.0
-	github.com/codefly-dev/authority/libraries/authority-client/go v0.2.1-0.20261110172726-357f1de701f6
-	github.com/codefly-dev/authority/libraries/authority-core/go v0.1.1-0.20261110172726-357f1de701f6
-	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261110172726-357f1de701f6
-	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261110172726-357f1de701f6
-	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261110172726-357f1de701f6
+	github.com/codefly-dev/authority/libraries/authority-client/go v0.2.1-0.20261112103810-7ff1b8aaa5f9
+	github.com/codefly-dev/authority/libraries/authority-core/go v0.1.1-0.20261112103810-7ff1b8aaa5f9
+	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261112103810-7ff1b8aaa5f9
+	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261112103810-7ff1b8aaa5f9
+	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261112103810-7ff1b8aaa5f9
 	github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc
 	github.com/codefly-dev/core v0.19.22
-	github.com/codefly-dev/interface-cache/go/cache v0.4.1
+	github.com/codefly-dev/interface-cache/go/cache v0.4.2-0.20261110162340-1f824ec7cb21
 	github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261021192505-6fd56dae2e04
 	github.com/codefly-dev/sdk-go v0.4.1
 	github.com/codefly-dev/sdk-go/workcontext v0.1.1-0.20261018052022-70dc7a546458
@@ -65,7 +65,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cheggaaa/pb/v3 v3.2.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
-	github.com/codefly-dev/authority/libraries/hop/go v0.2.0 // indirect
+	github.com/codefly-dev/authority/libraries/hop/go v0.2.1-0.20261111234045-1076f796c30f // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect

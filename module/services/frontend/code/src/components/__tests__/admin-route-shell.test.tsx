@@ -1,5 +1,4 @@
-import { cleanup, screen, waitFor } from "@testing-library/react";
-import { render } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AdminRouteShell } from "../admin-route-shell";
@@ -8,6 +7,7 @@ const state = vi.hoisted(() => ({
 	pathname: "/admin/teams/team-example",
 	isAuthenticated: true,
 	orgRole: "member" as string | undefined,
+	sessionRead: "confirmed" as string,
 	replace: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({
@@ -18,8 +18,23 @@ vi.mock("@/lib/auth", () => ({
 	useAuth: () => ({
 		isAuthenticated: state.isAuthenticated,
 		orgRole: state.orgRole,
+		sessionRead: state.sessionRead,
 		isLoading: false,
 	}),
+}));
+vi.mock("@/components/empty-state", () => ({
+	EmptyState: ({
+		title,
+		description,
+	}: {
+		title: string;
+		description: string;
+	}) => (
+		<div>
+			<h1>{title}</h1>
+			<p>{description}</p>
+		</div>
+	),
 }));
 vi.mock("@/components/admin-layout", () => ({
 	AdminLayout: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -27,17 +42,23 @@ vi.mock("@/components/admin-layout", () => ({
 vi.mock("@/components/impersonation-banner", () => ({
 	ImpersonationBanner: () => null,
 }));
+vi.mock("@/features/role-view/role-view", () => ({
+	RoleViewBanner: () => <div>narrowed session bar</div>,
+}));
 afterEach(cleanup);
 beforeEach(() => {
 	state.pathname = "/admin/teams/team-example";
 	state.isAuthenticated = true;
 	state.orgRole = "member";
+	state.sessionRead = "confirmed";
 	state.replace.mockClear();
 });
 
 it("admits a tenant member to team details", () => {
 	render(<AdminRouteShell>Team roster</AdminRouteShell>);
 	expect(screen.getByText("Team roster")).toBeTruthy();
+	// A view or a cast is said on admin pages too, admitted or refused.
+	expect(screen.getByText("narrowed session bar")).toBeTruthy();
 	expect(state.replace).not.toHaveBeenCalled();
 });
 it.each(["/admin/users", "/admin/teams-other", "/admin/billing"])(
@@ -46,9 +67,21 @@ it.each(["/admin/users", "/admin/teams-other", "/admin/billing"])(
 		state.pathname = path;
 		render(<AdminRouteShell>Restricted</AdminRouteShell>);
 		expect(screen.queryByText("Restricted")).toBeNull();
-		await waitFor(() => expect(state.replace).toHaveBeenCalledWith("/"));
+		expect(screen.getByText("You don't have access to Admin")).toBeTruthy();
+		expect(
+			screen.getByText(/Your role in this organization is member/),
+		).toBeTruthy();
+		expect(state.replace).not.toHaveBeenCalled();
 	},
 );
+it("names a role that is absent", () => {
+	state.pathname = "/admin/users";
+	state.orgRole = undefined;
+	render(<AdminRouteShell>Restricted</AdminRouteShell>);
+	expect(
+		screen.getByText(/Your role in this organization is none/),
+	).toBeTruthy();
+});
 it("still requires authentication", async () => {
 	state.isAuthenticated = false;
 	render(<AdminRouteShell>Team roster</AdminRouteShell>);
@@ -56,4 +89,24 @@ it("still requires authentication", async () => {
 	await waitFor(() =>
 		expect(state.replace).toHaveBeenCalledWith("/auth/login"),
 	);
+});
+
+// "No role" is not "unconfirmed": while the host is being asked the shell
+// waits, and when it could not be asked it says so. Neither is a denial, and
+// neither says the person's role is none.
+it("shows no denial while the session is being confirmed", () => {
+	state.orgRole = undefined;
+	state.sessionRead = "reading";
+	render(<AdminRouteShell>Team roster</AdminRouteShell>);
+	expect(screen.queryByText(/You don't have access/)).toBeNull();
+	expect(screen.queryByText(/is none/)).toBeNull();
+	expect(screen.getByText("narrowed session bar")).toBeTruthy();
+});
+
+it("says it could not confirm the session, not that the role is none", () => {
+	state.orgRole = undefined;
+	state.sessionRead = "failed";
+	render(<AdminRouteShell>Team roster</AdminRouteShell>);
+	expect(screen.getByText("Could not confirm what this session is")).toBeTruthy();
+	expect(screen.queryByText(/is none/)).toBeNull();
 });

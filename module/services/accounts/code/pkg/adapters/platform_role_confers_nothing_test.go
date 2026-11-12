@@ -28,6 +28,18 @@ func TestPlatformSuperAdminAdministersNoOrganizationItIsNotAMemberOf(t *testing.
 		"organization admin": func() error { return requireOrgAdmin(ctx, supportActorID, targetOrgID) },
 		"organization owner": func() error { return requireOrgOwner(ctx, supportActorID, targetOrgID) },
 		"billing admin":      func() error { return requireBillingAdmin(ctx, supportActorID, targetOrgID) },
+		"organization read": func() error {
+			_, err := (&OrgServer{}).GetOrganization(ctx, &gen.GetOrganizationRequest{Id: targetOrgID})
+			return err
+		},
+		"role assignments read": func() error {
+			_, err := (&PermServer{}).ListRoleAssignments(ctx, &gen.ListRoleAssignmentsRequest{OrgId: targetOrgID})
+			return err
+		},
+		"audit aggregate": func() error {
+			_, err := (&AuditServer{}).AggregateAuditLog(ctx, &gen.AggregateAuditLogRequest{OrgId: targetOrgID})
+			return err
+		},
 		"audit log read": func() error {
 			_, err := (&AuditServer{}).QueryAuditLog(ctx, &gen.QueryAuditLogRequest{OrgId: targetOrgID, PageSize: 5})
 			return err
@@ -40,4 +52,20 @@ func TestPlatformSuperAdminAdministersNoOrganizationItIsNotAMemberOf(t *testing.
 				"the refusal names why")
 		})
 	}
+}
+
+// A refusal names its reason: an export format this host does not produce is an
+// invalid argument that says which formats exist, not a masked internal error.
+func TestExportAuditLogNamesAnUnsupportedFormat(t *testing.T) {
+	store := targetTenantStore()
+	store.platformRoles[supportActorID] = "super_admin"
+	installLayeredAuthzService(t, store)
+
+	identity, err := auth.ParseRequestIdentity(supportActorID, supportActorID, "", "")
+	require.NoError(t, err)
+	ctx := stampRequestIdentity(context.Background(), identity, auth.Assurance{})
+
+	_, err = (&AuditServer{}).ExportAuditLog(ctx, &gen.ExportAuditLogRequest{Format: "EXPORT_FORMAT_JSON"})
+	require.Equal(t, codes.InvalidArgument, status.Code(err), "%v", err)
+	require.Contains(t, status.Convert(err).Message(), `use "csv" or "json"`)
 }
