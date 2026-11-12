@@ -163,10 +163,15 @@ func runHostInterfaceFixture(t *testing.T) {
 	// owner and composes its module in the authority core.
 	signer := deliverytest.Signer(t, "conformance-release")
 	verifier := deliverytest.Verifier(t, map[string][]string{signer.KeyID(): {"acme"}})
-	// The suite's reach case delivers conformance-reach and acts as its
-	// workload with the credential it delivered it with: that one delivery
-	// credential is the workload's own, and the carrier accepts it for it.
-	deliveryWorkloads := map[string]string{"conformance-reach": credential("conformance-reach")}
+	// The suite's reach cases deliver these modules and act as their
+	// workloads with the credentials they delivered them with: each one
+	// delivery credential is the workload's own, and the carrier accepts it
+	// for it. conformance-reach is the reach case's actor; the reach-through
+	// case's (reachThroughConsent) hops are conformance-through and its relay.
+	deliveryWorkloads := map[string]string{}
+	for _, module := range []string{"conformance-reach", "conformance-through", "conformance-through-relay"} {
+		deliveryWorkloads[module] = credential(module)
+	}
 	deliveryCredential := func(module string) string {
 		if workload, ok := deliveryWorkloads[module]; ok {
 			return workload
