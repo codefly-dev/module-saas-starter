@@ -77,8 +77,14 @@ func wireScopes(in []*authorityv1.WorkScopeV1) []*basev0.WorkScopeV1 {
 }
 
 // precheckCoreModule refuses, before anything is recorded, a delivery the core
-// would refuse to compose. It reads the carrier unverified, so it only ever
-// refuses: what is applied is read again from the verified, applied record. A
+// would refuse to compose: the core's own admission (authority.Service.Admit),
+// read-only against the composition as it stands, so the delivery endpoint
+// answers the core's reason at once. It reads the carrier unverified, so it
+// only ever refuses: what is applied is read again from the verified record,
+// and the pass composes it in the core before accounts records it
+// (composeDelivered), which is what keeps the two records together. A host
+// whose core is not built yet validates the module as the core would
+// (decide.ValidateModule, the core's own rule) and composes it when it is. A
 // module that gains or loses roles keeps its installations as they are: every
 // module is installed by composition, and its roles decide only who may use
 // it.
@@ -94,13 +100,21 @@ func (s *Service) precheckCoreModule(ctx context.Context, req *compositionv1.App
 	if err != nil {
 		return err
 	}
-	m.ResourceKinds = decide.Served(m)
-	return decide.ValidateModule(m)
+	core, err := s.AuthorityCore()
+	if errors.Is(err, ErrAuthorityCoreUnconfigured) {
+		m.ResourceKinds = decide.Served(m)
+		return decide.ValidateModule(m)
+	}
+	if err != nil {
+		return err
+	}
+	return core.Admit(ctx, m)
 }
 
-// applyCoreModule records the applied, verified delivery in the core: the
-// module it composes at its generation, or its withdrawal. A replay of the
-// generation the core already holds changes nothing.
+// applyCoreModule records a verified delivery in the core: the module it
+// composes at its generation, or its withdrawal. A replay of the generation
+// the core already holds changes nothing; what the core refuses is refused
+// with its reason, and a pass records nothing for it (composeDelivered).
 func (s *Service) applyCoreModule(ctx context.Context, manifest *solutionhost.ModuleManifest, carrierDocument []byte, signed *compositionv1.SignedManifestV1) ([]string, error) {
 	core, err := s.AuthorityCore()
 	if errors.Is(err, ErrAuthorityCoreUnconfigured) {
@@ -130,9 +144,9 @@ func (s *Service) applyCoreModule(ctx context.Context, manifest *solutionhost.Mo
 	if err != nil {
 		return nil, err
 	}
-	if held, err := core.Composed(ctx, m.Name); err == nil && held.Generation == m.Generation && !held.StandIn {
-		return nil, nil
-	}
+	// The core decides a replay of the generation it holds on its own
+	// transaction (ApplyModule): read here first, a slower path was refused
+	// the generation a faster one had just composed.
 	return core.ApplyModule(ctx, m)
 }
 
@@ -177,10 +191,8 @@ func (s *Service) reconcileAuthorityCore(ctx context.Context) error {
 
 // composeAppliedDelivery composes one binding's applied generation in the
 // core, read from the inbox's exact applied generation: the signed documents
-// accounts verified when it took them. Every delivery path reaches the core
-// this way, the composition interface's and the host's delivery endpoint
-// alike, so a solution delivered to a running host is one the core can
-// install. A generation the core already holds changes nothing.
+// accounts verified when it took them. A generation the core already holds
+// changes nothing.
 func (s *Service) composeAppliedDelivery(ctx context.Context, record *SolutionHostBindingRecord) error {
 	if s.deliveryStore == nil || record == nil {
 		return nil
@@ -189,32 +201,52 @@ func (s *Service) composeAppliedDelivery(ctx context.Context, record *SolutionHo
 	if err != nil || manifest == nil {
 		return nil
 	}
-	var delivered *SolutionDeliveryRecord
-	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		var err error
-		delivered, err = s.deliveryStore.ReadDeliveredDocument(ctx, record.BindingID, record.Applied.Generation)
+	delivered, err := s.deliveredGeneration(ctx, record.BindingID, record.Applied.Generation)
+	if err != nil || delivered == nil {
 		return err
-	}); err != nil {
-		return err
-	}
-	if delivered == nil {
-		return nil
 	}
 	_, err = s.applyCoreModule(ctx, manifest, delivered.Payload, signedAuthorityOf(delivered))
 	return err
 }
 
-// composeAppliedBinding composes binding's applied generation in the core,
-// right after a pass applied it.
-func (s *Service) composeAppliedBinding(ctx context.Context, binding string) error {
-	records, err := s.ListSolutionHostBindings(ctx)
-	if err != nil {
-		return err
-	}
-	for _, record := range records {
-		if record.BindingID == binding {
-			return s.composeAppliedDelivery(ctx, record)
+// composeDelivered composes a delivered generation in the core before
+// accounts applies it: the carrier the pass verified, with the authority
+// document the inbox holds for that generation. The core's refusal is the
+// pass's verdict on the generation: accounts records it as refused and
+// applies nothing, so what accounts holds as applied is what the core
+// composes. The core is asked first and accounts records after, rather than
+// the other way round, because the core's record is the one that cannot be
+// moved by hand: a generation accounts applied that the core refused stayed
+// applied and current for a day (Blue, 2026-11-11: a directory page's
+// generation 8, refused on reach, recorded as current beside the core's 7;
+// its generation 9 then measured as a widening of 7 and ended three of the
+// page's grants).
+// Should accounts' apply fail after the core composed, the core is one
+// generation ahead, which the next pass settles: the core answers the
+// generation it holds as a replay and accounts applies it.
+func (s *Service) composeDelivered(ctx context.Context, delivered *solutionhost.Delivered, manifest *solutionhost.ModuleManifest) error {
+	var signed *compositionv1.SignedManifestV1
+	if s.deliveryStore != nil {
+		record, err := s.deliveredGeneration(ctx, manifest.Binding, manifest.Generation)
+		if err != nil {
+			return err
+		}
+		if record != nil {
+			signed = signedAuthorityOf(record)
 		}
 	}
-	return nil
+	_, err := s.applyCoreModule(ctx, manifest, delivered.Payload(), signed)
+	return err
+}
+
+// deliveredGeneration is the inbox's record of binding's generation, nil when
+// the inbox holds none.
+func (s *Service) deliveredGeneration(ctx context.Context, binding string, generation uint64) (*SolutionDeliveryRecord, error) {
+	var delivered *SolutionDeliveryRecord
+	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		delivered, err = s.deliveryStore.ReadDeliveredDocument(ctx, binding, generation)
+		return err
+	})
+	return delivered, err
 }

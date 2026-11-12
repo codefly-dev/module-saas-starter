@@ -349,6 +349,86 @@ func testModulePageRoleReachesThroughItsBinding(t *testing.T, h reviewedClosureH
 	})
 }
 
+// testADeliveryTheCoreRefusesIsNeverApplied replays Blue, 2026-11-11, on the
+// real path: accounts recorded a directory page's generation 8 as applied
+// and current while the authority core refused it (its roles named a task
+// kind and the document kinds through an import binding, which the
+// composition did not reach) and stayed at 7; generation 9, identical to 8,
+// then measured as a widening of 7 and ended three of the page's role
+// grants. A delivery the core refuses
+// refuses is refused with the core's reason and recorded nowhere: accounts'
+// applied generation and the core's composed one agree after every step,
+// the refused generation delivered again at its own or a later generation is
+// still refused, and no grant on the page ends. A later generation the core
+// admits is applied and composed together.
+func testADeliveryTheCoreRefusesIsNeverApplied(t *testing.T, h reviewedClosureHarness) {
+	const page, store, legacy = "conformance-pair-page", "conformance-pair-store", "conformance-pair-legacy"
+	entry, row, item := page+".entry", store+".row", legacy+".item"
+	deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: store, ceilings: []*authorityv1.WorkScopeV1{wireScope(row, "read", "write")}})
+	deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: legacy, ceilings: []*authorityv1.WorkScopeV1{wireScope(item, "read")}})
+	// pageAt is the page at generation, binding the store's rows for its
+	// roles; beyondReach adds a binding carrying the legacy item's read and
+	// names its write through it for the viewer, which the composition does
+	// not reach: refused by name (decide.Unreached).
+	pageAt := func(generation uint64, beyondReach bool) conformanceModule {
+		m := conformanceModule{alias: page, generation: generation, ceilings: []*authorityv1.WorkScopeV1{wireScope(entry, "read", "write")}, installationRole: domain.NoInstallationRole,
+			page:     &solutionhost.Frontend{Title: "Pair page", ExposedModule: "./Page", HostContract: 1, Payload: h.pagePayload},
+			bindings: []solutionhost.AuthorityBinding{{ID: "rows", Audience: store, Operations: map[string][]string{"invoke": {row + ":read", row + ":write"}}}},
+			roles: map[string][]*authorityv1.WorkScopeV1{
+				"installer": {wireScope(entry, "read", "write"), wireScope(row, "read", "write")},
+				"viewer":    {wireScope(entry, "read"), wireScope(row, "read")},
+			}}
+		if beyondReach {
+			m.bindings = append(m.bindings, solutionhost.AuthorityBinding{ID: "legacy", Audience: legacy, Operations: map[string][]string{"invoke": {item + ":read"}}})
+			m.through = map[string]map[string][]*authorityv1.WorkScopeV1{"viewer": {"legacy": {wireScope(item, "write")}}}
+		}
+		return m
+	}
+	deliverModule(t, h.ctx, h.conn, h.signer, pageAt(7, false))
+	alex := authority.Person{ID: conformanceAlex, Organization: fixtureOrganization}
+	installation, ok := h.coreInstallation(t, alex, page)
+	require.True(t, ok, "the module page is installed by composition")
+	_, err := h.core.GrantRoleAsHost(h.ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: installation.ID, Role: "viewer", PersonID: conformanceMaya})
+	require.NoError(t, err)
+	_, err = h.core.GrantRoleAsHost(h.ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: installation.ID, Role: "installer", PersonID: conformanceAlex})
+	require.NoError(t, err)
+	grants, err := h.core.ListRoleGrants(h.ctx, alex, fixtureOrganization, installation.ID)
+	require.NoError(t, err)
+	require.Len(t, grants, 2)
+	installation, _ = h.coreInstallation(t, alex, page)
+
+	// agree holds both records to generation, and the page's installation to
+	// its grants and revision.
+	agree := func(generation uint64) {
+		t.Helper()
+		composed, err := h.core.Composed(h.ctx, page)
+		require.NoError(t, err)
+		require.Equal(t, generation, composed.Generation, "the core composes generation %d", generation)
+		records, err := h.svc.ListSolutionHostBindings(h.ctx)
+		require.NoError(t, err)
+		i := slices.IndexFunc(records, func(r *business.SolutionHostBindingRecord) bool { return r.BindingID == page })
+		require.GreaterOrEqual(t, i, 0)
+		require.NotNil(t, records[i].Applied)
+		require.Equal(t, generation, records[i].Applied.Generation, "accounts applied generation %d", generation)
+		now, ok := h.coreInstallation(t, alex, page)
+		require.True(t, ok)
+		require.Equal(t, installation.Revision, now.Revision, "the installation's revision did not move")
+		kept, err := h.core.ListRoleGrants(h.ctx, alex, fixtureOrganization, installation.ID)
+		require.NoError(t, err)
+		require.ElementsMatch(t, grants, kept, "every grant is kept")
+	}
+	agree(7)
+
+	for _, generation := range []uint64{8, 8, 9} {
+		err := tryDeliverModule(t, h.ctx, h.conn, h.signer, pageAt(generation, true))
+		require.ErrorContains(t, err, `role "viewer" of `+page+` names `+item+`:write through binding "legacy", which reaches it nowhere in the composition`, "generation %d", generation)
+		agree(7)
+	}
+
+	deliverModule(t, h.ctx, h.conn, h.signer, pageAt(10, false))
+	agree(10)
+}
+
 // testPagesReachThroughTheAgent holds the host to what a solution's page
 // reaches through an agent: the solution's roles name,
 // through their binding to the agent, what the agent's own bindings reach

@@ -7,11 +7,11 @@ require (
 	buf.build/go/protovalidate v1.4.0
 	connectrpc.com/connect v1.21.1
 	connectrpc.com/otelconnect v0.9.0
-	github.com/codefly-dev/authority/libraries/authority-client/go v0.2.1-0.20261112165108-e589a2c17802
-	github.com/codefly-dev/authority/libraries/authority-core/go v0.1.1-0.20261112165108-e589a2c17802
-	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261112165108-e589a2c17802
-	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261112165108-e589a2c17802
-	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261112165108-e589a2c17802
+	github.com/codefly-dev/authority/libraries/authority-client/go v0.2.1-0.20261112201749-1e943416f7e7
+	github.com/codefly-dev/authority/libraries/authority-core/go v0.1.1-0.20261112201749-1e943416f7e7
+	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261112201749-1e943416f7e7
+	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261112201749-1e943416f7e7
+	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261112201749-1e943416f7e7
 	github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc
 	github.com/codefly-dev/core v0.19.22
 	github.com/codefly-dev/interface-cache/go/cache v0.4.2-0.20261110162340-1f824ec7cb21

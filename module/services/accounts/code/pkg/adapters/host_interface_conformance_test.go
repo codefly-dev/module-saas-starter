@@ -1264,6 +1264,7 @@ func runHostInterfaceFixture(t *testing.T) {
 	testInstallAssignsAccess(t, closures)
 	testModulePagesAndReach(t, closures)
 	testModulePageRoleReachesThroughItsBinding(t, closures)
+	testADeliveryTheCoreRefusesIsNeverApplied(t, closures)
 	testPagesReachThroughTheAgent(t, closures)
 	testAnEditorSavesAndIsOfferedTheRunnablesTheirRoleAllows(t, closures)
 	testModulesInstalledByComposition(t, closures)
