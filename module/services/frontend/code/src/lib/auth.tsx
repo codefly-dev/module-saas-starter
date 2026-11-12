@@ -1,6 +1,7 @@
 "use client";
 
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
+import { createConnectTransport } from "@connectrpc/connect-web";
 import { startAuthentication } from "@simplewebauthn/browser";
 import {
 	createContext,
@@ -34,7 +35,7 @@ import {
 import {
 	getToken as getConnectToken,
 	markNarrowed,
-	setNarrowedSessionEndedHandler,
+	setNarrowedRequestRefusedHandler,
 	setToken as setConnectToken,
 	setRefreshHandler,
 } from "./connect/token-store";
@@ -43,6 +44,26 @@ import { apiTransport } from "./connect/transport";
 const authClient = createClient(AuthService, apiTransport);
 const platformAdminClient = createClient(PlatformAdminService, apiTransport);
 const sessionClient = createClient(SessionService, apiTransport);
+// The host asked about one bearer, as that bearer: off the page's transport,
+// whose interceptor would send the installed token instead and answer a 401
+// by reporting a refusal again.
+const bearerSessionClient = createClient(SessionService, createConnectTransport({ baseUrl: "/" }));
+
+/**
+ * Whether the host refuses `bearer` itself: its session interface answers
+ * Unauthenticated to it. A module's 401 under a live bearer is the module's
+ * refusal of that call, not the end of the session that made it; anything
+ * the host could not answer (a network failure, a 5xx) is not a refusal
+ * either, so a hiccup never ends a session the person chose.
+ */
+async function hostRefusesBearer(bearer: string): Promise<boolean> {
+	try {
+		await bearerSessionClient.current({}, { headers: { Authorization: `Bearer ${bearer}` } });
+		return false;
+	} catch (error) {
+		return ConnectError.from(error).code === Code.Unauthenticated;
+	}
+}
 
 // Browser REST is always same-origin. Next/gateway resolves the accounts
 // service server-side from Codefly bindings (CONV-004).
@@ -1217,18 +1238,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		//
 		// A request sent with a NARROWED bearer (a role view or a team cast)
 		// never reaches this handler: the token store answers it null from the
-		// bearer the request carried, and reports the end below. Deciding it
+		// bearer the request carried, and reports the refusal below. Deciding it
 		// here from a flag was the defect: the first repair cleared the flag, and
 		// the next 401 from the same narrowed bearer was replayed as the person.
-		setNarrowedSessionEndedHandler((bearer) => {
+		//
+		// The refusal ends the session only when the host refuses the bearer
+		// itself. A 401 from a module the session reached (a page's own check,
+		// its binding's) is that module's answer to that call: the request
+		// fails with it and the session stays as the person chose it.
+		const probing = new Map<string, Promise<boolean>>();
+		setNarrowedRequestRefusedHandler((bearer) => {
 			// A late 401 from a narrowed session the person already left says
 			// nothing about the session they are in now.
 			if (bearer !== getConnectToken()) return;
-			const as = narrowedAsRef.current;
-			// A lapsed bearer is not booted into again; what it acted as is kept so
-			// a reload still says, by name, that it ended.
-			keepNarrowedSession({ as });
-			setState((s) => (s.narrowedSessionEnd ? s : { ...s, narrowedSessionEnd: { reason: "expired", as } }));
+			let refused = probing.get(bearer);
+			if (!refused) {
+				refused = hostRefusesBearer(bearer).finally(() => probing.delete(bearer));
+				probing.set(bearer, refused);
+			}
+			void refused.then((ended) => {
+				if (!ended || bearer !== getConnectToken()) return;
+				const as = narrowedAsRef.current;
+				// A lapsed bearer is not booted into again; what it acted as is kept
+				// so a reload still says, by name, that it ended.
+				keepNarrowedSession({ as });
+				setState((s) => (s.narrowedSessionEnd ? s : { ...s, narrowedSessionEnd: { reason: "expired", as } }));
+			});
 		});
 		setRefreshHandler(async () => {
 			const wasImpersonating = impersonatingRef.current;
@@ -1291,7 +1326,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		});
 		return () => {
 			setRefreshHandler(null);
-			setNarrowedSessionEndedHandler(null);
+			setNarrowedRequestRefusedHandler(null);
 		};
 	}, [setTokens]);
 

@@ -315,6 +315,13 @@ func (s *Service) installReviewedSolution(ctx context.Context, caller authority.
 			continue
 		}
 		plan, err := s.store.(CanonicalInstallationSetupStore).SolutionInstallationPlan(ctx, org, inst.ID)
+		if code, ok := domain.CodeOf(err); ok && code == domain.NotFound && inst.Status == domain.Active {
+			// An active installation whose receipt is this review's operation
+			// and that records no plan is a module page's upgrade already
+			// recorded (a page's plan is carried, never kept): the review
+			// sent again is answered the installation, as the core replays it.
+			return InstalledSolution{Installation: inst}, nil
+		}
 		if err != nil {
 			return InstalledSolution{Installation: inst}, err
 		}

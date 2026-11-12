@@ -30,11 +30,12 @@ import (
 const compositionPageLimit = 200
 
 // InstallComposedModules installs, by composition, every composed module not
-// yet installed at every organization. It is idempotent; each organization's
-// failures are collected and the others are installed all the same.
-func (s *Service) InstallComposedModules(ctx context.Context) error {
+// yet installed at every organization, and reports how many it installed. It
+// is idempotent; each organization's failures are collected and the others
+// are installed all the same.
+func (s *Service) InstallComposedModules(ctx context.Context) (installed int, err error) {
 	if _, err := s.AuthorityCore(); err != nil {
-		return nil // A host whose core is not built composes nothing yet.
+		return 0, nil // A host whose core is not built composes nothing yet.
 	}
 	// One pass at a time in this process: a delivery's own pass and the
 	// ticking one never install the same module twice at once.
@@ -50,10 +51,12 @@ func (s *Service) InstallComposedModules(ctx context.Context) error {
 			}
 			return err
 		}); err != nil {
-			return fmt.Errorf("install the composed modules: list the organizations: %w", err)
+			return installed, fmt.Errorf("install the composed modules: list the organizations: %w", err)
 		}
 		for _, o := range page {
-			if err := s.installComposedModulesAt(ctx, o.id, o.owner); err != nil {
+			n, err := s.installComposedModulesAt(ctx, o.id, o.owner)
+			installed += n
+			if err != nil {
 				failures = append(failures, err)
 			}
 		}
@@ -61,24 +64,24 @@ func (s *Service) InstallComposedModules(ctx context.Context) error {
 			break
 		}
 	}
-	return errors.Join(failures...)
+	return installed, errors.Join(failures...)
 }
 
 type organizationOwner struct{ id, owner string }
 
 // installComposedModulesAt installs, by composition, every module org may
-// install and holds none of yet (installByComposition). The caller holds
-// s.composing.
-func (s *Service) installComposedModulesAt(ctx context.Context, org, owner string) error {
+// install and holds none of yet (installByComposition), and reports how many
+// it installed. The caller holds s.composing.
+func (s *Service) installComposedModulesAt(ctx context.Context, org, owner string) (installed int, err error) {
 	core, err := s.AuthorityCore()
 	if err != nil {
-		return nil
+		return 0, nil
 	}
 	var failures []error
 	for token := ""; ; {
 		available, next, err := s.ListAvailableSolutions(ctx, org, token, listInstallationsMaxPageSize)
 		if err != nil {
-			return fmt.Errorf("install the composed modules at %s: %w", org, err)
+			return installed, fmt.Errorf("install the composed modules at %s: %w", org, err)
 		}
 		for _, target := range available {
 			if target.Kind != "module" || target.Installed {
@@ -94,13 +97,15 @@ func (s *Service) installComposedModulesAt(ctx context.Context, org, owner strin
 			}
 			if err := s.installByComposition(ctx, org, owner, target, m); err != nil {
 				failures = append(failures, fmt.Errorf("install %s at %s: %w", target.RouteAlias, org, err))
+				continue
 			}
+			installed++
 		}
 		if token = next; token == "" {
 			break
 		}
 	}
-	return errors.Join(failures...)
+	return installed, errors.Join(failures...)
 }
 
 // installByComposition installs module m at org as the host's composition

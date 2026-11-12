@@ -60,7 +60,29 @@ afterEach(() => {
 const refreshAnswers = (queue: string[]) =>
 	server.use(http.post("/v1/auth/refresh", () => HttpResponse.json({ accessToken: queue.shift(), refreshToken: "r" })));
 
+// The host's session interface: it answers every bearer it was not told to
+// refuse, and records which bearer each reading carried. A narrowed session
+// ends only when the host refuses its bearer here.
+const CURRENT = "http://localhost:3000/host.session.v1.SessionService/Current";
+let refusedByHost = new Set<string>();
+let readFor: string[] = [];
+function hostSession() {
+	refusedByHost = new Set();
+	readFor = [];
+	server.use(
+		http.post(CURRENT, ({ request }) => {
+			const bearer = (request.headers.get("authorization") ?? "").replace(/^Bearer /, "");
+			readFor.push(bearer);
+			if (refusedByHost.has(bearer)) {
+				return HttpResponse.json({ code: "unauthenticated", message: "session expired" }, { status: 401 });
+			}
+			return HttpResponse.json({});
+		}),
+	);
+}
+
 async function boot() {
+	hostSession();
 	refreshAnswers([FULL, FULL2, FULL3]);
 	render(
 		<AuthProvider>
@@ -78,12 +100,16 @@ async function narrowedTo(as: string): Promise<string> {
 	await boot();
 	act(() => handles.enter(bearer, as));
 	await waitFor(() => expect(getToken()).toBe(bearer));
+	// The host read the session it was entered as, and accepted it.
+	await waitFor(() => expect(readFor).toContain(bearer));
 	return bearer;
 }
 
 // A backend that refuses the narrowed bearer and accepts any other, recording
-// which bearer each attempt carried.
+// which bearer each attempt carried. The narrowed credential lapsed, so the
+// host refuses it too.
 function backend(narrowed: string, gate: Partial<Record<string, Promise<void>>> = {}) {
+	refusedByHost.add(narrowed);
 	const seen: Record<string, string[]> = { a: [], b: [] };
 	for (const path of ["a", "b"]) {
 		server.use(
@@ -104,13 +130,51 @@ describe.each([
 	["a role view", "viewer on records"],
 ])("inside %s", (_, as) => {
 	it("the first 401 is not repaired with the full session, and the end is said by name", async () => {
-		await narrowedTo(as);
+		const narrowed = await narrowedTo(as);
+		refusedByHost.add(narrowed);
 		let fresh: string | null = "unset";
 		await act(async () => {
 			fresh = await refreshToken();
 		});
 		expect(fresh).toBeNull();
-		expect(screen.getByTestId("authed").textContent).toBe(`yes ended:expired:${as}`);
+		await waitFor(() => expect(screen.getByTestId("authed").textContent).toBe(`yes ended:expired:${as}`));
+	});
+
+	// A module the narrowed session reached refuses one call (a page's own
+	// check, its binding's) while the host still accepts the bearer: that call
+	// fails with the module's own refusal, and the session goes on. Red before:
+	// any 401 under a narrowed bearer was read as its credential expiring, so a
+	// page refusing one action ended the whole cast.
+	it("a module's 401 keeps the session and hands the caller the module's refusal", async () => {
+		const narrowed = await narrowedTo(as);
+		server.use(
+			http.post("/s/records/api/purge", () =>
+				HttpResponse.json({ code: "unauthenticated", message: "records: purge needs the editor role" }, { status: 401 }),
+			),
+		);
+		let res: Response | undefined;
+		await act(async () => {
+			res = await authedFetch("/s/records/api/purge", { method: "POST" });
+		});
+		expect(res?.status).toBe(401);
+		expect(await res?.json()).toEqual({ code: "unauthenticated", message: "records: purge needs the editor role" });
+		// The host was asked about the bearer itself, and accepted it.
+		await waitFor(() => expect(readFor.filter((b) => b === narrowed).length).toBeGreaterThanOrEqual(2));
+		await act(async () => {});
+		expect(getToken()).toBe(narrowed);
+		expect(handles.ended).toBeNull();
+		expect(screen.getByTestId("authed").textContent).toBe("yes");
+	});
+
+	it("the host's refusal of the bearer itself ends it, by name", async () => {
+		const narrowed = await narrowedTo(as);
+		server.use(http.post("/s/records/api/purge", () => new HttpResponse(null, { status: 401 })));
+		refusedByHost.add(narrowed);
+		await act(async () => {
+			await authedFetch("/s/records/api/purge", { method: "POST" });
+		});
+		await waitFor(() => expect(screen.getByTestId("authed").textContent).toBe(`yes ended:expired:${as}`));
+		expect(getToken()).toBe(narrowed);
 	});
 
 	it("a second request issued under it, whose 401 lands after the first repair settled, is not replayed either", async () => {
@@ -130,7 +194,7 @@ describe.each([
 		expect({ b: b?.status, attempts: seen.b }).toEqual({ b: 401, attempts: [`Bearer ${narrowed}`] });
 		// Nothing installed the person's own session behind their back.
 		expect(getToken()).toBe(narrowed);
-		expect(handles.ended).toEqual({ reason: "expired", as });
+		await waitFor(() => expect(handles.ended).toEqual({ reason: "expired", as }));
 	});
 });
 
@@ -158,7 +222,7 @@ it("an expired cast is left until the person asks: returning installs their own 
 		await authedFetch("/write/a", { method: "POST" });
 	});
 	expect(getToken()).toBe(cast);
-	expect(screen.getByTestId("authed").textContent).toBe("yes ended:expired:team Stewards");
+	await waitFor(() => expect(screen.getByTestId("authed").textContent).toBe("yes ended:expired:team Stewards"));
 	await act(async () => {
 		await handles.exit();
 	});

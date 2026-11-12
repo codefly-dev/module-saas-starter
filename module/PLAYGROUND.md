@@ -35,8 +35,8 @@ declaring roles) is installed at Acme Corp by Alice, each declared role to its
 `<target>-<role>` team, and Bob, Carol and Dana join the team of their role —
 the fixture's `installations` row whose target is `"*"` says so once, and the
 host expands it per target once every module the target reaches is composed
-(a grant approves the reach a role has when it is given, and the delivery of
-a module the target reaches would end it), so a composition opts in by
+(a solution installed before a module it reaches arrives is held at the
+narrower reach until an upgrade is approved), so a composition opts in by
 seeding `dev-admin` and nothing else. A target declaring other roles gets its
 teams and no member for a role it does not declare; a composing workspace's
 `configurations/local/fixture-grants.yaml` may still name a target explicitly,

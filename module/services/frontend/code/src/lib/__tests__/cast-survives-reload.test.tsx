@@ -131,10 +131,15 @@ describe("a team cast across a reload", () => {
 
 	it("once the host refuses the cast (401), a reload does not boot into it again, but still says it ended", async () => {
 		const cast = await castOpen(600);
+		server.use(
+			http.post("http://localhost:3000/host.session.v1.SessionService/Current", () =>
+				HttpResponse.json({ code: "unauthenticated", message: "session expired" }, { status: 401 }),
+			),
+		);
 		await act(async () => {
 			await refreshToken(cast);
 		});
-		expect(handles.ended).toEqual({ reason: "expired", as: "team Stewards" });
+		await waitFor(() => expect(handles.ended).toEqual({ reason: "expired", as: "team Stewards" }));
 		expect(readKeptNarrowedSession()).toEqual({ lapsed: "team Stewards" });
 		reload();
 		refreshAnswers([FULL]);

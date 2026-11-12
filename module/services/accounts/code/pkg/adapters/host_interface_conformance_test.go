@@ -1275,6 +1275,9 @@ func runHostInterfaceFixture(t *testing.T) {
 	testInstallAssignsAccess(t, closures)
 	testModulePagesAndReach(t, closures)
 	testModulePageRoleReachesThroughItsBinding(t, closures)
+	t.Run("a page delivered before a module it reaches holds that module's reach once it is composed, on the host's own delivery path", func(t *testing.T) {
+		testAPageDeliveredBeforeItsReachHoldsItOnceComposed(t, closures)
+	})
 	testADeliveryTheCoreRefusesIsNeverApplied(t, closures)
 	testPagesReachThroughTheAgent(t, closures)
 	testAnEditorSavesAndIsOfferedTheRunnablesTheirRoleAllows(t, closures)
@@ -1409,12 +1412,10 @@ installations:
 	})
 
 	// A composition is delivered one module at a time, and the fixture
-	// converges after each delivery: a module page set up in the pass that
-	// delivered it, before the module its roles reach through a binding,
-	// holds grants that module's delivery ends (the core's
-	// role_reach_widened), and the fixture would leave the teams with no
-	// grant and nothing to act as. The fixture waits for the reach instead.
-	t.Run("a fixture sets up a module page once every module it reaches is composed, so no later delivery ends its grants", func(t *testing.T) {
+	// converges after each delivery: it sets a target up once every module
+	// the target reaches through a binding is composed, so what it sets up
+	// is held at the whole reach from the first pass that installs it.
+	t.Run("a fixture sets up a module page once every module it reaches is composed, so what it sets up holds the whole reach", func(t *testing.T) {
 		const page, store, org = "conformance-fixture-reach-page", "conformance-fixture-reach-store", "00000000-0000-7000-8000-0000000002e1"
 		const owner, viewer = "00000000-0000-7000-8000-0000000002e2", "00000000-0000-7000-8000-0000000002e3"
 		entry, row := wireScope(page+".entry", "read"), wireScope(store+".row", "read")

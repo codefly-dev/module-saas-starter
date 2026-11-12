@@ -74,7 +74,7 @@ let inflightRefresh: Promise<string | null> | null = null;
  * to their own session is refused the same way.
  */
 const narrowedBearers = new Set<string>();
-let narrowedSessionEndedHandler: ((bearer: string) => void) | null = null;
+let narrowedRequestRefusedHandler: ((bearer: string) => void) | null = null;
 
 export function markNarrowed(token: string) {
 	narrowedBearers.add(token);
@@ -86,14 +86,17 @@ export function isNarrowed(token: string | null): boolean {
 
 /**
  * Told, with the bearer, when a request sent under a narrowed session came
- * back 401: that session is over (its credential expired or was revoked), and
- * the AuthProvider says so to the person instead of silently handing them back
- * their own session.
+ * back 401. That alone does not say the session is over: a module the request
+ * reached may refuse the call on its own terms while the host still accepts
+ * the bearer. The AuthProvider asks the host about the bearer itself, and only
+ * the host's refusal ends the session, said to the person instead of silently
+ * handing them back their own; any other 401 is the request's own refusal,
+ * returned to its caller as it came.
  */
-export function setNarrowedSessionEndedHandler(
+export function setNarrowedRequestRefusedHandler(
 	handler: ((bearer: string) => void) | null,
 ) {
-	narrowedSessionEndedHandler = handler;
+	narrowedRequestRefusedHandler = handler;
 }
 
 export function setRefreshHandler(
@@ -112,7 +115,7 @@ export function refreshToken(
 	sentWith: string | null = currentToken,
 ): Promise<string | null> {
 	if (isNarrowed(sentWith)) {
-		narrowedSessionEndedHandler?.(sentWith as string);
+		narrowedRequestRefusedHandler?.(sentWith as string);
 		return Promise.resolve(null);
 	}
 	// A request sent with the person's OWN token before they narrowed, whose

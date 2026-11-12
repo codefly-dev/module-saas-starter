@@ -428,13 +428,16 @@ func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation
 		}
 		return false, nil
 	}
-	// Installed once every module the target reaches is composed. A grant
-	// approves what a role reached when it was given, and the delivery of a
-	// module the target reaches widens it, which ends every grant on the
-	// target (the core's role_reach_widened, for an administrator to grant
-	// again): a target set up in the pass that delivered it, before the
-	// modules it reads, would hold its teams and no grant once the
-	// composition is up. A later pass installs it.
+	// Installed once every module the target reaches is composed. A role
+	// reaches a module through a binding only once that module is composed,
+	// and an installed target is held at the reach it had when installed. A
+	// module page's composition receipt is taken again when a module it
+	// reaches is composed for the first time; a solution's consent is an
+	// administrator's, so that module's arrival offers an upgrade instead,
+	// every grant kept at the narrower reach until it is approved. Set up
+	// against its whole reach, a target's people hold what it reads through
+	// its bindings from the first pass that installs it. A later pass
+	// installs it.
 	missing, err := i.uncomposedReach(ctx, m)
 	if err != nil {
 		return false, fmt.Errorf("the authority core: %w", err)
