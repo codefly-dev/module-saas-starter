@@ -355,8 +355,8 @@ func testModulePageRoleReachesThroughItsBinding(t *testing.T, h reviewedClosureH
 // kind and the document kinds through an import binding, which the
 // composition did not reach) and stayed at 7; generation 9, identical to 8,
 // then measured as a widening of 7 and ended three of the page's role
-// grants. A delivery the core refuses
-// refuses is refused with the core's reason and recorded nowhere: accounts'
+// grants. A delivery the core refuses is refused with the core's reason and
+// recorded nowhere: accounts'
 // applied generation and the core's composed one agree after every step,
 // the refused generation delivered again at its own or a later generation is
 // still refused, and no grant on the page ends. A later generation the core

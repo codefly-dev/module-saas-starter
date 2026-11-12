@@ -530,11 +530,12 @@ func (r *SolutionHostBindingReconciler) Shutdown(ctx context.Context) error {
 func (r *SolutionHostBindingReconciler) applyAdmitted(ctx context.Context, applied SolutionHostBindingDecision, authorityReason string) []error {
 	var failures []error
 	if err := r.service.composeDelivered(ctx, applied.Delivered, applied.Document); err != nil {
-		reason := fmt.Sprintf("the authority core refused generation %d: %v", applied.Document.Generation, err)
 		var recordErr error
 		if _, refusal := domain.CodeOf(err); refusal {
+			reason := fmt.Sprintf("the authority core refused generation %d: %v", applied.Document.Generation, err)
 			recordErr = r.service.recordSolutionHostBindingDesired(ctx, applied.Document, reason, authorityReason, false, r.now())
 		} else {
+			reason := fmt.Sprintf("generation %d is not composed in the authority core: %v", applied.Document.Generation, err)
 			recordErr = r.service.recordSolutionHostBindingRefusal(ctx, applied.Document.Binding, reason, r.now())
 		}
 		if recordErr != nil {

@@ -71,7 +71,7 @@ func TestApplyCompositionAnswersOnlyItsOwnManifestOutcome(t *testing.T) {
 			raw, err := solutionhost.SignedPayload(manifest)
 			require.NoError(t, err)
 			store := &compositionOutcomeStore{}
-			svc := &Service{store: store}
+			svc := &Service{store: store, authorityCore: &authorityCoreState{core: pairCore(t)}}
 			svc.SetSolutionDelivery(fixtureSigner(t), store, compositionOutcomeCarrier{})
 			svc.SetSolutionDeliveryCoordinate(testDeliveryCoordinate)
 			svc.SetCompositionReconcile(func(context.Context) error {

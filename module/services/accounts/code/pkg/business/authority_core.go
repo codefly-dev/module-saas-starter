@@ -91,10 +91,12 @@ func (s *Service) ConfigureAuthorityCore(ctx context.Context, issuer, keyID stri
 	if err != nil {
 		return err
 	}
+	// A delivery that arrived before the core was built is pending on it
+	// (applyCoreModule): a pass now applies it, rather than the next interval.
+	// On a host whose pass derives the registry, that pass also runs the boot
+	// reconciliation a pass before bootPending was set did not.
+	s.requestRegistryPass()
 	if waits {
-		// A pass that derived the registry before bootPending was set did
-		// not run it; this one will.
-		s.requestRegistryPass()
 		return nil
 	}
 	return errors.Join(s.reconcileAuthorityCoreBoot(ctx, core), s.KeepAuthorityCoreCurrent(ctx))

@@ -220,3 +220,59 @@ func TestTheEndpointRefusesWithTheCoresAdmissionBeforeRecording(t *testing.T) {
 	require.NoError(t, svc.precheckCoreModule(ctx, &compositionv1.ApplyManifestRequest{
 		Carrier: &compositionv1.SignedManifestV1{Document: within.carrier.Document}, Authority: within.authority}))
 }
+
+// Before the core is built, the pass applies nothing: a generation delivered
+// then is recorded as pending with that reason, applied nowhere, and applied
+// on the next pass once the core exists. The reconciler's first pass at boot
+// runs before the core is configured, and accounts' own admission admits a
+// generation the core refused on every pass, so this is what keeps a restart
+// from applying one. The endpoint answers the same before anything is
+// recorded. A generation the inbox holds no record of is not composed either:
+// the core composes a module with its authority document, never without.
+func TestThePassAppliesNothingBeforeTheCoreIsBuilt(t *testing.T) {
+	ctx := context.Background()
+	store := &pairStore{}
+	inbox := signedInbox{rows: map[string]*SolutionDeliveryRecord{}}
+	service := &Service{store: store, deliveryStore: inbox}
+	reconciler := &SolutionHostBindingReconciler{service: service, coordinate: testDeliveryCoordinate, now: func() time.Time { return time.Now().UTC() }}
+	deliver := func(d pagesDelivery, held bool) error {
+		if held {
+			inbox.rows[d.manifest.Binding+"@"+strconv.FormatUint(d.manifest.Generation, 10)] = d.inboxRecord()
+		}
+		// The pass records what delivery shows before it applies anything (RunOnce).
+		require.NoError(t, service.recordSolutionHostBindingDesired(ctx, d.manifest, "", "", false, reconciler.now()))
+		return errors.Join(reconciler.applyAdmitted(ctx, d.decision(), "")...)
+	}
+	within := pagesAt(t, 10, false)
+	err := deliver(within, true)
+	require.ErrorIs(t, err, ErrAuthorityCoreUnconfigured)
+	_, refusal := domain.CodeOf(err)
+	require.False(t, refusal, "no verdict: the generation is pending, not refused")
+	require.Nil(t, store.row.Applied, "accounts applied nothing before the core was built")
+	require.Equal(t, "generation 10 is not composed in the authority core: the authority core is not configured yet", store.row.PendingReason)
+	require.Equal(t, uint64(10), store.row.Desired.Generation, "the generation waits as desired")
+	require.ErrorIs(t, service.precheckCoreModule(ctx, &compositionv1.ApplyManifestRequest{
+		Carrier: &compositionv1.SignedManifestV1{Document: within.carrier.Document}, Authority: within.authority}), ErrAuthorityCoreUnconfigured,
+		"the endpoint admits nothing before the core is built")
+
+	// The next pass, with the core built: composed first, then accounts' apply runs.
+	core := pairCore(t)
+	service.authorityCore = &authorityCoreState{core: core}
+	store.stopApply = true
+	err = errors.Join(reconciler.applyAdmitted(ctx, within.decision(), "")...)
+	require.ErrorIs(t, err, errApplyStopped, "accounts' apply ran once the core had composed")
+	composed, err := core.Composed(ctx, "pages")
+	require.NoError(t, err)
+	require.Equal(t, uint64(10), composed.Generation)
+
+	// A generation the inbox holds no record of composes nothing.
+	store.stopApply = false
+	err = deliver(pagesAt(t, 11, false), false)
+	require.ErrorContains(t, err, "which the inbox does not hold")
+	_, refusal = domain.CodeOf(err)
+	require.False(t, refusal)
+	composed, err = core.Composed(ctx, "pages")
+	require.NoError(t, err)
+	require.Equal(t, uint64(10), composed.Generation, "the core still holds 10")
+	require.Contains(t, store.row.PendingReason, "generation 11 is not composed in the authority core: ")
+}

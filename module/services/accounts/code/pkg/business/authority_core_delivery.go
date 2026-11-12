@@ -11,12 +11,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	coredelivered "github.com/codefly-dev/authority/libraries/authority-core/go/delivered"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/solutionhost"
-	"github.com/codefly-dev/core/wool"
 	"google.golang.org/protobuf/proto"
 
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
@@ -83,8 +81,8 @@ func wireScopes(in []*authorityv1.WorkScopeV1) []*basev0.WorkScopeV1 {
 // only ever refuses: what is applied is read again from the verified record,
 // and the pass composes it in the core before accounts records it
 // (composeDelivered), which is what keeps the two records together. A host
-// whose core is not built yet validates the module as the core would
-// (decide.ValidateModule, the core's own rule) and composes it when it is. A
+// whose core is not built yet admits nothing: the delivery is answered with
+// that, and comes again once the core is built. A
 // module that gains or loses roles keeps its installations as they are: every
 // module is installed by composition, and its roles decide only who may use
 // it.
@@ -101,12 +99,8 @@ func (s *Service) precheckCoreModule(ctx context.Context, req *compositionv1.App
 		return err
 	}
 	core, err := s.AuthorityCore()
-	if errors.Is(err, ErrAuthorityCoreUnconfigured) {
-		m.ResourceKinds = decide.Served(m)
-		return decide.ValidateModule(m)
-	}
 	if err != nil {
-		return err
+		return coreUnconfiguredYet(err)
 	}
 	return core.Admit(ctx, m)
 }
@@ -114,17 +108,17 @@ func (s *Service) precheckCoreModule(ctx context.Context, req *compositionv1.App
 // applyCoreModule records a verified delivery in the core: the module it
 // composes at its generation, or its withdrawal. A replay of the generation
 // the core already holds changes nothing; what the core refuses is refused
-// with its reason, and a pass records nothing for it (composeDelivered).
+// with its reason, and a pass records nothing for it (composeDelivered). A
+// host whose core is not built yet composes nothing, and says so without a
+// verdict: the pass records the generation as pending and asks again at its
+// next pass, which is what keeps a restart from applying a generation the
+// core has not admitted (the reconciler's first pass runs before the core is
+// built, and a generation the core refused yesterday is admissible to
+// accounts' own admission every pass).
 func (s *Service) applyCoreModule(ctx context.Context, manifest *solutionhost.ModuleManifest, carrierDocument []byte, signed *compositionv1.SignedManifestV1) ([]string, error) {
 	core, err := s.AuthorityCore()
-	if errors.Is(err, ErrAuthorityCoreUnconfigured) {
-		// A host whose core is not built yet composes this delivery when it is
-		// (ConfigureAuthorityCore reconciles every applied delivery).
-		wool.Get(ctx).In("applyCoreModule").Warn("the authority core is not configured; it composes this delivery when it is", wool.Field("module", manifest.Alias))
-		return nil, nil
-	}
 	if err != nil {
-		return nil, err
+		return nil, coreUnconfiguredYet(err)
 	}
 	if manifest.Removed {
 		// A withdrawal is idempotent: two passes may apply the same one at
@@ -150,6 +144,16 @@ func (s *Service) applyCoreModule(ctx context.Context, manifest *solutionhost.Mo
 	return core.ApplyModule(ctx, m)
 }
 
+// coreUnconfiguredYet is the answer of a host whose core is not built yet: not
+// a verdict on the delivery (it carries no domain code), so the pass keeps it
+// pending and the endpoint answers it as this host's state.
+func coreUnconfiguredYet(err error) error {
+	if errors.Is(err, ErrAuthorityCoreUnconfigured) {
+		return fmt.Errorf("%w yet", ErrAuthorityCoreUnconfigured)
+	}
+	return err
+}
+
 // coreDeliveryError is a refusal of the core's, carried through the delivery
 // path's own error vocabulary.
 func coreDeliveryError(err error) error {
@@ -170,8 +174,9 @@ func coreDeliveryError(err error) error {
 
 // reconcileAuthorityCore composes, in the core, every delivery accounts has
 // applied: what a host runs once its core is built, so a module delivered
-// before this host decided through the core, or while its core could not be
-// built, is composed there too.
+// before this host decided through the core is composed there too (a
+// delivery that arrives while the core is not built waits for it instead,
+// applyCoreModule).
 func (s *Service) reconcileAuthorityCore(ctx context.Context) error {
 	if s.deliveryStore == nil {
 		return nil
@@ -224,18 +229,23 @@ func (s *Service) composeAppliedDelivery(ctx context.Context, record *SolutionHo
 // Should accounts' apply fail after the core composed, the core is one
 // generation ahead, which the next pass settles: the core answers the
 // generation it holds as a replay and accounts applies it.
+// The authority document is read from the inbox's record of the generation,
+// never assumed absent: a module composed without its document is held at a
+// digest its redelivery with the document then fails as a new generation, so
+// a host with no inbox, or an inbox holding no record of the generation,
+// composes nothing and says so.
 func (s *Service) composeDelivered(ctx context.Context, delivered *solutionhost.Delivered, manifest *solutionhost.ModuleManifest) error {
-	var signed *compositionv1.SignedManifestV1
-	if s.deliveryStore != nil {
-		record, err := s.deliveredGeneration(ctx, manifest.Binding, manifest.Generation)
-		if err != nil {
-			return err
-		}
-		if record != nil {
-			signed = signedAuthorityOf(record)
-		}
+	if s.deliveryStore == nil {
+		return fmt.Errorf("generation %d of binding %s is composed from its delivered record, and this host keeps no inbox", manifest.Generation, manifest.Binding)
 	}
-	_, err := s.applyCoreModule(ctx, manifest, delivered.Payload(), signed)
+	record, err := s.deliveredGeneration(ctx, manifest.Binding, manifest.Generation)
+	if err != nil {
+		return err
+	}
+	if record == nil {
+		return fmt.Errorf("generation %d of binding %s is composed from its delivered record, which the inbox does not hold", manifest.Generation, manifest.Binding)
+	}
+	_, err = s.applyCoreModule(ctx, manifest, delivered.Payload(), signedAuthorityOf(record))
 	return err
 }
 
