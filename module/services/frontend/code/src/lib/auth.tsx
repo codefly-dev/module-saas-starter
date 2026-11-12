@@ -517,6 +517,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	// decides per request, from the bearer that request carried.
 	const narrowedAsRef = useRef("");
 
+	// The host's answer to Session.Current, keyed by the token it was read for
+	// (see sessionRead below).
+	const [read, setRead] = useState<
+		| { token: string; failed: true }
+		| { token: string; failed?: false; castTeamId: string; roleView: RoleViewEntry[] }
+	>({ token: "", failed: true });
+
 	const applyAccessToken = useCallback(
 		(accessToken: string, userId?: string, email?: string) => {
 			const { organizationId, platformRole, orgRole } =
@@ -1153,6 +1160,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			const wasImpersonating = impersonatingRef.current;
 			const outcome = await exchangeRefreshCookie();
 			if (outcome.status === "ok") {
+				// A routine refresh of the SAME session is not a change of what
+				// the session is: the last confirmed answer carries to the new
+				// token until its own read lands (and is replaced, or marked
+				// failed, by it). Impersonation ending, a cast or a role view
+				// are identity changes and are never carried.
+				if (!wasImpersonating) {
+					const next = outcome.accessToken;
+					setRead((prev) =>
+						prev.failed || prev.castTeamId || prev.roleView.length
+							? prev
+							: { ...prev, token: next },
+					);
+				}
 				setTokens(outcome.accessToken, outcome.refreshToken);
 				// An impersonation token carries no refresh half of its own, so
 				// this cookie is the admin's and the session just restored is the
@@ -1223,10 +1243,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	// for THIS token succeeds the session is unconfirmed, never the token's
 	// roles: the host refuses by name whatever is offered, but the chrome must
 	// not claim what it could not confirm.
-	const [read, setRead] = useState<
-		| { token: string; failed: true }
-		| { token: string; failed?: false; castTeamId: string; roleView: RoleViewEntry[] }
-	>({ token: "", failed: true });
 	useEffect(() => {
 		const token = state.accessToken;
 		if (!token) return;

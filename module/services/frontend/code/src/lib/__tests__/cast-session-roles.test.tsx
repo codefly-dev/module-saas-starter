@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { server } from "@/test/setup";
 import { AuthProvider, useAuth } from "../auth";
-import { setRefreshHandler, setToken } from "../connect/token-store";
+import { refreshToken, setRefreshHandler, setToken } from "../connect/token-store";
 
 // A cast token still carries the person's organization role. The chrome reads
 // roles from useAuth, so a session the host has not confirmed, and a cast,
@@ -16,6 +16,7 @@ import { setRefreshHandler, setToken } from "../connect/token-store";
 const jwt = (claims: Record<string, unknown>) => `h.${btoa(JSON.stringify(claims))}.s`;
 const claims = { sub: "user-1", org: "org-1", or: "admin", pr: "super_admin" };
 const ADMIN = jwt(claims);
+const ADMIN2 = jwt({ ...claims, n: "refreshed" });
 const CAST = jwt({ ...claims, n: "cast" });
 const CURRENT = "http://localhost:3000/host.session.v1.SessionService/Current";
 
@@ -97,5 +98,52 @@ describe("roles the chrome reads", () => {
 		await waitFor(() => expect(roles()).toMatch(/^reading org:none platform:none cast:none/));
 		release();
 		await waitFor(() => expect(roles()).toBe("confirmed org:none platform:none cast:team-stewards"));
+	});
+
+	// A routine refresh of the same session is not a change of what it is.
+	describe("a refresh of the same session", () => {
+		function bootRefreshing(current: Parameters<typeof http.post>[1]) {
+			const queue = [ADMIN, ADMIN2];
+			server.use(
+				http.post("/v1/auth/refresh", () =>
+					HttpResponse.json({ accessToken: queue.shift() ?? ADMIN2, refreshToken: "r" }),
+				),
+				http.post(CURRENT, current),
+			);
+			render(
+				<AuthProvider>
+					<Probe />
+				</AuthProvider>,
+			);
+		}
+
+		it("keeps its confirmed role while the new token's read is in flight", async () => {
+			let release: () => void = () => {};
+			const gate = new Promise<void>((r) => (release = r));
+			bootRefreshing(async ({ request }) => {
+				if (request.headers.get("authorization") === `Bearer ${ADMIN2}`) await gate;
+				return HttpResponse.json({});
+			});
+			await waitFor(() => expect(roles()).toBe("confirmed org:admin platform:super_admin cast:none"));
+			await act(async () => {
+				await refreshToken();
+			});
+			expect(roles()).toBe("confirmed org:admin platform:super_admin cast:none");
+			release();
+			await waitFor(() => expect(roles()).toBe("confirmed org:admin platform:super_admin cast:none"));
+		});
+
+		it("is shown as could-not-confirm, not as no role, when the read after it fails", async () => {
+			bootRefreshing(({ request }) =>
+				request.headers.get("authorization") === `Bearer ${ADMIN2}`
+					? HttpResponse.json({ code: "unavailable", message: "down" }, { status: 503 })
+					: HttpResponse.json({}),
+			);
+			await waitFor(() => expect(roles()).toBe("confirmed org:admin platform:super_admin cast:none"));
+			await act(async () => {
+				await refreshToken();
+			});
+			await waitFor(() => expect(roles()).toBe("failed org:none platform:none cast:none"));
+		});
 	});
 });
