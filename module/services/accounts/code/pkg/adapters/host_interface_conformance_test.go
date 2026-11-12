@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"connectrpc.com/otelconnect"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
@@ -1537,7 +1536,7 @@ func serveConnect(t *testing.T, ctx context.Context, grpcServer *GrpcServer) uin
 	tier, err := NewConnectServer(&Configuration{}, grpcServer)
 	require.NoError(t, err)
 	mux := http.NewServeMux()
-	otel, err := otelconnect.NewInterceptor()
+	otel, err := NewOTelInterceptor()
 	require.NoError(t, err)
 	registerCatalogConnectServices(mux, tier, connect.WithInterceptors(otel,
 		connectRefusalInterceptor(), connectAuthInterceptor(func() auth.JWTMinter {
