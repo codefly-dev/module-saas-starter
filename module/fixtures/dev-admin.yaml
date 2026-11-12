@@ -192,10 +192,12 @@ collections:
 # The same people on every target: a row whose target is "*" stands for every
 # role-gated target the composition delivers to this host, whatever the
 # composition is, so no composition has to name its targets here. It is
-# expanded at each delivery pass into one installation per such target —
-# installed by Alice as an administrator installs it, each declared role to
-# its `<target>-<role>` team — and each member joins the team of the role
-# named, where the target declares that role. A composing workspace's
+# expanded at each delivery pass into one installation per such target,
+# performed once every module the target reaches is composed (a later
+# delivery of one would end the grants given before it) — installed by Alice
+# as an administrator installs it, each declared role to its `<target>-<role>`
+# team — and each member joins the team of the role named, where the target
+# declares that role. A composing workspace's
 # `fixture-grants.yaml` may still name a target explicitly; that row is kept
 # and the target is not expanded again.
 installations:

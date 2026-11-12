@@ -1403,6 +1403,91 @@ installations:
 		}
 	})
 
+	// A composition is delivered one module at a time, and the fixture
+	// converges after each delivery: a module page set up in the pass that
+	// delivered it, before the module its roles reach through a binding,
+	// holds grants that module's delivery ends (the core's
+	// role_reach_widened), and the fixture would leave the teams with no
+	// grant and nothing to act as. The fixture waits for the reach instead.
+	t.Run("a fixture sets up a module page once every module it reaches is composed, so no later delivery ends its grants", func(t *testing.T) {
+		const page, store, org = "conformance-fixture-reach-page", "conformance-fixture-reach-store", "00000000-0000-7000-8000-0000000002e1"
+		const owner, viewer = "00000000-0000-7000-8000-0000000002e2", "00000000-0000-7000-8000-0000000002e3"
+		entry, row := wireScope(page+".entry", "read"), wireScope(store+".row", "read")
+		deliverModule(t, ctx, conn, signer, conformanceModule{alias: page, ceilings: []*authorityv1.WorkScopeV1{entry}, installationRole: domain.NoInstallationRole,
+			page:     &solutionhost.Frontend{Title: "Reach fixture page", ExposedModule: "./Page", HostContract: 1, Payload: pagePayload},
+			bindings: []solutionhost.AuthorityBinding{{ID: "rows", Audience: store, Operations: map[string][]string{"invoke": {store + ".row:read"}}}},
+			roles:    map[string][]*authorityv1.WorkScopeV1{"installer": {entry, row}, "viewer": {entry, row}},
+			through:  map[string]map[string][]*authorityv1.WorkScopeV1{"installer": {"rows": {row}}, "viewer": {"rows": {row}}}})
+		path := filepath.Join(t.TempDir(), "reach-fixture.yaml")
+		require.NoError(t, os.WriteFile(path, []byte(`users:
+  - {id: `+owner+`, email: owner@reach-fixture.example.test, name: Reach Fixture Owner, role: member, provider: email, provider_id: fixture-reach-fixture-owner}
+  - {id: `+viewer+`, email: viewer@reach-fixture.example.test, name: Reach Fixture Viewer, role: member, provider: email, provider_id: fixture-reach-fixture-viewer}
+organizations:
+  - id: `+org+`
+    name: Example Reach Fixture
+    owner: owner@reach-fixture.example.test
+    members:
+      - {email: viewer@reach-fixture.example.test, role: member}
+installations:
+  - org: Example Reach Fixture
+    target: `+page+`
+    owner: owner@reach-fixture.example.test
+    installer_roles: [installer]
+    members: {viewer: [viewer@reach-fixture.example.test]}
+`), 0o600))
+		t.Setenv("DEV_FIXTURE_PATH", path)
+		rows, err := fixtures.SeedWithInstallations(ctx, svc, "reach-fixture")
+		require.NoError(t, err)
+		teams := func() []string {
+			t.Helper()
+			var teams []*gen.Team
+			require.NoError(t, svc.Store().WithControlPlane(ctx, func(ctx context.Context) error {
+				var err error
+				teams, err = svc.Store().ListTeams(ctx, org, "")
+				return err
+			}))
+			var names []string
+			for _, team := range teams {
+				names = append(names, team.GetName())
+			}
+			slices.Sort(names)
+			return names
+		}
+		require.NoError(t, rows.Converge(ctx), "a page reaching a module not composed yet is waited on, not refused")
+		require.Empty(t, teams(), "nothing is set up while the page's roles reach a module the composition does not hold")
+
+		deliverModule(t, ctx, conn, signer, conformanceModule{alias: store, ceilings: []*authorityv1.WorkScopeV1{row},
+			methods: []*compositionv1.MethodPolicyV1{{Method: "/" + store + ".Store/Read", Requires: []*authorityv1.WorkScopeV1{row}}}})
+		require.NoError(t, rows.Converge(ctx))
+		require.Equal(t, []string{page + "-installer", page + "-viewer"}, teams(), "set up once the store is composed: one team per declared role")
+		installer := authority.Person{ID: owner, Organization: org}
+		id, err := svc.WorkContextAudienceInstallation(ctx, org, page)
+		require.NoError(t, err)
+		granted := func() []string {
+			t.Helper()
+			grants, err := core.ListRoleGrants(ctx, installer, org, id)
+			require.NoError(t, err)
+			var held []string
+			for _, grant := range grants {
+				held = append(held, grant.Role)
+			}
+			slices.Sort(held)
+			return held
+		}
+		require.Equal(t, []string{"installer", "viewer"}, granted(), "each role to its team, given against the reach the page is composed with")
+
+		deliverModule(t, ctx, conn, signer, conformanceModule{alias: store, generation: 2, ceilings: []*authorityv1.WorkScopeV1{row},
+			methods: []*compositionv1.MethodPolicyV1{{Method: "/" + store + ".Store/Read", Requires: []*authorityv1.WorkScopeV1{row}}}})
+		require.NoError(t, rows.Converge(ctx))
+		require.Equal(t, []string{"installer", "viewer"}, granted(), "the store delivered again, reaching the same, ends no grant")
+
+		team := teamNamed(t, ctx, svc, org, page+"-viewer")
+		cast, err := core.OpenTeamCast(ctx, authority.Person{ID: owner, Organization: org, SessionID: "reach-fixture-session"},
+			authority.TeamCastRequest{Organization: org, Team: team, SessionID: "reach-fixture-cast"})
+		require.NoError(t, err, "the organization's administrator acts as the viewer team the fixture set up")
+		require.Equal(t, team, cast.Team)
+	})
+
 	// Beyond the suite: accounts' own person Work Context mints, beside the
 	// host Issue, follow the core's owner rule (RBAC-4a).
 	t.Run("a person's own Work Context mints follow the core's owner rule", func(t *testing.T) {

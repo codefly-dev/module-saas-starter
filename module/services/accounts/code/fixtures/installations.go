@@ -313,10 +313,17 @@ func (i *Installations) Converge(ctx context.Context) error {
 	for _, row := range i.pending {
 		if active, err := i.coreInstall(ctx, row); active || err != nil {
 			if err != nil {
-				remaining = append(remaining, row)
-				if !errors.Is(err, errCoreTargetNotComposed) && !setupPending(err) {
+				switch {
+				case errors.Is(err, errCoreTargetNotComposed):
+					// Said once per row: the composition delivers the rest.
+					if !row.waiting {
+						w.Info("fixture installation waits for the composition", wool.Field("installation", row.declared.describe()), wool.ErrField(err))
+						row.waiting = true
+					}
+				case !setupPending(err):
 					failures = append(failures, fmt.Errorf("fixture installation %s: %w", row.declared.describe(), err))
 				}
+				remaining = append(remaining, row)
 			}
 			continue
 		}
@@ -421,6 +428,20 @@ func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation
 		}
 		return false, nil
 	}
+	// Installed once every module the target reaches is composed. A grant
+	// approves what a role reached when it was given, and the delivery of a
+	// module the target reaches widens it, which ends every grant on the
+	// target (the core's role_reach_widened, for an administrator to grant
+	// again): a target set up in the pass that delivered it, before the
+	// modules it reads, would hold its teams and no grant once the
+	// composition is up. A later pass installs it.
+	missing, err := i.uncomposedReach(ctx, m)
+	if err != nil {
+		return false, fmt.Errorf("the authority core: %w", err)
+	}
+	if len(missing) > 0 {
+		return false, fmt.Errorf("%w: %s reaches %s, not composed yet", errCoreTargetNotComposed, m.Name, strings.Join(missing, ", "))
+	}
 	access := installAccess(row)
 	caller := authority.Person{ID: row.ownerID, Organization: row.orgID}
 	if m.Kind != domain.KindSolution {
@@ -462,6 +483,35 @@ func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation
 		return false, err
 	}
 	return true, i.joinMembers(ctx, row, caller, inst.ID)
+}
+
+// uncomposedReach is each audience m's bindings name, and onward each one a
+// module reached names, that the core does not compose yet, sorted. A role
+// reaches a module through a binding only once that module is composed
+// (decide.ReachOf), so the module's delivery widens the role.
+func (i *Installations) uncomposedReach(ctx context.Context, m domain.Module) ([]string, error) {
+	var missing []string
+	seen := map[string]bool{m.Principal: true}
+	for queue := []domain.Module{m}; len(queue) > 0; queue = queue[1:] {
+		for _, id := range slices.Sorted(maps.Keys(queue[0].Bindings)) {
+			audience := queue[0].Bindings[id].Audience
+			if seen[audience] {
+				continue
+			}
+			seen[audience] = true
+			reached, err := i.service.ComposedAudience(ctx, audience)
+			if code, ok := domain.CodeOf(err); errors.Is(err, domain.ErrNotFound) || (ok && code == domain.NotFound) {
+				missing = append(missing, audience)
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+			queue = append(queue, reached)
+		}
+	}
+	slices.Sort(missing)
+	return missing, nil
 }
 
 // installAccess is the access a row asks an install for, as the admin area
