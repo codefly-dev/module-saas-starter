@@ -44,6 +44,10 @@ type authorityCoreState struct {
 	mu   sync.RWMutex
 	core *authority.Service
 	err  error
+	// bootPending: the core is built and its boot reconciliation waits for
+	// the reconcile pass that derives the module registry it reads
+	// (completeAuthorityCoreBoot).
+	bootPending bool
 	// step overrides the host's durable setup adapter for explicit test/host
 	// integration. An absent override uses canonicalInstallationStep.
 	step authority.InstallStep
@@ -66,36 +70,72 @@ func (k staticKeys) PublicKeys(context.Context) (map[string]ed25519.PublicKey, e
 // only by accounts' own consent (an administrator's install, within the module
 // envelope): the core installs none itself and reads accounts' records live
 // (HostInstallsModules), so an uninstall or a narrowed ceiling ends it there at
-// once. Consents recorded before reach was kept adopt their reach
-// (AdoptLegacyReach), every applied delivery is composed in the core, then
-// the pass every delivery pass repeats runs (KeepAuthorityCoreCurrent). An error with the
-// core built (AuthorityCore answers it) is a reconciliation that did not
-// complete, which the next delivery pass retries; it never stops the host.
+// once. Then the core's boot reconciliation runs (reconcileAuthorityCoreBoot).
+//
+// That reconciliation reads every module installation's consent through the
+// module registry (moduleConsent), which a reconcile pass derives and which a
+// host starts without. Run before that pass, it is refused for every consent
+// ("the registry was derived from envelope revision 0"), so on a host whose
+// pass derives the registry it waits for that pass: the pass runs it once the
+// registry is derived and every later pass retries it until it completes
+// (completeAuthorityCoreBoot). An error with the core built (AuthorityCore
+// answers it) is a reconciliation that did not complete; it never stops the
+// host.
 func (s *Service) ConfigureAuthorityCore(ctx context.Context, issuer, keyID string, key ed25519.PrivateKey) error {
 	state := s.authorityCoreState()
 	core, err := s.newAuthorityCore(issuer, keyID, key)
+	waits := err == nil && s.registryPassTrigger != nil && s.modulePrincipals.Load() == nil
 	state.mu.Lock()
-	state.core, state.err = core, err
+	state.core, state.err, state.bootPending = core, err, waits
 	state.mu.Unlock()
 	if err != nil {
 		return err
 	}
+	if waits {
+		// A pass that derived the registry before bootPending was set did
+		// not run it; this one will.
+		s.requestRegistryPass()
+		return nil
+	}
+	return errors.Join(s.reconcileAuthorityCoreBoot(ctx, core), s.KeepAuthorityCoreCurrent(ctx))
+}
+
+// reconcileAuthorityCoreBoot is what the core reconciles once per start. A
+// consent recorded before its reach was kept adopts, once, what its approved
+// roles reach as the composition stands (installation.reach_adopted); until
+// then the core holds it to that same reach, and every delivery adopts before
+// it changes the composition. Then every applied delivery is composed in the
+// core, so a module delivered before this host decided through the core, or
+// while its core could not be built, is composed there too.
+func (s *Service) reconcileAuthorityCoreBoot(ctx context.Context, core *authority.Service) error {
 	var failures []error
-	// A consent recorded before its reach was kept adopts, once, what its
-	// approved roles reach as the composition stands when the host starts
-	// (installation.reach_adopted); until then the core holds it to that
-	// same reach. The core adopts before any delivery changes the
-	// composition too, so this only covers a host that starts on one.
 	if err := core.AdoptLegacyReach(ctx); err != nil {
 		failures = append(failures, fmt.Errorf("authority core: adopt the reach of earlier consents: %w", err))
 	}
 	if err := s.reconcileAuthorityCore(ctx); err != nil {
 		failures = append(failures, fmt.Errorf("authority core: compose the applied deliveries: %w", err))
 	}
-	if err := s.KeepAuthorityCoreCurrent(ctx); err != nil {
-		failures = append(failures, err)
-	}
 	return errors.Join(failures...)
+}
+
+// completeAuthorityCoreBoot runs the core's boot reconciliation a pass waits
+// for, once the pass has derived the module registry; until it completes,
+// every pass retries it.
+func (s *Service) completeAuthorityCoreBoot(ctx context.Context) error {
+	state := s.authorityCoreState()
+	state.mu.RLock()
+	core, pending := state.core, state.bootPending
+	state.mu.RUnlock()
+	if core == nil || !pending {
+		return nil
+	}
+	if err := s.reconcileAuthorityCoreBoot(ctx, core); err != nil {
+		return err
+	}
+	state.mu.Lock()
+	state.bootPending = false
+	state.mu.Unlock()
+	return nil
 }
 
 // KeepAuthorityCoreCurrent is what boot and every delivery pass run once the

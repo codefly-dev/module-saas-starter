@@ -9,7 +9,7 @@ import "github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 func (s *Service) UnconfigureAuthorityCoreForTest() {
 	state := s.authorityCoreState()
 	state.mu.Lock()
-	state.core, state.err = nil, ErrAuthorityCoreUnconfigured
+	state.core, state.err, state.bootPending = nil, ErrAuthorityCoreUnconfigured, false
 	state.mu.Unlock()
 }
 
