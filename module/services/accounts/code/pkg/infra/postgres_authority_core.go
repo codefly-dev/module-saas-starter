@@ -1301,13 +1301,13 @@ func (r AuthorityCoreReplay) PurgeExpiredAuthorityReplays(ctx context.Context) (
 }
 
 // RoleView is the role view a session was opened with, ErrNotFound when it has
-// none. The record is written once (the table grants no update or delete).
+// none. Its team is what makes it a cast: read and written with the rest. The record is written once (the table grants no update or delete).
 func (t coreTx) RoleView(session string) (domain.RoleView, error) {
 	v := domain.RoleView{SessionID: session}
 	var roles []byte
-	err := t.q.QueryRow(t.ctx, `SELECT parent_session_id, person_id, organization_id, roles
+	err := t.q.QueryRow(t.ctx, `SELECT parent_session_id, person_id, organization_id, roles, team_id
 		FROM public.authority_core_role_views WHERE session_id=$1`, session).
-		Scan(&v.Parent, &v.Person, &v.Organization, &roles)
+		Scan(&v.Parent, &v.Person, &v.Organization, &roles, &v.Team)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return v, coreMissing("role view of session", session)
 	}
@@ -1329,7 +1329,7 @@ func (t coreTx) PutRoleView(v domain.RoleView) error {
 		return err
 	}
 	_, err = t.q.Exec(t.ctx, `INSERT INTO public.authority_core_role_views
-		(session_id, parent_session_id, person_id, organization_id, roles) VALUES ($1,$2,$3,$4,$5)`,
-		v.SessionID, v.Parent, v.Person, v.Organization, roles)
+		(session_id, parent_session_id, person_id, organization_id, roles, team_id) VALUES ($1,$2,$3,$4,$5,$6)`,
+		v.SessionID, v.Parent, v.Person, v.Organization, roles, v.Team)
 	return err
 }

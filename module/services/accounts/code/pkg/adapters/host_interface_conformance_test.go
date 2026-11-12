@@ -1417,6 +1417,12 @@ installations:
 	t.Run("a role view mints no person Work Context of organization RBAC", func(t *testing.T) {
 		testRoleViewRefusesOrganizationMints(t, conn, signIn("fixture-alex"), store)
 	})
+	// A cast is a team and nothing else: what this host decides by the person's
+	// organization or platform role, it refuses to an administrator cast onto a
+	// team they are not in.
+	t.Run("an administrator cast onto a team holds nothing of their own here", func(t *testing.T) {
+		testTeamCastHoldsNothingOfItsPerson(t, conn, signIn("fixture-alex"), teamNamed(t, ctx, svc, fixtureOrganization, "Principal empty team"), store)
+	})
 
 	// The installed module actor the last case grants, delivered and installed
 	// while no envelope is committed.

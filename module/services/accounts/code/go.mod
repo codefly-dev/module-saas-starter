@@ -7,11 +7,11 @@ require (
 	buf.build/go/protovalidate v1.4.0
 	connectrpc.com/connect v1.21.1
 	connectrpc.com/otelconnect v0.9.0
-	github.com/codefly-dev/authority/libraries/authority-client/go v0.2.1-0.20261110172726-357f1de701f6
-	github.com/codefly-dev/authority/libraries/authority-core/go v0.1.1-0.20261110172726-357f1de701f6
-	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261110172726-357f1de701f6
-	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261110172726-357f1de701f6
-	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261110172726-357f1de701f6
+	github.com/codefly-dev/authority/libraries/authority-client/go v0.2.1-0.20261112092433-8cefcff9f133
+	github.com/codefly-dev/authority/libraries/authority-core/go v0.1.1-0.20261112092433-8cefcff9f133
+	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261112092433-8cefcff9f133
+	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261112092433-8cefcff9f133
+	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261112092433-8cefcff9f133
 	github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc
 	github.com/codefly-dev/core v0.19.22
 	github.com/codefly-dev/interface-cache/go/cache v0.4.1
@@ -65,7 +65,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cheggaaa/pb/v3 v3.2.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
-	github.com/codefly-dev/authority/libraries/hop/go v0.2.0 // indirect
+	github.com/codefly-dev/authority/libraries/hop/go v0.2.1-0.20261111234045-1076f796c30f // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect

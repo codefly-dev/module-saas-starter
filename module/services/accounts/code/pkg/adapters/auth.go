@@ -170,7 +170,7 @@ func platformRole(ctx context.Context, actorID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(view.Roles) > 0 {
+	if narrows(view) {
 		return "", nil
 	}
 	return service.Store().GetPlatformRole(ctx, actorID)

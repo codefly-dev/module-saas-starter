@@ -69,6 +69,7 @@
         "/host.session.v1.SessionService/Current",
         "/host.session.v1.SessionService/ListFixturePeople",
         "/host.session.v1.SessionService/OpenRoleView",
+        "/host.session.v1.SessionService/OpenTeamCast",
         "/host.session.v1.SessionService/SignIn"
       ]
     },
@@ -1833,6 +1834,59 @@
       },
       "policy_tier": "auth",
       "description": "Open a session that acts as some of the roles the caller holds on one installation; it only narrows.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.session.v1.SessionService/OpenTeamCast",
+      "service": "SessionService",
+      "full_service": "host.session.v1.SessionService",
+      "method": "OpenTeamCast",
+      "input_type": "host.session.v1.OpenTeamCastRequest",
+      "output_type": "host.session.v1.Session",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/session/v1/session.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/session:open-team-cast",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.authority.role_view_opened"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_SECRET",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "auth",
+      "description": "Open a session that acts as one team and nothing else, for a caller who could grant that team's roles.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

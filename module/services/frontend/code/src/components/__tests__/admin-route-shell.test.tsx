@@ -40,6 +40,9 @@ vi.mock("@/components/admin-layout", () => ({
 vi.mock("@/components/impersonation-banner", () => ({
 	ImpersonationBanner: () => null,
 }));
+vi.mock("@/features/role-view/role-view", () => ({
+	RoleViewBanner: () => <div>narrowed session bar</div>,
+}));
 afterEach(cleanup);
 beforeEach(() => {
 	state.pathname = "/admin/teams/team-example";
@@ -51,6 +54,8 @@ beforeEach(() => {
 it("admits a tenant member to team details", () => {
 	render(<AdminRouteShell>Team roster</AdminRouteShell>);
 	expect(screen.getByText("Team roster")).toBeTruthy();
+	// A view or a cast is said on admin pages too, admitted or refused.
+	expect(screen.getByText("narrowed session bar")).toBeTruthy();
 	expect(state.replace).not.toHaveBeenCalled();
 });
 it.each(["/admin/users", "/admin/teams-other", "/admin/billing"])(

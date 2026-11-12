@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import { OrgSelector } from "@/components/org-selector";
+import { ActAsTeam } from "@/features/role-view/role-view";
 import type { Team } from "@/gen/saas/accounts/v1/common_pb";
 import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
 import { useAuth } from "@/lib/auth";
@@ -167,6 +168,7 @@ function TeamDetails({ team }: { team: Team }) {
 					</>
 				)}
 			</section>
+			<ActAsTeam teamId={team.id} teamName={team.name} />
 			<TeamMembersPanel
 				orgId={team.orgId}
 				teamId={team.id}

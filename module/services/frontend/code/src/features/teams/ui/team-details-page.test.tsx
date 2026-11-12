@@ -78,6 +78,11 @@ describe("team details", () => {
 		expect(screen.queryByRole("button", { name: "Add member" })).toBeNull();
 		expect(screen.queryByText(team.id)).toBeNull();
 	});
+	it("offers to act as the team to whoever reads the page: the host decides who may, not the page", async () => {
+		renderInApp(<TeamDetailsPage teamId={team.id} />);
+		const section = await screen.findByRole("region", { name: "Act as this team" });
+		expect(within(section).getByRole("button", { name: "Act as this team" })).toBeTruthy();
+	});
 	it("lets a team admin manage members without organization-admin status", async () => {
 		role = 2;
 		renderInApp(<TeamDetailsPage teamId={team.id} />);
