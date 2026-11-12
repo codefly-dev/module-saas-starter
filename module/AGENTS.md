@@ -94,8 +94,8 @@ together. Accounts and auth-gateway use released SDK v0.4.1, which owns tracing
 startup and shutdown. Never ship a host release on an untagged Core candidate:
 these services move to a tagged Core that contains that commit before one. Run qualification with
 `GOWORK=off` so a workspace cannot mask the pins.
-Accounts requires Go 1.27.3. All go-grpc services pin released agent 0.1.72,
-whose builder uses Go 1.27.3 under `GOTOOLCHAIN=local`; CI uses the same patch.
+Accounts requires Go 1.27.4. All go-grpc services pin released agent 0.1.74,
+whose builder uses Go 1.27.4 under `GOTOOLCHAIN=local`; CI uses the same patch.
 Go 1.27.0 is affected by [GO-2026-6613](https://pkg.go.dev/vuln/GO-2026-6613),
 and Go 1.27.2 by [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809).
 A source audit under a newer compiler does not qualify the compiler used in the

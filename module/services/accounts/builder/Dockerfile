@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
+# syntax=docker.io/docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # The Go modules the recipe declares it downloads (go_module_downloads), fetched
 # by the caller on its own machine before any image build and supplied here as
 # the build context of this name, in the Go module proxy layout. Without a
@@ -7,7 +7,7 @@
 FROM scratch AS gomodproxy
 
 # Build stage
-FROM golang:1.27.3-alpine3.23@sha256:895e5feab11a4b3774d24ee3c9579028456b82ad37f42a9eb6f82adaf776a201 AS builder
+FROM docker.io/library/golang:1.27.4-alpine3.23@sha256:146e3b9c7c1e2ec3d3f5348c8a686151a75e1976e50efac9fc022ebe446a9a82 AS builder
 
 ARG TARGETARCH
 
@@ -65,7 +65,7 @@ RUN --network=none cd code && \
     sha256sum /app/app > /app/build-evidence/binaries.sha256
 
 # Final stage
-FROM alpine:3.23.5@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
+FROM docker.io/library/alpine:3.23.7@sha256:ff7f0c727dd796aa36787bfcd9a64bf35a6ce72a73451b3359fde849b6703d63 AS runtimefiles
 
 # Runtime only needs the public CA bundle and the packages the service declares in runtime-packages. Keep build tooling out of the image.
 RUN apk add --no-cache ca-certificates git
@@ -75,9 +75,6 @@ RUN apk add --no-cache ca-certificates git
 # service's runtime path — e.g. "../routing/rest", anchored at the source dir —
 # resolve to the same file it does in dev.
 WORKDIR /app/code
-
-# Set environment variables
-
 
 # Create a non-root user
 RUN adduser -D appuser
@@ -93,7 +90,10 @@ COPY --from=builder /app/build-evidence /usr/share/codefly/build
 # Inventory the final bytes at their real runtime locations, including assets.
 RUN find /app -type f -print0 | sort -z | xargs -0 sha256sum > /usr/share/codefly/build/runtime.sha256
 
-# Use the non-root user
+# These settings apply to either final base. FROM scratch resets image config.
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+
 USER appuser
 
 # Expose ports
