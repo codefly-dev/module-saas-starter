@@ -56,7 +56,7 @@ import { useAppearance } from "@/lib/appearance-provider";
 import { useAuth } from "@/lib/auth";
 import { sessionDisplayLabel } from "@/lib/auth-session";
 import { getNavigationIcon } from "@/lib/navigation-icons";
-import { useHeldPlugins } from "@/lib/plugins/held-pages";
+import { useHeldEntries } from "@/lib/plugins/held-pages";
 import { canPresent, selectNavigation } from "@/lib/plugins/presentation";
 import { useFrontendConfig } from "@/lib/providers";
 import { usePublicRuntimeConfig } from "@/lib/public-runtime-config-provider";
@@ -135,8 +135,8 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 		!!castTeamId || castable.some((team) => team.holds.length > 0);
 	const config = useFrontendConfig();
 	const { branding } = useAppearance();
-	const heldPlugins = useHeldPlugins();
-	const principal = { isAuthenticated, platformRole, orgRole, heldPlugins };
+	const heldEntries = useHeldEntries();
+	const principal = { isAuthenticated, platformRole, orgRole, heldEntries };
 	const { productFeatures } = usePublicRuntimeConfig();
 
 	const showAdmin = canPresent({ access: "admin" }, principal);
@@ -265,7 +265,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 					    administers nothing: its entry, outside Admin. */}
 					{!showAdmin &&
 						visibleSections
-							.filter((section) => heldPlugins.has(section.plugin))
+							.filter((section) => heldEntries.has(section.plugin))
 							.map((section) => (
 								<PluginNavigationSection
 									key={section.plugin}
