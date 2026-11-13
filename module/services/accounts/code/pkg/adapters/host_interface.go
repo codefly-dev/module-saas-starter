@@ -451,7 +451,9 @@ func (s *HostInstallationServer) Current(ctx context.Context, req *installationv
 }
 
 // Review reads the exact authority offer an administrator consents to,
-// without recording consent.
+// without recording consent; a module page's update is reviewed by its
+// installer-role holder too. The core decides who (its approver), under the
+// caller's session.
 func (s *HostInstallationServer) Review(ctx context.Context, req *installationv1.ReviewRequest) (*installationv1.ConsentApproval, error) {
 	core, err := authorityCore()
 	if err != nil {
@@ -461,7 +463,7 @@ func (s *HostInstallationServer) Review(ctx context.Context, req *installationv1
 	if err != nil {
 		return nil, err
 	}
-	if err := requireOrgAdmin(ctx, caller.ID, req.GetOrganizationId()); err != nil {
+	if err := requireOrgMember(ctx, caller.ID, req.GetOrganizationId()); err != nil {
 		return nil, err
 	}
 	a, err := core.Review(ctx, caller, req.GetOrganizationId(), req.GetTarget())
@@ -472,7 +474,9 @@ func (s *HostInstallationServer) Review(ctx context.Context, req *installationv1
 }
 
 // Install installs a solution at the caller's organization under the consent
-// they reviewed; nobody holds a role on it until granted one.
+// they reviewed; nobody holds a role on it until granted one. A module page's
+// update is approved here too, by an administrator or the page's
+// installer-role holder, as the core decides (its approver).
 func (s *HostInstallationServer) Install(ctx context.Context, req *installationv1.InstallRequest) (*installationv1.Installation, error) {
 	core, err := authorityCore()
 	if err != nil {
@@ -482,7 +486,7 @@ func (s *HostInstallationServer) Install(ctx context.Context, req *installationv
 	if err != nil {
 		return nil, err
 	}
-	if err := requireOrgAdmin(ctx, caller.ID, req.GetOrganizationId()); err != nil {
+	if err := requireOrgMember(ctx, caller.ID, req.GetOrganizationId()); err != nil {
 		return nil, err
 	}
 	var approval *domain.ConsentApproval

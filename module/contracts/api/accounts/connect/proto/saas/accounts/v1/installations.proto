@@ -386,10 +386,13 @@ message SetUpModulePageRequest {
 
 service InstallationService {
   // Review one solution release and its supporting module access before consent.
+  // A member's to ask: the authority core answers it to an organization
+  // administrator, and a module page's update to the holder of the page's
+  // installer role too (its approver), and refuses anyone else.
   rpc ReviewSolutionInstall(ReviewSolutionInstallRequest) returns (ReviewedSolutionInstall) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
-      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
       resource_bindings: {request_field: "org_id" target: RESOURCE_TARGET_ORGANIZATION lookup: RESOURCE_LOOKUP_DIRECT_ID}
       mfa: MFA_REQUIREMENT_NONE
       audit: {emission: AUDIT_EMISSION_NONE}
@@ -402,10 +405,13 @@ service InstallationService {
     option (google.api.http) = {post: "/v1/solution-installations/review" body: "*"};
   }
   // Consent to the exact review; retries retain its original per-owner receipts.
+  // A member's to ask: the authority core admits an organization
+  // administrator, and the holder of a module page's installer role to
+  // approve the page's update (its approver), and refuses anyone else.
   rpc InstallReviewedSolution(InstallReviewedSolutionRequest) returns (Installation) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
-      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
       resource_bindings: {request_field: "org_id" target: RESOURCE_TARGET_ORGANIZATION lookup: RESOURCE_LOOKUP_DIRECT_ID}
       mfa: MFA_REQUIREMENT_NONE
       audit: {emission: AUDIT_EMISSION_NONE}

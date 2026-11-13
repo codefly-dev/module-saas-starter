@@ -310,6 +310,93 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		require.Equal(t, approved.ID, again.ID)
 		require.Equal(t, approved.Revision, again.Revision, "and records nothing again")
 	})
+
+	// Every role a page declares has its team, a role its update adds
+	// included; and the holder of the page's installer role approves that
+	// update, as the core admits them (its approver), while a member holding
+	// another role, and an administrator of nothing, are refused. Red before:
+	// the host gated the review and the approval on an organization
+	// administrator, and an approved update assigned no team, so an added
+	// role read "nobody".
+	t.Run("a page's update adds a role with its team, approved by the page's installer", func(t *testing.T) {
+		const page = "conformance-role-added-page"
+		entry := wireScope(page+".entry", "read")
+		roles := map[string][]*authorityv1.WorkScopeV1{"installer": {entry}, "viewer": {entry}}
+		deliverPage := func(generation uint64) {
+			deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: page, generation: generation, ceilings: []*authorityv1.WorkScopeV1{entry}, installationRole: domain.NoInstallationRole,
+				page: &solutionhost.Frontend{Title: "Role added page", ExposedModule: "./Page", HostContract: 1, Payload: h.pagePayload}, roles: roles})
+		}
+		deliverPage(1)
+		require.NoError(t, consentModule(h.ctx, h.svc, h.store, fixtureOrganization, conformanceAlex, page))
+		require.NoError(t, h.core.AdoptLegacyReach(h.ctx), "composition holds the page at what it approved")
+		set, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(page).TargetID, business.InstallAccess{})
+		require.NoError(t, err)
+		require.Empty(t, set.AccessProblems)
+		installer := teamsNamed(t, h, page+"-installer")
+		require.Len(t, installer, 1)
+		require.NoError(t, h.svc.AddTeamMember(h.ctx, conformanceAlex, &gen.AddTeamMemberRequest{TeamId: installer[0], UserId: conformanceMaya}))
+		viewer := teamsNamed(t, h, page+"-viewer")
+		require.Len(t, viewer, 1)
+		require.NoError(t, h.svc.AddTeamMember(h.ctx, conformanceAlex, &gen.AddTeamMemberRequest{TeamId: viewer[0], UserId: conformanceIvy}))
+		grantedRoles := func() []string {
+			t.Helper()
+			grants, err := h.core.ListRoleGrants(h.ctx, alex, fixtureOrganization, set.ID)
+			require.NoError(t, err)
+			var out []string
+			for _, grant := range grants {
+				out = append(out, grant.Role)
+			}
+			slices.Sort(out)
+			return out
+		}
+		require.Equal(t, []string{"installer", "viewer"}, grantedRoles())
+
+		// The update adds `user`. Set up while it waits sets up what was
+		// approved and asks the core for no role it would refuse.
+		roles["user"] = []*authorityv1.WorkScopeV1{entry}
+		deliverPage(2)
+		pending, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(page).TargetID, business.InstallAccess{})
+		require.NoError(t, err)
+		require.Empty(t, pending.AccessProblems, "a role nobody approved yet is not set up")
+		require.Empty(t, teamsNamed(t, h, page+"-user"))
+
+		maya := authority.Person{ID: conformanceMaya, Organization: fixtureOrganization}
+		ivy := authority.Person{ID: conformanceIvy, Organization: fixtureOrganization}
+		_, err = h.svc.ReviewSolutionInstall(h.ctx, ivy, fixtureOrganization, available(page).TargetID)
+		require.Error(t, err, "a viewer of the page does not review its update")
+		review, err := h.svc.ReviewSolutionInstall(h.ctx, maya, fixtureOrganization, available(page).TargetID)
+		require.NoError(t, err, "the page's installer reviews its update")
+		_, err = h.svc.InstallReviewedSolution(h.ctx, ivy, fixtureOrganization, review, business.InstallAccess{})
+		require.Error(t, err, "nor approves another's review")
+		approved, err := h.svc.InstallReviewedSolution(h.ctx, maya, fixtureOrganization, review, business.InstallAccess{})
+		require.NoError(t, err, "the page's installer approves its update")
+		require.Equal(t, set.ID, approved.ID)
+		require.Equal(t, review.GetApproval().GetOperationId(), approved.Consent.OperationID)
+		require.Len(t, approved.AccessProblems, 1, "the role the update adds waits for an administrator's team")
+		require.Equal(t, "user", approved.AccessProblems[0].Role)
+		require.Empty(t, teamsNamed(t, h, page+"-user"), "the installer creates no team of the organization")
+
+		// An administrator's Set up gives it its team, now that it is approved.
+		again, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(page).TargetID, business.InstallAccess{})
+		require.NoError(t, err)
+		require.Empty(t, again.AccessProblems)
+		require.Len(t, teamsNamed(t, h, page+"-user"), 1)
+		require.Equal(t, []string{"installer", "user", "viewer"}, grantedRoles())
+
+		// An administrator's approval of an update that adds a role gives it
+		// its team at once.
+		roles["author"] = []*authorityv1.WorkScopeV1{entry}
+		deliverPage(3)
+		review, err = h.svc.ReviewSolutionInstall(h.ctx, alex, fixtureOrganization, available(page).TargetID)
+		require.NoError(t, err)
+		approved, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{})
+		require.NoError(t, err)
+		require.Empty(t, approved.AccessProblems)
+		author := teamsNamed(t, h, page+"-author")
+		require.Len(t, author, 1, "the added role's conventional team is created")
+		require.Empty(t, teamMembers(t, h, author[0]), "with nobody in it: the update gives no person anything")
+		require.Equal(t, []string{"author", "installer", "user", "viewer"}, grantedRoles())
+	})
 }
 
 // reachOperations are the operations role reaches at module in offer.

@@ -221,6 +221,24 @@ export function navProjection(
 }
 
 /**
+ * The pages this viewer holds a role on that the registry carries no remote
+ * for, by alias: a page the host bundles into its own frontend (the registry
+ * lists it among the modules without a manifest, `moduleTargets`), joined to
+ * the viewer's entitlements on its TARGET exactly as a remote page is. A
+ * module that declares no roles is never entitled, so it is never one. The
+ * host frontend presents a bundled page's plugin to whoever this names.
+ */
+export function heldPages(
+	moduleTargets: ReadonlyMap<string, string>,
+	entitlements: ViewerEntitlements,
+): string[] {
+	return [...moduleTargets]
+		.filter(([, target]) => entitlements.byTarget.has(target))
+		.map(([alias]) => alias)
+		.sort();
+}
+
+/**
  * What one kind of client may read: the surfaces declared for that kind, named
  * by the solution offering them. A client asks for its own kind and gets
  * exactly what applies to it, so learning what is on offer no longer means

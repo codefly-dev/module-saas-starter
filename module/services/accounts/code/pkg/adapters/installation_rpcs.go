@@ -31,10 +31,11 @@ func (s *InstallationServer) ReviewSolutionInstall(ctx context.Context, req *gen
 	if err != nil {
 		return nil, err
 	}
-	if err := requireOrgAdmin(ctx, actor, req.OrgId); err != nil {
+	caller, err := installationApprover(ctx, actor, req.OrgId)
+	if err != nil {
 		return nil, err
 	}
-	review, err := service.ReviewSolutionInstall(ctx, authority.Person{ID: actor, Organization: req.OrgId}, req.OrgId, req.TargetId)
+	review, err := service.ReviewSolutionInstall(ctx, caller, req.OrgId, req.TargetId)
 	if err != nil {
 		return nil, mapInstallationError(err)
 	}
@@ -49,10 +50,11 @@ func (s *InstallationServer) InstallReviewedSolution(ctx context.Context, req *g
 	if err != nil {
 		return nil, err
 	}
-	if err := requireOrgAdmin(ctx, actor, req.OrgId); err != nil {
+	caller, err := installationApprover(ctx, actor, req.OrgId)
+	if err != nil {
 		return nil, err
 	}
-	inst, err := service.InstallReviewedSolution(ctx, authority.Person{ID: actor, Organization: req.OrgId}, req.OrgId, req.Review, business.InstallAccess{RoleTeams: req.RoleTeams, InstallerRoles: req.InstallerRoles})
+	inst, err := service.InstallReviewedSolution(ctx, caller, req.OrgId, req.Review, business.InstallAccess{RoleTeams: req.RoleTeams, InstallerRoles: req.InstallerRoles})
 	if err != nil {
 		return nil, mapInstallationError(err)
 	}
@@ -62,6 +64,31 @@ func (s *InstallationServer) InstallReviewedSolution(ctx context.Context, req *g
 	}
 	result.AccessProblems = business.AccessProblemsToWire(inst.AccessProblems)
 	return result, nil
+}
+
+// installationApprover is the caller of a review or an approval of an
+// installation at org, a member of it: an administrator or owner of org, as
+// before; any other member as the signed-in person of their own session
+// there, whom the core admits only as the holder of a module page's installer
+// role approving the page's update (its approver) and refuses otherwise,
+// under that session's view. Nothing else is widened: the core decides, and
+// refuses the rest as before.
+func installationApprover(ctx context.Context, actor, org string) (authority.Person, error) {
+	if err := requireOrgMember(ctx, actor, org); err != nil {
+		return authority.Person{}, err
+	}
+	refused := requireOrgAdmin(ctx, actor, org)
+	if refused == nil {
+		return authority.Person{ID: actor, Organization: org}, nil
+	}
+	if status.Code(refused) != codes.PermissionDenied {
+		return authority.Person{}, refused
+	}
+	person, err := signedInPerson(ctx, "approve a page's update")
+	if err != nil || person.ID != actor || person.Organization != org {
+		return authority.Person{}, refused
+	}
+	return person, nil
 }
 
 // SetUpModulePage sets up who may use a module page, as an administrator of

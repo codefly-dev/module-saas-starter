@@ -8,13 +8,15 @@
 #   admin@acme.com   Sarah Chen    the platform admin (super_admin), owner of Acme Corp
 #   alice@acme.com   Alice Johnson the organisation admin of Acme Corp
 #   bob@acme.com     Bob Williams  a member: the viewer of every target
-#   carol@acme.com   Carol Davis   a member: the editor of every target
+#   carol@acme.com   Carol Davis   a member: the editor of every target, and its
+#                                  user where it declares one
 #   dana@example.com Dana Lee      a member: the installer of every target
 #
 # Every role-gated target the composition delivers (a solution, a module page
 # declaring roles) is installed at Acme Corp by Alice, each declared role to
-# its `<target>-<role>` team, and Bob, Carol and Dana join the team of their
-# role (`installations`, below). Signed in as Sarah or Alice, "Act as this
+# its `<target>-<role>` team, every role it declares (a fourth such as
+# `user` included), and Bob, Carol and Dana join the team of their role
+# (`installations`, below). Signed in as Sarah or Alice, "Act as this
 # team" on any of those teams opens a session that is that team and nothing
 # else; signed in as Bob, Carol or Dana, the product shows that one team's
 # reach. The other people below are the authority interface's own local
@@ -198,7 +200,11 @@ collections:
 # is approved) — installed by Alice
 # as an administrator installs it, each declared role to its `<target>-<role>`
 # team — and each member joins the team of the role named, where the target
-# declares that role. A composing workspace's
+# declares that role. `user`, where a target declares it, is the role that
+# uses the product without authoring it (it reads, and writes only the
+# person's own work); its editor holds all of that and more, so Carol, the
+# one who uses every target, is seated there too and Bob stays the viewer
+# who writes nothing. A composing workspace's
 # `fixture-grants.yaml` may still name a target explicitly; that row is kept
 # and the target is not expanded again.
 installations:
@@ -208,4 +214,5 @@ installations:
     members:
       viewer: [bob@acme.com]
       editor: [carol@acme.com]
+      user: [carol@acme.com]
       installer: [dana@example.com]

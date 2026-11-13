@@ -3038,9 +3038,9 @@ const file_saas_accounts_v1_installations_proto_rawDesc = "" +
 	"'READINESS_ACTION_INSTALL_REACHED_MODULE\x10\x05\x12\x19\n" +
 	"\x15READINESS_ACTION_WAIT\x10\x062\xb5\x17\n" +
 	"\x13InstallationService\x12\xc6\x01\n" +
-	"\x15ReviewSolutionInstall\x12..saas.accounts.v1.ReviewSolutionInstallRequest\x1a).saas.accounts.v1.ReviewedSolutionInstall\"R\xc2\xf3\x18\"\b\x02\x10\x04*\f\n" +
+	"\x15ReviewSolutionInstall\x12..saas.accounts.v1.ReviewSolutionInstallRequest\x1a).saas.accounts.v1.ReviewedSolutionInstall\"R\xc2\xf3\x18\"\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02&:\x01*\"!/v1/solution-installations/review\x12\xb8\x01\n" +
-	"\x17InstallReviewedSolution\x120.saas.accounts.v1.InstallReviewedSolutionRequest\x1a\x1e.saas.accounts.v1.Installation\"K\xc2\xf3\x18\"\b\x02\x10\x04*\f\n" +
+	"\x17InstallReviewedSolution\x120.saas.accounts.v1.InstallReviewedSolutionRequest\x1a\x1e.saas.accounts.v1.Installation\"K\xc2\xf3\x18\"\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x1f:\x01*\"\x1a/v1/solution-installations\x12\x84\x02\n" +
 	"\x0fSetUpModulePage\x12(.saas.accounts.v1.SetUpModulePageRequest\x1a\x1e.saas.accounts.v1.Installation\"\xa6\x01\xc2\xf3\x18j\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:J\n" +

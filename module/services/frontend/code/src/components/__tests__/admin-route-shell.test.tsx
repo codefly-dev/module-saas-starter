@@ -10,6 +10,26 @@ const state = vi.hoisted(() => ({
 	castTeamId: "",
 	sessionRead: "confirmed" as string,
 	replace: vi.fn(),
+	heldPlugins: new Set<string>(),
+	pagesLoaded: true,
+}));
+vi.mock("@/lib/providers", () => ({
+	useFrontendConfig: () => ({
+		routes: [
+			{
+				id: "models",
+				path: "/admin/models",
+				plugin: "model",
+				requiredRole: "admin",
+			},
+		],
+	}),
+}));
+vi.mock("@/lib/plugins/held-pages", () => ({
+	useHeldPlugins: () => state.heldPlugins,
+}));
+vi.mock("@/solutions/SolutionsMenu", () => ({
+	useRegisteredSolutionsLoaded: () => state.pagesLoaded,
 }));
 vi.mock("next/navigation", () => ({
 	usePathname: () => state.pathname,
@@ -55,6 +75,39 @@ beforeEach(() => {
 	state.castTeamId = "";
 	state.sessionRead = "confirmed";
 	state.replace.mockClear();
+	state.heldPlugins = new Set();
+	state.pagesLoaded = true;
+});
+
+// A page the host bundles (model's /admin/models) is its role holders' to
+// open, administrators or not; a member holding no role on it is refused as
+// on any admin page. Red before: the shell admitted administrators alone.
+describe("a page the host bundles", () => {
+	it("admits a member holding a role on it", () => {
+		state.pathname = "/admin/models";
+		state.heldPlugins = new Set(["model"]);
+		render(<AdminRouteShell>Installed models</AdminRouteShell>);
+		expect(screen.getByText("Installed models")).toBeTruthy();
+	});
+	it("refuses a member holding none", () => {
+		state.pathname = "/admin/models";
+		render(<AdminRouteShell>Installed models</AdminRouteShell>);
+		expect(screen.queryByText("Installed models")).toBeNull();
+		expect(screen.getByText("You don't have access to Admin")).toBeTruthy();
+	});
+	it("refuses nothing before the member's pages are read", () => {
+		state.pathname = "/admin/models";
+		state.pagesLoaded = false;
+		render(<AdminRouteShell>Installed models</AdminRouteShell>);
+		expect(screen.queryByText("Installed models")).toBeNull();
+		expect(screen.queryByText("You don't have access to Admin")).toBeNull();
+	});
+	it("opens no other admin page to them", () => {
+		state.pathname = "/admin/users";
+		state.heldPlugins = new Set(["model"]);
+		render(<AdminRouteShell>Users</AdminRouteShell>);
+		expect(screen.queryByText("Users")).toBeNull();
+	});
 });
 
 it("admits a tenant member to team details", () => {
@@ -110,7 +163,9 @@ it("says it could not confirm the session, not that the role is none", () => {
 	state.orgRole = undefined;
 	state.sessionRead = "failed";
 	render(<AdminRouteShell>Team roster</AdminRouteShell>);
-	expect(screen.getByText("Could not confirm what this session is")).toBeTruthy();
+	expect(
+		screen.getByText("Could not confirm what this session is"),
+	).toBeTruthy();
 	expect(screen.queryByText(/is none/)).toBeNull();
 });
 

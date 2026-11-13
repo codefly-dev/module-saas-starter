@@ -38,6 +38,10 @@ type Listener = () => void;
 
 const EMPTY: SolutionNav[] = [];
 let snapshot: SolutionNav[] = EMPTY;
+// The pages the host bundles that this viewer holds a role on, by alias
+// (`pages` of the same listing): their plugins are this viewer's to see.
+const NO_PAGES: readonly string[] = [];
+let pages: readonly string[] = NO_PAGES;
 let snapshotLoaded = false;
 const listeners = new Set<Listener>();
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -80,12 +84,21 @@ function currentViewer(): string | null {
 	return `${subject}\u0000${org}\u0000${narrowed}`;
 }
 
-function publish(next: SolutionNav[], loaded = true): void {
+function publish(
+	next: SolutionNav[],
+	loaded = true,
+	nextPages: readonly string[] = NO_PAGES,
+): void {
 	// Keep the reference stable when nothing changed so subscribers don't
 	// re-render on every poll (useSyncExternalStore compares by identity).
-	if (sameList(snapshot, next) && snapshotLoaded === loaded) return;
+	const samePages =
+		pages.length === nextPages.length &&
+		pages.every((page, index) => page === nextPages[index]);
+	if (sameList(snapshot, next) && snapshotLoaded === loaded && samePages)
+		return;
 	snapshotLoaded = loaded;
 	snapshot = next;
+	if (!samePages) pages = nextPages;
 	for (const listener of listeners) {
 		listener();
 	}
@@ -189,10 +202,17 @@ async function refresh(): Promise<void> {
 			if (response.status !== 429) retryFirstRead(viewer);
 			return;
 		}
-		const data: { solutions?: SolutionNav[] } = await response.json();
+		const data: { solutions?: SolutionNav[]; pages?: unknown } =
+			await response.json();
 		if (currentViewer() !== viewer) return;
 		answered = true;
-		publish(data.solutions ?? []);
+		publish(
+			data.solutions ?? [],
+			true,
+			Array.isArray(data.pages)
+				? data.pages.filter((page): page is string => typeof page === "string")
+				: NO_PAGES,
+		);
 	} catch {
 		// Network blip — keep the last known list.
 		retryFirstRead(viewer);
@@ -242,6 +262,20 @@ function getSnapshot(): SolutionNav[] {
  */
 export function useRegisteredSolutions(): SolutionNav[] {
 	return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+/**
+ * The pages the host bundles into its own frontend that this viewer holds a
+ * role on, by alias, from the same poll: the server joins them to the
+ * viewer's entitlements, under the session they asked from (a team cast
+ * holds its team's).
+ */
+export function useHeldPages(): readonly string[] {
+	return useSyncExternalStore(
+		subscribe,
+		() => (currentViewer() === snapshotViewer ? pages : NO_PAGES),
+		() => NO_PAGES,
+	);
 }
 
 /** Whether the menu titles each of its groups itself (any group, or a module page). */

@@ -211,8 +211,12 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 			ResponseSensitivity: policyv1.Sensitivity_SENSITIVITY_INTERNAL,
 			PlatformRole:        policyv1.PlatformRoleRequirement_PLATFORM_ROLE_REQUIREMENT_NONE,
 		},
+		// A member's to ask: the core admits an organization administrator, and
+		// a module page's installer-role holder approving its update (its
+		// approver), and refuses anyone else.
 		"/host.installation.v1.InstallationService/Install": func() *policyv1.MethodPolicy {
 			p := adminWrite(string(EventAuthorityInstallationRequested))
+			p.Tenant = policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_MEMBER
 			p.Audit.Events = append(p.Audit.Events, string(EventAuthorityInstallationActivated), string(EventAuthorityInstallationUpgraded))
 			return p
 		}(),
@@ -225,7 +229,7 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 		"/host.artifact.v1.ArtifactService/Approve":                artifactConsent(),
 		"/host.artifact.v1.ArtifactService/Authorize":              workloadCall(policyv1.Sensitivity_SENSITIVITY_SECRET),
 		"/host.artifact.v1.ArtifactService/Revoke":                 artifactConsent(),
-		"/host.installation.v1.InstallationService/Review":         read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
+		"/host.installation.v1.InstallationService/Review":         read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_MEMBER, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL), // the core answers an administrator, and a module page's installer-role holder for its update
 		"/host.installation.v1.InstallationService/GrantRole":      roleChange(EventAuthorityRoleGranted),
 		"/host.installation.v1.InstallationService/RevokeRole":     roleChange(EventAuthorityRoleRevoked),
 		"/host.installation.v1.InstallationService/ListRoleGrants": read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),

@@ -20,12 +20,49 @@ export interface PresentationPrincipal {
 	isAuthenticated: boolean;
 	platformRole?: PlatformRole;
 	orgRole?: OrgRole;
+	/**
+	 * The plugins that are pages this person holds a role on (pagePlugins):
+	 * a page the host bundles is presented to its role holders, as a remote
+	 * page is, whatever administrator gate its manifest names.
+	 */
+	heldPlugins?: ReadonlySet<string>;
+}
+
+/**
+ * The plugins that are the pages `pages` names (by alias, the module a page
+ * is): each plugin with a service bound to one of those modules, as the
+ * composition bound it (`contributedServiceBindings`).
+ */
+export function pagePlugins(
+	pages: readonly string[],
+	bindings: readonly { plugin: string; target: { module: string } }[],
+): ReadonlySet<string> {
+	return new Set(
+		bindings
+			.filter((binding) => pages.includes(binding.target.module))
+			.map((binding) => binding.plugin),
+	);
 }
 
 export function canPresent(
-	requirement: PresentationRequirement,
+	requirement: PresentationRequirement & { plugin?: string },
 	principal: PresentationPrincipal,
 ): boolean {
+	// A page's own administrator gate yields to holding a role on that page:
+	// a super administrator's gate never does.
+	const held =
+		requirement.plugin !== undefined &&
+		principal.heldPlugins?.has(requirement.plugin) === true;
+	if (held && principal.isAuthenticated) {
+		requirement = {
+			...requirement,
+			access: requirement.access === "admin" ? undefined : requirement.access,
+			requiredRole:
+				requirement.requiredRole === "admin"
+					? undefined
+					: requirement.requiredRole,
+		};
+	}
 	const access =
 		requirement.access ?? requirement.requiredRole ?? "authenticated";
 	const accessAllowed = (() => {
@@ -75,13 +112,22 @@ export function selectNavigation(
 	principal: PresentationPrincipal,
 	features: ProductFeatures,
 ): NavItem[] {
+	// An item is its section's plugin's, which a held page's gate reads.
+	const pluginOf = new Map(
+		config.navSections.flatMap((section) =>
+			section.items.map((item) => [item, section.plugin] as const),
+		),
+	);
 	return config.navItems.filter(
 		(item) =>
 			(
 				item.surfaces ?? ["sidebar", "command_palette", "plugin_registry"]
 			).includes(surface) &&
 			isProductRouteEnabled(item.href, features) &&
-			canPresent(item, principal),
+			canPresent(
+				{ ...item, plugin: item.plugin ?? pluginOf.get(item) },
+				principal,
+			),
 	);
 }
 

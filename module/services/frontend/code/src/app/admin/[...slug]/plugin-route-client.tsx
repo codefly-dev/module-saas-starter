@@ -10,14 +10,16 @@
  *
  * Specific filesystem routes (users, billing, …) are matched by Next BEFORE this
  * catch-all, so only unmatched paths fall through here. The (admin) layout
- * already enforces auth + admin-tier; a route's optional `requiredRole` is an
- * additional, finer gate.
+ * already enforces auth + admin-tier, or a role on the page the route is (a
+ * page the host bundles: useHeldPlugins); a route's optional `requiredRole` is
+ * an additional, finer gate, which a role on that page meets.
  */
 
 import { notFound, usePathname } from "next/navigation";
 
 import { PluginContributionBoundary } from "@/components/plugin-contribution-boundary";
 import { useAuth } from "@/lib/auth";
+import { useHeldPlugins } from "@/lib/plugins/held-pages";
 import { selectRoute } from "@/lib/plugins/presentation";
 import { useFrontendConfig } from "@/lib/providers";
 
@@ -25,10 +27,12 @@ export default function PluginRouteClient() {
 	const pathname = usePathname();
 	const config = useFrontendConfig();
 	const { isAuthenticated, platformRole, orgRole } = useAuth();
+	const heldPlugins = useHeldPlugins();
 	const route = selectRoute(config, pathname, {
 		isAuthenticated,
 		platformRole,
 		orgRole,
+		heldPlugins,
 	});
 
 	if (!route) {
