@@ -33,7 +33,8 @@ func reachingBinding(t *testing.T, alias, principal string, bindings ...solution
 
 // A record's reach is the modules it invokes on a person's behalf, named by
 // their aliases: never its own principal, never a headless-only binding, and
-// never an audience no applied record answers to.
+// never an audience no applied record answers to. Each is reached through a
+// binding of the record's own, so each is in its bound reach too.
 func TestARecordReachesTheModulesItDeclaresItInvokes(t *testing.T) {
 	invoke := map[string][]string{"invoke": {"record:read"}}
 	page := reachingBinding(t, "people", "people-runtime",
@@ -55,14 +56,16 @@ func TestARecordReachesTheModulesItDeclaresItInvokes(t *testing.T) {
 	s := (&appliedBindingsRegistry{bindings: bindings})
 	snapshot, err := s.List(context.Background(), nil)
 	require.NoError(t, err)
-	require.Equal(t, map[string][]string{"people": {"records"}}, snapshot.reaches)
+	require.Equal(t, map[string]moduleReach{"people": {Aliases: []string{"records"}, Bound: []string{"records"}}}, snapshot.reaches)
 	require.Equal(t, map[string][]string{"notes-runtime": {"notes-a", "notes-b"}}, snapshot.sharedPrincipals)
 }
 
 // A page's edge dependencies are reach too: the modules it calls with the
 // person's own Work Context, named by principal, resolved to the alias that
 // carries each, beside the modules its bindings invoke for the person. One
-// named twice is listed once; one nothing carries, or its own, is not.
+// named twice is listed once; one nothing carries, or its own, is not. Only
+// the modules a binding invokes are bound reach: an edge dependency is called
+// with the person's own Work Context, so it is not.
 func TestARecordReachesTheModulesItsPageDependsOn(t *testing.T) {
 	invoke := map[string][]string{"invoke": {"record:read"}}
 	page := reachingBinding(t, "people", "people-runtime",
@@ -85,11 +88,12 @@ func TestARecordReachesTheModulesItsPageDependsOn(t *testing.T) {
 	}}
 	snapshot, err := s.List(context.Background(), nil)
 	require.NoError(t, err)
-	require.Equal(t, map[string][]string{"people": {"assistant", "records"}}, snapshot.reaches)
+	require.Equal(t, map[string]moduleReach{"people": {Aliases: []string{"assistant", "records"}, Bound: []string{"records"}}}, snapshot.reaches)
 }
 
-// The frontend reads a record's reach from the registry snapshot route, so the
-// route — not only the join behind it — has to carry it.
+// The frontend reads a record's reach, and which of it is bound, from the
+// registry snapshot route, so the route — not only the join behind it — has
+// to carry both.
 func TestTheRegistrySnapshotRouteCarriesARecordsReach(t *testing.T) {
 	invoke := map[string][]string{"invoke": {"record:read"}}
 	gw, _, _, _ := newGatewayHarness(t)
@@ -105,9 +109,10 @@ func TestTheRegistrySnapshotRouteCarriesARecordsReach(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	var snapshot solutionRegistryProjection
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &snapshot))
-	reaches := map[string][]string{}
+	reaches, bound := map[string][]string{}, map[string][]string{}
 	for _, record := range snapshot.Solutions {
-		reaches[record.ID] = record.Reaches
+		reaches[record.ID], bound[record.ID] = record.Reaches, record.BoundReaches
 	}
 	require.Equal(t, map[string][]string{"people": {"records"}, "records": nil}, reaches)
+	require.Equal(t, map[string][]string{"people": {"records"}, "records": nil}, bound)
 }

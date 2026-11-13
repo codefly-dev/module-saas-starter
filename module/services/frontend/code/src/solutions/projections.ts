@@ -303,6 +303,24 @@ export function surfacesProjection(
 	};
 }
 
+/**
+ * Every registered module's target by alias: the composed modules the registry
+ * carries no remote for (`moduleTargets`, a host-bundled page among them) and
+ * the module pages it does. What `pageBinding` keys a declared reach on.
+ */
+export function registeredModuleTargets(registered: {
+	solutions: readonly SolutionManifest[];
+	moduleTargets: ReadonlyMap<string, string>;
+}): ReadonlyMap<string, string> {
+	const targets = new Map(registered.moduleTargets);
+	for (const manifest of registered.solutions) {
+		if (manifest.kind === "module" && manifest.targetId !== "") {
+			targets.set(manifest.id, manifest.targetId);
+		}
+	}
+	return targets;
+}
+
 /** What the host hands one mounted page about where, and for whom, it acts. */
 export interface PageBinding {
 	installationId: string;
@@ -316,20 +334,27 @@ export interface PageBinding {
  * The binding facts for the page registered under `id`, from the two reads the
  * navigation already makes, joined as the navigation joins them: `entitled` is
  * `entitledSolutions(registry, entitlements)`, so the record's declared
- * consumption and each module it reaches are read only through the verified
- * viewer's own entitlements. Null when the viewer has no installation of the
- * page.
+ * consumption is read only through the verified viewer's own entitlements.
+ * Null when the viewer has no installation of the page.
  *
- * A declared module joins to an installation in one of two ways, by target:
+ * `moduleTargets` is every registered module's target by alias, a page or not
+ * (`registeredModuleTargets`). A declared module joins to an installation in
+ * one of three ways, each naming an installation and granting nothing — every
+ * call there is still decided where it is made:
  *
- * - a module with a page (and so, possibly, roles) through the viewer's own
- *   entitlement for it, so a page is never told an installation of a module
- *   its viewer was not granted;
- * - a composed module with no page, `moduleTargets` (from the registry),
- *   through the organization's composition installation of it, which the
- *   gateway names only for a module that declares no roles
- *   (`entitlements.composedModules`). Such a module decides every call on the
- *   person's own access, so naming its installation widens nothing.
+ * - through the viewer's own entitlement to it, so a module page the viewer
+ *   holds a role on is named by that installation, remote or host-bundled;
+ * - a module the page consumes through a binding of its own
+ *   (`manifest.boundReaches`), through the organization's composition
+ *   installation of it (`entitlements.composedModules`), whether or not it
+ *   declares roles: every such call is issued through the page's binding and
+ *   carries the person's role at the PAGE, cut to the binding, never what the
+ *   person holds at the module, so the module's own roles are not what admits
+ *   it;
+ * - a module the page calls on the person's own session, through its
+ *   composition installation only when it declares no roles: such a module
+ *   decides every call on the person's own access, so naming it widens
+ *   nothing, while one declaring roles reaches the person by grant alone.
  */
 export function pageBinding(
 	entitled: ReturnType<typeof entitledSolutions>,
@@ -340,16 +365,23 @@ export function pageBinding(
 	const byAlias = new Map(entitled.map((pair) => [pair.manifest.id, pair]));
 	const page = byAlias.get(id);
 	if (!page || page.entitlement.installationId === "") return null;
-	const composed = (alias: string): string | undefined => {
+	const bound = new Set(page.manifest.boundReaches ?? []);
+	const joined = (alias: string): string | undefined => {
+		const own = byAlias.get(alias)?.entitlement.installationId;
+		if (own) return own;
 		const target = moduleTargets.get(alias);
-		return target === undefined
-			? undefined
-			: entitlements.composedModules?.get(target);
+		if (target === undefined) return undefined;
+		const held = entitlements.byTarget.get(target)?.installationId;
+		if (held) return held;
+		const composed = entitlements.composedModules?.get(target);
+		if (!composed) return undefined;
+		return bound.has(alias) || !composed.roleGated
+			? composed.installationId
+			: undefined;
 	};
 	const reach: PageBinding["reach"] = {};
 	for (const alias of page.manifest.reaches ?? []) {
-		const installationId =
-			byAlias.get(alias)?.entitlement.installationId || composed(alias);
+		const installationId = joined(alias);
 		if (installationId) reach[alias] = { installationId };
 	}
 	return {

@@ -42,9 +42,16 @@ export interface SolutionManifest {
 	 * Aliases of the modules this record's applied manifest declares it
 	 * consumes on a person's session. Stamped from the gateway's record, like
 	 * `targetId`, never parsed from the remote's manifest; a statement, never a
-	 * grant: `pageBinding` joins each to the viewer's own entitlements.
+	 * grant: `pageBinding` joins each to an installation.
 	 */
 	reaches?: string[];
+	/**
+	 * The `reaches` this record consumes through a binding of its own, stamped
+	 * the same way: every call there carries the person's role at this record,
+	 * cut to the binding, so `pageBinding` joins each to the organization's
+	 * composition installation whether or not the module declares roles.
+	 */
+	boundReaches?: string[];
 	/**
 	 * Major of the manifest wire shape this solution was built against.
 	 * Validated by `checkRuntimeCompatibility` before the read projection renders it.
@@ -379,6 +386,8 @@ interface GatewayRegistryEntry {
 	targetId?: unknown;
 	/** Aliases of the modules the applied manifest declares it consumes. */
 	reaches?: unknown;
+	/** The subset of `reaches` consumed through the record's own bindings. */
+	boundReaches?: unknown;
 }
 
 /**
@@ -446,6 +455,10 @@ function manifestsFromSnapshot(payload: unknown): {
 			...(Array.isArray(entry.reaches) &&
 			entry.reaches.every((alias) => typeof alias === "string")
 				? { reaches: entry.reaches as string[] }
+				: {}),
+			...(Array.isArray(entry.boundReaches) &&
+			entry.boundReaches.every((alias) => typeof alias === "string")
+				? { boundReaches: entry.boundReaches as string[] }
 				: {}),
 			...(typeof entry.assetVersion === "string" &&
 			/^[a-f0-9]{64}$/.test(entry.assetVersion)

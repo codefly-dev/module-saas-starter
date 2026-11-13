@@ -59,10 +59,12 @@ components:
   under impersonation it is the impersonated person's, so state kept under it
   lands in that person's partition.
 - `reach?: Record<alias, { installationId }>` — the modules this page declared
-  it consumes, each with the viewer organization's installation of it: the
-  applied declaration joined to the viewer's own entitlements. A declared module
-  the viewer cannot open has no entry; read an absent alias as "not reachable
-  here", and an absent `reach` as "the host does not tell me".
+  it consumes, each with the viewer organization's installation of it: a module
+  the page consumes through one of its own bindings whenever the organization
+  has it composed (each call there carries the viewer's role at the page), and
+  a module it calls on the person's own session when the viewer may open it or
+  it declares no roles. Read an absent alias as "not reachable here", and an
+  absent `reach` as "the host does not tell me".
 - `solutionFetch(binding, path, init)` / `solutionJson<T>(binding, path, init)` —
   a request to the solution's own backend at `apiBase + path`, same-origin,
   through the host's `authedFetch` (refresh-then-retry on a 401) with the bearer

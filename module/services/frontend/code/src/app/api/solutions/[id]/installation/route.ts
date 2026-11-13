@@ -1,5 +1,5 @@
 import { entitlementFailureResponse, isEntitlementFailure, viewerEntitlements } from "@/solutions/entitlements";
-import { entitledSolutions, pageBinding } from "@/solutions/projections";
+import { entitledSolutions, pageBinding, registeredModuleTargets } from "@/solutions/projections";
 import { loadSolutionsWithRevision } from "@/solutions/registry";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +29,7 @@ interface RouteContext {
 export async function GET(request: Request, context: RouteContext): Promise<Response> {
 	const { id } = await context.params;
 	// The organization's composed modules too: the page's declared reach
-	// joins a module with no page to them.
+	// joins to them (pageBinding says which).
 	const entitlements = await viewerEntitlements(request, { composedModules: true });
 	if (isEntitlementFailure(entitlements)) {
 		return entitlementFailureResponse(entitlements);
@@ -40,7 +40,7 @@ export async function GET(request: Request, context: RouteContext): Promise<Resp
 	}
 	// The navigation's own join, over the whole registry, so this answer and the
 	// menu can never disagree about which solutions the viewer may use.
-	const binding = pageBinding(entitledSolutions(registered.solutions, entitlements), entitlements, id, registered.moduleTargets);
+	const binding = pageBinding(entitledSolutions(registered.solutions, entitlements), entitlements, id, registeredModuleTargets(registered));
 	if (!binding) {
 		return Response.json({ error: "not_installed" }, { status: 404, headers: { "cache-control": "no-store" } });
 	}

@@ -155,7 +155,17 @@ manifest's invoke bindings name as audiences, other than its own principal. It i
 the declared half of accounts' reached-module rule: a binding the derived module
 registry withheld (an envelope narrowing) is still listed, because that registry
 is accounts' alone, and the module refuses those calls with its reason. A
-principal two aliases carry resolves to no reach and is logged. `viewerKey` is
+principal two aliases carry resolves to no reach and is logged. The snapshot's
+`reaches` also names the record's edge dependencies (modules its page calls with
+the person's own Work Context), and its `boundReaches` the subset consumed
+through an invoke binding of the record's own. The route names a reach by the
+viewer's own entitlement to the module; failing that, by the organization's
+composition installation (ListSolutionEntitlements `composed_modules`, each
+with `role_gated`) when the reach is bound, since each call there carries the
+viewer's role at the record cut to the binding, or when the module declares no
+roles. A bound reach counts invoke bindings only: a binding the core would also
+route for a page on lookup scopes alone is not yet one, so such a module stays
+absent (fails closed). `viewerKey` is
 the effective viewer: the impersonated person's while an impersonation is active. The solution outlet reads the
 route with the viewer's session and hands the answer to the page as
 `SolutionBinding.installationId`, `organizationId`, `viewerKey` and `reach`.

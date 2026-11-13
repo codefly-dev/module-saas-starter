@@ -464,9 +464,16 @@ type solutionRegistrationProjection struct {
 	Manifest *string `json:"manifest,omitempty"`
 	// Reaches are the aliases of the modules this record's applied manifest
 	// declares it consumes on a person's session. A statement, never a grant:
-	// the frontend joins each to the viewer's own entitlement before a page
-	// is told an installation to act in.
+	// the frontend joins each to an installation (the viewer's own
+	// entitlement, or the organization's composition installation) before a
+	// page is told one to act in.
 	Reaches []string `json:"reaches,omitempty"`
+	// BoundReaches are the Reaches the record consumes through a binding of
+	// its own (moduleReach.Bound): each call there carries the person's role
+	// at this record, cut to the binding, so the frontend joins such a module
+	// to its composition installation whether or not the module declares
+	// roles of its own.
+	BoundReaches []string `json:"boundReaches,omitempty"`
 	// Refusal is why this replica dropped the record's applied manifest, as a
 	// class only: the full reason is in the gateway's log, because it can quote
 	// what the manifest carries, an address among it. The registration stays
@@ -499,12 +506,13 @@ func (g *Gateway) handleSolutionRegistrySnapshot(w http.ResponseWriter, r *http.
 	}
 	for _, record := range records {
 		projection := solutionRegistrationProjection{
-			ID:        record.GetSolutionId(),
-			Publisher: record.GetPublisher(),
-			Revision:  record.GetRevision(),
-			Status:    solutionRegistryStatusLabel(record),
-			TargetID:  record.GetDeclared().GetTargetId(),
-			Reaches:   reaches[record.GetSolutionId()],
+			ID:           record.GetSolutionId(),
+			Publisher:    record.GetPublisher(),
+			Revision:     record.GetRevision(),
+			Status:       solutionRegistryStatusLabel(record),
+			TargetID:     record.GetDeclared().GetTargetId(),
+			Reaches:      reaches[record.GetSolutionId()].Aliases,
+			BoundReaches: reaches[record.GetSolutionId()].Bound,
 		}
 		switch {
 		case declaredModuleKind(record):

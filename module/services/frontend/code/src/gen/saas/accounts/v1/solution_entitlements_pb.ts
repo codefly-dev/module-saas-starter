@@ -11,7 +11,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/solution_entitlements.proto.
  */
 export const file_saas_accounts_v1_solution_entitlements: GenFile = /*@__PURE__*/
-  fileDesc("CixzYWFzL2FjY291bnRzL3YxL3NvbHV0aW9uX2VudGl0bGVtZW50cy5wcm90bxIQc2Fhcy5hY2NvdW50cy52MSKnAQoTU29sdXRpb25FbnRpdGxlbWVudBIhCg9pbnN0YWxsYXRpb25faWQYAiABKAlCCLpIBXIDsAEBEiQKEnJvb3Rfc2NvcGVfbm9kZV9pZBgDIAEoCUIIukgFcgOwAQESDwoHaGVhbHRoeRgEIAEoCBIbCgl0YXJnZXRfaWQYBSABKAlCCLpIBXIDsAEBSgQIARACUhNzb2x1dGlvbl9pZGVudGlmaWVyIs8BCh9MaXN0U29sdXRpb25FbnRpdGxlbWVudHNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESHAoKc3ViamVjdF9pZBgCIAEoCUIIukgFcgOwAQESHQoJcGFnZV9zaXplGAMgASgFQgq6SAcaBRj0AygAEhIKCnBhZ2VfdG9rZW4YBCABKAkSIAoYaW5jbHVkZV9jb21wb3NlZF9tb2R1bGVzGAUgASgIEh8KCnNlc3Npb25faWQYBiABKAlCC7pICNgBAXIDsAEBIsABCiBMaXN0U29sdXRpb25FbnRpdGxlbWVudHNSZXNwb25zZRI7CgxlbnRpdGxlbWVudHMYASADKAsyJS5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uRW50aXRsZW1lbnQSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJEkYKEGNvbXBvc2VkX21vZHVsZXMYAyADKAsyLC5zYWFzLmFjY291bnRzLnYxLkNvbXBvc2VkTW9kdWxlSW5zdGFsbGF0aW9uIlwKGkNvbXBvc2VkTW9kdWxlSW5zdGFsbGF0aW9uEhsKCXRhcmdldF9pZBgBIAEoCUIIukgFcgOwAQESIQoPaW5zdGFsbGF0aW9uX2lkGAIgASgJQgi6SAVyA7ABAULBAQoUY29tLnNhYXMuYWNjb3VudHMudjFCGVNvbHV0aW9uRW50aXRsZW1lbnRzUHJvdG9QAVosYWNjb3VudHMvcGtnL2dlbi9zYWFzL2FjY291bnRzL3YxO2FjY291bnRzdjGiAgNTQViqAhBTYWFzLkFjY291bnRzLlYxygIQU2Fhc1xBY2NvdW50c1xWMeICHFNhYXNcQWNjb3VudHNcVjFcR1BCTWV0YWRhdGHqAhJTYWFzOjpBY2NvdW50czo6VjFiBnByb3RvMw", [file_buf_validate_validate]);
+  fileDesc("CixzYWFzL2FjY291bnRzL3YxL3NvbHV0aW9uX2VudGl0bGVtZW50cy5wcm90bxIQc2Fhcy5hY2NvdW50cy52MSKnAQoTU29sdXRpb25FbnRpdGxlbWVudBIhCg9pbnN0YWxsYXRpb25faWQYAiABKAlCCLpIBXIDsAEBEiQKEnJvb3Rfc2NvcGVfbm9kZV9pZBgDIAEoCUIIukgFcgOwAQESDwoHaGVhbHRoeRgEIAEoCBIbCgl0YXJnZXRfaWQYBSABKAlCCLpIBXIDsAEBSgQIARACUhNzb2x1dGlvbl9pZGVudGlmaWVyIs8BCh9MaXN0U29sdXRpb25FbnRpdGxlbWVudHNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESHAoKc3ViamVjdF9pZBgCIAEoCUIIukgFcgOwAQESHQoJcGFnZV9zaXplGAMgASgFQgq6SAcaBRj0AygAEhIKCnBhZ2VfdG9rZW4YBCABKAkSIAoYaW5jbHVkZV9jb21wb3NlZF9tb2R1bGVzGAUgASgIEh8KCnNlc3Npb25faWQYBiABKAlCC7pICNgBAXIDsAEBIsABCiBMaXN0U29sdXRpb25FbnRpdGxlbWVudHNSZXNwb25zZRI7CgxlbnRpdGxlbWVudHMYASADKAsyJS5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uRW50aXRsZW1lbnQSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJEkYKEGNvbXBvc2VkX21vZHVsZXMYAyADKAsyLC5zYWFzLmFjY291bnRzLnYxLkNvbXBvc2VkTW9kdWxlSW5zdGFsbGF0aW9uInAKGkNvbXBvc2VkTW9kdWxlSW5zdGFsbGF0aW9uEhsKCXRhcmdldF9pZBgBIAEoCUIIukgFcgOwAQESIQoPaW5zdGFsbGF0aW9uX2lkGAIgASgJQgi6SAVyA7ABARISCgpyb2xlX2dhdGVkGAMgASgIQsEBChRjb20uc2Fhcy5hY2NvdW50cy52MUIZU29sdXRpb25FbnRpdGxlbWVudHNQcm90b1ABWixhY2NvdW50cy9wa2cvZ2VuL3NhYXMvYWNjb3VudHMvdjE7YWNjb3VudHN2MaICA1NBWKoCEFNhYXMuQWNjb3VudHMuVjHKAhBTYWFzXEFjY291bnRzXFYx4gIcU2Fhc1xBY2NvdW50c1xWMVxHUEJNZXRhZGF0YeoCElNhYXM6OkFjY291bnRzOjpWMWIGcHJvdG8z", [file_buf_validate_validate]);
 
 /**
  * SolutionEntitlement is one installed solution a subject may use. It is
@@ -165,15 +165,22 @@ export type ListSolutionEntitlementsResponse = Message<"saas.accounts.v1.ListSol
   nextPageToken: string;
 
   /**
-   * The organization's installation of every composed module that declares no
-   * roles, when include_composed_modules asked for it; on the first page only.
+   * The organization's installation of every composed module, each saying
+   * whether the module declares roles, when include_composed_modules asked for
+   * it; on the first page only.
    *
    * Not entitlements, and never merged into them: nobody was granted these.
    * Every composed module is installed in every organization by composition,
-   * and one declaring no roles decides each call on the caller's own
-   * organization access, so naming its installation to a page that consumes it
-   * on the person's session widens nothing. A module declaring roles is never
-   * listed here: it reaches a viewer only through entitlements, by grant.
+   * and naming an installation grants nothing: what a call there may do is
+   * decided per call. A page is told one in two cases. A module declaring no
+   * roles decides each call on the caller's own organization access, so a page
+   * consuming it on the person's session is told it. A module declaring roles
+   * is told only to a page that consumes it through one of the page's own
+   * bindings: each such call is issued through that binding and carries what
+   * the person's role at the PAGE names, cut to the binding, never anything
+   * the person holds at the module itself, so the module's own roles are not
+   * what admits it. Through the person's own session such a module reaches a
+   * viewer by grant alone, through the entitlements.
    *
    * @generated from field: repeated saas.accounts.v1.ComposedModuleInstallation composed_modules = 3;
    */
@@ -189,7 +196,7 @@ export const ListSolutionEntitlementsResponseSchema: GenMessage<ListSolutionEnti
 
 /**
  * ComposedModuleInstallation is an organization's installation of one composed
- * module that declares no roles, joined like an entitlement on the target.
+ * module, joined like an entitlement on the target.
  *
  * @generated from message saas.accounts.v1.ComposedModuleInstallation
  */
@@ -203,6 +210,14 @@ export type ComposedModuleInstallation = Message<"saas.accounts.v1.ComposedModul
    * @generated from field: string installation_id = 2;
    */
   installationId: string;
+
+  /**
+   * The module declares roles (the core's RoleGated): a page is told this
+   * installation only when it consumes the module through its own binding.
+   *
+   * @generated from field: bool role_gated = 3;
+   */
+  roleGated: boolean;
 };
 
 /**
