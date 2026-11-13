@@ -58,7 +58,7 @@ export interface TeamHoldings {
 	holds: Holding[];
 }
 
-/** "Wiki · editor" — one holding in the words the menu uses. */
+/** "Directory · editor" — one holding in the words the menu uses. */
 export const holdingLabel = (h: Pick<Holding, "title" | "role">) =>
 	`${h.title} · ${h.role}`;
 
