@@ -104,7 +104,7 @@ func TestRedeliveryKeepsSolutionEntitled(t *testing.T) {
 	approved := func(generation uint64) {
 		t.Helper()
 		require.NoError(t, store.Read(testCtx, func(tx authority.Tx) error {
-			m, err := tx.ApprovedModule(alias, generation)
+			m, err := tx.ApprovedModule(alias, generation, "")
 			require.Equal(t, generation, m.Generation, "the approved declaration is kept per generation")
 			return err
 		}))

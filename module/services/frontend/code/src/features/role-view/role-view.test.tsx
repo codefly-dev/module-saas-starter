@@ -1,5 +1,4 @@
 import {
-	act,
 	cleanup,
 	fireEvent,
 	screen,
@@ -7,10 +6,10 @@ import {
 } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderInApp, rpc } from "@/test/container";
+import { renderInApp } from "@/test/container";
 import { server } from "@/test/setup";
 import { ActAsTeam, RoleViewBanner } from "./role-view";
-import { setTeamSwitcherOpen } from "./team-casting";
+import { HostCasting } from "./team-casting";
 
 // The person on the page holds no role the browser knows of. Nothing here may
 // decide who can cast: that is the authority's, and these tests would pass a
@@ -49,8 +48,6 @@ vi.mock("@/lib/auth", () => ({
 
 const session = (method: string) =>
 	`http://localhost:3000/host.session.v1.SessionService/${method}`;
-const host = (method: string) =>
-	`http://localhost:3000/host.installation.v1.InstallationService/${method}`;
 let current: Record<string, unknown> = {};
 let asked: string[] = [];
 
@@ -68,24 +65,37 @@ beforeEach(() => {
 	auth.narrowedSessionEnd = null;
 	auth.sessionRead = "confirmed";
 	auth.orgRole = undefined;
+	sessionStorage.clear();
 	server.use(
 		http.get("http://localhost:3000/api/solutions", () =>
-			HttpResponse.json({ solutions: [] }),
+			HttpResponse.json({
+				solutions: [{ id: "records", nav: { title: "Records" } }],
+			}),
 		),
-		http.post(rpc("TeamService", "ListTeams"), () =>
+		// The host's answers: who the session is, and the teams it lists.
+		http.post(session("Current"), () =>
+			HttpResponse.json({
+				personId: "user-example",
+				organizationId: "org-example",
+				...current,
+			}),
+		),
+		http.post(session("ListCastableTeams"), () =>
 			HttpResponse.json({
 				teams: [
-					{ id: "team-stewards", orgId: "org-example", name: "Stewards" },
+					{
+						teamId: "team-stewards",
+						displayName: "Stewards",
+						holds: [
+							{ installationId: "inst-a", target: "records", role: "steward" },
+						],
+					},
 				],
 			}),
 		),
 	);
 });
-afterEach(() => {
-	// A refusal is kept outside React (it outlives a remount): no test inherits one.
-	act(() => setTeamSwitcherOpen(false));
-	cleanup();
-});
+afterEach(cleanup);
 
 const refuse = (code: string, status: number, message: string) =>
 	server.use(
@@ -93,8 +103,17 @@ const refuse = (code: string, status: number, message: string) =>
 			HttpResponse.json({ code, message }, { status }),
 		),
 	);
-const viewAs = () =>
-	fireEvent.click(screen.getByRole("button", { name: "View as this team" }));
+const viewAs = async () =>
+	fireEvent.click(
+		await screen.findByRole("button", { name: "View as this team" }),
+	);
+// The card as the page mounts it: under this host's casting, which reads the
+// session and the teams from the host.
+const card = (key = "page") => (
+	<HostCasting key={key}>
+		<ActAsTeam teamId="team-stewards" teamName="Stewards" />
+	</HostCasting>
+);
 
 describe("view as this team", () => {
 	it("asks the host for the cast, installs the session it answers, and lands where the team starts", async () => {
@@ -108,8 +127,8 @@ describe("view as this team", () => {
 				});
 			}),
 		);
-		renderInApp(<ActAsTeam teamId="team-stewards" teamName="Stewards" />);
-		viewAs();
+		renderInApp(card());
+		await viewAs();
 		await waitFor(() =>
 			expect(auth.enterRoleView).toHaveBeenCalledWith(
 				"cast-bearer",
@@ -136,11 +155,11 @@ describe("view as this team", () => {
 		"shows a refusal in the host's words, with its code (%s)",
 		async (code, status, reason) => {
 			refuse(code, status, reason);
-			renderInApp(<ActAsTeam teamId="team-stewards" teamName="Stewards" />);
-			viewAs();
+			renderInApp(card());
+			await viewAs();
 			const alert = await screen.findByRole("alert");
 			expect(alert.textContent).toBe(
-				`You are not viewing as Stewards. The host answered: ${reason} (${code === "not_found" ? "NotFound" : "PermissionDenied"})`,
+				`Not viewing as Stewards: ${reason} (${code === "not_found" ? "NotFound" : "PermissionDenied"})`,
 			);
 			expect(auth.enterRoleView).not.toHaveBeenCalled();
 			// The way to ask again stays: a refusal is not an empty page.
@@ -152,25 +171,26 @@ describe("view as this team", () => {
 
 	it("says a failure that carries no reason is one, never that the cast is open", async () => {
 		server.use(http.post(session("OpenTeamCast"), () => HttpResponse.error()));
-		renderInApp(<ActAsTeam teamId="team-stewards" teamName="Stewards" />);
-		viewAs();
+		renderInApp(card());
+		await viewAs();
 		expect((await screen.findByRole("alert")).textContent).toContain(
-			"You are not viewing as Stewards.",
+			"Not viewing as Stewards:",
 		);
 		expect(auth.enterRoleView).not.toHaveBeenCalled();
 	});
 
 	it("while the host says the session is this team, says so and offers the way back", async () => {
 		current = { castTeamId: "team-stewards" };
-		renderInApp(<ActAsTeam teamId="team-stewards" teamName="Stewards" />);
+		renderInApp(card());
+		const back = await screen.findByRole("button", { name: /Back to my view/ });
 		const section = screen.getByRole("region", { name: "View as this team" });
 		expect(section.textContent).toContain("You are viewing as this team");
 		expect(section.textContent).toContain("attributed to the team");
 		expect(
 			screen.queryByRole("button", { name: "View as this team" }),
 		).toBeNull();
-		fireEvent.click(screen.getByRole("button", { name: "Back to my view" }));
-		expect(auth.exitRoleView).toHaveBeenCalledTimes(1);
+		fireEvent.click(back);
+		await waitFor(() => expect(auth.exitRoleView).toHaveBeenCalledTimes(1));
 	});
 
 	it("on another team's page, a cast goes back to the person's own session and asks from there: the host decides", async () => {
@@ -181,8 +201,8 @@ describe("view as this team", () => {
 				return HttpResponse.json({ bearer: "cast-bearer" });
 			}),
 		);
-		renderInApp(<ActAsTeam teamId="team-stewards" teamName="Stewards" />);
-		viewAs();
+		renderInApp(card());
+		await viewAs();
 		await waitFor(() =>
 			expect(auth.enterRoleView).toHaveBeenCalledWith(
 				"cast-bearer",
@@ -195,39 +215,20 @@ describe("view as this team", () => {
 	it("on another team's page, a refusal after the way back says the person is in their own view, and outlives the remount that view causes", async () => {
 		current = { castTeamId: "team-other" };
 		refuse("permission_denied", 403, "holds roles you could not grant");
-		const { rerender } = renderInApp(
-			<ActAsTeam key="cast" teamId="team-stewards" teamName="Stewards" />,
-		);
-		viewAs();
+		const { rerender } = renderInApp(card("cast"));
+		await viewAs();
 		const said =
-			"You are back in your own view. The host did not open Stewards: holds roles you could not grant (PermissionDenied)";
+			"You are back in your own view. Stewards was not opened: holds roles you could not grant (PermissionDenied)";
 		expect((await screen.findByRole("alert")).textContent).toBe(said);
 		// The person's own session is confirmed, and the authority boundary
 		// (lib/providers.tsx) remounts the page under it.
 		current = {};
-		rerender(
-			<ActAsTeam key="own" teamId="team-stewards" teamName="Stewards" />,
-		);
-		expect(screen.getByRole("alert").textContent).toBe(said);
+		rerender(card("own"));
+		expect((await screen.findByRole("alert")).textContent).toBe(said);
 	});
 
-	it("shows what the team holds before anyone asks, read where the person may read it", async () => {
-		auth.orgRole = "admin";
-		server.use(
-			http.post(host("List"), () =>
-				HttpResponse.json({
-					installations: [
-						{ id: "inst-a", target: "records", status: "STATUS_ACTIVE" },
-					],
-				}),
-			),
-			http.post(host("ListRoleGrants"), () =>
-				HttpResponse.json({
-					grants: [{ role: "steward", teamId: "team-stewards" }],
-				}),
-			),
-		);
-		renderInApp(<ActAsTeam teamId="team-stewards" teamName="Stewards" />);
+	it("shows what the team holds before anyone asks, as the host lists it", async () => {
+		renderInApp(card());
 		expect(await screen.findByText("records · steward")).toBeTruthy();
 	});
 });

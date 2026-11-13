@@ -5,8 +5,8 @@ go 1.27.4
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2
 	connectrpc.com/connect v1.21.1
-	github.com/codefly-dev/authority/libraries/authority-client/go v0.2.1-0.20261113101720-7f855d5bf3d8
-	github.com/codefly-dev/authority/libraries/authority-core/go v0.1.1-0.20261113101720-7f855d5bf3d8
+	github.com/codefly-dev/authority/libraries/authority-client/go v0.2.1-0.20261113111135-b86ea4294b38
+	github.com/codefly-dev/authority/libraries/authority-core/go v0.1.1-0.20261113111135-b86ea4294b38
 	github.com/codefly-dev/authority/libraries/hop/go v0.2.1-0.20261111234045-1076f796c30f
 	github.com/codefly-dev/core v0.19.27
 	github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261021192505-6fd56dae2e04
@@ -47,8 +47,8 @@ require (
 	github.com/cheggaaa/pb/v3 v3.2.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
-	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261113101720-7f855d5bf3d8 // indirect
-	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261113101720-7f855d5bf3d8 // indirect
+	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261113111135-b86ea4294b38 // indirect
+	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261113111135-b86ea4294b38 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.3 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect

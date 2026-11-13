@@ -386,6 +386,10 @@ type moduleDocument struct {
 	// declaration, so a store that dropped them would leave every approved
 	// target governing no source.
 	SourceGovernance []storedScope `json:"source_governance,omitempty"`
+	// Source is the digest of the signed documents the declaration was read
+	// from (domain.Module.Source): whether reading it again is a re-read of
+	// that delivery or another delivery at the same generation.
+	Source string `json:"source,omitempty"`
 }
 
 type storedScope struct {
@@ -429,7 +433,7 @@ func loadScopes(in []storedScope) []*basev0.WorkScopeV1 {
 func encodeModule(m domain.Module) ([]byte, error) {
 	doc := moduleDocument{ResourceKinds: storeScopes(m.ResourceKinds), OwnerAware: m.OwnerAware, HasRoles: m.Roles != nil, HasMethods: m.Methods != nil,
 		InstallationRole: m.InstallationRole, EdgeDependencies: m.EdgeDependencies, SharedKinds: m.SharedKinds,
-		SourceGovernance: storeScopes(m.SourceGovernance)}
+		SourceGovernance: storeScopes(m.SourceGovernance), Source: m.Source}
 	for role, bindings := range m.Through {
 		if doc.Through == nil {
 			doc.Through = map[string]map[string][]storedScope{}
@@ -473,7 +477,7 @@ func decodeModule(m *domain.Module, raw []byte) error {
 	}
 	m.ResourceKinds, m.OwnerAware = loadScopes(doc.ResourceKinds), doc.OwnerAware
 	m.InstallationRole, m.EdgeDependencies, m.SharedKinds = doc.InstallationRole, doc.EdgeDependencies, doc.SharedKinds
-	m.SourceGovernance = loadScopes(doc.SourceGovernance)
+	m.SourceGovernance, m.Source = loadScopes(doc.SourceGovernance), doc.Source
 	for role, bindings := range doc.Through {
 		if m.Through == nil {
 			m.Through = map[string]map[string][]*basev0.WorkScopeV1{}
@@ -561,20 +565,51 @@ func (t coreTx) PutModule(m domain.Module) error {
 }
 
 // ApprovedModule and PutApprovedModule keep the declaration an installation's
-// consent approved, per module and generation (authority_core_approved_modules,
-// migration 68): the core writes one whenever a consent is taken or advances
-// and reads it to decide what a holder holds while the consent is behind the
-// delivered generation. A generation no active consent names may be dropped;
-// this store keeps every one it was given. A kept declaration is never
-// replaced: writing the same one again is accepted, writing a different one
-// at a kept (name, generation) answers domain.ErrApprovedDeclarationKept and
-// changes nothing, so the control plane holds no UPDATE on the table.
-func (t coreTx) ApprovedModule(name string, generation uint64) (domain.Module, error) {
-	m, err := scanCoreModule(t.q.QueryRow(t.ctx, `SELECT `+coreModuleColumns+` FROM public.authority_core_approved_modules WHERE name = $1 AND generation = $2`, name, int64(generation)))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.Module{}, coreMissing("approved generation", fmt.Sprintf("%s@%d", name, generation))
+// consent approved, per module, generation and offer digest
+// (authority_core_approved_modules, migrations 68 and 78): the core writes one
+// whenever a consent is taken or advances and reads it to decide what a holder
+// holds while the consent is behind the delivered generation, or approved a
+// reading of it the core has read again since (RereadModule). A generation no
+// active consent names may be dropped; this store keeps every one it was
+// given. A kept declaration is never replaced: one is keyed by the offer
+// digest of the declaration as this store answers it, so writing the same
+// one again changes nothing and the control plane holds no UPDATE on the
+// table. A row kept before migration 78 carries no digest and is answered by
+// the one its declaration computes to.
+func (t coreTx) ApprovedModule(name string, generation uint64, digest string) (domain.Module, error) {
+	rows, err := t.q.Query(t.ctx, `SELECT `+coreModuleColumns+`, offer_digest FROM public.authority_core_approved_modules
+		WHERE name = $1 AND generation = $2 AND ($3 = '' OR offer_digest IN ($3, '')) ORDER BY offer_digest DESC`, name, int64(generation), digest)
+	if err != nil {
+		return domain.Module{}, err
 	}
-	return m, err
+	kept, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (approvedRow, error) {
+		var r approvedRow
+		var generation int64
+		var raw []byte
+		if err := row.Scan(&r.m.Name, &r.m.Principal, &r.m.Kind, &generation, &r.m.StandIn, &raw, &r.digest); err != nil {
+			return r, err
+		}
+		r.m.Generation = uint64(generation)
+		return r, decodeModule(&r.m, raw)
+	})
+	if err != nil {
+		return domain.Module{}, err
+	}
+	for _, r := range kept {
+		if digest == "" || r.digest == digest {
+			return r.m, nil
+		}
+		if computed, err := authority.OfferDigest(r.m); err != nil || computed == digest {
+			return r.m, err
+		}
+	}
+	return domain.Module{}, coreMissing("approved generation", fmt.Sprintf("%s@%d %s", name, generation, digest))
+}
+
+// approvedRow is one kept approved declaration and the digest it is keyed by.
+type approvedRow struct {
+	m      domain.Module
+	digest string
 }
 
 func (t coreTx) PutApprovedModule(m domain.Module) error {
@@ -585,38 +620,24 @@ func (t coreTx) PutApprovedModule(m domain.Module) error {
 	if err != nil {
 		return err
 	}
-	tag, err := t.q.Exec(t.ctx, `
-		INSERT INTO public.authority_core_approved_modules (name, generation, principal, kind, stand_in, declarations)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		ON CONFLICT (name, generation) DO NOTHING`,
-		m.Name, int64(m.Generation), m.Principal, m.Kind, m.StandIn, raw)
-	if err != nil || tag.RowsAffected() == 1 {
-		return err
-	}
-	kept, err := t.ApprovedModule(m.Name, m.Generation)
-	if err != nil {
-		return err
-	}
-	// Compared as this store answers both: m as it would read back.
+	// Keyed as this store answers it: m as it would read back.
 	written := domain.Module{Name: m.Name, Principal: m.Principal, Kind: m.Kind, Generation: m.Generation, StandIn: m.StandIn}
 	if err := decodeModule(&written, raw); err != nil {
 		return err
 	}
-	same, err := sameOffer(kept, written)
-	if err != nil || same {
+	digest, err := authority.OfferDigest(written)
+	if err != nil {
 		return err
 	}
-	return fmt.Errorf("%s generation %d: %w", m.Name, m.Generation, domain.ErrApprovedDeclarationKept)
-}
-
-// sameOffer: a and b are the same declaration, as a consent sees it.
-func sameOffer(a, b domain.Module) (bool, error) {
-	da, err := authority.OfferDigest(a)
-	if err != nil {
-		return false, err
+	if _, err := t.ApprovedModule(m.Name, m.Generation, digest); err == nil || !errors.Is(err, domain.ErrNotFound) {
+		return err // kept already (a row from before migration 78 included), or unreadable
 	}
-	db, err := authority.OfferDigest(b)
-	return da == db, err
+	_, err = t.q.Exec(t.ctx, `
+		INSERT INTO public.authority_core_approved_modules (name, generation, principal, kind, stand_in, declarations, offer_digest)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (name, generation, offer_digest) DO NOTHING`,
+		m.Name, int64(m.Generation), m.Principal, m.Kind, m.StandIn, raw, digest)
+	return err
 }
 
 func (t coreTx) DeleteModule(name string) error {

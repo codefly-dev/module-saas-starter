@@ -31,6 +31,7 @@ import (
 	conformance "github.com/codefly-dev/authority/libraries/conformance/go"
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
 	modulecontract "github.com/codefly-dev/core/contracts/module"
+	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/sdk"
 	"github.com/codefly-dev/core/solutionhost"
 	codefly "github.com/codefly-dev/sdk-go"
@@ -167,9 +168,10 @@ func runHostInterfaceFixture(t *testing.T) {
 	// workloads with the credentials they delivered them with: each one
 	// delivery credential is the workload's own, and the carrier accepts it
 	// for it. conformance-reach is the reach case's actor; the reach-through
-	// case's (reachThroughConsent) hops are conformance-through and its relay.
+	// case's (reachThroughConsent) hops are conformance-through and its relay;
+	// the re-read case's (installationReread) is conformance-reread.
 	deliveryWorkloads := map[string]string{}
-	for _, module := range []string{"conformance-reach", "conformance-through", "conformance-through-relay"} {
+	for _, module := range []string{"conformance-reach", "conformance-through", "conformance-through-relay", "conformance-reread"} {
 		deliveryWorkloads[module] = credential(module)
 	}
 	deliveryCredential := func(module string) string {
@@ -399,6 +401,12 @@ func runHostInterfaceFixture(t *testing.T) {
 		DeliveryCredential: deliveryCredential,
 		InstallModule:      installModule,
 		PagePayload:        pagePayload,
+		// A host start reads the deliveries it holds again, in its core's
+		// boot reconciliation.
+		Reread: &conformance.RereadCase{
+			Strand: func(ctx context.Context, module string) error { return strandWithoutThrough(ctx, store, module) },
+			Reread: svc.ReconcileHeldDeliveries,
+		},
 		// accounts serves OfferService from the same core, so the declaration
 		// case compares the reviewed offer here too: a solution's roles and the
 		// permissions they carry are its declaration on either host.
@@ -1709,4 +1717,29 @@ func (c conformanceCarrier) AuthorizeCarrier(_ context.Context, credential strin
 		}
 	}
 	return fmt.Errorf("not the delivery workload of %v", namespaces)
+}
+
+// strandWithoutThrough holds module, composed in the core, as a host that did
+// not read roles' through declarations composed the same delivery: each role
+// without the scopes it names through a binding, no through, and no source
+// recorded. The conformance case's roles name through a binding only kinds
+// they name nowhere else.
+func strandWithoutThrough(ctx context.Context, store *infra.PostgresStore, module string) error {
+	return store.AuthorityCoreWithConsent(nil).Write(ctx, func(tx authority.Tx) error {
+		m, err := tx.ModuleNamed(module)
+		if err != nil {
+			return err
+		}
+		for role, byBinding := range m.Through {
+			reached := map[string]bool{}
+			for _, scopes := range byBinding {
+				for _, sc := range scopes {
+					reached[sc.GetResourceKind()] = true
+				}
+			}
+			m.Roles[role] = slices.DeleteFunc(m.Roles[role], func(sc *basev0.WorkScopeV1) bool { return reached[sc.GetResourceKind()] })
+		}
+		m.Through, m.Source = nil, ""
+		return tx.PutModule(m)
+	})
 }

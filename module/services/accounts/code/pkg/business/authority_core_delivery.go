@@ -15,6 +15,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/solutionhost"
+	"github.com/codefly-dev/core/wool"
 	"google.golang.org/protobuf/proto"
 
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
@@ -22,8 +23,20 @@ import (
 )
 
 // coreModuleOf is what the core composes from a delivery's manifest and the
-// authority document paired with it, if any.
+// authority document paired with it, if any, named by the source it was read
+// from (coredelivered.Source): an empty authority document is none, as the
+// inbox keeps it.
 func coreModuleOf(manifest *solutionhost.ModuleManifest, carrierDocument []byte, signed *compositionv1.SignedManifestV1) (domain.Module, error) {
+	m, err := readCoreModule(manifest, carrierDocument, signed)
+	var document []byte
+	if len(signed.GetDocument()) > 0 {
+		document = signed.GetDocument()
+	}
+	m.Source = coredelivered.Source(carrierDocument, document)
+	return m, err
+}
+
+func readCoreModule(manifest *solutionhost.ModuleManifest, carrierDocument []byte, signed *compositionv1.SignedManifestV1) (domain.Module, error) {
 	var doc *coredelivered.Document
 	if signed != nil {
 		var wire compositionv1.AuthorityManifestV1
@@ -172,12 +185,13 @@ func coreDeliveryError(err error) error {
 	return fmt.Errorf("%w: %w", ErrSolutionDeliveryUnattested, err)
 }
 
-// reconcileAuthorityCore composes, in the core, every delivery accounts has
-// applied: what a host runs once its core is built, so a module delivered
-// before this host decided through the core is composed there too (a
-// delivery that arrives while the core is not built waits for it instead,
-// applyCoreModule).
-func (s *Service) reconcileAuthorityCore(ctx context.Context) error {
+// ReconcileHeldDeliveries composes, in the core, every delivery accounts has
+// applied: what a host runs once its core is built (its boot reconciliation),
+// so a module delivered before this host decided through the core is composed
+// there too (a delivery that arrives while the core is not built waits for it
+// instead, applyCoreModule), and a generation the core holds is read again as
+// this host reads it now (rereadHeldGeneration).
+func (s *Service) ReconcileHeldDeliveries(ctx context.Context) error {
 	if s.deliveryStore == nil {
 		return nil
 	}
@@ -206,12 +220,61 @@ func (s *Service) composeAppliedDelivery(ctx context.Context, record *SolutionHo
 	if err != nil || manifest == nil {
 		return nil
 	}
+	if handled, err := s.rereadHeldGeneration(ctx, record, manifest); handled || err != nil {
+		return err
+	}
 	delivered, err := s.deliveredGeneration(ctx, record.BindingID, record.Applied.Generation)
 	if err != nil || delivered == nil {
 		return err
 	}
 	_, err = s.applyCoreModule(ctx, manifest, delivered.Payload, signedAuthorityOf(delivered))
 	return err
+}
+
+// rereadHeldGeneration reads the applied generation the core already holds
+// again from the inbox's record of it, verified again with the pinned keys,
+// as this host reads a delivery now (authority.Service.RereadModule). A host
+// that learned to read a declaration field reads the same signed documents
+// as another declaration than the one it composed before, which the core
+// otherwise refuses as a changed declaration at the held generation, leaving
+// the module stranded until its next release and any approval taken
+// meanwhile reviewing the copy without the field. The core proves the
+// re-read is of the delivery it holds (the source digest of the documents),
+// holds every consent at what it approved, and offers the upgrade; a
+// re-read that changes the held declaration is logged, once, since the next
+// start reads the same declaration again. It handles nothing (false) where
+// the core does not hold the applied generation or the host verifies no
+// inbox: the generation is applied as a delivery is.
+func (s *Service) rereadHeldGeneration(ctx context.Context, record *SolutionHostBindingRecord, manifest *solutionhost.ModuleManifest) (bool, error) {
+	if s.deliveryVerifier == nil || manifest.Removed {
+		return false, nil
+	}
+	core, err := s.AuthorityCore()
+	if err != nil {
+		return false, nil // applied when the core is built (applyCoreModule)
+	}
+	held, err := core.Composed(ctx, manifest.Alias)
+	if err != nil || held.StandIn || held.Generation != manifest.Generation {
+		return false, nil
+	}
+	delivered, verified, _, err := s.verifyDeliveredGeneration(ctx, manifest.Alias, record.BindingID, manifest.Generation)
+	if err != nil || delivered == nil {
+		return true, err
+	}
+	again, err := verified.Manifest()
+	if err != nil {
+		return true, err
+	}
+	m, err := coreModuleOf(again, delivered.Payload, signedAuthorityOf(delivered))
+	if err != nil {
+		return true, err
+	}
+	reread, err := core.RereadModule(ctx, m)
+	if reread {
+		wool.Get(ctx).In("rereadHeldGeneration").Info("read a held generation again: its declaration as this host reads the delivery differs from the one composed from it before; consented installations stay on what they approved and offer the upgrade",
+			wool.Field("module", m.Name), wool.Field("generation", m.Generation), wool.Field("binding", record.BindingID), wool.Field("source", m.Source))
+	}
+	return true, err
 }
 
 // composeDelivered composes a delivered generation in the core before

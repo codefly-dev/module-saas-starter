@@ -1,5 +1,6 @@
 "use client";
 
+import { forgetCastTeams } from "@codefly-dev/saas-ui/casting";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { startAuthentication } from "@simplewebauthn/browser";
@@ -988,6 +989,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	const logout = useCallback(async (): Promise<SignOutResult> => {
 		narrowedAsRef.current = "";
 		forgetNarrowedSession();
+		// What this tab kept to switch casts from is the person's, never the next one's.
+		forgetCastTeams();
 		// Always hit logout so the server clears the httpOnly refresh cookie, even
 		// if we have no access token in memory. The refresh token is read from the
 		// cookie server-side (no body token needed).

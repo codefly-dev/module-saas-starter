@@ -114,7 +114,7 @@ func (s *Service) reconcileAuthorityCoreBoot(ctx context.Context, core *authorit
 	if err := core.AdoptLegacyReach(ctx); err != nil {
 		failures = append(failures, fmt.Errorf("authority core: adopt the reach of earlier consents: %w", err))
 	}
-	if err := s.reconcileAuthorityCore(ctx); err != nil {
+	if err := s.ReconcileHeldDeliveries(ctx); err != nil {
 		failures = append(failures, fmt.Errorf("authority core: compose the applied deliveries: %w", err))
 	}
 	return errors.Join(failures...)

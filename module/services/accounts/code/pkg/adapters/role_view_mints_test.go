@@ -61,7 +61,7 @@ var personMintEntryPoints = map[string]map[string]string{
 		"Current": core, "Install": core, "Review": core, "GrantRole": core, "RevokeRole": core, "ListRoleGrants": core, "List": core, "ListHeld": core,
 	},
 	"OfferService":   {"ListOffers": core, "ReviewOffer": core},
-	"SessionService": {"SignIn": none, "Current": none, "OpenRoleView": core, "OpenTeamCast": core, "ListFixturePeople": none},
+	"SessionService": {"SignIn": none, "Current": none, "OpenRoleView": core, "OpenTeamCast": core, "ListCastableTeams": core, "ListFixturePeople": none},
 }
 
 func TestEveryPersonMintEntryPointHonoursOrRefusesARoleView(t *testing.T) {

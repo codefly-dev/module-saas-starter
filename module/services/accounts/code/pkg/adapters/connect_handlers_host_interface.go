@@ -123,6 +123,9 @@ func (h *hostSessionConnectHandler) OpenRoleView(ctx context.Context, req *conne
 func (h *hostSessionConnectHandler) OpenTeamCast(ctx context.Context, req *connect.Request[sessionv1.OpenTeamCastRequest]) (*connect.Response[sessionv1.Session], error) {
 	return unary(ctx, req, NewHostSessionServer(h.svc).OpenTeamCast)
 }
+func (h *hostSessionConnectHandler) ListCastableTeams(ctx context.Context, req *connect.Request[sessionv1.ListCastableTeamsRequest]) (*connect.Response[sessionv1.ListCastableTeamsResponse], error) {
+	return unary(ctx, req, NewHostSessionServer(h.svc).ListCastableTeams)
+}
 func (h *hostSessionConnectHandler) ListFixturePeople(ctx context.Context, req *connect.Request[sessionv1.ListFixturePeopleRequest]) (*connect.Response[sessionv1.ListFixturePeopleResponse], error) {
 	return unary(ctx, req, NewHostSessionServer(h.svc).ListFixturePeople)
 }

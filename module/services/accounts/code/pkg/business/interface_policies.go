@@ -268,6 +268,10 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 			p.RateLimit = policyv1.RateLimitClass_RATE_LIMIT_CLASS_STANDARD_WRITE
 			return p
 		}(),
+		// The teams a person may act as: their own session's read, decided by
+		// the core's one rule like OpenTeamCast, so the perimeter adds no tenant
+		// floor that would be a second place deciding it.
+		"/host.session.v1.SessionService/ListCastableTeams": read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
 		// The sign-in page reads it before anyone signs in; it answers none
 		// unless fixture sign-in is enabled, and then the tokens SignIn takes.
 		"/host.session.v1.SessionService/ListFixturePeople": {
@@ -358,6 +362,7 @@ var interfaceDescriptions = map[string]string{
 	"SessionService/OpenRoleView":           "Open a session that acts as some of the roles the caller holds on one installation; it only narrows.",
 	"SessionService/OpenTeamCast":           "Open a session that acts as one team and nothing else, for a caller who could grant that team's roles.",
 	"SessionService/Current":                "Answer the session the caller's bearer belongs to, without the bearer.",
+	"SessionService/ListCastableTeams":      "List the teams the caller may act as now, each with what it holds, by the rule that decides OpenTeamCast.",
 	"SessionService/ListFixturePeople":      "List the people fixture sign-in admits, in the fixture's order; none where it is not enabled.",
 }
 

@@ -5019,20 +5019,18 @@
     {
       "source": "src/features/role-view/role-view.tsx",
       "imports": [
+        "@codefly-dev/saas-ui/casting",
         "@connectrpc/connect",
-        "lucide-react",
         "react",
         "sonner",
         "@/gen/host/installation/v1/installation_pb",
         "@/gen/host/session/v1/session_pb",
         "@/lib/auth",
-        "@/lib/connect/transport",
-        "@/shared/ui",
-        "./team-casting"
+        "@/lib/connect/transport"
       ],
       "owner": "SaaS application",
       "disposition": "keep feature-local",
-      "reason": "Owns the narrowed-session workflow on a team's page and in the shell: asks the host which roles the person holds and opens a view, asks the host to view as a team (a cast) with what the team holds shown first, shows a refusal in the host's words, and says when a narrowed session ended or is unconfirmed. It holds no authority; the host decides.",
+      "reason": "Owns the narrowed-session workflow on a team's page and in the shell: asks the host which roles the person holds and opens a view, places the kit's view-as control and holdings on a team's page, and says when a narrowed session ended or is unconfirmed. It holds no authority; the host decides.",
       "stories": [],
       "coverage": "missing",
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
@@ -5040,28 +5038,17 @@
     {
       "source": "src/features/role-view/team-casting.tsx",
       "imports": [
+        "@codefly-dev/saas-ui/casting",
         "@connectrpc/connect",
-        "@tanstack/react-query",
-        "lucide-react",
         "next/navigation",
         "react",
-        "sonner",
-        "@/features/teams/service/queries",
-        "@/features/teams/ui/team-installation-access",
-        "@/features/solution-installations/model/installations",
-        "@/features/solution-installations/service/queries",
         "@/features/solution-installations/ui/target-name",
-        "@/gen/host/installation/v1/installation_pb",
-        "@/gen/host/session/v1/session_pb",
-        "@/gen/saas/accounts/v1/frontend_catalog",
         "@/lib/auth",
-        "@/lib/connect/transport",
-        "@/lib/permissions",
-        "@/shared/ui"
+        "@/lib/connect/transport"
       ],
       "owner": "SaaS application",
       "disposition": "keep feature-local",
-      "reason": "Owns how a person finds and leaves a team cast: the searchable team switcher (teams grouped by what they hold), the one-line cast bar with switch, way back and details, and the holdings badges. It reads what the team pages read and holds no authority; the host decides every cast.",
+      "reason": "This host's adapter for the kit's team casting (@codefly-dev/saas-ui/casting): the session interface through this host's transport, a cast's bearer adopted as the tab's narrowed session and the person's own session as the way back. It draws nothing; the kit does, and the host decides every cast.",
       "stories": [],
       "coverage": "missing",
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
@@ -6003,6 +5990,31 @@
       ],
       "coverage": "owner stories; browser/skin verification pending",
       "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/saas-ui/src/casting/casting.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout",
+        "lucide-react",
+        "react",
+        "./host.js",
+        "./store.js"
+      ],
+      "owner": "@codefly-dev/saas-ui",
+      "disposition": "already canonical",
+      "reason": "Team casting on every host that serves the session interface: the searchable switcher (teams grouped by what they hold), the one-line cast bar with switch, way back and details, a team's view-as control and its holdings, all driven by a CastHost adapter (the saas host's generated client, or the local authority's edge). It holds no authority; the host decides every cast.",
+      "stories": [
+        {
+          "file": "packages/saas-ui/stories/casting.stories.tsx",
+          "export": "OwnView"
+        },
+        {
+          "file": "packages/saas-ui/stories/casting.stories.tsx",
+          "export": "ViewingAsATeam"
+        }
+      ],
+      "coverage": "owner stories and unit tests; browser/skin verification pending",
+      "remaining": "Verify explorer rendering and visual baselines under external skins."
     }
   ],
   "publicEntrypoints": {

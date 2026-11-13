@@ -373,6 +373,15 @@ release. The package's `exports` map may not name a subpath into the generated
 tree: a consumer imports the SDK's own surface, never a stub path
 (`publish-frontend-kit.test.mjs` enforces it). See the `cut-a-release` skill.
 
+Team casting ("View as team…", the cast bar, the switcher and a team's view-as
+control) is the kit's `@codefly-dev/saas-ui/casting`, the same component a
+module playground mounts in front of the local authority's edge. This host
+supplies only its adapter (`src/features/role-view/team-casting.tsx`,
+`HostCasting`): the session interface through `apiTransport`, the cast's bearer
+adopted with `enterRoleView`, `exitRoleView` as the way back. The teams it
+offers are the host's `SessionService.ListCastableTeams`, listed by the rule
+that decides `OpenTeamCast`.
+
 `@codefly-dev/ui`, `@codefly-dev/saas-ui`, `@codefly-dev/saas-plugin-contract`
 and `@codefly-dev/saas-plugin-react` publish beside it, in dependency order. Plugin
 peers use required semver ranges: GitHub Packages omits optional-peer metadata.

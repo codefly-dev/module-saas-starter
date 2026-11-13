@@ -9,7 +9,7 @@ import {
 	useReactTable,
 } from "@tanstack/react-table";
 import { Eye, MoreHorizontal, Pencil, Trash2, Users } from "lucide-react";
-import { type Holding, HoldingBadges } from "@/features/role-view/team-casting";
+import { type Holding, HoldingBadges } from "@codefly-dev/saas-ui/casting";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { formatDate } from "@/shared/lib/utils";

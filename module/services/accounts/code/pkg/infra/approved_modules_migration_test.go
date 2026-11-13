@@ -30,7 +30,11 @@ func approvedModulesFill(t *testing.T) string {
 	fill := string(body)
 	at := strings.Index(fill, "INSERT INTO public.authority_core_approved_modules")
 	require.GreaterOrEqual(t, at, 0, "the migration fills the approved declarations")
-	return fill[at:]
+	// Replayed against today's schema, whose key migration 78 widened by the
+	// offer digest: the rows 68 writes carry none ('').
+	const key = "ON CONFLICT (name, generation) DO NOTHING"
+	require.Contains(t, fill[at:], key)
+	return strings.Replace(fill[at:], key, "ON CONFLICT (name, generation, offer_digest) DO NOTHING", 1)
 }
 
 // Migration 68 writes a consent's approved declaration only where the
@@ -74,13 +78,13 @@ func TestMigration68FillsOnlyTheDeclarationACurrentConsentApproved(t *testing.T)
 	}
 
 	require.NoError(t, testStore.AuthorityCore().Read(testCtx, func(tx authority.Tx) error {
-		kept, err := tx.ApprovedModule(current, 2)
+		kept, err := tx.ApprovedModule(current, 2, "")
 		require.NoError(t, err, "a consent at the current generation is filled")
 		composed, err := tx.ModuleNamed(current)
 		require.NoError(t, err)
 		require.Equal(t, composed, kept, "with the module's current declaration")
 		for _, generation := range []uint64{1, 3} {
-			_, err = tx.ApprovedModule(behind, generation)
+			_, err = tx.ApprovedModule(behind, generation, "")
 			require.ErrorIs(t, err, domain.ErrNotFound, "a consent behind the current generation is filled at no generation")
 		}
 		return nil

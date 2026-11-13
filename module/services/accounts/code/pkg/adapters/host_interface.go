@@ -11,6 +11,7 @@ package adapters
 // record of each issue.
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -882,6 +883,45 @@ func (s *HostSessionServer) OpenTeamCast(ctx context.Context, req *sessionv1.Ope
 	}
 	session := &sessionv1.Session{SessionId: castID.String(), PersonId: person.ID, OrganizationId: person.Organization, Bearer: pair.AccessToken}
 	return session, s.describe(ctx, session)
+}
+
+// ListCastableTeams answers the teams the caller may act as now, each with
+// what it holds and named as this host names its teams. Which teams is the
+// authority core's answer, by OpenTeamCast's own rule; this host adds only the
+// names. The callers OpenTeamCast refuses are refused here.
+func (s *HostSessionServer) ListCastableTeams(ctx context.Context, _ *sessionv1.ListCastableTeamsRequest) (*sessionv1.ListCastableTeamsResponse, error) {
+	person, err := signedInPerson(ctx, "list the teams to act as")
+	if err != nil {
+		return nil, err
+	}
+	core, err := authorityCore()
+	if err != nil {
+		return nil, err
+	}
+	teams, err := core.CastableTeams(ctx, person, person.Organization)
+	if err != nil {
+		return nil, coreStatus(err)
+	}
+	out := &sessionv1.ListCastableTeamsResponse{}
+	if len(teams) == 0 {
+		return out, nil
+	}
+	named, err := s.service.ListTeams(ctx, &gen.ListTeamsRequest{OrgId: person.Organization})
+	if err != nil {
+		return nil, status.Errorf(codes.Unavailable, "cannot read the organization's team names: %v", err)
+	}
+	names := map[string]string{}
+	for _, team := range named.GetTeams() {
+		names[team.GetId()] = team.GetName()
+	}
+	for _, team := range teams {
+		listed := &sessionv1.CastableTeam{TeamId: team.Team, DisplayName: cmp.Or(names[team.Team], team.Team)}
+		for _, h := range team.Holds {
+			listed.Holds = append(listed.Holds, &sessionv1.TeamHolding{InstallationId: h.InstallationID, Target: h.Target, Role: h.Role})
+		}
+		out.Teams = append(out.Teams, listed)
+	}
+	return out, nil
 }
 
 // describe names, on session, what Current and OpenRoleView answer of the

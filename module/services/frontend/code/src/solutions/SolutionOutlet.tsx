@@ -7,6 +7,7 @@ import * as PluginRuntime from "@codefly-dev/saas-plugin-react/runtime";
 import * as PluginUi from "@codefly-dev/saas-plugin-react/ui";
 import * as SaasSdk from "@codefly-dev/saas-sdk";
 import * as SaasUi from "@codefly-dev/saas-ui";
+import * as SaasUiCasting from "@codefly-dev/saas-ui/casting";
 import * as SaasUiSolution from "@codefly-dev/saas-ui/solution";
 import * as CodeflyUi from "@codefly-dev/ui";
 import * as CodeflyLifecycle from "@codefly-dev/ui/lifecycle";
@@ -185,6 +186,11 @@ export const CODEFLY_KIT_SHARED = {
 	"@codefly-dev/saas-ui/solution": {
 		version: CODEFLY_KIT_VERSION,
 		lib: () => SaasUiSolution,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/saas-ui/casting": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => SaasUiCasting,
 		shareConfig: SEALED_SHARE_CONFIG,
 	},
 	"@codefly-dev/saas-sdk": {

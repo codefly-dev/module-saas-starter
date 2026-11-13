@@ -308,6 +308,47 @@ same reads without the UI. Stories (`stories/solution-setup.stories.tsx`) render
 each section from a local-authority-shaped and a SaaS-shaped answer — the same
 messages, over an in-memory transport speaking the real wire format.
 
+## Team casting: `@codefly-dev/saas-ui/casting`
+
+Viewing the product as a member of a team sees it, the same on every host that
+serves the session interface (`host.session.v1`): the saas host, and the local
+authority's edge in front of a module playground. The kit draws it and the host
+decides every cast; nothing here works out who may act as what.
+
+- `<CastingProvider host titleOf?>` reads the session (`Current`) and the teams
+  the host lists for it (`ListCastableTeams`, each with what it holds), and keeps
+  per tab the list the person's own view read, so a cast (which lists only its
+  own team) can still switch. `forgetCastTeams()` drops it; call it on sign-out
+  (the provider also drops it when the host answers `Unauthenticated`).
+- `<CastBar />`: one line naming the team and what it holds, Switch team, Back
+  to my view, and the details popover. Only the announcement is a live region.
+- `<TeamSwitcher />` and `openTeamSwitcher()`: the searchable list, grouped by
+  what each team holds. Focus returns where it was opened from.
+- `<ViewAsTeamButton team />`: a team's own control (a row action or a card);
+  `<HoldingBadges holds />`; `useCasting()` for anything else.
+
+A switch is the way back first, then the ask, so a refusal leaves the person in
+their own view and says so in the host's words with its code; a failed way back
+is said as itself, never as a host refusal.
+
+The host comes through a `CastHost`, one of two adapters over the generated
+`host.session.v1` client:
+
+```tsx
+// The saas host: a cast's bearer becomes the tab's session.
+sessionCastHost({ transport, adopt: (cast) => useBearer(cast.bearer), back: restoreOwnSession });
+
+// A module playground behind the local authority's edge: the session is an
+// HttpOnly cookie the edge sets; the way back is its act-as form; a change
+// reloads the page. Made once: a new host is a new session to read.
+const edge = edgeCastHost();
+<CastingProvider host={edge}>
+  <CastBar />
+  <TeamSwitcher />
+  …the page…
+</CastingProvider>
+```
+
 ## Datasources
 
 - `<DatasourcesPanel gateway={{ apiBase, getAccessToken }} orgId={…} />` or
