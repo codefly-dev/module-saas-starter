@@ -1,5 +1,14 @@
-import { entitlementFailureResponse, isEntitlementFailure, viewerEntitlements } from "@/solutions/entitlements";
-import { cachedProjection, entitledSolutions, navProjection } from "@/solutions/projections";
+import {
+	entitlementFailureResponse,
+	isEntitlementFailure,
+	viewerEntitlements,
+} from "@/solutions/entitlements";
+import {
+	cachedProjection,
+	entitledSolutions,
+	heldPages,
+	navProjection,
+} from "@/solutions/projections";
 import { loadSolutionsWithRevision } from "@/solutions/registry";
 
 export const dynamic = "force-dynamic";
@@ -30,5 +39,10 @@ export async function GET(request: Request): Promise<Response> {
 				({ manifest, entitlement }) => navProjection(manifest, entitlement),
 			),
 	);
-	return Response.json({ solutions });
+	// The bundled pages this viewer holds a role on, beside the remote ones:
+	// the host's own frontend presents their plugins to them.
+	return Response.json({
+		solutions,
+		pages: heldPages(registered.moduleTargets, entitlements),
+	});
 }

@@ -11,10 +11,20 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { RoleViewBanner } from "@/features/role-view/role-view";
 import { useAuth } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
+import { useHeldPlugins } from "@/lib/plugins/held-pages";
+import { selectRoute } from "@/lib/plugins/presentation";
+import { useFrontendConfig } from "@/lib/providers";
+import { useRegisteredSolutionsLoaded } from "@/solutions/SolutionsMenu";
 
 export function AdminRouteShell({ children }: { children: ReactNode }) {
-	const { isAuthenticated, isLoading, platformRole, orgRole, sessionRead, castTeamId } =
-		useAuth();
+	const {
+		isAuthenticated,
+		isLoading,
+		platformRole,
+		orgRole,
+		sessionRead,
+		castTeamId,
+	} = useAuth();
 	const router = useRouter();
 	const pathname = usePathname();
 	const admin = isAdmin(platformRole, orgRole);
@@ -23,7 +33,20 @@ export function AdminRouteShell({ children }: { children: ReactNode }) {
 	// member of the team it acts as, so the team pages are its own to read.
 	const teamRoute =
 		pathname === "/admin/teams" || pathname.startsWith("/admin/teams/");
-	const allowed = admin || (teamRoute && (!!orgRole || !!castTeamId));
+	// A page the host bundles is its role holders' to open, administrators or
+	// not, as the sidebar presents it to them (useHeldPlugins).
+	const config = useFrontendConfig();
+	const heldPlugins = useHeldPlugins();
+	const pagesLoaded = useRegisteredSolutionsLoaded();
+	const pageRoute = selectRoute(config, pathname, {
+		isAuthenticated,
+		platformRole,
+		orgRole,
+		heldPlugins,
+	});
+	const heldPageRoute = !!pageRoute && heldPlugins.has(pageRoute.plugin);
+	const allowed =
+		admin || (teamRoute && (!!orgRole || !!castTeamId)) || heldPageRoute;
 
 	useEffect(() => {
 		if (isLoading) return;
@@ -62,6 +85,19 @@ export function AdminRouteShell({ children }: { children: ReactNode }) {
 					/>
 				)}
 			</>
+		);
+	}
+	// Whether a plugin's page asked for is one this person holds is known
+	// once their listing has answered; until then it is not a refusal.
+	if (
+		!allowed &&
+		!pagesLoaded &&
+		config.routes.some((route) => route.path === pathname)
+	) {
+		return (
+			<div className="min-h-screen flex items-center justify-center">
+				<Skeleton className="h-8 w-48" />
+			</div>
 		);
 	}
 	// A refusal says why and who can change it; sending the person to the

@@ -10,6 +10,7 @@ import { lazy } from "react";
 import { describe, expect, it } from "vitest";
 import {
 	canPresent,
+	pagePlugins,
 	selectNavigation,
 	selectRoute,
 	selectWidgets,
@@ -137,4 +138,66 @@ describe("shared presentation authorization", () => {
 			).toBe(superAllowed);
 		},
 	);
+});
+
+// A page the host bundles (its plugin bound to the page's module) is its role
+// holders' to see and open, as a remote page is: a member holding a role on
+// it meets the administrator gate its manifest names, a member holding none
+// does not, and a super administrator's gate yields to nobody. Red before:
+// a viewer of the page who administers nothing had no entry and no route.
+describe("a page the host bundles", () => {
+	const features = { subscriptions: false, sso: false, entitlements: false };
+	const bindings = [
+		{
+			plugin: "matrix",
+			alias: "api",
+			target: { module: "matrix-module", service: "api" },
+		},
+		{
+			plugin: "other",
+			alias: "api",
+			target: { module: "other-module", service: "api" },
+		},
+	];
+	const member = { isAuthenticated: true, orgRole: "member" as const };
+
+	it("is the plugin bound to the page's module", () => {
+		expect([...pagePlugins(["matrix-module"], bindings)]).toEqual(["matrix"]);
+		expect(pagePlugins([], bindings).size).toBe(0);
+	});
+
+	it("is presented, entry and route, to a member holding a role on it", () => {
+		const holder = {
+			...member,
+			heldPlugins: pagePlugins(["matrix-module"], bindings),
+		};
+		expect(
+			selectNavigation(config, "sidebar", holder, features).map(
+				(item) => item.label,
+			),
+		).toEqual(["Admin"]);
+		expect(Boolean(selectRoute(config, "/admin/matrix", holder))).toBe(true);
+		expect(
+			canPresent({ requiredRole: "admin", plugin: "matrix" }, holder),
+		).toBe(true);
+		expect(Boolean(selectRoute(config, "/admin/matrix/super", holder))).toBe(
+			false,
+		);
+	});
+
+	it("is not presented to a member holding a role on another page, or signed out", () => {
+		const other = {
+			...member,
+			heldPlugins: pagePlugins(["other-module"], bindings),
+		};
+		expect(selectNavigation(config, "sidebar", other, features)).toEqual([]);
+		expect(Boolean(selectRoute(config, "/admin/matrix", other))).toBe(false);
+		const signedOut = {
+			isAuthenticated: false,
+			heldPlugins: pagePlugins(["matrix-module"], bindings),
+		};
+		expect(Boolean(selectRoute(config, "/admin/matrix", signedOut))).toBe(
+			false,
+		);
+	});
 });

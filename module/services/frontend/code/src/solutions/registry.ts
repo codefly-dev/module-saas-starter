@@ -588,7 +588,7 @@ export async function loadSolutionsWithRevision(): Promise<
 	| {
 			revision: number;
 			solutions: SolutionManifest[];
-			/** Each active composed module with no page, by alias, to its target. */
+			/** Each active composed module with no remote page (a page the host bundles included), by alias, to its target. */
 			moduleTargets: ReadonlyMap<string, string>;
 	  }
 	| SolutionRegistryFailure

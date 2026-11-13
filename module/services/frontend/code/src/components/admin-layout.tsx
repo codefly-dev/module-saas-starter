@@ -47,12 +47,13 @@ import { NotificationBell } from "@/features/notifications/ui/notification-bell"
 import { OrgSwitcher } from "@/features/organizations/ui/org-switcher";
 import { useAppearance } from "@/lib/appearance-provider";
 import { useAuth } from "@/lib/auth";
-import { signOutAndLeave } from "@/lib/sign-out-journey";
 import { sessionDisplayLabel } from "@/lib/auth-session";
 import { getNavigationIcon } from "@/lib/navigation-icons";
+import { useHeldPlugins } from "@/lib/plugins/held-pages";
 import { canPresent, selectNavigation } from "@/lib/plugins/presentation";
 import { useFrontendConfig } from "@/lib/providers";
 import { usePublicRuntimeConfig } from "@/lib/public-runtime-config-provider";
+import { signOutAndLeave } from "@/lib/sign-out-journey";
 import { cn } from "@/lib/utils";
 import { useRegisteredSolutions } from "@/solutions/SolutionsMenu";
 import { groupSolutionNavigation } from "@/solutions/solution-groups";
@@ -120,7 +121,8 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 	const { user, platformRole, orgRole, isAuthenticated, logout } = useAuth();
 	const config = useFrontendConfig();
 	const { branding } = useAppearance();
-	const principal = { isAuthenticated, platformRole, orgRole };
+	const heldPlugins = useHeldPlugins();
+	const principal = { isAuthenticated, platformRole, orgRole, heldPlugins };
 	const { productFeatures } = usePublicRuntimeConfig();
 
 	const showAdmin = canPresent({ access: "admin" }, principal);
@@ -244,6 +246,19 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 							</SidebarGroupContent>
 						</SidebarGroup>
 					))}
+
+					{/* A page the host bundles, to a holder of a role on it who
+					    administers nothing: its entry, outside Admin. */}
+					{!showAdmin &&
+						visibleSections
+							.filter((section) => heldPlugins.has(section.plugin))
+							.map((section) => (
+								<PluginNavigationSection
+									key={section.plugin}
+									section={section}
+									pathname={pathname}
+								/>
+							))}
 
 					{showAdmin &&
 						primarySections.map((section) => (
