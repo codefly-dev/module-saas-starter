@@ -309,3 +309,16 @@ func RequireCatalogReadsScopeSettings(ctx context.Context, q interface {
 // decision this returns rather than a backend reappearing in a shared pool
 // within some number of seconds.
 func ReturnsToTenantRole(conn *pgx.Conn) bool { return returnsToTenantRole(conn) }
+
+// AuthoritySnapshotStatements is how many statements the authority snapshot
+// ctx carries has sent to the database so far, and how many it answered from
+// a result it kept. Zero and zero outside a snapshot.
+func AuthoritySnapshotStatements(ctx context.Context) (sent, replayed int) {
+	snap, ok := ctx.Value(authoritySnapshotKey{}).(*authoritySnapshot)
+	if !ok {
+		return 0, 0
+	}
+	snap.reads.mu.Lock()
+	defer snap.reads.mu.Unlock()
+	return snap.reads.sent, snap.reads.replayed
+}

@@ -166,6 +166,15 @@ func (s *HostAuthorityServer) Keys(ctx context.Context, _ *authorityv1.KeysReque
 	}}, AdmissionKeys: admission}, nil
 }
 
+// oneRead answers one authority question with every read the core makes for
+// it taken from one transaction (business.Service.WithAuthoritySnapshot): a
+// module asks these in bursts, and read source by source each one took the
+// control-plane pool a dozen times. Only the core's decision runs inside;
+// authenticating the caller and recording the issue stay outside it.
+func oneRead(ctx context.Context, ask func(context.Context) error) error {
+	return service.WithAuthoritySnapshot(ctx, ask)
+}
+
 // Check verifies a capability for the audience the caller is and, when a
 // method is named, applies what the audience's delivery declares for it.
 func (s *HostAuthorityServer) Check(ctx context.Context, req *authorityv1.CheckRequest) (*authorityv1.CheckResponse, error) {
@@ -173,7 +182,13 @@ func (s *HostAuthorityServer) Check(ctx context.Context, req *authorityv1.CheckR
 	if err != nil {
 		return nil, err
 	}
-	verified, revision, refused, err := core.CheckMethod(ctx, req.GetToken(), req.GetAudience(), req.GetMethod(), req.GetAdvisory())
+	var verified *workcontext.Verified
+	var revision uint64
+	var refused error
+	err = oneRead(ctx, func(ctx context.Context) (err error) {
+		verified, revision, refused, err = core.CheckMethod(ctx, req.GetToken(), req.GetAudience(), req.GetMethod(), req.GetAdvisory())
+		return err
+	})
 	if err != nil {
 		return nil, coreStatus(err)
 	}
@@ -219,37 +234,46 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 			if err := service.RequireModuleEdge(ctx, req.GetActor().GetCredential()); err != nil {
 				return nil, status.Error(codes.PermissionDenied, err.Error())
 			}
-			out, err = core.IssueForPage(ctx, person, page, r)
+			err = oneRead(ctx, func(ctx context.Context) (err error) { out, err = core.IssueForPage(ctx, person, page, r); return err })
 			// Through a binding it is the target's hop, recorded as a child.
 			child = err == nil && len(out.Context.GetActorChain()) > 0
 		} else {
-			out, err = core.IssueForPerson(ctx, person, r)
+			err = oneRead(ctx, func(ctx context.Context) (err error) { out, err = core.IssueForPerson(ctx, person, r); return err })
 		}
 	case *authorityv1.IssueRequest_Workload:
 		w, werr := workload(ctx, as.Workload.GetCredential(), "workload")
 		if werr != nil {
 			return nil, werr
 		}
-		out, err = core.IssueForWorkload(ctx, w, r)
+		err = oneRead(ctx, func(ctx context.Context) (err error) { out, err = core.IssueForWorkload(ctx, w, r); return err })
 	case *authorityv1.IssueRequest_Installation:
 		w, werr := workload(ctx, req.GetActor().GetCredential(), "actor")
 		if werr != nil {
 			return nil, werr
 		}
-		out, err = core.IssueForInstallation(ctx, w, as.Installation.GetInstallationId(), r)
+		err = oneRead(ctx, func(ctx context.Context) (err error) {
+			out, err = core.IssueForInstallation(ctx, w, as.Installation.GetInstallationId(), r)
+			return err
+		})
 	case *authorityv1.IssueRequest_ParentToken:
 		w, werr := workload(ctx, req.GetActor().GetCredential(), "actor")
 		if werr != nil {
 			return nil, werr
 		}
-		out, err = core.IssueChild(ctx, as.ParentToken, w, r)
+		err = oneRead(ctx, func(ctx context.Context) (err error) {
+			out, err = core.IssueChild(ctx, as.ParentToken, w, r)
+			return err
+		})
 		child = true
 	case *authorityv1.IssueRequest_Delegation:
 		w, werr := workload(ctx, req.GetActor().GetCredential(), "actor")
 		if werr != nil {
 			return nil, werr
 		}
-		out, err = core.IssueForDelegation(ctx, as.Delegation.GetDelegationId(), w, r)
+		err = oneRead(ctx, func(ctx context.Context) (err error) {
+			out, err = core.IssueForDelegation(ctx, as.Delegation.GetDelegationId(), w, r)
+			return err
+		})
 	default:
 		return nil, status.Error(codes.InvalidArgument, "an issue names whom it is for: a person, a workload, an installation, a parent token or a delegation")
 	}
@@ -283,7 +307,11 @@ func (s *HostAuthorityServer) ListResources(ctx context.Context, req *authorityv
 	if err != nil {
 		return nil, err
 	}
-	grants, err := core.ListResources(ctx, req.GetToken(), req.GetAudience(), req.GetResourceKind(), req.GetAction())
+	var grants []authority.Grant
+	err = oneRead(ctx, func(ctx context.Context) (err error) {
+		grants, err = core.ListResources(ctx, req.GetToken(), req.GetAudience(), req.GetResourceKind(), req.GetAction())
+		return err
+	})
 	if err != nil {
 		return nil, coreStatus(err)
 	}

@@ -196,6 +196,23 @@ func (s *Service) newAuthorityCore(issuer, keyID string, key ed25519.PrivateKey)
 	})
 }
 
+// AuthoritySnapshotStore answers every authority-core read of one question
+// from one transaction (infra.PostgresStore.WithAuthoritySnapshot).
+type AuthoritySnapshotStore interface {
+	WithAuthoritySnapshot(ctx context.Context, fn func(context.Context) error) error
+}
+
+// WithAuthoritySnapshot runs one authority question, fn, with the core's reads
+// answered from one transaction of the store, when the store keeps one, and
+// read source by source otherwise. It is the question's own read, never a cache
+// across questions: see the store's method.
+func (s *Service) WithAuthoritySnapshot(ctx context.Context, fn func(context.Context) error) error {
+	if store, ok := s.store.(AuthoritySnapshotStore); ok {
+		return store.WithAuthoritySnapshot(ctx, fn)
+	}
+	return fn(ctx)
+}
+
 // AuthorityCore is the core every host interface operation is decided by.
 func (s *Service) AuthorityCore() (*authority.Service, error) {
 	state := s.authorityCoreState()

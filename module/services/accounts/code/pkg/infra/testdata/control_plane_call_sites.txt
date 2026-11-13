@@ -188,6 +188,8 @@ pkg/infra/postgres_authority_core.go: (AuthorityCoreReplay).Consume: withControl
 pkg/infra/postgres_authority_core.go: (AuthorityCoreReplay).PurgeExpiredAuthorityReplays: WithControlPlane
 pkg/infra/postgres_authority_core.go: (AuthorityCoreStore).Read: withControlPlaneTx
 pkg/infra/postgres_authority_core.go: (AuthorityCoreStore).Write: withControlPlaneTx
+pkg/infra/postgres_authority_snapshot.go: (*PostgresStore).WithAuthoritySnapshot: authorityRead
+pkg/infra/postgres_authority_snapshot.go: (*PostgresStore).WithAuthoritySnapshot: withControlPlaneTxOn(authorityRead)
 pkg/infra/postgres_canonical_installation_setup.go: (*PostgresStore).EnqueueCanonicalInstallationStep: WithControlPlane
 pkg/infra/postgres_canonical_installation_setup.go: (*PostgresStore).ModuleInstallationPrerequisite: WithControlPlane
 pkg/infra/postgres_canonical_installation_setup.go: (*PostgresStore).RecordSolutionPrerequisites: WithControlPlane
@@ -227,7 +229,7 @@ pkg/infra/tenant_tx.go: (*PostgresStore).WithOrgReadSnapshot: txbind.BindRequest
 pkg/infra/tenant_tx.go: (*PostgresStore).WithOrgTx: txbind.BindRequest
 pkg/infra/tenant_tx.go: (*PostgresStore).WithOrgTx: txbind.BindRequest
 pkg/infra/tenant_tx.go: (*PostgresStore).WithUserTx: txbind.BindRequest
-pkg/infra/tenant_tx.go: (*PostgresStore).withControlPlaneTx: controlPlane.BeginTx
-pkg/infra/tenant_tx.go: (*PostgresStore).withControlPlaneTx: txbind.BindControlPlane
+pkg/infra/tenant_tx.go: (*PostgresStore).withControlPlaneTx: withControlPlaneTxOn(controlPlane)
+pkg/infra/tenant_tx.go: withControlPlaneTxOn: txbind.BindControlPlane
 work.go: doWork: WithControlPlane
 work.go: doWork: WithControlPlane
