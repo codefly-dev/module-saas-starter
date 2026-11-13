@@ -59,7 +59,7 @@ func (s *Service) reviewSolutionInstall(ctx context.Context, caller authority.Pe
 		return nil, err
 	}
 	if offer.Approval.TargetID == "" {
-		return nil, domain.Refuse("an organization administrator must approve installation")
+		return nil, domain.Refuse("installing or updating %s is approved by an administrator or owner of the organization, and a module page's update also by the holder of its installer role", available.RouteAlias)
 	}
 	if offer.Module.InstallationRole == "" {
 		offer.Module.InstallationRole = requestedRole
