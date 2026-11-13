@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 
 	installationv1 "accounts/pkg/gen/host/installation/v1"
@@ -256,7 +257,11 @@ func (s *Service) ReviewCurrent(ctx context.Context, review *gen.ReviewedSolutio
 // once the installation is active, by this call or by the resumed attempt
 // that activates it, the installer joins the teams of the roles they took and
 // every role is granted to its team. An upgrade of an active installation
-// assigns nothing: its grants and teams stand.
+// keeps its grants and teams, and assigns each role the upgrade adds to its
+// conventional team (upgradeAccess): every role a target declares has a team.
+//
+// Its caller is an administrator of org, or, for a module page's upgrade, a
+// holder of the page's installer role, as the core decides (installationsAt).
 //
 // What of that access could not be applied once the installation is active
 // (a team that cannot be created, a grant or membership refused) is answered
@@ -296,16 +301,18 @@ func (s *Service) installReviewedSolution(ctx context.Context, caller authority.
 	if err != nil {
 		return InstalledSolution{}, err
 	}
-	all, err := core.Installations(ctx, caller, org)
+	all, administrator, err := s.installationsAt(ctx, core, caller, org, review.Target)
 	if err != nil {
 		return InstalledSolution{}, err
 	}
-	upgrade := false
+	upgrade, upgraded := false, ""
 	for _, inst := range all {
 		if inst.Target != review.Target || (inst.Status != domain.Pending && inst.Status != domain.Active) {
 			continue
 		}
-		upgrade = upgrade || inst.Status == domain.Active
+		if inst.Status == domain.Active {
+			upgrade, upgraded = true, inst.ID
+		}
 		if inst.Consent.OperationID != review.Approval.OperationId {
 			// A fresh review must pass reconstruction and core's revision
 			// fence below: on a pending attempt it supersedes it; on an
@@ -348,12 +355,28 @@ func (s *Service) installReviewedSolution(ctx context.Context, caller authority.
 	if err := s.checkReviewedModulesInstallable(ctx, org, review); err != nil {
 		return InstalledSolution{}, err
 	}
-	if request.assignAccess && !upgrade {
+	if !administrator {
+		// The holder of a page's installer role approves its update and
+		// nothing beyond it: a supporting module the organization does not
+		// have yet is installed by an administrator's review.
+		for _, reviewed := range review.GetModules() {
+			if reviewed.GetRequired() && reviewed.GetReuseInstallationId() == "" {
+				return InstalledSolution{}, domain.Refuse("approving the update of %s installs %s, which an administrator or owner of the organization approves", review.Target, reviewed.GetPrincipal())
+			}
+		}
+	}
+	var approvedBefore map[string]string
+	switch {
+	case request.assignAccess && !upgrade:
 		target, err := core.Composed(ctx, review.Target)
 		if err != nil {
 			return InstalledSolution{}, err
 		}
-		if plan.Access, err = s.resolveInstallationAccess(ctx, caller, org, target, request.access); err != nil {
+		if plan.Access, err = s.resolveInstallationAccess(ctx, caller, org, target.Name, authority.RoleTeams(target), request.access); err != nil {
+			return InstalledSolution{}, err
+		}
+	case request.assignAccess:
+		if approvedBefore, err = core.RoleTeamsOf(ctx, upgraded); err != nil {
 			return InstalledSolution{}, err
 		}
 	}
@@ -366,7 +389,60 @@ func (s *Service) installReviewedSolution(ctx context.Context, caller authority.
 	if err != nil {
 		return InstalledSolution{Installation: inst}, err
 	}
+	if request.assignAccess && upgrade {
+		return InstalledSolution{Installation: inst, AccessProblems: s.upgradeAccess(ctx, core, caller, inst, approvedBefore, administrator)}, nil
+	}
 	return InstalledSolution{Installation: inst, AccessProblems: s.applyInstallationAccess(ctx, caller, inst, plan.Access)}, nil
+}
+
+// installationsAt are org's installations as caller may approve target's:
+// every one, to an administrator or owner of org (administrator); to the
+// holder of a module page's installer role, whom the core admits to approve
+// the page's upgrade (its approver), the page's active installation alone.
+// Anyone else is refused as the core refuses a person who administers
+// nothing.
+func (s *Service) installationsAt(ctx context.Context, core *authority.Service, caller authority.Person, org, target string) ([]domain.Installation, bool, error) {
+	all, refused := core.Installations(ctx, caller, org)
+	if code, ok := domain.CodeOf(refused); refused == nil || !ok || code != domain.Denied {
+		return all, refused == nil, refused
+	}
+	offer, err := core.ReviewOffer(ctx, caller, org, target)
+	if code, ok := domain.CodeOf(err); err != nil && (!ok || code != domain.Denied) {
+		return nil, false, err
+	}
+	// The approval tuple is answered to an approver alone; a member who
+	// holds another role on the page reads the offer without it.
+	if err != nil || offer.Approval.TargetID == "" || offer.Module.Kind == domain.KindSolution || offer.Installation.Status != domain.Active {
+		return nil, false, refused
+	}
+	return []domain.Installation{offer.Installation}, false, nil
+}
+
+// upgradeAccess assigns, once inst's upgrade is recorded, each role the
+// approved declaration declares that the one before it (approvedBefore, the
+// core's RoleTeamsOf) did not to its conventional team, as an install assigns
+// a role nobody named a team for; every other role keeps its grants. Teams are
+// the organization's, so an approver who is no administrator (a page's
+// installer) is told each added role waits for one instead.
+func (s *Service) upgradeAccess(ctx context.Context, core *authority.Service, caller authority.Person, inst domain.Installation, approvedBefore map[string]string, administrator bool) []AccessProblem {
+	approved, err := core.RoleTeamsOf(ctx, inst.ID)
+	if err != nil {
+		return []AccessProblem{{Role: "every role", Problem: fmt.Sprintf("the roles the update approved could not be read: %v", err)}}
+	}
+	added := map[string]string{}
+	for role, team := range approved {
+		if _, held := approvedBefore[role]; !held {
+			added[role] = team
+		}
+	}
+	if administrator {
+		return s.applyInstallationAccess(ctx, caller, inst, &InstallationAccess{Conventional: added, Installer: caller.ID})
+	}
+	var problems []AccessProblem
+	for _, role := range slices.Sorted(maps.Keys(added)) {
+		problems = append(problems, AccessProblem{Role: role, Problem: fmt.Sprintf("the update adds it; an administrator of the organization gives it its team %s", added[role])})
+	}
+	return problems
 }
 
 // installStepFor is the install step the core runs for target: one that
@@ -559,7 +635,7 @@ func (s *Service) InstallAuthoritySolution(ctx context.Context, caller authority
 	if approval == nil {
 		return domain.Installation{}, domain.NotNow("INSTALLATION_APPROVAL_REQUIRED: review the solution before installation")
 	}
-	installed, err := core.Installations(ctx, caller, org)
+	installed, _, err := s.installationsAt(ctx, core, caller, org, target)
 	if err != nil {
 		return domain.Installation{}, err
 	}

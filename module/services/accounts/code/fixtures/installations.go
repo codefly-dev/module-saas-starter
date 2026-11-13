@@ -595,7 +595,7 @@ func (i *Installations) roleTeam(ctx context.Context, row pendingInstallation, c
 	if err != nil {
 		return "", err
 	}
-	name := business.ConventionalTeamName(row.declared.Target, role)
+	name := authority.ConventionalTeamName(row.declared.Target, role)
 	for _, team := range listed.GetTeams() {
 		if slices.Contains(holding, team.GetId()) && strings.EqualFold(team.GetName(), name) {
 			return team.GetId(), nil

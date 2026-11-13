@@ -27,7 +27,7 @@ module playground, a module page or a solution run locally with the authority
 | Sarah Chen (`admin@acme.com`) | the platform admin (`super_admin`), owner of Acme Corp | nothing of her own; she may act as any team |
 | Alice Johnson (`alice@acme.com`) | the organisation admin of Acme Corp | the installer of record; she may act as any team |
 | Bob Williams (`bob@acme.com`) | a member | the `<target>-viewer` team |
-| Carol Davis (`carol@acme.com`) | a member | the `<target>-editor` team |
+| Carol Davis (`carol@acme.com`) | a member | the `<target>-editor` team, and `<target>-user` where the target declares `user` |
 | Dana Lee (`dana@example.com`) | a member | the `<target>-installer` team |
 
 Every role-gated target the composition delivers (a solution, a module page
@@ -37,8 +37,11 @@ the fixture's `installations` row whose target is `"*"` says so once, and the
 host expands it per target once every module the target reaches is composed
 (a solution installed before a module it reaches arrives is held at the
 narrower reach until an upgrade is approved), so a composition opts in by
-seeding `dev-admin` and nothing else. A target declaring other roles gets its
-teams and no member for a role it does not declare; a composing workspace's
+seeding `dev-admin` and nothing else. Every role a target declares gets its
+team, a fourth such as `user` included (Carol joins it: the editor uses the
+product too, and Bob stays the viewer who writes nothing); a role the update
+of an installed target adds gets its team when that update is approved. A
+composing workspace's
 `configurations/local/fixture-grants.yaml` may still name a target explicitly,
 and that row is kept.
 

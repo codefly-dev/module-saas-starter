@@ -42,8 +42,14 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type InstallationServiceClient interface {
 	// Review one solution release and its supporting module access before consent.
+	// A member's to ask: the authority core answers it to an organization
+	// administrator, and a module page's update to the holder of the page's
+	// installer role too (its approver), and refuses anyone else.
 	ReviewSolutionInstall(ctx context.Context, in *ReviewSolutionInstallRequest, opts ...grpc.CallOption) (*ReviewedSolutionInstall, error)
 	// Consent to the exact review; retries retain its original per-owner receipts.
+	// A member's to ask: the authority core admits an organization
+	// administrator, and the holder of a module page's installer role to
+	// approve the page's update (its approver), and refuses anyone else.
 	InstallReviewedSolution(ctx context.Context, in *InstallReviewedSolutionRequest, opts ...grpc.CallOption) (*Installation, error)
 	// Set up who may use a module page: its roles to teams on its composition
 	// installation, in one act; the answer is that installation, with what
@@ -288,8 +294,14 @@ func (c *installationServiceClient) RevokeInstallationFromTeam(ctx context.Conte
 // for forward compatibility.
 type InstallationServiceServer interface {
 	// Review one solution release and its supporting module access before consent.
+	// A member's to ask: the authority core answers it to an organization
+	// administrator, and a module page's update to the holder of the page's
+	// installer role too (its approver), and refuses anyone else.
 	ReviewSolutionInstall(context.Context, *ReviewSolutionInstallRequest) (*ReviewedSolutionInstall, error)
 	// Consent to the exact review; retries retain its original per-owner receipts.
+	// A member's to ask: the authority core admits an organization
+	// administrator, and the holder of a module page's installer role to
+	// approve the page's update (its approver), and refuses anyone else.
 	InstallReviewedSolution(context.Context, *InstallReviewedSolutionRequest) (*Installation, error)
 	// Set up who may use a module page: its roles to teams on its composition
 	// installation, in one act; the answer is that installation, with what

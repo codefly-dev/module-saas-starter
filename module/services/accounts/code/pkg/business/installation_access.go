@@ -56,13 +56,6 @@ func AccessProblemsToWire(problems []AccessProblem) []string {
 	return out
 }
 
-// ConventionalTeamName is the team a declared role of target goes to when the
-// administrator names none: `<target>-<role>`, lower case, with runs of
-// spaces as one dash.
-func ConventionalTeamName(target, role string) string {
-	return strings.ToLower(strings.Join(strings.Fields(target+"-"+role), "-"))
-}
-
 // isConventionalTeam reports whether team is the organization's team named
 // name: its name, whatever its case, or a root team whose path is the slug of
 // name. Teams are unique by path, so a team named otherwise ("Target Viewer")
@@ -75,22 +68,24 @@ func isConventionalTeam(team *gen.Team, name string) bool {
 }
 
 // resolveInstallationAccess is the access caller's install of target records:
-// for every role target declares, the team requested names for it, which must
-// be a team of org, or else the conventional name, whose team is found or
-// created once the installation is active. Everything requested is checked
-// here; no team is created and no team's members change.
-func (s *Service) resolveInstallationAccess(ctx context.Context, caller authority.Person, org string, target domain.Module, requested InstallAccess) (*InstallationAccess, error) {
-	roles := slices.Sorted(maps.Keys(target.Roles))
+// for every role of roleTeams (the core's role → conventional team of what is
+// being approved: authority.RoleTeams of the offer, or RoleTeamsOf an active
+// installation), the team requested names for it, which must be a team of
+// org, or else its conventional team, found or created once the installation
+// is active. Everything requested is checked here; no team is created and no
+// team's members change.
+func (s *Service) resolveInstallationAccess(ctx context.Context, caller authority.Person, org, target string, roleTeams map[string]string, requested InstallAccess) (*InstallationAccess, error) {
+	roles := slices.Sorted(maps.Keys(roleTeams))
 	access := &InstallationAccess{Teams: map[string]string{}, Conventional: map[string]string{}, Installer: caller.ID,
 		InstallerRoles: slices.Sorted(slices.Values(requested.InstallerRoles))}
 	for _, role := range access.InstallerRoles {
 		if !slices.Contains(roles, role) {
-			return nil, domain.Malformed("%s declares no role %q", target.Name, role)
+			return nil, domain.Malformed("%s declares no role %q", target, role)
 		}
 	}
 	for role := range requested.RoleTeams {
 		if !slices.Contains(roles, role) {
-			return nil, domain.Malformed("%s declares no role %q", target.Name, role)
+			return nil, domain.Malformed("%s declares no role %q", target, role)
 		}
 	}
 	var teams []*gen.Team
@@ -109,7 +104,7 @@ func (s *Service) resolveInstallationAccess(ctx context.Context, caller authorit
 	}
 	for _, role := range roles {
 		if _, named := requested.RoleTeams[role]; !named {
-			access.Conventional[role] = ConventionalTeamName(target.Name, role)
+			access.Conventional[role] = roleTeams[role]
 		}
 	}
 	return access, refuseSharedTeam(access, teams)
@@ -181,7 +176,7 @@ func (s *Service) applyInstallationAccess(ctx context.Context, caller authority.
 			// conventional team created now, whose members are nobody's but the
 			// installer's choice; an existing one has members nobody chose for
 			// this role, so it is granted nothing.
-			name := ConventionalTeamName(inst.Target, role)
+			name := authority.ConventionalTeamName(inst.Target, role)
 			if slices.ContainsFunc(teams, func(t *gen.Team) bool { return isConventionalTeam(t, name) }) {
 				report(role, "the team chosen for it no longer exists, and %s already exists with members nobody chose for this role; grant the role in Set up", name)
 				continue
@@ -197,7 +192,7 @@ func (s *Service) applyInstallationAccess(ctx context.Context, caller authority.
 		}
 		name := access.Conventional[role]
 		if name == "" {
-			name = ConventionalTeamName(inst.Target, role)
+			name = authority.ConventionalTeamName(inst.Target, role)
 		}
 		// A team that already holds the conventional name was not made for this
 		// role, whoever is in it today: a role is never granted to a team
@@ -382,7 +377,13 @@ func (s *Service) SetUpModulePage(ctx context.Context, caller authority.Person, 
 	if i < 0 {
 		return InstalledSolution{}, domain.NotNow("%s is not installed in this organization yet: composition installs it (a solution that reaches it, or supporting module administration); set up its access once it is", m.Name)
 	}
-	access, err := s.resolveInstallationAccess(ctx, caller, org, m, requested)
+	// Every role the installation's consent approved, never one a delivery
+	// since asks and nobody approved yet: the core grants no such role.
+	roleTeams, err := core.RoleTeamsOf(ctx, installed[i].ID)
+	if err != nil {
+		return InstalledSolution{}, err
+	}
+	access, err := s.resolveInstallationAccess(ctx, caller, org, m.Name, roleTeams, requested)
 	if err != nil {
 		return InstalledSolution{}, err
 	}
@@ -392,21 +393,22 @@ func (s *Service) SetUpModulePage(ctx context.Context, caller authority.Person, 
 // ApplyInstallAccess assigns, as caller, the access requested on inst, an
 // installation already active: exactly what an administrator's install assigns
 // on activation (resolveInstallationAccess, applyInstallationAccess), for the
-// installation that install made. Every step is check-before-write, so applying
-// it again changes nothing. A target declaring no roles has nothing to assign.
+// installation that install made, over every role its consent approved. Every
+// step is check-before-write, so applying it again changes nothing. A target
+// declaring no roles has nothing to assign.
 func (s *Service) ApplyInstallAccess(ctx context.Context, caller authority.Person, inst domain.Installation, requested InstallAccess) ([]AccessProblem, error) {
 	core, err := s.AuthorityCore()
 	if err != nil {
 		return nil, err
 	}
-	target, err := core.Composed(ctx, inst.Target)
+	roleTeams, err := core.RoleTeamsOf(ctx, inst.ID)
 	if err != nil {
 		return nil, err
 	}
-	if len(target.Roles) == 0 {
-		return nil, domain.Refuse("%s declares no roles: there is no access of a person to assign", target.Name)
+	if len(roleTeams) == 0 {
+		return nil, domain.Refuse("%s declares no roles: there is no access of a person to assign", inst.Target)
 	}
-	access, err := s.resolveInstallationAccess(ctx, caller, inst.Organization, target, requested)
+	access, err := s.resolveInstallationAccess(ctx, caller, inst.Organization, inst.Target, roleTeams, requested)
 	if err != nil {
 		return nil, err
 	}

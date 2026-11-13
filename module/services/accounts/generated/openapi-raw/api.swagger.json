@@ -5502,7 +5502,7 @@
     },
     "/v1/solution-installations": {
       "post": {
-        "summary": "Consent to the exact review; retries retain its original per-owner receipts.",
+        "summary": "Consent to the exact review; retries retain its original per-owner receipts.\nA member's to ask: the authority core admits an organization\nadministrator, and the holder of a module page's installer role to\napprove the page's update (its approver), and refuses anyone else.",
         "operationId": "InstallationService_InstallReviewedSolution",
         "responses": {
           "200": {
@@ -5569,7 +5569,7 @@
     },
     "/v1/solution-installations/review": {
       "post": {
-        "summary": "Review one solution release and its supporting module access before consent.",
+        "summary": "Review one solution release and its supporting module access before consent.\nA member's to ask: the authority core answers it to an organization\nadministrator, and a module page's update to the holder of the page's\ninstaller role too (its approver), and refuses anyone else.",
         "operationId": "InstallationService_ReviewSolutionInstall",
         "responses": {
           "200": {

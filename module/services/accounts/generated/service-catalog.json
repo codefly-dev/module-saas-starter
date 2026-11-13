@@ -1352,7 +1352,7 @@
       "http_bindings": [],
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [],
@@ -1374,7 +1374,7 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "description": "Install one solution at one organisation under the consent its administrator reviewed; pending until its install step converges.",
       "owner": {
         "module": "saas-starter",
@@ -1528,7 +1528,7 @@
       "http_bindings": [],
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [],
@@ -1546,7 +1546,7 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "description": "Read the exact authority offer an administrator consents to, without recording consent.",
       "owner": {
         "module": "saas-starter",
@@ -6518,7 +6518,7 @@
       ],
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [
@@ -6542,7 +6542,7 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "description": "Install the unchanged reviewed solution and supporting modules; activate only after setup acknowledgement and final prerequisite checks.",
       "owner": {
         "module": "saas-starter",
@@ -6909,7 +6909,7 @@
       ],
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [
@@ -6933,7 +6933,7 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "description": "Review a delivered solution release and the exact supporting module consent before installation.",
       "owner": {
         "module": "saas-starter",
