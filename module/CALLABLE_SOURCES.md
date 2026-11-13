@@ -199,8 +199,8 @@ organization's own source and a governed one are unchanged.
 Every read of and call on a source a cast's session makes is decided by the
 team's grants alone (`sourceCaller`), or refused by name (`refuseCast`):
 
-- `InvokeSourceOperation` calls only a source of the person's own, where the
-  team holds `datasource:invoke`, decided in `sourceOperationAccess` before the
+- `InvokeSourceOperation` calls only a source of the person's own that no
+  solution governs, where the team holds `datasource:invoke`, decided in `sourceOperationAccess` before the
   call and again after the receipt guard's hold. An organization's own source
   is refused to a cast even where its team holds `datasource:invoke` there:
   that is the member's to call in their own session.

@@ -92,9 +92,14 @@ func TestASourceOperationIsDecidedByWhoeverAnswersForTheSession(t *testing.T) {
 	}
 
 	t.Run("a cast calls no source but its person's own, whatever its team holds", func(t *testing.T) {
-		for _, owner := range []string{"", "55555555-5555-4555-8555-555555555555"} {
+		governed := &business.SourceGovernance{InstallationID: "installation", Kind: "kind", Action: "write"}
+		for _, c := range []struct {
+			owner      string
+			governance *business.SourceGovernance
+		}{{"", nil}, {"55555555-5555-4555-8555-555555555555", nil}, {person, governed}} {
+			owner := c.owner
 			store := &grantedOnlyTo{sourceWireStore: &sourceWireStore{declaration: declaration,
-				source: &business.DatasourceSource{ID: "source", OrgID: org, Provider: business.DatasourceProviderAPI, API: &business.APIDatasourceConfig{}, BoundaryNodeID: "node", PersonalOwnerUserID: owner}},
+				source: &business.DatasourceSource{ID: "source", OrgID: org, Provider: business.DatasourceProviderAPI, API: &business.APIDatasourceConfig{}, BoundaryNodeID: "node", PersonalOwnerUserID: owner, Governance: c.governance}},
 				subject: cast.SubjectID, kind: cast.SubjectKind}
 			svc, err := business.NewService(store)
 			require.NoError(t, err)
