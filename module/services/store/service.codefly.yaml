@@ -1,5 +1,5 @@
 name: store
-version: 0.0.0
+version: 0.0.1
 agent:
     kind: codefly:service
     name: postgres
@@ -9,7 +9,11 @@ agent:
     # 0.0.144 also carries the explicit test verdict required by CLI 0.1.185.
     # 0.0.146: the bootstrap image fetches migrate with the base's wget and pins
     # no curl, so an Alpine curl rebuild no longer reds the build (service-postgres#189).
-    version: 0.0.146
+    # 0.0.150: the bootstrap lock pins postgresql17-client 17.12-r0, the only build
+    # Alpine v3.21 still serves, on the alpine 3.21.10 base (service-postgres#223).
+    # Since 0.0.150 a deploy render also requires the environment to declare this
+    # store in in-cluster-services or managed-services, and refuses one that says neither.
+    version: 0.0.150
     publisher: codefly.dev
 endpoints:
     - name: tcp
