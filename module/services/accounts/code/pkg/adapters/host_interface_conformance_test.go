@@ -168,10 +168,12 @@ func runHostInterfaceFixture(t *testing.T) {
 	// workloads with the credentials they delivered them with: each one
 	// delivery credential is the workload's own, and the carrier accepts it
 	// for it. conformance-reach is the reach case's actor; the reach-through
-	// case's (reachThroughConsent) hops are conformance-through and its relay;
-	// the re-read case's (installationReread) is conformance-reread.
+	// case's (reachThroughConsent) hops are conformance-through and its relay,
+	// and conformance-through-paged, the solution whose hop reaches a module
+	// declaring its own page's roles; the re-read case's (installationReread)
+	// is conformance-reread. The modules they reach (the vaults) never act.
 	deliveryWorkloads := map[string]string{}
-	for _, module := range []string{"conformance-reach", "conformance-through", "conformance-through-relay", "conformance-reread"} {
+	for _, module := range []string{"conformance-reach", "conformance-through", "conformance-through-relay", "conformance-through-paged", "conformance-reread"} {
 		deliveryWorkloads[module] = credential(module)
 	}
 	deliveryCredential := func(module string) string {
