@@ -529,6 +529,20 @@ func (r *SolutionHostBindingReconciler) Shutdown(ctx context.Context) error {
 // module registry's reason for the binding, if any, kept beside it.
 func (r *SolutionHostBindingReconciler) applyAdmitted(ctx context.Context, applied SolutionHostBindingDecision, authorityReason string) []error {
 	var failures []error
+	// A route this host cannot address is refused before the core is asked,
+	// as the apply refuses it (solutionHostBindingRegistryKey): composed
+	// first, the core held a module accounts never applied, under the alias
+	// it refused, and the binding's next generation then met that module's
+	// claim on its principal.
+	if !applied.Document.Removed {
+		if _, err := solutionHostBindingRegistryKey(applied.Document); err != nil {
+			if recordErr := r.service.recordSolutionHostBindingRefusal(ctx, applied.Document.Binding, err.Error(), r.now()); recordErr != nil {
+				failures = append(failures, recordErr)
+			}
+			return append(failures, fmt.Errorf("apply binding %q generation %d: %w",
+				applied.Document.Binding, applied.Document.Generation, err))
+		}
+	}
 	if err := r.service.composeDelivered(ctx, applied.Delivered, applied.Document); err != nil {
 		var recordErr error
 		if _, refusal := domain.CodeOf(err); refusal {

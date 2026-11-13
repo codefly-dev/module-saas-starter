@@ -114,6 +114,7 @@ function forgetIfViewerChanged(): boolean {
 	if (viewer === snapshotViewer) return false;
 	snapshotViewer = viewer;
 	answered = false;
+	firstReadFailed = false;
 	firstReadRetries = 0;
 	if (firstReadTimer) {
 		clearTimeout(firstReadTimer);
@@ -128,16 +129,27 @@ function forgetIfViewerChanged(): boolean {
 // meet a session the host has not settled yet (401, 503, a dropped request);
 // the menu then showed no page at all until the next 10 s poll. Until the
 // first answer lands it is asked again after a second, a few times.
+// Once those retries are spent, or the answer is one not asked again at once
+// (429), the first read has failed: it is said, rather than waited on for as
+// long as the listing keeps failing (firstReadFailed). A later poll that
+// answers settles it.
 let answered = false;
+let firstReadFailed = false;
 let firstReadRetries = 0;
 let firstReadTimer: ReturnType<typeof setTimeout> | null = null;
 const FIRST_READ_RETRY_MS = 1_000;
 const FIRST_READ_RETRIES = 5;
 
-function retryFirstRead(viewer: string): void {
-	if (answered || firstReadTimer || firstReadRetries >= FIRST_READ_RETRIES)
-		return;
+function retryFirstRead(viewer: string, again = true): void {
+	if (answered || firstReadTimer) return;
 	if (listeners.size === 0 || currentViewer() !== viewer) return;
+	if (!again || firstReadRetries >= FIRST_READ_RETRIES) {
+		if (!firstReadFailed) {
+			firstReadFailed = true;
+			for (const listener of listeners) listener();
+		}
+		return;
+	}
 	firstReadRetries += 1;
 	firstReadTimer = setTimeout(() => {
 		firstReadTimer = null;
@@ -199,7 +211,7 @@ async function refresh(): Promise<void> {
 			// would empty a working nav on a blip — the reason the route
 			// distinguishes them from an empty projection at all. A 429 is the
 			// organization's read budget: asking again at once spends more of it.
-			if (response.status !== 429) retryFirstRead(viewer);
+			retryFirstRead(viewer, response.status !== 429);
 			return;
 		}
 		const data: { solutions?: SolutionNav[]; pages?: unknown } =
@@ -283,12 +295,20 @@ function titlesGroups(solutions: SolutionNav[]): boolean {
 	return solutions.some((entry) => entry.group || entry.kind === "module");
 }
 
-/** Whether this viewer's first authenticated projection has arrived. */
-export function useRegisteredSolutionsLoaded(): boolean {
+/**
+ * Where this viewer's first listing stands: "reading" until it answers or
+ * fails, "read" once one has answered, "failed" once its first read could not
+ * be answered (its quick retries spent, or a 429), until a later poll answers.
+ */
+export function useRegisteredSolutionsRead(): "reading" | "read" | "failed" {
 	return useSyncExternalStore(
 		subscribe,
-		() => currentViewer() === snapshotViewer && snapshotLoaded,
-		() => false,
+		() => {
+			if (currentViewer() !== snapshotViewer) return "reading";
+			if (snapshotLoaded) return "read";
+			return firstReadFailed ? "failed" : "reading";
+		},
+		() => "reading",
 	);
 }
 

@@ -28,8 +28,7 @@ func TestAnAppliedAuthorityDocumentIsVerifiedOncePerGeneration(t *testing.T) {
 		verified.Add(1)
 		return delivery.Verify(doc, envelope, map[string]crypto.PublicKey{signer.KeyID(): signer.Public()})
 	})
-	reconciler, err := business.NewSolutionHostBindingReconciler(d.service, business.SolutionHostBindingReconcilerConfig{Source: business.NewDeliveredSolutionHostBindings(d.service), Verifier: productionVerifier(t), Coordinate: productionPathCoordinate})
-	require.NoError(t, err)
+	reconciler := newProductionPathReconciler(t, d.service)
 	d.service.SetCompositionReconcile(reconciler.RunOnce)
 	m := productionPathManifest(t, uniqueAlias("cached-policy"), 1)
 	// A module: the policy pair is what is under test, and a solution would

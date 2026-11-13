@@ -149,6 +149,60 @@ describe("SolutionsMenu ownership (#949)", () => {
 		}
 	});
 
+	it("says the first read failed once its quick retries are spent, until a poll answers", async () => {
+		vi.useFakeTimers();
+		try {
+			tokenState.fetch.mockResolvedValue(
+				Response.json({ error: "authority_unavailable" }, { status: 503 }),
+			);
+			const { useRegisteredSolutionsRead } = await import(
+				"@/solutions/SolutionsMenu"
+			);
+			function Read() {
+				return <p>{useRegisteredSolutionsRead()}</p>;
+			}
+			render(<Read />);
+			expect(screen.getByText("reading")).toBeTruthy();
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(4_500);
+			});
+			expect(screen.getByText("reading")).toBeTruthy();
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(1_000);
+			});
+			expect(screen.getByText("failed")).toBeTruthy();
+			tokenState.fetch.mockResolvedValue(listing("audit"));
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(10_000);
+			});
+			expect(screen.getByText("read")).toBeTruthy();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("says the first read failed at once on a 429, which is not asked again quickly", async () => {
+		vi.useFakeTimers();
+		try {
+			tokenState.fetch.mockResolvedValue(
+				Response.json({ error: "rate_limited" }, { status: 429 }),
+			);
+			const { useRegisteredSolutionsRead } = await import(
+				"@/solutions/SolutionsMenu"
+			);
+			function Read() {
+				return <p>{useRegisteredSolutionsRead()}</p>;
+			}
+			render(<Read />);
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(0);
+			});
+			expect(screen.getByText("failed")).toBeTruthy();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it("starts the next person's quick retries afresh, and drops the last person's", async () => {
 		vi.useFakeTimers();
 		try {

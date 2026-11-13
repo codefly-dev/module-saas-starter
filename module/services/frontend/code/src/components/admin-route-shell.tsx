@@ -13,10 +13,10 @@ import { CastBar, TeamSwitcher } from "@codefly-dev/saas-ui/casting";
 import { HostCasting } from "@/features/role-view/team-casting";
 import { useAuth } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
-import { useHeldPlugins } from "@/lib/plugins/held-pages";
+import { useHeldEntries } from "@/lib/plugins/held-pages";
 import { selectRoute } from "@/lib/plugins/presentation";
 import { useFrontendConfig } from "@/lib/providers";
-import { useRegisteredSolutionsLoaded } from "@/solutions/SolutionsMenu";
+import { useRegisteredSolutionsRead } from "@/solutions/SolutionsMenu";
 
 /** The admin pages, under this host's team casting (the cast bar and switcher, and every "view as"). */
 export function AdminRouteShell({ children }: { children: ReactNode }) {
@@ -45,17 +45,18 @@ function AdminRoutes({ children }: { children: ReactNode }) {
 	const teamRoute =
 		pathname === "/admin/teams" || pathname.startsWith("/admin/teams/");
 	// A page the host bundles is its role holders' to open, administrators or
-	// not, as the sidebar presents it to them (useHeldPlugins).
+	// not, its entry alone, as the sidebar presents it to them (useHeldEntries).
 	const config = useFrontendConfig();
-	const heldPlugins = useHeldPlugins();
-	const pagesLoaded = useRegisteredSolutionsLoaded();
+	const heldEntries = useHeldEntries();
+	const pagesRead = useRegisteredSolutionsRead();
 	const pageRoute = selectRoute(config, pathname, {
 		isAuthenticated,
 		platformRole,
 		orgRole,
-		heldPlugins,
+		heldEntries,
 	});
-	const heldPageRoute = !!pageRoute && heldPlugins.has(pageRoute.plugin);
+	const heldPageRoute =
+		!!pageRoute && heldEntries.get(pageRoute.plugin) === pageRoute.path;
 	const allowed =
 		admin || (teamRoute && (!!orgRole || !!castTeamId)) || heldPageRoute;
 
@@ -99,16 +100,28 @@ function AdminRoutes({ children }: { children: ReactNode }) {
 		);
 	}
 	// Whether a plugin's page asked for is one this person holds is known
-	// once their listing has answered; until then it is not a refusal.
+	// once their listing has answered; until then it is not a refusal, and a
+	// listing that could not be read says so rather than waiting for ever.
 	if (
 		!allowed &&
-		!pagesLoaded &&
+		pagesRead !== "read" &&
 		config.routes.some((route) => route.path === pathname)
 	) {
-		return (
+		return pagesRead === "reading" ? (
 			<div className="min-h-screen flex items-center justify-center">
 				<Skeleton className="h-8 w-48" />
 			</div>
+		) : (
+			<>
+				<ImpersonationBanner />
+				<RoleViewBanner />
+				<EmptyState
+					icon={ShieldOff}
+					title="Could not read the pages you hold"
+					description="The host could not say which pages you hold a role on, so this page is not shown. This is not a statement about your access. It is asked again shortly; reload to try now."
+					action={<Link href="/">Back to the dashboard</Link>}
+				/>
+			</>
 		);
 	}
 	// A refusal says why and who can change it; sending the person to the

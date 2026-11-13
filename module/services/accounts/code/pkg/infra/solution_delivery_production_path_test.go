@@ -4,6 +4,8 @@ package infra_test
 
 import (
 	"context"
+	"crypto"
+	"crypto/ed25519"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +18,7 @@ import (
 	"accounts/pkg/business"
 	"accounts/pkg/infra"
 
+	authoritydelivery "github.com/codefly-dev/authority/libraries/delivery/go"
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
 )
@@ -87,12 +90,30 @@ func newProductionPathDelivery(t *testing.T) *productionPathDelivery {
 
 	service, err := business.NewService(testStore)
 	require.NoError(t, err)
+	// Its authority core, as accounts builds it at start: a pass composes a
+	// generation in the core before it applies it, and a host whose core is
+	// not built applies nothing. Built before the inbox is wired, so its boot
+	// reconciliation composes nothing of what other tests delivered into the
+	// package's database.
+	_, key, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	require.NoError(t, service.ConfigureAuthorityCore(testCtx, "https://accounts.example.test", "production-path", key))
 	service.SetSolutionDelivery(productionVerifier(t), testStore,
 		infra.NewSolutionDeliveryCarrierCheck(infra.NewKubernetesClientForTest(t, server)))
 	service.SetSolutionDeliveryCoordinate(productionPathCoordinate)
 	rule, err := business.NewModuleNamespaceRule(productionPathHostNamespace, productionPathHostModule)
 	require.NoError(t, err)
 	service.SetModuleNamespaceRule(rule)
+	// The module envelope and the live authority every capability decision,
+	// and every install by composition, reads.
+	service.SetModuleEnvelopeStore(testStore)
+	service.SetModuleAuthorityReads(testStore, nil)
+	// The authority documents the composition pairs with a manifest are
+	// verified with the release key this host pins, as at start.
+	signer := deliverytest.Signer(t, productionPathSigner)
+	service.SetAuthorityDocumentVerifier(func(doc, envelope []byte) (string, error) {
+		return authoritydelivery.Verify(doc, envelope, map[string]crypto.PublicKey{signer.KeyID(): signer.Public()})
+	})
 	delivery.service = service
 	delivery.handler = adapters.NewSolutionDeliveryHTTPHandler(service)
 	return delivery
@@ -258,8 +279,14 @@ func newProductionPathReconciler(t *testing.T, service *business.Service) *busin
 			Verifier:   productionVerifier(t),
 			Coordinate: productionPathCoordinate,
 			Interval:   time.Minute,
+			Envelopes:  service,
 		})
 	require.NoError(t, err)
+	// A running host's registry is derived from the committed envelope: a
+	// pass composes in the core against it, and a registry older than the
+	// envelope refuses that until the next pass derives it. What it omits
+	// for other tests' principals is theirs, never an unreadable input.
+	require.NotErrorIs(t, reconciler.ModulePrincipals().RunOnce(testCtx), business.ErrModulePrincipalInputsUnreadable)
 	return reconciler
 }
 
@@ -277,12 +304,15 @@ func productionPathBindingRecord(t *testing.T, service *business.Service, bindin
 }
 
 // productionPathManifest is a live manifest for one module on this test host:
-// one workload, one routed endpoint.
+// one workload, one routed endpoint. A module, which the delivery endpoint
+// carries alone: a solution declares an installer role in the authority
+// document the composition interface pairs with its manifest, and the
+// authority core composes no solution delivered without one.
 func productionPathManifest(t *testing.T, alias string, generation uint64) *solutionhost.ModuleManifest {
 	t.Helper()
 	manifest := &solutionhost.ModuleManifest{
 		Schema: solutionhost.SchemaModuleManifestV1, Binding: "acme.test." + alias, Alias: alias,
-		Kind: solutionhost.KindSolution, Generation: generation,
+		Kind: solutionhost.KindModule, Generation: generation,
 		Host:      solutionhost.HostTarget{Coordinate: productionPathCoordinate, Domain: productionPathDomain},
 		Release:   solutionhost.Release{Publisher: "acme", Name: alias, Version: "1.4.0"},
 		Workloads: []solutionhost.Workload{{Service: "api", Container: "api"}},

@@ -1,5 +1,6 @@
 import type {
 	FrontendConfig,
+	FrontendPlugin,
 	NavItem,
 	NavigationSurface,
 	PresentationRequirement,
@@ -21,38 +22,57 @@ export interface PresentationPrincipal {
 	platformRole?: PlatformRole;
 	orgRole?: OrgRole;
 	/**
-	 * The plugins that are pages this person holds a role on (pagePlugins):
-	 * a page the host bundles is presented to its role holders, as a remote
-	 * page is, whatever administrator gate its manifest names.
+	 * The entries of the pages this person holds a role on, by plugin
+	 * (pageEntries): a page the host bundles is presented to its role holders,
+	 * entry and route, as a remote page is, whatever administrator gate its
+	 * manifest names.
 	 */
-	heldPlugins?: ReadonlySet<string>;
+	heldEntries?: ReadonlyMap<string, string>;
 }
 
 /**
- * The plugins that are the pages `pages` names (by alias, the module a page
- * is): each plugin with a service bound to one of those modules, as the
- * composition bound it (`contributedServiceBindings`).
+ * The entries of the pages `pages` names (by alias, the module a page is), by
+ * plugin. A plugin is a page's when every service it binds is that page
+ * module's, as the composition bound it (`contributedServiceBindings`): one
+ * also bound to another module's is no page's. The page's entry is the route
+ * its plugin's first navigation item opens, one route as a remote page has
+ * one path; every other route, item and widget of the plugin keeps the gate
+ * its manifest names.
  */
-export function pagePlugins(
+export function pageEntries(
 	pages: readonly string[],
 	bindings: readonly { plugin: string; target: { module: string } }[],
-): ReadonlySet<string> {
-	return new Set(
-		bindings
-			.filter((binding) => pages.includes(binding.target.module))
-			.map((binding) => binding.plugin),
-	);
+	plugins: readonly Pick<FrontendPlugin, "name" | "navItems" | "routes">[],
+): ReadonlyMap<string, string> {
+	const entries = new Map<string, string>();
+	for (const plugin of plugins) {
+		const bound = bindings.filter((binding) => binding.plugin === plugin.name);
+		const page = bound[0]?.target.module;
+		if (
+			page === undefined ||
+			!pages.includes(page) ||
+			bound.some((binding) => binding.target.module !== page)
+		) {
+			continue;
+		}
+		const entry = plugin.navItems?.find((item) =>
+			plugin.routes?.some((route) => route.path === item.href),
+		);
+		if (entry) entries.set(plugin.name, entry.href);
+	}
+	return entries;
 }
 
 export function canPresent(
-	requirement: PresentationRequirement & { plugin?: string },
+	requirement: PresentationRequirement & { plugin?: string; href?: string },
 	principal: PresentationPrincipal,
 ): boolean {
-	// A page's own administrator gate yields to holding a role on that page:
-	// a super administrator's gate never does.
+	// A page's own administrator gate, on its entry alone, yields to holding
+	// a role on that page: a super administrator's gate never does.
 	const held =
 		requirement.plugin !== undefined &&
-		principal.heldPlugins?.has(requirement.plugin) === true;
+		requirement.href !== undefined &&
+		principal.heldEntries?.get(requirement.plugin) === requirement.href;
 	if (held && principal.isAuthenticated) {
 		requirement = {
 			...requirement,
@@ -153,7 +173,7 @@ export function selectRoute(
 	return config.routes.find(
 		(route) =>
 			normalize(route.path) === normalize(pathname) &&
-			canPresent(route, principal),
+			canPresent({ ...route, href: route.path }, principal),
 	);
 }
 

@@ -10,8 +10,8 @@ const state = vi.hoisted(() => ({
 	castTeamId: "",
 	sessionRead: "confirmed" as string,
 	replace: vi.fn(),
-	heldPlugins: new Set<string>(),
-	pagesLoaded: true,
+	heldEntries: new Map<string, string>(),
+	pagesRead: "read" as string,
 }));
 vi.mock("@/lib/providers", () => ({
 	useFrontendConfig: () => ({
@@ -22,14 +22,20 @@ vi.mock("@/lib/providers", () => ({
 				plugin: "model",
 				requiredRole: "admin",
 			},
+			{
+				id: "settings",
+				path: "/admin/models/settings",
+				plugin: "model",
+				requiredRole: "admin",
+			},
 		],
 	}),
 }));
 vi.mock("@/lib/plugins/held-pages", () => ({
-	useHeldPlugins: () => state.heldPlugins,
+	useHeldEntries: () => state.heldEntries,
 }));
 vi.mock("@/solutions/SolutionsMenu", () => ({
-	useRegisteredSolutionsLoaded: () => state.pagesLoaded,
+	useRegisteredSolutionsRead: () => state.pagesRead,
 }));
 vi.mock("next/navigation", () => ({
 	usePathname: () => state.pathname,
@@ -84,8 +90,8 @@ beforeEach(() => {
 	state.castTeamId = "";
 	state.sessionRead = "confirmed";
 	state.replace.mockClear();
-	state.heldPlugins = new Set();
-	state.pagesLoaded = true;
+	state.heldEntries = new Map();
+	state.pagesRead = "read";
 });
 
 // A page the host bundles (model's /admin/models) is its role holders' to
@@ -94,7 +100,7 @@ beforeEach(() => {
 describe("a page the host bundles", () => {
 	it("admits a member holding a role on it", () => {
 		state.pathname = "/admin/models";
-		state.heldPlugins = new Set(["model"]);
+		state.heldEntries = new Map([["model", "/admin/models"]]);
 		render(<AdminRouteShell>Installed models</AdminRouteShell>);
 		expect(screen.getByText("Installed models")).toBeTruthy();
 	});
@@ -106,14 +112,29 @@ describe("a page the host bundles", () => {
 	});
 	it("refuses nothing before the member's pages are read", () => {
 		state.pathname = "/admin/models";
-		state.pagesLoaded = false;
+		state.pagesRead = "reading";
 		render(<AdminRouteShell>Installed models</AdminRouteShell>);
 		expect(screen.queryByText("Installed models")).toBeNull();
 		expect(screen.queryByText("You don't have access to Admin")).toBeNull();
 	});
+	it("says it could not read their pages when the listing keeps failing", () => {
+		state.pathname = "/admin/models";
+		state.pagesRead = "failed";
+		render(<AdminRouteShell>Installed models</AdminRouteShell>);
+		expect(screen.queryByText("Installed models")).toBeNull();
+		expect(screen.queryByText("You don't have access to Admin")).toBeNull();
+		expect(screen.getByText("Could not read the pages you hold")).toBeTruthy();
+	});
+	it("opens the page's entry alone, not another route of its plugin", () => {
+		state.pathname = "/admin/models/settings";
+		state.heldEntries = new Map([["model", "/admin/models"]]);
+		render(<AdminRouteShell>Model settings</AdminRouteShell>);
+		expect(screen.queryByText("Model settings")).toBeNull();
+		expect(screen.getByText("You don't have access to Admin")).toBeTruthy();
+	});
 	it("opens no other admin page to them", () => {
 		state.pathname = "/admin/users";
-		state.heldPlugins = new Set(["model"]);
+		state.heldEntries = new Map([["model", "/admin/models"]]);
 		render(<AdminRouteShell>Users</AdminRouteShell>);
 		expect(screen.queryByText("Users")).toBeNull();
 	});

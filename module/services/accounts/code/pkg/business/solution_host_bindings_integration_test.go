@@ -4,6 +4,8 @@ package business_test
 
 import (
 	"context"
+	"crypto"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -11,10 +13,14 @@ import (
 
 	"accounts/internal/deliverytest"
 	"accounts/pkg/business"
+	authorityv1 "accounts/pkg/gen/host/authority/v1"
+	compositionv1 "accounts/pkg/gen/host/composition/v1"
 	"accounts/pkg/infra"
 
+	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 )
 
 // The reconciler against Postgres. The row lock, the partial unique index on the
@@ -29,11 +35,57 @@ type deliveredSet struct {
 	err       error
 }
 
-func (d *deliveredSet) Documents(context.Context) ([]business.SolutionHostBindingDocument, error) {
+func (d *deliveredSet) Documents(ctx context.Context) ([]business.SolutionHostBindingDocument, error) {
 	if d.err != nil {
 		return nil, d.err
 	}
+	for _, document := range d.documents {
+		if err := receive(ctx, document.Data); err != nil {
+			return nil, err
+		}
+	}
 	return d.documents, nil
+}
+
+// receive records a carrier the mount hands over in the host's inbox, as the
+// delivery endpoint records what it receives: a pass composes each generation
+// in the authority core from the inbox's record of it (composeDelivered), and
+// the host's own source is that inbox. A carrier that does not parse is not
+// recorded (the pass refuses it), and a generation the inbox already holds
+// keeps its first bytes, as the endpoint keeps them: the pass refuses the
+// rewrite.
+func receive(ctx context.Context, data []byte) error {
+	signed, err := solutionhost.ParseSigned(data)
+	if err != nil {
+		return nil
+	}
+	var manifest solutionhost.ModuleManifest
+	if json.Unmarshal(signed.Document, &manifest) != nil || manifest.Binding == "" {
+		return nil
+	}
+	digest, err := manifest.Digest()
+	if err != nil {
+		return nil
+	}
+	record := &business.SolutionDeliveryRecord{
+		Binding: manifest.Binding, Generation: manifest.Generation, ContentHash: digest,
+		Payload: signed.Document, Envelope: signed.Envelope, SignerIdentity: testSignerIdentity,
+		OwnershipDomain: manifest.Host.Domain, ReceivedAt: time.Now().UTC(),
+	}
+	if manifest.Kind == solutionhost.KindSolution && !manifest.Removed {
+		// A solution declares an installer role (the authority core's
+		// contract), in the authority document paired with its manifest.
+		if record.AuthorityDocument, record.AuthorityEnvelope, err = installerDocument(&manifest, signed.Document); err != nil {
+			return err
+		}
+	}
+	return testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+		_, err := testStore.RecordDeliveredDocument(ctx, record)
+		if errors.Is(err, business.ErrSolutionDeliveryConflict) {
+			return nil
+		}
+		return err
+	})
 }
 
 func (d *deliveredSet) put(t *testing.T, document *solutionhost.ModuleManifest) {
@@ -85,6 +137,8 @@ func declaredBinding(t *testing.T, solutionID string, generation uint64) *soluti
 		Release:    solutionhost.Release{Publisher: "acme", Name: solutionID, Version: "1.4.0"},
 		Workloads:  []solutionhost.Workload{{Service: "api", Container: "api"}},
 		Endpoints:  []solutionhost.Endpoint{{Name: "rest", Service: "api", API: "rest", Address: "http://api." + solutionID + ".svc.cluster.local:8080"}},
+		// What it serves, which its installer role grants (installerDocument).
+		Authority: &solutionhost.Authority{Principal: solutionID, ResourceKinds: []string{"doc"}},
 	}
 	if err := document.Validate(); err != nil {
 		t.Fatalf("test document is not a valid manifest: %v", err)
@@ -158,9 +212,59 @@ func isolateBindingFixture(t *testing.T) {
 	})
 }
 
+// installerDocument is the signed authority document of a solution that
+// declares its installer role, reading what it serves, and nothing more,
+// paired with manifest.
+func installerDocument(manifest *solutionhost.ModuleManifest, payload []byte) (document, envelope []byte, err error) {
+	reads := []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read"}}}
+	document, err = proto.Marshal(&compositionv1.AuthorityManifestV1{Module: manifest.Alias, Generation: manifest.Generation,
+		CoreManifestDigest: delivery.Digest(payload), Roles: []*compositionv1.RoleV1{{Name: business.InstallerRole, Scopes: reads}}})
+	if err != nil {
+		return nil, nil, err
+	}
+	envelope, err = delivery.Sign(document, inboxSigner.KeyID(), inboxSigner.Sign)
+	return document, envelope, err
+}
+
+var (
+	hostsWithInbox = map[*testing.T]bool{}
+	// inboxSigner signs the authority documents the inbox pairs with a
+	// solution's manifest: the test signer, pinned by the host's verifier.
+	inboxSigner *solutionhost.InMemorySigner
+)
+
+// hostWithInbox makes the shared service the host a reconciler runs on, as
+// accounts is at start: its delivery inbox (the store), pinning the test
+// signer for domains, and its authority core built. A pass composes each
+// generation in the core from the inbox's record of it before it applies the
+// generation (composeDelivered), so a host with neither applies nothing.
+func hostWithInbox(t *testing.T, domains ...string) {
+	t.Helper()
+	if hostsWithInbox[t] {
+		return
+	}
+	testService.SetSolutionDelivery(deliverytest.Verifier(t, map[string][]string{testSignerIdentity: domains}), testStore, legacyCarrier{})
+	inboxSigner = deliverytest.Signer(t, testSignerIdentity)
+	testService.SetAuthorityDocumentVerifier(func(doc, envelope []byte) (string, error) {
+		return delivery.Verify(doc, envelope, map[string]crypto.PublicKey{inboxSigner.KeyID(): inboxSigner.Public()})
+	})
+	// A pass derives the module registry from what it applied; the next test
+	// starts from the registry this one found.
+	registry := testService.ModulePrincipals()
+	t.Cleanup(func() {
+		testService.SetSolutionDelivery(nil, nil, nil)
+		testService.SetAuthorityDocumentVerifier(nil)
+		testService.SetModulePrincipals(registry)
+		delete(hostsWithInbox, t)
+	})
+	withAuthorityCore(t)
+	hostsWithInbox[t] = true
+}
+
 func newTestReconciler(t *testing.T, source business.SolutionHostBindingSource) *business.SolutionHostBindingReconciler {
 	t.Helper()
 	isolateBindingFixture(t)
+	hostWithInbox(t, testOwnershipDomain)
 	reconciler, err := business.NewSolutionHostBindingReconciler(testService,
 		business.SolutionHostBindingReconcilerConfig{
 			Source:     source,
@@ -670,7 +774,10 @@ func TestSolutionHostBinding_AliasHandsOverInOnePass(t *testing.T) {
 		t.Fatalf("first holder: %v", err)
 	}
 
-	second := declaredBinding(t, solutionID, 1)
+	// Above the generation the alias was withdrawn at: the authority core holds
+	// a module's generations by its name, for life, and a redelivery under the
+	// name never rewinds them, whichever binding carries it.
+	second := declaredBinding(t, solutionID, 2)
 	second.Binding = "acme.test." + solutionID + ".b"
 	retiring := tombstoneOf(t, first, 2)
 	firstData := testCarrier(t, retiring)
@@ -777,6 +884,9 @@ func TestSolutionTarget_ARenameKeepsTheIdentityAndMovesTheAlias(t *testing.T) {
 
 	renamed := declaredBinding(t, first, 2)
 	renamed.Alias = second
+	// A module's principal is its name (solutionhost.Authority): the rename
+	// moves it with the alias.
+	renamed.Authority = &solutionhost.Authority{Principal: second, ResourceKinds: []string{"doc"}}
 	// The module's namespace is its alias by the rule, so a rename moves its
 	// endpoints' Service with it.
 	renamed.Endpoints[0].Address = "http://api." + second + ".svc.cluster.local:8080"
@@ -858,7 +968,10 @@ func TestSolutionTarget_AReusedAliasDoesNotInheritTheWithdrawnIdentity(t *testin
 	}
 
 	// A different binding now takes the alias the tombstone released.
-	second := declaredBinding(t, alias, 1)
+	// Above the generation the alias was withdrawn at: the authority core holds
+	// a module's generations by its name, for life, and a redelivery under the
+	// name never rewinds them, whichever binding carries it.
+	second := declaredBinding(t, alias, 2)
 	second.Binding = "acme.test." + alias + ".y"
 	mount.put(t, second)
 	if err := newTestReconciler(t, mount).RunOnce(testCtx); err != nil {
@@ -938,7 +1051,10 @@ func TestSolutionTarget_RePresentingAWithdrawnBindingIsRefused(t *testing.T) {
 	// binding ID, which opens a target of its own. Without this half the test
 	// would pin "withdrawal is final" without pinning "replacement is possible",
 	// and the refusal would be indistinguishable from a dead end.
-	replacement := declaredBinding(t, solutionID, 1)
+	// Above the generation the alias was withdrawn at: the authority core holds
+	// a module's generations by its name, for life, and a redelivery under the
+	// name never rewinds them, whichever binding carries it.
+	replacement := declaredBinding(t, solutionID, 2)
 	replacement.Binding = present.Binding + "r"
 	mount.put(t, replacement)
 	if err := reconciler.RunOnce(testCtx); err != nil {
@@ -993,6 +1109,7 @@ func testReconcilerAcceptingDomains(
 ) *business.SolutionHostBindingReconciler {
 	t.Helper()
 	isolateBindingFixture(t)
+	hostWithInbox(t, domains...)
 	reconciler, err := business.NewSolutionHostBindingReconciler(testService,
 		business.SolutionHostBindingReconcilerConfig{
 			Source: source,

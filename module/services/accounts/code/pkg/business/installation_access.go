@@ -24,6 +24,19 @@ type InstallAccess struct {
 	InstallerRoles []string
 }
 
+// named is what access asks for, in words, sorted: each role it names a team
+// for, and each role it asks the installer to take.
+func (access InstallAccess) named() []string {
+	var out []string
+	for _, role := range slices.Sorted(maps.Keys(access.RoleTeams)) {
+		out = append(out, fmt.Sprintf("role %s to team %s", role, access.RoleTeams[role]))
+	}
+	for _, role := range slices.Sorted(slices.Values(access.InstallerRoles)) {
+		out = append(out, "the installer in role "+role)
+	}
+	return out
+}
+
 // InstallationAccess is the access an install checked and recorded on its
 // plan, so a pending attempt that resumes applies the same one: the team of
 // the organization the administrator named for a role (Teams), the
