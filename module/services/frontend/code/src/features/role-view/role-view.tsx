@@ -1,19 +1,26 @@
 "use client";
 
-import { Code, ConnectError, createClient } from "@connectrpc/connect";
-import Link from "next/link";
+import { createClient } from "@connectrpc/connect";
+import { Eye } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { hostRefusal } from "@/features/solution-installations/model/installations";
 import { InstallationService } from "@/gen/host/installation/v1/installation_pb";
-import { type RoleViewEntry, SessionService } from "@/gen/host/session/v1/session_pb";
-import { TeamService } from "@/gen/saas/accounts/v1/teams_pb";
+import {
+	type RoleViewEntry,
+	SessionService,
+} from "@/gen/host/session/v1/session_pb";
 import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
+import { Button } from "@/shared/ui";
+import {
+	castRefusal,
+	HoldingBadges,
+	useCastOnto,
+	useTeamDirectory,
+} from "./team-casting";
 
 const installations = createClient(InstallationService, apiTransport);
 const sessions = createClient(SessionService, apiTransport);
-const teams = createClient(TeamService, apiTransport);
 
 /** A role the person can act as on one installation, by the roles they hold now. */
 export interface Held {
@@ -37,8 +44,10 @@ export interface Narrowed {
  * the host could not be asked about is `confirmed: false`, never "whole".
  */
 export function useNarrowedSession(): Narrowed {
-	const { isAuthenticated, accessToken, sessionRead, castTeamId, roleView } = useAuth();
-	if (!isAuthenticated || !accessToken) return { view: [], castTeamId: "", confirmed: true };
+	const { isAuthenticated, accessToken, sessionRead, castTeamId, roleView } =
+		useAuth();
+	if (!isAuthenticated || !accessToken)
+		return { view: [], castTeamId: "", confirmed: true };
 	return { view: roleView, castTeamId, confirmed: sessionRead === "confirmed" };
 }
 
@@ -47,63 +56,80 @@ export function useRoleView(): RoleViewEntry[] {
 }
 
 const back = (exit: () => Promise<void>) => () =>
-	void exit().catch((e: unknown) => toast.error(e instanceof Error ? e.message : "Could not restore your session."));
+	void exit().catch((e: unknown) =>
+		toast.error(
+			e instanceof Error ? e.message : "Could not restore your session.",
+		),
+	);
 
 /**
- * "Act as this team": asks the host for a session that is this team and nothing
- * else, so a person can see what a member of it sees without joining it. Whether
- * they may is the authority's decision and is never worked out here: anyone on
- * the page may ask, and a refusal is shown in the host's words with its code.
+ * "View as this team" on a team's page: what the team holds, read before the
+ * person asks, and the one control that asks the host for a session that is
+ * this team and nothing else. Whether they may is the authority's decision and
+ * is never worked out here: anyone on the page may ask, and a refusal is shown
+ * in the host's words with its code.
  */
-export function ActAsTeam({ teamId, teamName }: { teamId: string; teamName: string }) {
-	const { user, enterRoleView, exitRoleView } = useAuth();
+export function ActAsTeam({
+	teamId,
+	teamName,
+}: {
+	teamId: string;
+	teamName: string;
+}) {
+	const { exitRoleView } = useAuth();
 	const { castTeamId } = useNarrowedSession();
+	const { teams } = useTeamDirectory();
+	const castOnto = useCastOnto();
+	const holds = teams.find((t) => t.id === teamId)?.holds;
 	const [asking, setAsking] = useState(false);
 	const [refusal, setRefusal] = useState("");
 	const ask = async () => {
 		setAsking(true);
 		setRefusal("");
 		try {
-			enterRoleView((await sessions.openTeamCast({ teamId })).bearer, `team ${teamName}`);
+			await castOnto({ id: teamId, name: teamName });
 		} catch (error) {
-			setRefusal(`${hostRefusal(error)} (${Code[ConnectError.from(error).code]})`);
+			setRefusal(castRefusal(error));
 		} finally {
 			setAsking(false);
 		}
 	};
+	const current = castTeamId === teamId;
 	return (
-		<section aria-label="Act as this team" className="space-y-2 rounded-lg border p-4">
-			<h2 className="font-semibold">Act as this team</h2>
-			{castTeamId === teamId ? (
-				<>
-					<p>
-						You are <strong>{user?.email ?? "signed in"}</strong>, acting as team <strong>{teamName}</strong>. This session
-						holds what the team holds and nothing of your own, and what you do in it is attributed to the team. (Data
-						sources and scopes you hold personally are still read as you.)
-					</p>
-					<Link href="/" className="text-primary underline">
-						See what this team sees
-					</Link>{" "}
-					<button type="button" className="underline" onClick={back(exitRoleView)}>
-						Stop acting as this team
-					</button>
-				</>
-			) : (
-				<>
+		<section
+			aria-label="View as this team"
+			className="space-y-3 rounded-lg border p-4"
+		>
+			<div className="flex flex-wrap items-start justify-between gap-3">
+				<div className="min-w-0 flex-1 space-y-1">
+					<h2 className="font-semibold">View as this team</h2>
 					<p className="text-sm text-muted-foreground">
-						Open a session that holds what this team holds and nothing of your own: not your roles, not your other teams,
-						not your administrator access. You do not have to be a member. Your own session is untouched and is the way
-						back.
+						{current
+							? "You are viewing as this team: this session holds what it holds and nothing of your own, and what you do in it is attributed to the team."
+							: "See the product as a member of this team sees it: its pages and roles, and none of yours. You do not have to be a member, and your own session is one click back."}
 					</p>
-					<button type="button" className="underline" disabled={asking} onClick={() => void ask()}>
-						{asking ? "Asking…" : "Act as this team"}
-					</button>
-					{refusal && (
-						<p role="alert">
-							You are not acting as {teamName}. The host answered: {refusal}
-						</p>
-					)}
-				</>
+				</div>
+				{current ? (
+					<Button variant="outline" onClick={back(exitRoleView)}>
+						Back to my view
+					</Button>
+				) : (
+					<Button disabled={asking} onClick={() => void ask()}>
+						<Eye className="mr-2 h-4 w-4" />
+						{asking ? "Opening…" : "View as this team"}
+					</Button>
+				)}
+			</div>
+			{holds && (
+				<div className="flex flex-wrap items-center gap-2 text-sm">
+					<span className="text-muted-foreground">It holds</span>
+					<HoldingBadges holds={holds} />
+				</div>
+			)}
+			{refusal && (
+				<p role="alert" className="text-sm">
+					You are not viewing as {teamName}. The host answered: {refusal}
+				</p>
 			)}
 		</section>
 	);
@@ -111,7 +137,8 @@ export function ActAsTeam({ teamId, teamName }: { teamId: string; teamName: stri
 
 /** "View as": what the person holds on each installation, and a way to act as less of it. */
 export function RoleViewSelector() {
-	const { organizationId, accessToken, enterRoleView, exitRoleView } = useAuth();
+	const { organizationId, accessToken, enterRoleView, exitRoleView } =
+		useAuth();
 	const view = useRoleView();
 	const [heldRaw, setHeld] = useState<Held[]>([]);
 	const held = organizationId && accessToken ? heldRaw : [];
@@ -120,7 +147,17 @@ export function RoleViewSelector() {
 		let current = true;
 		installations
 			.listHeld({ organizationId })
-			.then((r) => current && setHeld(r.installations.map((h) => ({ id: h.installation?.id ?? "", target: h.installation?.target ?? "", roles: h.roles }))))
+			.then(
+				(r) =>
+					current &&
+					setHeld(
+						r.installations.map((h) => ({
+							id: h.installation?.id ?? "",
+							target: h.installation?.target ?? "",
+							roles: h.roles,
+						})),
+					),
+			)
 			.catch(() => current && setHeld([]));
 		return () => {
 			current = false;
@@ -131,17 +168,25 @@ export function RoleViewSelector() {
 		async (installationId: string, roles: string[]) => {
 			try {
 				const opened = await sessions.openRoleView({ installationId, roles });
-				const target = heldRaw.find((h) => h.id === installationId)?.target ?? installationId;
+				const target =
+					heldRaw.find((h) => h.id === installationId)?.target ??
+					installationId;
 				enterRoleView(opened.bearer, `${roles.join(", ")} on ${target}`);
 				toast.success(`Viewing as ${roles.join(", ")}`);
 			} catch (error) {
-				toast.error(error instanceof Error ? error.message : "Could not open the role view.");
+				toast.error(
+					error instanceof Error
+						? error.message
+						: "Could not open the role view.",
+				);
 			}
 		},
 		[enterRoleView, heldRaw],
 	);
 
-	const choices = held.filter((h) => h.roles.length > 1 || view.some((v) => v.installationId === h.id));
+	const choices = held.filter(
+		(h) => h.roles.length > 1 || view.some((v) => v.installationId === h.id),
+	);
 	if (choices.length === 0) return null;
 	return (
 		<div aria-label="View as" className="flex flex-col gap-2 text-sm">
@@ -149,19 +194,32 @@ export function RoleViewSelector() {
 				<div key={h.id} className="flex flex-wrap items-center gap-2">
 					<span className="font-medium">{h.target}</span>
 					{h.roles.length > 1 && (
-						<button type="button" className="underline" onClick={() => void open(h.id, h.roles)}>
+						<button
+							type="button"
+							className="underline"
+							onClick={() => void open(h.id, h.roles)}
+						>
 							all of mine
 						</button>
 					)}
 					{h.roles.map((role) => (
-						<button key={role} type="button" className="underline" onClick={() => void open(h.id, [role])}>
+						<button
+							key={role}
+							type="button"
+							className="underline"
+							onClick={() => void open(h.id, [role])}
+						>
 							{role}
 						</button>
 					))}
 				</div>
 			))}
 			{view.length > 0 && (
-				<button type="button" className="text-left underline" onClick={back(exitRoleView)}>
+				<button
+					type="button"
+					className="text-left underline"
+					onClick={back(exitRoleView)}
+				>
 					Back to all my roles
 				</button>
 			)}
@@ -170,37 +228,29 @@ export function RoleViewSelector() {
 }
 
 /**
- * The bar that says, whatever the page shows, that this session acts as less
- * than the person holds. A narrowed session that ENDED without the person
- * asking is said before anything else, by name, with the one way on: an
- * expired one is left for them to leave (their own session is not installed
- * behind their back), one that had lapsed by a reload is acknowledged (a live
- * one survives the reload: the tab keeps it). Otherwise a cast is the
- * stronger statement and is said first: who
- * the person is, which team they act as, and how to stop. The team is named by
- * the host's roster when the cast may read it, and by its id when it may not.
+ * What a narrowed session needs said over everything else, whatever the page:
+ * one that ENDED without the person asking, by name, with the one way on (an
+ * expired one is left for them to leave: their own session is not installed
+ * behind their back; one that had lapsed by a reload is acknowledged), and one
+ * the host has not confirmed yet. A live cast or role view is said by the
+ * calmer CastIndicator in the page itself.
  */
 export function RoleViewBanner() {
-	const { user, organizationId, exitRoleView, narrowedSessionEnd, dismissNarrowedSessionEnd } = useAuth();
-	const { view, castTeamId, confirmed } = useNarrowedSession();
+	const { exitRoleView, narrowedSessionEnd, dismissNarrowedSessionEnd } =
+		useAuth();
+	const { confirmed } = useNarrowedSession();
 	const { sessionRead } = useAuth();
-	const [named, setNamed] = useState({ id: "", name: "" });
-	useEffect(() => {
-		if (!castTeamId || !organizationId) return;
-		let current = true;
-		teams
-			.listTeams({ orgId: organizationId, memberId: "" })
-			.then((r) => current && setNamed({ id: castTeamId, name: r.teams.find((t) => t.id === castTeamId)?.name ?? "" }))
-			.catch(() => undefined);
-		return () => {
-			current = false;
-		};
-	}, [castTeamId, organizationId]);
 	if (narrowedSessionEnd) {
 		const expired = narrowedSessionEnd.reason === "expired";
 		return (
-			<div role="alert" className="fixed bottom-0 left-0 right-0 z-[9999] border-t-2 border-red-700 bg-red-200 px-4 py-2 text-sm text-red-950">
-				<span className="font-bold">Your session acting as {narrowedSessionEnd.as} has ended</span> &mdash;{" "}
+			<div
+				role="alert"
+				className="fixed bottom-0 left-0 right-0 z-[9999] border-t-2 border-red-700 bg-red-200 px-4 py-2 text-sm text-red-950"
+			>
+				<span className="font-bold">
+					Your session acting as {narrowedSessionEnd.as} has ended
+				</span>{" "}
+				&mdash;{" "}
 				{expired
 					? "its credential expired. Nothing more is done as them, and you are not back in your own session until you choose to be."
 					: "its credential had lapsed when the page reloaded. You are back in your own session, with all of your own access."}
@@ -216,33 +266,18 @@ export function RoleViewBanner() {
 	}
 	if (!confirmed)
 		return (
-			<div role="status" className="fixed bottom-0 left-0 right-0 z-[9999] border-t-2 border-amber-600 bg-amber-200 px-4 py-2 text-sm text-amber-950">
-				<span className="font-bold">{sessionRead === "reading" ? "Confirming what this session is" : "Could not confirm what this session is"}</span>{" "}
-				&mdash; it may be acting as less than you hold, so no administrator access is offered until the host says. The host decides every action.
+			<div
+				role="status"
+				className="fixed bottom-0 left-0 right-0 z-[9999] border-t-2 border-amber-600 bg-amber-200 px-4 py-2 text-sm text-amber-950"
+			>
+				<span className="font-bold">
+					{sessionRead === "reading"
+						? "Confirming what this session is"
+						: "Could not confirm what this session is"}
+				</span>{" "}
+				&mdash; it may be acting as less than you hold, so no administrator
+				access is offered until the host says. The host decides every action.
 			</div>
 		);
-	if (view.length === 0 && !castTeamId) return null;
-	const viewed = view.map((v) => `${v.roles.join(", ")} on ${v.installationId}`).join("; ");
-	return (
-		<div
-			role="status"
-			className={`fixed bottom-0 left-0 right-0 z-[9999] border-t-2 px-4 py-2 text-sm ${castTeamId ? "border-fuchsia-600 bg-fuchsia-300 text-fuchsia-950" : "border-sky-500 bg-sky-300 text-sky-950"}`}
-		>
-			{castTeamId ? (
-				<>
-					<span className="font-bold">Acting as team {(named.id === castTeamId && named.name) || castTeamId}</span> &mdash; you
-					are {user?.email ?? "signed in"}, holding what this team holds and nothing of your own (data sources and
-					scopes you hold personally are still read as you). What you do here is attributed to the team.
-					{viewed && ` Viewing as ${viewed}.`}
-				</>
-			) : (
-				<>
-					<span className="font-bold">Role view</span> &mdash; acting as {viewed}
-				</>
-			)}
-			<button type="button" className="ml-3 rounded bg-black/80 px-3 py-1 text-white" onClick={back(exitRoleView)}>
-				{castTeamId ? "Stop acting as this team" : "Back to all my roles"}
-			</button>
-		</div>
-	);
+	return null;
 }

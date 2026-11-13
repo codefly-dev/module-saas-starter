@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ImpersonationBanner } from "@/components/impersonation-banner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RoleViewBanner } from "@/features/role-view/role-view";
+import { CastIndicator, TeamSwitcher } from "@/features/role-view/team-casting";
 import { useAuth } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
 import { useHeldPlugins } from "@/lib/plugins/held-pages";
@@ -107,12 +108,14 @@ export function AdminRouteShell({ children }: { children: ReactNode }) {
 			<>
 				<ImpersonationBanner />
 				<RoleViewBanner />
+				<CastIndicator />
+				<TeamSwitcher />
 				<EmptyState
 					icon={ShieldOff}
 					title="You don't have access to Admin"
 					description={
 						castTeamId
-							? "Admin is for organization and platform administrators. This session acts as a team and holds what that team holds, none of your own roles. Stop acting as the team to use your own access."
+							? "Admin is for organization and platform administrators. This session acts as a team and holds what that team holds, none of your own roles. Go back to your own view, from the bar above, to use your own access."
 							: `Admin is for organization and platform administrators. Your role in this organization is ${orgRole ?? "none"}. Ask an administrator of this organization to give you the role you need.`
 					}
 					action={<Link href="/">Back to the dashboard</Link>}

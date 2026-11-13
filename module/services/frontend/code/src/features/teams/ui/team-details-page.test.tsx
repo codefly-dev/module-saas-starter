@@ -18,6 +18,11 @@ const auth = vi.hoisted(() => ({
 	platformRole: undefined as string | undefined,
 }));
 vi.mock("@/lib/auth", () => ({ useAuth: () => auth }));
+// The team page's "View as this team" lands where the team starts.
+vi.mock("next/navigation", () => ({
+	usePathname: () => "/admin/teams/team-1",
+	useRouter: () => ({ push: vi.fn() }),
+}));
 let role = 1;
 let removed = false;
 const team = {
@@ -80,8 +85,12 @@ describe("team details", () => {
 	});
 	it("offers to act as the team to whoever reads the page: the host decides who may, not the page", async () => {
 		renderInApp(<TeamDetailsPage teamId={team.id} />);
-		const section = await screen.findByRole("region", { name: "Act as this team" });
-		expect(within(section).getByRole("button", { name: "Act as this team" })).toBeTruthy();
+		const section = await screen.findByRole("region", {
+			name: "View as this team",
+		});
+		expect(
+			within(section).getByRole("button", { name: "View as this team" }),
+		).toBeTruthy();
 	});
 	it("lets a team admin manage members without organization-admin status", async () => {
 		role = 2;

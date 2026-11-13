@@ -10,6 +10,7 @@ import {
 	ChevronUp,
 	LogOut,
 	ShieldCheck,
+	UsersRound,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -43,6 +44,12 @@ import {
 } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
 import { NotificationBanner } from "@/features/notifications/ui/notification-banner";
+import {
+	CastIndicator,
+	setTeamSwitcherOpen,
+	TeamSwitcher,
+	useTeamDirectory,
+} from "@/features/role-view/team-casting";
 import { NotificationBell } from "@/features/notifications/ui/notification-bell";
 import { OrgSwitcher } from "@/features/organizations/ui/org-switcher";
 import { useAppearance } from "@/lib/appearance-provider";
@@ -118,7 +125,14 @@ function PluginNavigationSection({
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
 	const pathname = usePathname();
-	const { user, platformRole, orgRole, isAuthenticated, logout } = useAuth();
+	const { user, platformRole, orgRole, isAuthenticated, logout, castTeamId } =
+		useAuth();
+	// "View as team…" is offered where there is a team to view as: one this
+	// person could read holding something, or the cast they are in (to switch).
+	// The host decides each cast when it is asked.
+	const { teams: castable } = useTeamDirectory();
+	const offerViewAs =
+		!!castTeamId || castable.some((team) => team.holds.length > 0);
 	const config = useFrontendConfig();
 	const { branding } = useAppearance();
 	const heldPlugins = useHeldPlugins();
@@ -336,6 +350,12 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 											</DropdownMenuItem>
 										);
 									})}
+									{offerViewAs && (
+										<DropdownMenuItem onClick={() => setTeamSwitcherOpen(true)}>
+											<UsersRound className="mr-2 h-4 w-4" />
+											{castTeamId ? "Switch team…" : "View as team…"}
+										</DropdownMenuItem>
+									)}
 									<DropdownMenuSeparator />
 									<DropdownMenuItem
 										onClick={() => {
@@ -359,6 +379,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 			</Sidebar>
 
 			<SidebarInset>
+				<CastIndicator />
 				<header className="flex h-14 items-center gap-2 border-b px-4">
 					<SidebarTrigger />
 					<Separator orientation="vertical" className="h-6" />
@@ -379,6 +400,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 				</main>
 			</SidebarInset>
 
+			<TeamSwitcher />
 			<Toaster />
 			<RateLimitBanner />
 		</SidebarProvider>

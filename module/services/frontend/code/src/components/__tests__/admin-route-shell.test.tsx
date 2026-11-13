@@ -67,6 +67,10 @@ vi.mock("@/components/impersonation-banner", () => ({
 vi.mock("@/features/role-view/role-view", () => ({
 	RoleViewBanner: () => <div>narrowed session bar</div>,
 }));
+vi.mock("@/features/role-view/team-casting", () => ({
+	CastIndicator: () => <div>cast bar</div>,
+	TeamSwitcher: () => null,
+}));
 afterEach(cleanup);
 beforeEach(() => {
 	state.pathname = "/admin/teams/team-example";
@@ -192,6 +196,8 @@ describe("a cast session", () => {
 			expect(screen.queryByText("Restricted")).toBeNull();
 			expect(screen.getByText("You don't have access to Admin")).toBeTruthy();
 			expect(screen.getByText(/This session acts as a team/)).toBeTruthy();
+			// The way back is on the refusal too, not only inside the layout.
+			expect(screen.getByText("cast bar")).toBeTruthy();
 			expect(screen.queryByText(/Your role in this organization/)).toBeNull();
 		},
 	);
