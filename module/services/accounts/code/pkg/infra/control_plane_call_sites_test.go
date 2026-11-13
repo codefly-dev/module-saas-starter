@@ -29,7 +29,8 @@ const controlPlaneCallSitesGolden = "testdata/control_plane_call_sites.txt"
 // identity (As(System()), on its own, or taken as a function value), a System
 // identity built without naming System (Identity's system field set in a
 // literal, positionally, by assignment or through its address, anywhere but
-// in System itself), any use of the control-plane pool field — or that labels
+// in System itself), any use of a control-plane-login pool field (controlPlane,
+// authorityUse, authorityRead) — or that labels
 // a transaction's authority with one of txbind's binders (called or taken as a
 // value), each by file and enclosing function, and compares the list with the
 // committed one. A new call
@@ -411,7 +412,7 @@ func controlPlaneSitesIn(file *ast.File) ([]string, error) {
 	}
 	isControlPlaneField := func(expr ast.Expr) bool {
 		sel, ok := expr.(*ast.SelectorExpr)
-		return ok && (sel.Sel.Name == "controlPlane" || sel.Sel.Name == "authorityUse")
+		return ok && (sel.Sel.Name == "controlPlane" || sel.Sel.Name == "authorityUse" || sel.Sel.Name == "authorityRead")
 	}
 	// isIdentity reports whether expr spells business.Identity, or a pointer to
 	// it.
@@ -486,7 +487,7 @@ func controlPlaneSitesIn(file *ast.File) ([]string, error) {
 				switch {
 				case n.Sel.Name == "WithControlPlane", n.Sel.Name == "WithControlPlaneReadSnapshot", n.Sel.Name == "withControlPlaneTx":
 					record(n.Sel.Name)
-				case n.Sel.Name == "controlPlane", n.Sel.Name == "authorityUse":
+				case n.Sel.Name == "controlPlane", n.Sel.Name == "authorityUse", n.Sel.Name == "authorityRead":
 					record(n.Sel.Name)
 				case isSystem(n):
 					// Not called here: a function value that yields System() later,

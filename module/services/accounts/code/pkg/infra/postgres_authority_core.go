@@ -65,8 +65,12 @@ func (s *PostgresStore) AuthorityCoreWithConsent(consent business.ModuleConsent)
 	return AuthorityCoreStore{s: s, consent: consent, hostSolutions: true}
 }
 
-// Read runs fn over one consistent snapshot.
+// Read runs fn over one consistent snapshot: the question's own, when ctx
+// carries one (WithAuthoritySnapshot), else a transaction of its own.
 func (c AuthorityCoreStore) Read(ctx context.Context, fn func(authority.Tx) error) error {
+	if snap := snapshotOf(ctx, c.s); snap != nil {
+		return fn(coreTx{ctx: snap.ctx, q: snap.reads, consent: c.consent, hostSolutions: c.hostSolutions})
+	}
 	recordControlPlane(ctx)
 	return c.s.withControlPlaneTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(ctx context.Context) error {
 		return fn(coreTx{ctx: ctx, q: c.s.getQueryExecutor(ctx), consent: c.consent, hostSolutions: c.hostSolutions})
@@ -77,6 +81,10 @@ func (c AuthorityCoreStore) Read(ctx context.Context, fn func(authority.Tx) erro
 // serialization failure; fn is free of other effects, as the Store contract
 // requires.
 func (c AuthorityCoreStore) Write(ctx context.Context, fn func(authority.Tx) error) error {
+	if snap := snapshotOf(ctx, c.s); snap != nil {
+		// Whatever the question reads after its own write is read fresh.
+		defer snap.ended.Store(true)
+	}
 	recordControlPlane(ctx)
 	var err error
 	for attempt := range authorityCoreAttempts {
@@ -745,10 +753,8 @@ func (t coreTx) moduleInstallations(where string, args ...any) ([]domain.Install
 	if err != nil || len(modules) == 0 {
 		return nil, err
 	}
-	principals := make([]uuid.UUID, 0, len(modules))
-	for principal := range modules {
-		principals = append(principals, principal)
-	}
+	// In one order, so the same question is the same statement (snapshotKey).
+	principals := slices.SortedFunc(maps.Keys(modules), func(a, b uuid.UUID) int { return strings.Compare(a.String(), b.String()) })
 	// The committed envelope revision, read in this transaction, so the
 	// consent is judged against the ceiling in force and never a registry a
 	// newer envelope has replaced.
@@ -883,10 +889,7 @@ func (t coreTx) InstallationByPrincipal(principal string) (domain.Installation, 
 	if err != nil || len(modules) == 0 {
 		return domain.Installation{}, coreMissingOr(err, principal)
 	}
-	principals := make([]uuid.UUID, 0, len(modules))
-	for p := range modules {
-		principals = append(principals, p)
-	}
+	principals := slices.SortedFunc(maps.Keys(modules), func(a, b uuid.UUID) int { return strings.Compare(a.String(), b.String()) })
 	rows, err := t.q.Query(t.ctx, `
 		SELECT i.id, i.org_id, i.registry_principal_id FROM public.installations i
 		 WHERE i.kind = 'module' AND i.registry_principal_id = ANY($1)

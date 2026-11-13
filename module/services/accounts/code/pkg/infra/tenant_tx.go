@@ -10,6 +10,7 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
@@ -404,7 +405,13 @@ func (s *PostgresStore) WithControlPlaneReadSnapshot(ctx context.Context, fn fun
 }
 
 func (s *PostgresStore) withControlPlaneTx(ctx context.Context, options pgx.TxOptions, fn func(ctx context.Context) error) error {
-	tx, err := s.controlPlane.BeginTx(ctx, options)
+	return withControlPlaneTxOn(ctx, s.controlPlane, options, fn)
+}
+
+// withControlPlaneTxOn is withControlPlaneTx on pool, one of the pools that
+// authenticate as the control-plane login.
+func withControlPlaneTxOn(ctx context.Context, pool *pgxpool.Pool, options pgx.TxOptions, fn func(ctx context.Context) error) error {
+	tx, err := pool.BeginTx(ctx, options)
 	if err != nil {
 		return err
 	}

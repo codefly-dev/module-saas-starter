@@ -50,7 +50,12 @@ type PostgresStore struct {
 	// Lock holders use a separate pool so concurrent requests cannot exhaust
 	// the control-plane connections needed to finish their effects.
 	authorityUse *pgxpool.Pool
-	database     *scopedpostgres.Factory
+	// authorityRead holds the one control-plane transaction an authority
+	// question reads through (WithAuthoritySnapshot); it is separate so a
+	// question holding one never waits on a control-plane connection another
+	// question holds.
+	authorityRead *pgxpool.Pool
+	database      *scopedpostgres.Factory
 }
 
 // beforeConnectHook resolves a fresh password for every pool connection attempt.
@@ -210,18 +215,28 @@ func NewPostgresStoreWithCapabilities(ctx context.Context, readOnlyConnection, r
 		closeDatabase()
 		return nil, err
 	}
+	authorityReadPool, err := pgxpool.NewWithConfig(ctx, controlPlaneConfig.Copy())
+	if err != nil {
+		authorityPool.Close()
+		controlPlanePool.Close()
+		requestPool.Close()
+		closeDatabase()
+		return nil, err
+	}
 
 	return &PostgresStore{
 		Close: func() {
+			authorityReadPool.Close()
 			authorityPool.Close()
 			controlPlanePool.Close()
 			requestPool.Close()
 			closeDatabase()
 		},
-		pool:         requestPool,
-		controlPlane: controlPlanePool,
-		authorityUse: authorityPool,
-		database:     database,
+		pool:          requestPool,
+		controlPlane:  controlPlanePool,
+		authorityUse:  authorityPool,
+		authorityRead: authorityReadPool,
+		database:      database,
 	}, nil
 }
 
@@ -942,11 +957,18 @@ func newPostgresStoreFromConfig(ctx context.Context, poolConfig *pgxpool.Config)
 		pool.Close()
 		return nil, err
 	}
+	authorityReadPool, err := pgxpool.NewWithConfig(ctx, poolConfig.Copy())
+	if err != nil {
+		authorityPool.Close()
+		pool.Close()
+		return nil, err
+	}
 	return &PostgresStore{
-		Close:        func() { authorityPool.Close(); pool.Close() },
-		authorityUse: authorityPool,
-		pool:         pool,
-		controlPlane: pool,
+		Close:         func() { authorityReadPool.Close(); authorityPool.Close(); pool.Close() },
+		authorityUse:  authorityPool,
+		authorityRead: authorityReadPool,
+		pool:          pool,
+		controlPlane:  pool,
 	}, nil
 }
 
