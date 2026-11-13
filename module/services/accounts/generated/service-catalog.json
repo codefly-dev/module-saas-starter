@@ -67,6 +67,7 @@
       "full_name": "host.session.v1.SessionService",
       "procedures": [
         "/host.session.v1.SessionService/Current",
+        "/host.session.v1.SessionService/ListCastableTeams",
         "/host.session.v1.SessionService/ListFixturePeople",
         "/host.session.v1.SessionService/OpenRoleView",
         "/host.session.v1.SessionService/OpenTeamCast",
@@ -1730,6 +1731,57 @@
       },
       "policy_tier": "auth",
       "description": "Answer the session the caller's bearer belongs to, without the bearer.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.session.v1.SessionService/ListCastableTeams",
+      "service": "SessionService",
+      "full_service": "host.session.v1.SessionService",
+      "method": "ListCastableTeams",
+      "input_type": "host.session.v1.ListCastableTeamsRequest",
+      "output_type": "host.session.v1.ListCastableTeamsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/session/v1/session.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/session/castable-teams",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "auth",
+      "description": "List the teams the caller may act as now, each with what it holds, by the rule that decides OpenTeamCast.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

@@ -4,14 +4,10 @@ import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useCasting } from "@codefly-dev/saas-ui/casting";
 import { OrgSelector } from "@/components/org-selector";
-import {
-	castRefusal,
-	useCastOnto,
-	useTeamDirectory,
-} from "@/features/role-view/team-casting";
 import { useAuth } from "@/lib/auth";
 import {
 	AlertDialog,
@@ -120,19 +116,24 @@ function TeamsPageForOrganization({ orgId }: { orgId: string }) {
 	);
 	// What each team holds, for someone who may read it, and a view as it on
 	// the row: the host decides each one when it is asked.
-	const directory = useTeamDirectory();
-	const holdings = directory.kept
-		? undefined
-		: new Map(directory.teams.map((team) => [team.id, team.holds]));
-	const castOnto = useCastOnto();
+	const { ask, kept, teams: castable } = useCasting();
+	const holdings = useMemo(
+		() =>
+			kept ? undefined : new Map(castable.map((team) => [team.id, team.holds])),
+		[kept, castable],
+	);
 	const handleViewAs = useCallback(
 		(team: Team) =>
-			void castOnto(team).then(
-				() => toast.success(`Viewing as ${team.name}`),
-				(error: unknown) =>
-					toast.error(`Not viewing as ${team.name}: ${castRefusal(error)}`),
+			void ask({
+				id: team.id,
+				name: team.name,
+				holds: holdings?.get(team.id) ?? [],
+			}).then((refusal) =>
+				refusal
+					? toast.error(`Not viewing as ${team.name}: ${refusal.reason}`)
+					: toast.success(`Viewing as ${team.name}`),
 			),
-		[castOnto],
+		[ask, holdings],
 	);
 	const handleRename = useCallback((team: Team) => setRenameTarget(team), []);
 	const handleDelete = useCallback((team: Team) => setDeleteTarget(team), []);

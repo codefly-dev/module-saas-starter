@@ -68,8 +68,13 @@ vi.mock("@/features/role-view/role-view", () => ({
 	RoleViewBanner: () => <div>narrowed session bar</div>,
 }));
 vi.mock("@/features/role-view/team-casting", () => ({
-	CastIndicator: () => <div>cast bar</div>,
+	HostCasting: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
+vi.mock("@codefly-dev/saas-ui/casting", () => ({
+	CastBar: () => <div>cast bar</div>,
 	TeamSwitcher: () => null,
+	useCasting: () => ({ teams: [] }),
+	openTeamSwitcher: () => undefined,
 }));
 afterEach(cleanup);
 beforeEach(() => {

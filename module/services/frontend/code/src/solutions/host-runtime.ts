@@ -81,6 +81,7 @@ export const HOST_SHARED_VERSIONS: Readonly<Record<string, string>> = {
 	"@codefly-dev/ui/plugin-host/ui": CODEFLY_KIT_VERSION,
 	"@codefly-dev/saas-ui": CODEFLY_SAAS_UI_VERSION,
 	"@codefly-dev/saas-ui/solution": CODEFLY_SAAS_UI_VERSION,
+	"@codefly-dev/saas-ui/casting": CODEFLY_SAAS_UI_VERSION,
 	"@codefly-dev/saas-sdk": CODEFLY_SAAS_SDK_VERSION,
 };
 

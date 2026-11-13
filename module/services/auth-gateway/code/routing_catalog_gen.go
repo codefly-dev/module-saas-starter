@@ -247,6 +247,7 @@ func generatedCatalogConnectRoutes() []*RouteEntry {
 		{Service: "accounts_connect", Method: "POST", Path: "/host.installation.v1.OfferService/ListOffers", UpstreamPath: "", Procedure: "/host.installation.v1.OfferService/ListOffers"},
 		{Service: "accounts_connect", Method: "POST", Path: "/host.installation.v1.OfferService/ReviewOffer", UpstreamPath: "", Procedure: "/host.installation.v1.OfferService/ReviewOffer"},
 		{Service: "accounts_connect", Method: "POST", Path: "/host.session.v1.SessionService/Current", UpstreamPath: "", Procedure: "/host.session.v1.SessionService/Current"},
+		{Service: "accounts_connect", Method: "POST", Path: "/host.session.v1.SessionService/ListCastableTeams", UpstreamPath: "", Procedure: "/host.session.v1.SessionService/ListCastableTeams"},
 		{Service: "accounts_connect", Method: "POST", Path: "/host.session.v1.SessionService/ListFixturePeople", UpstreamPath: "", Procedure: "/host.session.v1.SessionService/ListFixturePeople"},
 		{Service: "accounts_connect", Method: "POST", Path: "/host.session.v1.SessionService/OpenRoleView", UpstreamPath: "", Procedure: "/host.session.v1.SessionService/OpenRoleView"},
 		{Service: "accounts_connect", Method: "POST", Path: "/host.session.v1.SessionService/OpenTeamCast", UpstreamPath: "", Procedure: "/host.session.v1.SessionService/OpenTeamCast"},

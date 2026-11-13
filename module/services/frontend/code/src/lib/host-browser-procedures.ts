@@ -36,8 +36,9 @@ export const HOST_SETUP_PROCEDURES = [
 
 /**
  * The session interface's browser edge, which this app's own chrome calls and
- * nothing else does: what the host says this session is, and the two ways to
- * open a narrower one.
+ * nothing else does: what the host says this session is, the teams it may act
+ * as (the kit's team casting, `@codefly-dev/saas-ui/casting`), and the two
+ * ways to open a narrower one.
  *
  * `Current` is the one that decides whether administrator actions are offered:
  * the auth provider reads it to learn whether the bearer is a cast, and an
@@ -56,6 +57,7 @@ export const HOST_CHROME_PROCEDURES = [
 	"/host.session.v1.SessionService/Current",
 	"/host.session.v1.SessionService/OpenRoleView",
 	"/host.session.v1.SessionService/OpenTeamCast",
+	"/host.session.v1.SessionService/ListCastableTeams",
 ] as const;
 
 /**

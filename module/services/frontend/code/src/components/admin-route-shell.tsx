@@ -9,7 +9,8 @@ import { EmptyState } from "@/components/empty-state";
 import { ImpersonationBanner } from "@/components/impersonation-banner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RoleViewBanner } from "@/features/role-view/role-view";
-import { CastIndicator, TeamSwitcher } from "@/features/role-view/team-casting";
+import { CastBar, TeamSwitcher } from "@codefly-dev/saas-ui/casting";
+import { HostCasting } from "@/features/role-view/team-casting";
 import { useAuth } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
 import { useHeldPlugins } from "@/lib/plugins/held-pages";
@@ -17,7 +18,16 @@ import { selectRoute } from "@/lib/plugins/presentation";
 import { useFrontendConfig } from "@/lib/providers";
 import { useRegisteredSolutionsLoaded } from "@/solutions/SolutionsMenu";
 
+/** The admin pages, under this host's team casting (the cast bar and switcher, and every "view as"). */
 export function AdminRouteShell({ children }: { children: ReactNode }) {
+	return (
+		<HostCasting>
+			<AdminRoutes>{children}</AdminRoutes>
+		</HostCasting>
+	);
+}
+
+function AdminRoutes({ children }: { children: ReactNode }) {
 	const {
 		isAuthenticated,
 		isLoading,
@@ -108,7 +118,7 @@ export function AdminRouteShell({ children }: { children: ReactNode }) {
 			<>
 				<ImpersonationBanner />
 				<RoleViewBanner />
-				<CastIndicator />
+				<CastBar />
 				<TeamSwitcher />
 				<EmptyState
 					icon={ShieldOff}

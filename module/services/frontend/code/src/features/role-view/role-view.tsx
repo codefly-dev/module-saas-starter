@@ -1,7 +1,11 @@
 "use client";
 
+import {
+	HoldingBadges,
+	useCasting,
+	ViewAsTeamButton,
+} from "@codefly-dev/saas-ui/casting";
 import { createClient } from "@connectrpc/connect";
-import { Eye } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { InstallationService } from "@/gen/host/installation/v1/installation_pb";
@@ -11,8 +15,6 @@ import {
 } from "@/gen/host/session/v1/session_pb";
 import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
-import { Button } from "@/shared/ui";
-import { HoldingBadges, useCastAsk, useTeamDirectory } from "./team-casting";
 
 const installations = createClient(InstallationService, apiTransport);
 const sessions = createClient(SessionService, apiTransport);
@@ -58,8 +60,8 @@ const back = (exit: () => Promise<void>) => () =>
 	);
 
 /**
- * "View as this team" on a team's page: what the team holds, read before the
- * person asks, and the one control that asks the host for a session that is
+ * "View as this team" on a team's page: what the team holds, as the host
+ * lists it, and the kit's one control that asks the host for a session that is
  * this team and nothing else. Whether they may is the authority's decision and
  * is never worked out here: anyone on the page may ask, and a refusal is shown
  * in the host's words with its code.
@@ -71,21 +73,9 @@ export function ActAsTeam({
 	teamId: string;
 	teamName: string;
 }) {
-	const { exitRoleView } = useAuth();
-	const { castTeamId } = useNarrowedSession();
-	const { teams } = useTeamDirectory();
-	const {
-		open: switcherOpen,
-		asking: askingFor,
-		refusal: lastRefusal,
-		ask,
-	} = useCastAsk();
-	const holds = teams.find((t) => t.id === teamId)?.holds;
-	const asking = askingFor === teamId;
-	// The switcher says its own refusals; the card says the ones it was asked.
-	const refusal =
-		!switcherOpen && lastRefusal?.teamId === teamId ? lastRefusal : null;
-	const current = castTeamId === teamId;
+	const { teams, session } = useCasting();
+	const listed = teams.find((t) => t.id === teamId);
+	const current = session?.castTeamId === teamId;
 	return (
 		<section
 			aria-label="View as this team"
@@ -100,32 +90,15 @@ export function ActAsTeam({
 							: "See the product as a member of this team sees it: its pages and roles, and none of yours. You do not have to be a member, and your own session is one click back."}
 					</p>
 				</div>
-				{current ? (
-					<Button variant="outline" onClick={back(exitRoleView)}>
-						Back to my view
-					</Button>
-				) : (
-					<Button
-						disabled={asking}
-						onClick={() => void ask({ id: teamId, name: teamName })}
-					>
-						<Eye className="mr-2 h-4 w-4" />
-						{asking ? "Opening…" : "View as this team"}
-					</Button>
-				)}
+				<ViewAsTeamButton
+					team={listed ?? { id: teamId, name: teamName, holds: [] }}
+				/>
 			</div>
-			{holds && (
+			{listed && (
 				<div className="flex flex-wrap items-center gap-2 text-sm">
 					<span className="text-muted-foreground">It holds</span>
-					<HoldingBadges holds={holds} />
+					<HoldingBadges holds={listed.holds} />
 				</div>
-			)}
-			{refusal && (
-				<p role="alert" className="text-sm">
-					{refusal.backInOwn
-						? `You are back in your own view. The host did not open ${teamName}: ${refusal.reason}`
-						: `You are not viewing as ${teamName}. The host answered: ${refusal.reason}`}
-				</p>
 			)}
 		</section>
 	);
@@ -229,7 +202,7 @@ export function RoleViewSelector() {
  * expired one is left for them to leave: their own session is not installed
  * behind their back; one that had lapsed by a reload is acknowledged), and one
  * the host has not confirmed yet. A live cast or role view is said by the
- * calmer CastIndicator in the page itself.
+ * calmer CastBar (the kit's) in the page itself.
  */
 export function RoleViewBanner() {
 	const { exitRoleView, narrowedSessionEnd, dismissNarrowedSessionEnd } =

@@ -18,6 +18,7 @@
  *     authz error anyway, but better not to dangle the link.
  */
 
+import { openTeamSwitcher, useCasting } from "@codefly-dev/saas-ui/casting";
 import { LogOut, Users, UsersRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -31,10 +32,6 @@ import {
 	useCommandFilter,
 } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import {
-	setTeamSwitcherOpen,
-	useTeamDirectory,
-} from "@/features/role-view/team-casting";
 import { useAuth } from "@/lib/auth";
 import { useUsersSearch } from "@/lib/hooks/use-users-search";
 import { getNavigationIcon } from "@/lib/navigation-icons";
@@ -50,7 +47,7 @@ export function CommandPalette() {
 	const { isAuthenticated, platformRole, orgRole, logout, castTeamId } =
 		useAuth();
 	// The same offer as the account menu's: a team to view as, or a cast to switch.
-	const { teams: castable } = useTeamDirectory();
+	const { teams: castable } = useCasting();
 	const config = useFrontendConfig();
 	const router = useRouter();
 
@@ -165,7 +162,7 @@ export function CommandPalette() {
 									onSelect={() => {
 										setOpen(false);
 										setQuery("");
-										setTeamSwitcherOpen(true);
+										openTeamSwitcher();
 									}}
 								>
 									<UsersRound className="mr-2 h-4 w-4" />

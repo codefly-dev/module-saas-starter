@@ -13,6 +13,8 @@ vi.mock("next/navigation", () => ({
 // which throws outside an AuthProvider. Supply a stable org so the page can
 // issue its ListTeams query. OrgSelector consumes the same mocked hook.
 const auth = vi.hoisted(() => ({
+	isAuthenticated: true,
+	user: { id: "user-1" },
 	organizationId: "org-1",
 	orgRole: undefined as string | undefined,
 	sessionRead: "confirmed",
@@ -24,6 +26,7 @@ const auth = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/auth", () => ({ useAuth: () => auth }));
 
+import { HostCasting } from "@/features/role-view/team-casting";
 import { TeamsPage } from "./teams-page";
 
 afterEach(cleanup);
@@ -52,8 +55,7 @@ describe("TeamsPage admin container", () => {
 describe("viewing as a team from the list", () => {
 	it("says what each team holds and views as one from its row; the host decides", async () => {
 		auth.orgRole = "admin";
-		const host =
-			"http://localhost:3000/host.installation.v1.InstallationService";
+		const session = "http://localhost:3000/host.session.v1.SessionService";
 		let asked = "";
 		server.use(
 			http.get("http://localhost:3000/api/solutions", () =>
@@ -67,25 +69,31 @@ describe("viewing as a team from the list", () => {
 					],
 				}),
 			),
-			http.post(`${host}/List`, () =>
+			// The host lists the teams this person may act as, with what each holds.
+			http.post(`${session}/Current`, () =>
+				HttpResponse.json({ personId: "user-1", organizationId: "org-1" }),
+			),
+			http.post(`${session}/ListCastableTeams`, () =>
 				HttpResponse.json({
-					installations: [
-						{ id: "inst-a", target: "records", status: "STATUS_ACTIVE" },
+					teams: [
+						{
+							teamId: "team-1",
+							displayName: "Readers",
+							holds: [{ installationId: "inst-a", target: "records", role: "viewer" }],
+						},
 					],
 				}),
 			),
-			http.post(`${host}/ListRoleGrants`, () =>
-				HttpResponse.json({ grants: [{ role: "viewer", teamId: "team-1" }] }),
-			),
-			http.post(
-				"http://localhost:3000/host.session.v1.SessionService/OpenTeamCast",
-				async ({ request }) => {
-					asked = JSON.stringify(await request.json());
-					return HttpResponse.json({ bearer: "cast-bearer" });
-				},
-			),
+			http.post(`${session}/OpenTeamCast`, async ({ request }) => {
+				asked = JSON.stringify(await request.json());
+				return HttpResponse.json({ bearer: "cast-bearer" });
+			}),
 		);
-		renderInApp(<TeamsPage />);
+		renderInApp(
+			<HostCasting>
+				<TeamsPage />
+			</HostCasting>,
+		);
 		expect(await screen.findByText("records · viewer")).toBeTruthy();
 		expect(screen.getByText("Holds nothing installed")).toBeTruthy();
 		// A team granted nothing has nothing to view as.

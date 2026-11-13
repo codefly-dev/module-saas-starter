@@ -7,6 +7,7 @@ import { CommandPalette } from "@/components/command-palette";
 import { ImpersonationBanner } from "@/components/impersonation-banner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RoleViewBanner, RoleViewSelector } from "@/features/role-view/role-view";
+import { HostCasting } from "@/features/role-view/team-casting";
 import { OnboardingGate } from "@/features/onboarding/ui/onboarding-gate";
 import { useAuth } from "@/lib/auth";
 
@@ -28,7 +29,7 @@ export function DashboardRouteShell({ children }: { children: ReactNode }) {
 	if (!isAuthenticated) return null;
 
 	return (
-		<>
+		<HostCasting>
 			<ImpersonationBanner />
 			<RoleViewBanner />
 			<RoleViewSelector />
@@ -36,6 +37,6 @@ export function DashboardRouteShell({ children }: { children: ReactNode }) {
 			<OnboardingGate>
 				<AdminLayout>{children}</AdminLayout>
 			</OnboardingGate>
-		</>
+		</HostCasting>
 	);
 }

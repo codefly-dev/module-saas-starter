@@ -138,6 +138,7 @@
             "@codefly-dev/ui/plugin-host/runtime",
             "@codefly-dev/ui/plugin-host/ui",
             "@codefly-dev/saas-ui",
+            "@codefly-dev/saas-ui/casting",
             "@codefly-dev/saas-ui/solution",
             "@codefly-dev/saas-sdk"
           ],
