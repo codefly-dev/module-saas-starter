@@ -200,11 +200,11 @@ collections:
 # is approved) — installed by Alice
 # as an administrator installs it, each declared role to its `<target>-<role>`
 # team — and each member joins the team of the role named, where the target
-# declares that role. `user` is the role that uses a product without
-# authoring it (core-solutions' wiki and robin-builder: it reads and chats,
-# writes only the person's own conversations); its editor holds all of that
-# and more, so Carol, the one who uses every target, is seated there too and
-# Bob stays the viewer who writes nothing. A composing workspace's
+# declares that role. `user`, where a target declares it, is the role that
+# uses the product without authoring it (it reads, and writes only the
+# person's own work); its editor holds all of that and more, so Carol, the
+# one who uses every target, is seated there too and Bob stays the viewer
+# who writes nothing. A composing workspace's
 # `fixture-grants.yaml` may still name a target explicitly; that row is kept
 # and the target is not expanded again.
 installations:

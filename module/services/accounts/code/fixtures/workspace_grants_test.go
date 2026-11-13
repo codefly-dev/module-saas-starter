@@ -337,9 +337,9 @@ func TestARowMayStandForEveryTarget(t *testing.T) {
 
 // THE FIXTURE seats someone on every role a target declares: Bob on viewer,
 // Carol on editor and on user (the role that uses a product without authoring
-// it, which the editor holds all of: core-solutions' wiki and robin-builder),
-// Dana on installer. A target declaring `user` (wiki, Robin Builder) reads
-// "user: nobody" otherwise. Red before the fixture named a user member.
+// it, all of which the editor holds), Dana on installer. A target declaring
+// `user` reads "user: nobody" otherwise. Red before the fixture named a user
+// member.
 func TestTheOneFixtureSeatsSomeoneOnEveryStandardRole(t *testing.T) {
 	data, err := embeddedFixtures.ReadFile("embedded/dev-admin.yaml")
 	if err != nil {
