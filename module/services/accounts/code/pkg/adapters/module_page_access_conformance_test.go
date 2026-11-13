@@ -124,7 +124,9 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		// never read its grants and called every module page unset.
 		rows, _, err := h.svc.ListOrganizationInstallations(h.ctx, fixtureOrganization, "", 500)
 		require.NoError(t, err)
-		i := slices.IndexFunc(rows, func(row *business.OrganizationInstallation) bool { return row.Target != nil && row.Target.RouteAlias == page })
+		i := slices.IndexFunc(rows, func(row *business.OrganizationInstallation) bool {
+			return row.Target != nil && row.Target.RouteAlias == page
+		})
 		require.GreaterOrEqual(t, i, 0, "the module page's installation is listed")
 		require.Equal(t, []string{"installer", "viewer"}, rows[i].Target.Roles)
 	})
@@ -206,7 +208,9 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		const solutionAlias = "conformance-access-own"
 		all, err := h.core.Installations(h.ctx, alex, fixtureOrganization)
 		require.NoError(t, err)
-		own := slices.IndexFunc(all, func(inst domain.Installation) bool { return inst.Target == solutionAlias && inst.Status == domain.Active })
+		own := slices.IndexFunc(all, func(inst domain.Installation) bool {
+			return inst.Target == solutionAlias && inst.Status == domain.Active
+		})
 		require.GreaterOrEqual(t, own, 0)
 		before, err := h.core.ListRoleGrants(h.ctx, alex, fixtureOrganization, all[own].ID)
 		require.NoError(t, err)
