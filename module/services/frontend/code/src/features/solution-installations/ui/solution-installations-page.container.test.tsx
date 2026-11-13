@@ -1516,10 +1516,112 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 		);
 	});
 
+	it("an installed solution a role of which nobody holds offers Set up, for that role alone", async () => {
+		// The installed solution's approved roles are installer, user and
+		// viewer; nobody holds user (an update added it before an approval
+		// gave added roles their teams). Red before: the Solutions table said
+		// "Installed" and offered nothing, so only a fixture's install pass
+		// could give user a team.
+		const PAYROLL_INSTALLATION = "bbbbbbbb-0000-4000-8000-000000000003";
+		const reads = serveSolutions();
+		const payroll = {
+			...catalogue.solutions[0],
+			installed: true,
+			roles: ["installer", "user", "viewer"],
+		};
+		const solutionInstalled = structuredClone(installed);
+		solutionInstalled.installations.push({
+			...installations.installations[0],
+			installation: {
+				...installations.installations[0].installation,
+				id: PAYROLL_INSTALLATION,
+				targetId: PAYROLL_TARGET,
+			},
+			target: payroll,
+			rootScopePath: "",
+			grantedTeams: [],
+			inheritedTeams: [],
+		});
+		serve({
+			availableBody: { solutions: [payroll, ...catalogue.solutions.slice(1)] },
+			installationsBody: solutionInstalled,
+		});
+		server.use(
+			http.post(LIST_OFFERS, () =>
+				HttpResponse.json({ offers: [{ target: "payroll", generation: "5" }] }),
+			),
+			http.post(
+				"http://localhost:3000/host.installation.v1.InstallationService/List",
+				() =>
+					HttpResponse.json({
+						installations: [
+							{
+								id: PAYROLL_INSTALLATION,
+								roles: ["installer", "user", "viewer"],
+							},
+						],
+					}),
+			),
+			http.post(
+				"http://localhost:3000/host.installation.v1.InstallationService/ListRoleGrants",
+				async ({ request }) => {
+					const { installationId } = (await request.json()) as {
+						installationId: string;
+					};
+					return HttpResponse.json({
+						grants:
+							installationId === PAYROLL_INSTALLATION
+								? [
+										{ role: "installer", teamId: FINANCE_TEAM },
+										{ role: "viewer", teamId: FINANCE_TEAM },
+									]
+								: [],
+					});
+				},
+			),
+		);
+		renderInApp(<SolutionsPage />);
+		const availableTable = await screen.findByRole("table", {
+			name: "Available solutions",
+		});
+		const row = (await within(availableTable).findByText("payroll")).closest(
+			"tr",
+		) as HTMLElement;
+		expect(
+			await within(row).findByText("Installed · user held by nobody"),
+		).toBeTruthy();
+		fireEvent.click(
+			within(row).getByRole("button", { name: "Set up access to payroll" }),
+		);
+		const dialog = await screen.findByRole("dialog");
+		await within(dialog).findByRole("region", { name: "Role user" });
+		expect(
+			within(dialog).queryByRole("region", { name: "Role viewer" }),
+		).toBeNull();
+		expect(
+			within(dialog).queryByRole("region", { name: "Role installer" }),
+		).toBeNull();
+		fireEvent.click(
+			within(
+				within(dialog).getByRole("region", { name: "Role user" }),
+			).getByRole("checkbox", { name: "Add me to this team" }),
+		);
+		fireEvent.click(
+			within(dialog).getByRole("button", { name: "Set up access" }),
+		);
+		await waitFor(() => expect(reads.setUp).toHaveLength(1));
+		expect(reads.setUp[0]).toEqual({
+			orgId: "org-1",
+			targetId: PAYROLL_TARGET,
+		});
+	});
+
 	it("a module page someone holds a role on reads Set up, and offers Manage access instead", async () => {
 		serveSolutions();
+		// Its composition installation carries a host scope root, as every host
+		// serves a module's (local and hosted alike): its access is still its roles.
 		const pageInstalled = structuredClone(installed);
-		pageInstalled.installations[1].rootScopePath = "";
+		expect(pageInstalled.installations[1].rootScopePath).not.toBe("");
 		serve({ availableBody: catalogue, installationsBody: pageInstalled });
 		server.use(
 			http.post(LIST_OFFERS, () =>
@@ -1826,12 +1928,19 @@ describe("an installation survives delivery: the host offers an update, and the 
 				],
 			},
 		});
-		const pageApproval = { ...approval, targetId: "module:expenses", generation: "4" };
+		const pageApproval = {
+			...approval,
+			targetId: "module:expenses",
+			generation: "4",
+		};
 		server.use(
 			http.post(
 				rpc("InstallationService", "ReviewSolutionInstall"),
 				async ({ request }) => {
-					await assertBody(request, { orgId: "org-1", targetId: EXPENSES_TARGET });
+					await assertBody(request, {
+						orgId: "org-1",
+						targetId: EXPENSES_TARGET,
+					});
 					return HttpResponse.json({
 						...review,
 						targetId: EXPENSES_TARGET,

@@ -32,6 +32,7 @@ import { InstallationTeamAssignment } from "./installation-team-assignment";
 export function SetUpModulePageDialog({
 	orgId,
 	page,
+	roles = page.roles,
 	onSubmit,
 	isPending,
 	error,
@@ -39,6 +40,11 @@ export function SetUpModulePageDialog({
 }: {
 	orgId: string;
 	page: AvailableSolution;
+	/**
+	 * The roles this Set up gives teams: every role of a module page, or the
+	 * roles of an installed solution that nobody holds.
+	 */
+	roles?: string[];
 	onSubmit: (access: InstallAccess) => void;
 	isPending: boolean;
 	error?: string;
@@ -53,10 +59,10 @@ export function SetUpModulePageDialog({
 	});
 	const teamList = teams.data?.teams ?? [];
 	const target = page.routeAlias;
-	const assignment = teamAssignment(target, page.roles, teamList, chosen);
+	const assignment = teamAssignment(target, roles, teamList, chosen);
 	const access: InstallAccess = {
 		roleTeams: roleTeamsOf(assignment),
-		installerRoles: page.roles.filter((role) => !untaken.has(role)),
+		installerRoles: roles.filter((role) => !untaken.has(role)),
 	};
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -70,14 +76,14 @@ export function SetUpModulePageDialog({
 				<DialogHeader>
 					<DialogTitle>Set up access to {target}</DialogTitle>
 					<DialogDescription>
-						{target} is a module page: it is part of the platform, installed for
-						this organization, and nobody can use it until its roles are given
-						to teams.
+						{page.kind === "module"
+							? `${target} is a module page: it is part of the platform, installed for this organization, and nobody can use it until its roles are given to teams.`
+							: `${target} is installed, and nobody holds ${roles.join(", ")} yet. Each goes to a team; the roles people hold already stay as they are.`}
 					</DialogDescription>
 				</DialogHeader>
 				<InstallationTeamAssignment
 					assignment={assignment}
-					conventional={teamAssignment(target, page.roles, teamList, {})}
+					conventional={teamAssignment(target, roles, teamList, {})}
 					teams={teamList}
 					taken={new Set(access.installerRoles)}
 					teamsError={teams.isError ? hostRefusal(teams.error) : undefined}

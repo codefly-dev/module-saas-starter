@@ -231,7 +231,10 @@ export function installedRows(
 					installationId: installation.id,
 					targetId: installation.targetId,
 					target,
-					hasHostScopeRoot: Boolean(rootScopePath),
+					// A module page's composition installation carries a host scope
+					// root too, but its access is its roles, as a solution's is: only
+					// a record with a root and no roles is exposed to teams by the host.
+					hasHostScopeRoot: Boolean(rootScopePath) && !isModulePage(target),
 					upgradeAvailable: installation.upgradeAvailable,
 					solution: target
 						? { kind: "value", text: target.routeAlias }

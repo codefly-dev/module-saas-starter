@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useRegisteredSolutions } from "@/solutions/SolutionsMenu";
 
 /**
@@ -11,8 +12,11 @@ import { useRegisteredSolutions } from "@/solutions/SolutionsMenu";
  */
 export function useTargetTitles(): ReadonlyMap<string, string> {
 	const solutions = useRegisteredSolutions();
-	return new Map(
-		solutions.map((solution) => [solution.id, solution.nav.title]),
+	// One map per listing, so a consumer keyed on it re-renders only when the menu changes.
+	return useMemo(
+		() =>
+			new Map(solutions.map((solution) => [solution.id, solution.nav.title])),
+		[solutions],
 	);
 }
 

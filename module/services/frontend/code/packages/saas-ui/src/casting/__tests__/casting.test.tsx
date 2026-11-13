@@ -73,6 +73,34 @@ describe("team casting", () => {
 		expect(calls).toEqual(["back", "open dir-viewer"]);
 	});
 
+	it("names a kept team's pages as the person's own menu named them, though the cast's menu lists none of them", async () => {
+		// The host names a holding by its target; the menu, by its title. A
+		// cast's menu lists only the cast's own pages. Red before: the
+		// switcher, opened in a cast, headed the other teams' pages with their
+		// ids ("records") rather than their titles ("Records").
+		const records: CastTeam = { id: "rec-viewer", name: "records-viewer", holds: [{ installationId: "i2", target: "records", title: "records", role: "viewer" }] };
+		const { host, cast } = fakeHost({ listTeams: async () => [editors, viewers, records] });
+		const menu = new Map([["directory", "Directory"], ["records", "Records"]]);
+		const own = render(
+			<CastingProvider host={host} titleOf={(target) => menu.get(target)}>
+				<TeamSwitcher />
+			</CastingProvider>,
+		);
+		await waitFor(() => expect(sessionStorage.getItem("codefly_cast_teams") ?? "").toContain("Records"));
+		own.unmount();
+		cast("dir-editor");
+		const castMenu = new Map([["directory", "Directory"]]);
+		render(
+			<CastingProvider host={host} titleOf={(target) => castMenu.get(target)}>
+				<CastBar />
+				<TeamSwitcher />
+			</CastingProvider>,
+		);
+		await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Directory editors"));
+		act(() => openTeamSwitcher());
+		expect(await screen.findByText("Records")).toBeTruthy();
+	});
+
 	it("says a refusal after the way back in the host's words, and a failed way back as itself", async () => {
 		const { host, cast } = fakeHost();
 		await readOwnView(host);

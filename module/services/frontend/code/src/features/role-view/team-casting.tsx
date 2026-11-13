@@ -7,7 +7,7 @@ import {
 } from "@codefly-dev/saas-ui/casting";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { usePathname, useRouter } from "next/navigation";
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useCallback, useMemo } from "react";
 import { useTargetTitles } from "@/features/solution-installations/ui/target-name";
 import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
@@ -24,6 +24,8 @@ export function HostCasting({ children }: { children: ReactNode }) {
 	const { isAuthenticated, user, organizationId, enterRoleView, exitRoleView } =
 		useAuth();
 	const titles = useTargetTitles();
+	// One function per menu: the provider re-names what it keeps when this changes.
+	const titleOf = useCallback((target: string) => titles.get(target), [titles]);
 	const router = useRouter();
 	// A cast never opens on an Admin page: one asked from there lands at "/".
 	const onAdmin = (usePathname() ?? "").startsWith("/admin");
@@ -44,7 +46,7 @@ export function HostCasting({ children }: { children: ReactNode }) {
 		return { ...adapter, current: signedOut, listTeams: signedOut };
 	}, [who, onAdmin, enterRoleView, exitRoleView, router]);
 	return (
-		<CastingProvider host={host} titleOf={(target) => titles.get(target)}>
+		<CastingProvider host={host} titleOf={titleOf}>
 			{children}
 		</CastingProvider>
 	);
