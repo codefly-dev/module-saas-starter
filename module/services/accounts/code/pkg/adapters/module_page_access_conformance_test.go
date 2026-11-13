@@ -117,6 +117,16 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 			require.NotContains(t, entitled(person), inst.ID, "navigation lists it for nobody, administrators included")
 		}
 		require.Equal(t, []string{"installer", "viewer"}, available(page).Roles, "Admin lists it with its roles, to set up")
+		// The organization's installations name the page's roles on its
+		// target as the catalogue does: its composition installation carries a
+		// host scope root, and the roles are what tells Admin to read who
+		// holds them. Red before: the installed target named none, so Admin
+		// never read its grants and called every module page unset.
+		rows, _, err := h.svc.ListOrganizationInstallations(h.ctx, fixtureOrganization, "", 500)
+		require.NoError(t, err)
+		i := slices.IndexFunc(rows, func(row *business.OrganizationInstallation) bool { return row.Target != nil && row.Target.RouteAlias == page })
+		require.GreaterOrEqual(t, i, 0, "the module page's installation is listed")
+		require.Equal(t, []string{"installer", "viewer"}, rows[i].Target.Roles)
 	})
 
 	t.Run("setting up a module page is one act", func(t *testing.T) {
@@ -251,6 +261,8 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		require.Empty(t, again.AccessProblems)
 		require.Len(t, teamsNamed(t, h, target+"-viewer"), 1, "setting it up again creates nothing")
 		require.Len(t, holders(), 2)
+		_, err = h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(target).TargetID, business.InstallAccess{InstallerRoles: []string{"author"}})
+		require.ErrorContains(t, err, `declares no role "author"`, "a role the solution never declared is refused by name, never dropped")
 	})
 
 	t.Run("a widening anywhere in the reach shows update available", func(t *testing.T) {

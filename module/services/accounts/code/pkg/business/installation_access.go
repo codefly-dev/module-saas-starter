@@ -426,6 +426,9 @@ func (s *Service) setUpSolution(ctx context.Context, caller authority.Person, or
 		return inst.Target == target && inst.Status == domain.Active
 	})
 	if i < 0 {
+		if slices.ContainsFunc(installed, func(inst domain.Installation) bool { return inst.Target == target && inst.Status == domain.Pending }) {
+			return InstalledSolution{}, domain.NotNow("%s is still being installed: set up its access once its installation is active", target)
+		}
 		return InstalledSolution{}, domain.NotNow("%s is not installed in this organization: install it, and its install gives each of its roles a team", target)
 	}
 	inst := installed[i]
@@ -446,10 +449,21 @@ func (s *Service) setUpSolution(ctx context.Context, caller authority.Person, or
 			unheld[role] = team
 		}
 	}
+	// A role the solution's consent never approved is refused by name, as an
+	// install refuses it; one someone holds is simply not this act's.
+	for role := range requested.RoleTeams {
+		if _, declared := approved[role]; !declared {
+			return InstalledSolution{}, domain.Malformed("%s declares no role %q", target, role)
+		}
+	}
+	for _, role := range requested.InstallerRoles {
+		if _, declared := approved[role]; !declared {
+			return InstalledSolution{}, domain.Malformed("%s declares no role %q", target, role)
+		}
+	}
 	if len(unheld) == 0 {
 		return InstalledSolution{Installation: inst}, nil
 	}
-	// What was asked of a role someone holds already is not this act's.
 	asked := InstallAccess{RoleTeams: map[string]string{}}
 	for role, team := range requested.RoleTeams {
 		if _, open := unheld[role]; open {

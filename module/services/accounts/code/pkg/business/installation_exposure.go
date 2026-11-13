@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
@@ -148,6 +150,13 @@ func (s *Service) ListOrganizationInstallations(
 			return nil
 		}); err != nil {
 			return nil, "", w.Wrapf(err, "cannot read the installed targets")
+		}
+		// Each installed module names its roles as the catalogue does
+		// (ListAvailableSolutions): a module page's composition installation
+		// carries a host scope root too, and its roles are what tells a page
+		// to read who holds them rather than which teams it is exposed to.
+		if err := s.modulePageRoles(ctx, slices.Collect(maps.Values(targets))); err != nil {
+			return nil, "", w.Wrapf(err, "cannot read the installed module pages' roles")
 		}
 	}
 

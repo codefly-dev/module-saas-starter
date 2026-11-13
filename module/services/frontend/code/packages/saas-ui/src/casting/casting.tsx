@@ -159,11 +159,13 @@ export function CastingProvider({
 		[titleOf],
 	);
 	// The person's own view keeps its list, named as its menu names each page,
-	// for the cast that lists only itself.
+	// for the cast that lists only itself. Only a current read is kept: while a
+	// cast's read is in flight the previous own-view read is still held, and the
+	// menu may already be the cast's.
 	useEffect(() => {
-		if (session && listed && !session.castTeamId && session.roleView.length === 0)
+		if (!reading && session && listed && !session.castTeamId && session.roleView.length === 0)
 			keepCastTeams(session.personId, session.organizationId, named(listed));
-	}, [session, listed, named]);
+	}, [reading, session, listed, named]);
 
 	const value = useMemo<Casting>(() => {
 		const narrowed = !!session && (!!session.castTeamId || session.roleView.length > 0);

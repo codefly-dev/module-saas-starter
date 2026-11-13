@@ -165,6 +165,9 @@ function SolutionInstallationsForOrganization({
 	const offered = useOfferedTargets(orgId);
 	const setUp = useSetUpModulePage(orgId);
 	const [settingUp, setSettingUp] = useState<AvailableSolution | null>(null);
+	// The roles that Set up gives teams, taken when it is opened: once grants
+	// are read again, an open dialog still shows what it was asked to set up.
+	const [settingUpRoles, setSettingUpRoles] = useState<string[]>([]);
 	// Until the offers are read, supporting module administration offers no
 	// module to install and lists what is installed without saying which is a
 	// module page: only that classification waits on the authority.
@@ -314,6 +317,9 @@ function SolutionInstallationsForOrganization({
 									? undefined
 									: (solution) => {
 											setUp.reset();
+											setSettingUpRoles(
+												pageAccess(solution).unheld ?? solution.roles,
+											);
 											setSettingUp(solution);
 										}
 							}
@@ -332,6 +338,7 @@ function SolutionInstallationsForOrganization({
 							pageAccess={pageAccess}
 							onSetUp={(page) => {
 								setUp.reset();
+								setSettingUpRoles(page.roles);
 								setSettingUp(page);
 							}}
 						/>
@@ -406,11 +413,7 @@ function SolutionInstallationsForOrganization({
 				<SetUpModulePageDialog
 					orgId={orgId}
 					page={settingUp}
-					roles={
-						isModulePage(settingUp)
-							? settingUp.roles
-							: (pageAccess(settingUp).unheld ?? settingUp.roles)
-					}
+					roles={settingUpRoles}
 					isPending={setUp.isPending}
 					error={setUp.isError ? hostRefusal(setUp.error) : undefined}
 					onSubmit={(access) =>
