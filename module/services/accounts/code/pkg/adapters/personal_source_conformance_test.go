@@ -128,6 +128,7 @@ func testAMemberConnectsAPersonalSourceOfTheirOwn(t *testing.T, h reviewedClosur
 	t.Run("a member needs datasource:invoke where their own source is placed", func(t *testing.T) {
 		_, err := personal(remi, under(granted))
 		refused(t, err, codes.PermissionDenied, "you do not hold datasource:invoke on scope node "+granted.GetId())
+		require.True(t, strings.HasPrefix(status.Convert(err).Message(), "you do not hold"), "the refusal is the caller's, not a failure to persist: %v", err)
 		_, err = personal(nora, under(granted))
 		refused(t, err, codes.PermissionDenied, "datasource:invoke")
 	})
