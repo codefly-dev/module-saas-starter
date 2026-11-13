@@ -35,12 +35,14 @@ import {
 } from "./auth-session";
 import {
 	getToken as getConnectToken,
+	isNarrowed,
 	markNarrowed,
 	setNarrowedRequestRefusedHandler,
 	setToken as setConnectToken,
 	setRefreshHandler,
 } from "./connect/token-store";
 import { apiTransport } from "./connect/transport";
+import { type Reopen, renewWhileActive, reopenOf } from "./narrowed-renewal";
 
 const authClient = createClient(AuthService, apiTransport);
 const platformAdminClient = createClient(PlatformAdminService, apiTransport);
@@ -1061,6 +1063,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		[applyAccessToken],
 	);
 
+	// Opens the same narrowed session again from the person's own session (the
+	// refresh cookie, which a narrowed session never touched), and installs it
+	// in place of `bearer`: what the person kept using is not cut off by its
+	// cap (narrowed-renewal). The person's own bearer is used for that one ask
+	// and never installed. The host decides the ask as it decided the first; a
+	// refusal throws and the session lapses as it would have.
+	const renewNarrowed = useCallback(
+		async (bearer: string, reopen: Reopen) => {
+			const own = await exchangeRefreshCookie();
+			if (own.status !== "ok") throw new Error("your own session could not be read");
+			const headers = { Authorization: `Bearer ${own.accessToken}` };
+			const session =
+				"teamId" in reopen
+					? await bearerSessionClient.openTeamCast({ teamId: reopen.teamId }, { headers })
+					: await bearerSessionClient.openRoleView(reopen, { headers });
+			// The person left it, or chose another, while the host answered: what they chose stands.
+			if (!session.bearer || getConnectToken() !== bearer) return;
+			markNarrowed(session.bearer);
+			// The same session, opened again: what the host said it is carries to
+			// the new bearer until the host's own reading of it lands.
+			setRead((prev) => (prev.token === bearer && !prev.failed ? { ...prev, token: session.bearer } : prev));
+			applyAccessToken(session.bearer);
+			keepNarrowedSession({ bearer: session.bearer, as: narrowedAsRef.current });
+		},
+		[applyAccessToken],
+	);
+
 	const exitRoleView = useCallback(async () => {
 		const outcome = await exchangeRefreshCookie();
 		if (outcome.status !== "ok") {
@@ -1381,6 +1410,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				: "confirmed";
 	const castTeamId = answered && !answered.failed ? answered.castTeamId : "";
 	const roleView = answered && !answered.failed ? answered.roleView : NO_VIEW;
+
+	// A narrowed session the host confirmed, and that has not ended, is opened
+	// again while the person uses it (narrowed-renewal); an idle one lapses.
+	const reopen =
+		state.accessToken && isNarrowed(state.accessToken) && !state.narrowedSessionEnd && answered && !answered.failed
+			? reopenOf(answered)
+			: null;
+	const reopenKey = reopen ? JSON.stringify(reopen) : "";
+	useEffect(() => {
+		const bearer = state.accessToken;
+		if (!bearer || !reopenKey) return;
+		const what = JSON.parse(reopenKey) as Reopen;
+		return renewWhileActive(bearer, () => renewNarrowed(bearer, what));
+	}, [state.accessToken, reopenKey, renewNarrowed]);
 	const rolesHidden = !!state.accessToken && (sessionRead !== "confirmed" || !!castTeamId);
 
 	const value = useMemo<AuthContextType>(
