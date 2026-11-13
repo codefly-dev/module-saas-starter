@@ -7,6 +7,11 @@ import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { OrgSelector } from "@/components/org-selector";
+import {
+	castRefusal,
+	useCastOnto,
+	useTeamDirectory,
+} from "@/features/role-view/team-casting";
 import { useAuth } from "@/lib/auth";
 import {
 	AlertDialog,
@@ -113,6 +118,22 @@ function TeamsPageForOrganization({ orgId }: { orgId: string }) {
 		},
 		[router],
 	);
+	// What each team holds, for someone who may read it, and a view as it on
+	// the row: the host decides each one when it is asked.
+	const directory = useTeamDirectory();
+	const holdings = directory.kept
+		? undefined
+		: new Map(directory.teams.map((team) => [team.id, team.holds]));
+	const castOnto = useCastOnto();
+	const handleViewAs = useCallback(
+		(team: Team) =>
+			void castOnto(team).then(
+				() => toast.success(`Viewing as ${team.name}`),
+				(error: unknown) =>
+					toast.error(`Not viewing as ${team.name}: ${castRefusal(error)}`),
+			),
+		[castOnto],
+	);
 	const handleRename = useCallback((team: Team) => setRenameTarget(team), []);
 	const handleDelete = useCallback((team: Team) => setDeleteTarget(team), []);
 
@@ -152,6 +173,8 @@ function TeamsPageForOrganization({ orgId }: { orgId: string }) {
 					onViewMembers={handleViewMembers}
 					onRename={handleRename}
 					onDelete={handleDelete}
+					holdings={holdings && holdings.size > 0 ? holdings : undefined}
+					onViewAs={handleViewAs}
 				/>
 			)}
 

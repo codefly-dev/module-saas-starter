@@ -18,7 +18,7 @@
  *     authz error anyway, but better not to dangle the link.
  */
 
-import { LogOut, Users } from "lucide-react";
+import { LogOut, Users, UsersRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -31,6 +31,10 @@ import {
 	useCommandFilter,
 } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+	setTeamSwitcherOpen,
+	useTeamDirectory,
+} from "@/features/role-view/team-casting";
 import { useAuth } from "@/lib/auth";
 import { useUsersSearch } from "@/lib/hooks/use-users-search";
 import { getNavigationIcon } from "@/lib/navigation-icons";
@@ -43,7 +47,10 @@ import { signOutAndLeave } from "@/lib/sign-out-journey";
 export function CommandPalette() {
 	const [open, setOpen] = useState(false);
 	const [query, setQuery] = useState("");
-	const { isAuthenticated, platformRole, orgRole, logout } = useAuth();
+	const { isAuthenticated, platformRole, orgRole, logout, castTeamId } =
+		useAuth();
+	// The same offer as the account menu's: a team to view as, or a cast to switch.
+	const { teams: castable } = useTeamDirectory();
 	const config = useFrontendConfig();
 	const router = useRouter();
 
@@ -89,8 +96,12 @@ export function CommandPalette() {
 		[visibleNav, query, contains],
 	);
 	const signOutVisible = contains("sign out logout", query);
+	const viewAsVisible =
+		(!!castTeamId || castable.some((team) => team.holds.length > 0)) &&
+		contains("view as team switch cast", query);
 	const hasResults =
 		filteredNav.length > 0 ||
+		viewAsVisible ||
 		(superAdmin && userResults.length > 0) ||
 		signOutVisible;
 
@@ -144,6 +155,22 @@ export function CommandPalette() {
 										</span>
 									</CommandItem>
 								))}
+							</CommandGroup>
+						)}
+
+						{viewAsVisible && (
+							<CommandGroup heading="Teams">
+								<CommandItem
+									value="view as team switch cast"
+									onSelect={() => {
+										setOpen(false);
+										setQuery("");
+										setTeamSwitcherOpen(true);
+									}}
+								>
+									<UsersRound className="mr-2 h-4 w-4" />
+									{castTeamId ? "Switch team…" : "View as team…"}
+								</CommandItem>
 							</CommandGroup>
 						)}
 

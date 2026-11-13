@@ -22,6 +22,11 @@ const session = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth", () => ({ useAuth: () => session }));
+// The team page's "View as this team" lands where the team starts.
+vi.mock("next/navigation", () => ({
+	usePathname: () => "/admin/teams/team-1",
+	useRouter: () => ({ push: vi.fn() }),
+}));
 
 function serveTeam() {
 	server.use(
@@ -168,8 +173,12 @@ describe("TeamDetailsPage (org-selection and access states)", () => {
 
 		await screen.findByRole("heading", { name: "platform" });
 		const access = await screen.findByLabelText("Your team access");
-		expect(await within(access).findByText("Acting as this team")).toBeTruthy();
-		expect(within(access).queryByText(/administrator access allows/)).toBeNull();
+		expect(
+			await within(access).findByText("Viewing as this team"),
+		).toBeTruthy();
+		expect(
+			within(access).queryByText(/administrator access allows/),
+		).toBeNull();
 		expect(screen.queryByRole("button", { name: "Edit team" })).toBeNull();
 	});
 
@@ -181,7 +190,9 @@ describe("TeamDetailsPage (org-selection and access states)", () => {
 		renderInApp(<TeamDetailsPage teamId="team-1" />);
 
 		const access = await screen.findByLabelText("Your team access");
-		expect(await within(access).findByText(/Could not confirm what this session is/)).toBeTruthy();
+		expect(
+			await within(access).findByText(/Could not confirm what this session is/),
+		).toBeTruthy();
 		expect(within(access).queryByText(/team administrator/)).toBeNull();
 	});
 });

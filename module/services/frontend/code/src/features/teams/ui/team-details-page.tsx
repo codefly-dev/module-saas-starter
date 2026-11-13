@@ -94,7 +94,10 @@ function TeamDetails({ team }: { team: Team }) {
 		(member) => member.userId === user?.id,
 	);
 	// A cast holds what its team holds, not the person's own team role.
-	const myRole = membership && !castTeamId && !unconfirmed ? toTeamRole(membership.role) : undefined;
+	const myRole =
+		membership && !castTeamId && !unconfirmed
+			? toTeamRole(membership.role)
+			: undefined;
 	const teamAdmin = myRole === "admin" || myRole === "owner";
 	const orgAdmin = orgRole === "admin" || orgRole === "owner";
 	const canManage =
@@ -158,8 +161,8 @@ function TeamDetails({ team }: { team: Team }) {
 					<>
 						<Badge variant="outline">
 							{castTeamId === team.id
-								? "Acting as this team"
-								: "Acting as another team"}
+								? "Viewing as this team"
+								: "Viewing as another team"}
 						</Badge>
 						<p className="text-sm text-muted-foreground">
 							This session holds what the team it acts as holds and nothing of
