@@ -184,5 +184,5 @@ func TestImpersonationRestrictionsMatchTheDescriptorsTheInterceptorReads(t *test
 	}
 
 	require.Equal(t, catalogued, enforced)
-	require.Len(t, enforced, 73) // 57 of the API package + OpenTeamCast, OpenRoleView, Issue, Delegate, RevokeDelegation, GetDelegation, Install, Review, GrantRole, RevokeRole, ListRoleGrants, List, ListHeld, Current, ListOffers, ReviewOffer of the implemented interfaces; Check and ListResources are public, authenticated by the token they check
+	require.Len(t, enforced, 74) // 57 of the API package + OpenTeamCast, ListCastableTeams, OpenRoleView, Issue, Delegate, RevokeDelegation, GetDelegation, Install, Review, GrantRole, RevokeRole, ListRoleGrants, List, ListHeld, Current, ListOffers, ReviewOffer of the implemented interfaces; Check and ListResources are public, authenticated by the token they check
 }
