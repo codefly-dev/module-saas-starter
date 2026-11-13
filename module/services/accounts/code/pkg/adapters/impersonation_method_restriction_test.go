@@ -178,7 +178,7 @@ func TestImpersonatedCallWithoutAResolvablePolicyIsDenied(t *testing.T) {
 	require.NoError(t, err)
 	ctx := stampRequestIdentity(context.Background(), identity, auth.Assurance{})
 
-	err = enforceImpersonationPolicy(ctx, "/saas.accounts.v1.UserService/FutureUnclassifiedRPC")
+	err = enforceImpersonationPolicy(ctx, "/saas.accounts.v1.UserService/FutureUnclassifiedRPC", nil)
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
 
 	// An ordinary session reaches the same unclassified procedure through the

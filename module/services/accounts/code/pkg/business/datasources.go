@@ -814,6 +814,12 @@ type AddSourceInput struct {
 	// organization. A governed connect by anyone else brings its own
 	// credential and never reads through the organization's (governedCredential).
 	ByOrganizationAdministrator bool
+	// PersonalTo is set when a member connects a source of their own and is
+	// decided by no organization role: the source must be personal, placed
+	// under an existing node this holder holds datasource:invoke on, and it
+	// delegates nothing to a module (personal_source.go). Nil for every other
+	// connect, which the caller decided as an administrator or by governance.
+	PersonalTo *SourceBoundaryHolder
 
 	// GitHub provider config.
 	Repo           string
@@ -862,6 +868,9 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 		return nil, w.Wrap(err)
 	}
 	if err := input.Governance.validate(); err != nil {
+		return nil, err
+	}
+	if err := admitPersonalConnect(input); err != nil {
 		return nil, err
 	}
 	if s.datasourceCipher == nil {
@@ -1019,6 +1028,14 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 			return err
 		}
 		source.BoundaryNodeID = boundaryID
+		if input.PersonalTo != nil {
+			if source.PersonalOwnerUserID != actorID {
+				return status.Error(codes.Internal, "a source connected as the caller's own did not become personal to them")
+			}
+			if err := s.requireHoldsSourceBoundaryTx(ctx, orgID, *input.PersonalTo, boundaryID); err != nil {
+				return err
+			}
+		}
 		if err := s.store.InsertDatasourceSource(ctx, source); err != nil {
 			return err
 		}
@@ -1032,6 +1049,12 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 		}
 		if err := s.emitTx(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID, payload); err != nil {
 			return err
+		}
+		if input.PersonalTo != nil {
+			// A source of the caller's own delegates nothing to a module:
+			// unattended authority over a source is connected by an
+			// administrator, and a cast holds nothing of its person's to give.
+			return nil
 		}
 		return s.recordSourceDelegationsOnConnectTx(ctx, actorID, orgID, source.ID)
 	}); err != nil {

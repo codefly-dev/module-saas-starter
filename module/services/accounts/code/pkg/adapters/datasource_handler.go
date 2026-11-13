@@ -137,7 +137,24 @@ func (h *datasourceConnectHandler) AddSource(
 	if err != nil {
 		return nil, err
 	}
-	governance, administrator, err := h.authorizeConnect(ctx, actorID, req.Msg.OrgId, req.Msg.GetGovernance())
+	// Every connect is a member's first, whichever arm decides it.
+	if err := requireOrgMember(ctx, actorID, req.Msg.OrgId); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	// A personal source is the person's own and administers nothing: a member
+	// connects it, decided by who answers for the session they call from
+	// (personalSourceHolder). Every other connect is decided as before.
+	var (
+		governance    *business.SourceGovernance
+		administrator bool
+		personalTo    *business.SourceBoundaryHolder
+	)
+	if personalSourceRequest(req.Msg) {
+		personalTo, administrator, err = personalSourceHolder(ctx, actorID, req.Msg.OrgId)
+		err = translateGRPCError(err)
+	} else {
+		governance, administrator, err = h.authorizeConnect(ctx, actorID, req.Msg.OrgId, req.Msg.GetGovernance())
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -150,6 +167,7 @@ func (h *datasourceConnectHandler) AddSource(
 		WebhookSecret:      req.Msg.WebhookSecret,
 		OAuth2ClientSecret: req.Msg.Oauth2ClientSecret,
 		Governance:         governance,
+		PersonalTo:         personalTo,
 
 		ByOrganizationAdministrator: administrator,
 	}

@@ -186,7 +186,7 @@ func (i *connectPolicyInterceptor) WrapUnary(next connect.UnaryFunc) connect.Una
 		if err != nil {
 			return nil, recordPolicyDenial(ctx, procedure, denialReasonAdmission, err)
 		}
-		if err := enforceImpersonationPolicy(ctx, procedure); err != nil {
+		if err := enforceImpersonationPolicy(ctx, procedure, req.Any()); err != nil {
 			return nil, translateGRPCError(recordPolicyDenial(ctx, procedure, denialReasonImpersonation, err))
 		}
 		if err := enforceAPIKeyScopePolicy(ctx, procedure); err != nil {
@@ -214,7 +214,7 @@ func (i *connectPolicyInterceptor) WrapStreamingHandler(next connect.StreamingHa
 		if err != nil {
 			return recordPolicyDenial(ctx, procedure, denialReasonAdmission, err)
 		}
-		if err := enforceImpersonationPolicy(ctx, procedure); err != nil {
+		if err := enforceImpersonationPolicy(ctx, procedure, nil); err != nil {
 			return translateGRPCError(recordPolicyDenial(ctx, procedure, denialReasonImpersonation, err))
 		}
 		if err := enforceAPIKeyScopePolicy(ctx, procedure); err != nil {

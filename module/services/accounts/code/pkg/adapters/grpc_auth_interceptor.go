@@ -70,7 +70,7 @@ func grpcAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExposure) 
 		if err != nil {
 			return nil, recordPolicyDenial(ctx, info.FullMethod, denialReasonAdmission, err)
 		}
-		if err := enforceImpersonationPolicy(ctx, info.FullMethod); err != nil {
+		if err := enforceImpersonationPolicy(ctx, info.FullMethod, req); err != nil {
 			return nil, recordPolicyDenial(ctx, info.FullMethod, denialReasonImpersonation, err)
 		}
 		if err := enforceAPIKeyScopePolicy(ctx, info.FullMethod); err != nil {
@@ -92,7 +92,7 @@ func grpcStreamAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExpo
 		if err != nil {
 			return recordPolicyDenial(ctx, info.FullMethod, denialReasonAdmission, err)
 		}
-		if err := enforceImpersonationPolicy(ctx, info.FullMethod); err != nil {
+		if err := enforceImpersonationPolicy(ctx, info.FullMethod, nil); err != nil {
 			return recordPolicyDenial(ctx, info.FullMethod, denialReasonImpersonation, err)
 		}
 		if err := enforceAPIKeyScopePolicy(ctx, info.FullMethod); err != nil {
@@ -335,9 +335,12 @@ func enforceCentralPolicy(ctx context.Context, fullMethod string) error {
 // before its handler can mutate anything. The option defaults open, but the
 // lookup does not — an impersonated call whose policy will not resolve is
 // denied here rather than left to the caller's ordering against authorize.
-func enforceImpersonationPolicy(ctx context.Context, fullMethod string) error {
+//
+// req is the request message of a unary call, nil for a stream; only the role
+// view gate reads it (enforceRoleViewPolicy).
+func enforceImpersonationPolicy(ctx context.Context, fullMethod string, req any) error {
 	if !auth.ImpersonatedRequest(ctx) {
-		return enforceRoleViewPolicy(ctx, fullMethod)
+		return enforceRoleViewPolicy(ctx, fullMethod, req)
 	}
 	policy, ok := business.LookupRPCPolicy(fullMethod)
 	if !ok {

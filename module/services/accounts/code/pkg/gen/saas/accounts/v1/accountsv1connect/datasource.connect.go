@@ -164,7 +164,9 @@ type DatasourceServiceClient interface {
 	LookupInvokeSourceOperation(context.Context, *connect.Request[v1.LookupInvokeSourceOperationRequest]) (*connect.Response[v1.InvokeSourceOperationResponse], error)
 	// ListSourceOperations reads the currently admitted declarations under source authority.
 	ListSourceOperations(context.Context, *connect.Request[v1.ListSourceOperationsRequest]) (*connect.Response[v1.ListSourceOperationsResponse], error)
-	// DeclareSourceOperations atomically replaces the source operation set, as an administrator.
+	// DeclareSourceOperations atomically replaces the source operation set: an
+	// organization's own source's as an administrator, a personal source's as
+	// its owner.
 	DeclareSourceOperations(context.Context, *connect.Request[v1.DeclareSourceOperationsRequest]) (*connect.Response[v1.DeclareSourceOperationsResponse], error)
 	// AddGitHubSource registers a GitHub repository as a datasource, encrypts and
 	// stores its access token (and optional webhook signing secret), and returns
@@ -759,7 +761,9 @@ type DatasourceServiceHandler interface {
 	LookupInvokeSourceOperation(context.Context, *connect.Request[v1.LookupInvokeSourceOperationRequest]) (*connect.Response[v1.InvokeSourceOperationResponse], error)
 	// ListSourceOperations reads the currently admitted declarations under source authority.
 	ListSourceOperations(context.Context, *connect.Request[v1.ListSourceOperationsRequest]) (*connect.Response[v1.ListSourceOperationsResponse], error)
-	// DeclareSourceOperations atomically replaces the source operation set, as an administrator.
+	// DeclareSourceOperations atomically replaces the source operation set: an
+	// organization's own source's as an administrator, a personal source's as
+	// its owner.
 	DeclareSourceOperations(context.Context, *connect.Request[v1.DeclareSourceOperationsRequest]) (*connect.Response[v1.DeclareSourceOperationsResponse], error)
 	// AddGitHubSource registers a GitHub repository as a datasource, encrypts and
 	// stores its access token (and optional webhook signing secret), and returns
