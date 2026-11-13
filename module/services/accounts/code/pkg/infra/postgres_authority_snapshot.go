@@ -218,7 +218,7 @@ func snapshotKey(sql string, args []any) (string, bool) {
 				key.WriteString(":" + strconv.Quote(item))
 			}
 		case int, int32, int64, uint64, bool:
-			key.WriteString(fmt.Sprintf(" %T:%v", v, v))
+			fmt.Fprintf(&key, " %T:%v", v, v)
 		default:
 			return "", false
 		}

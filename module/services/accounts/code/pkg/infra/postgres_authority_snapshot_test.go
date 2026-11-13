@@ -232,12 +232,13 @@ func TestAnOpenSnapshotIsNotSharedWithTheNextQuestion(t *testing.T) {
 			return nil
 		})
 	}()
+	// Released however the test ends, so a failed assertion never leaves the
+	// first question holding its connection.
+	defer func() { close(revoked); wg.Wait() }()
 	<-opened
 	require.NoError(t, inside)
 	require.NoError(t, testStore.AuthorityCore().Write(testCtx, func(tx authority.Tx) error { return tx.BumpAuthorizationRevision(sc.org) }))
 	err := testStore.WithAuthoritySnapshot(testCtx, func(ctx context.Context) error { _, err := sc.list(ctx); return err })
-	close(revoked)
-	wg.Wait()
 	require.ErrorContains(t, err, "revision", "a question started after the revocation committed reads it")
 }
 
