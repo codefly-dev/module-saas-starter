@@ -10,7 +10,7 @@ package business
 // generation is rebuilt here, at boot and on every delivery pass, from the
 // signed documents this host received for it, which the delivery inbox keeps
 // append-only: verified again as delivery verified them, and written only when
-// it is the offer every consent naming it approved.
+// it is the offer the consents naming it approved.
 
 import (
 	"context"
@@ -27,12 +27,13 @@ import (
 	compositionv1 "accounts/pkg/gen/host/composition/v1"
 )
 
-// approvedGeneration is one (target, generation) a live consent names and the
-// store keeps no declaration for, with the installations that name it and the
-// target as the core composes it now.
+// approvedGeneration is one (target, generation, offer digest) a live consent
+// names and the store keeps no declaration for, with the installations that
+// name it and the target as the core composes it now.
 type approvedGeneration struct {
 	target     string
 	generation uint64
+	digest     string
 	current    domain.Module
 	held       []domain.Installation
 }
@@ -89,37 +90,28 @@ func (s *Service) keepApprovedDeclarations(ctx context.Context) error {
 			continue
 		}
 		// The digest is the one a consent records: of the declaration as the
-		// store answers it, so it is compared after the write, in the same
-		// transaction, which a mismatch rolls back.
-		var stored string
+		// store answers it, which keys what it keeps, so the write is read
+		// back by the consents' digest in the same transaction, and a
+		// declaration that is not that offer is rolled back.
 		err = store.Write(ctx, func(tx authority.Tx) error {
-			if _, err := tx.ApprovedModule(want.target, want.generation); !errors.Is(err, domain.ErrNotFound) {
+			if _, err := tx.ApprovedModule(want.target, want.generation, want.digest); !errors.Is(err, domain.ErrNotFound) {
 				return err // kept already (nil), or unreadable
 			}
 			if err := tx.PutApprovedModule(approved); err != nil {
 				return err
 			}
-			kept, err := tx.ApprovedModule(want.target, want.generation)
-			if err != nil {
+			if _, err := tx.ApprovedModule(want.target, want.generation, want.digest); errors.Is(err, domain.ErrNotFound) {
+				return errNotTheApprovedOffer
+			} else if err != nil {
 				return err
-			}
-			if stored, err = authority.OfferDigest(kept); err != nil {
-				return err
-			}
-			for _, inst := range want.held {
-				if inst.Consent.Digest != stored {
-					return errNotTheApprovedOffer
-				}
 			}
 			return nil
 		})
 		switch {
 		case errors.Is(err, errNotTheApprovedOffer):
+			composed, _ := authority.OfferDigest(approved)
 			unkept(want, func(inst domain.Installation) string {
-				if inst.Consent.Digest == stored {
-					return fmt.Sprintf("another installation's consent to generation %d approved a different offer than the inbox's documents compose (%s); none is written", want.generation, stored)
-				}
-				return fmt.Sprintf("its consent approved offer %q, and the inbox's documents for generation %d compose %q", inst.Consent.Digest, want.generation, stored)
+				return fmt.Sprintf("its consent approved offer %q, and the inbox's documents for generation %d compose %q", inst.Consent.Digest, want.generation, composed)
 			})
 		case err != nil:
 			failures = append(failures, fmt.Errorf("%s generation %d: %w", want.target, want.generation, err))
@@ -128,9 +120,9 @@ func (s *Service) keepApprovedDeclarations(ctx context.Context) error {
 	return errors.Join(failures...)
 }
 
-// unkeptApprovedGenerations lists every (target, generation) a pending or
-// active installation's consent names, at or below the target's composed
-// generation, that the store keeps no declaration for.
+// unkeptApprovedGenerations lists every (target, generation, offer digest) a
+// pending or active installation's consent names, at or below the target's
+// composed generation, that the store keeps no declaration for.
 func unkeptApprovedGenerations(ctx context.Context, store authority.Store) ([]*approvedGeneration, error) {
 	var out []*approvedGeneration
 	err := store.Read(ctx, func(tx authority.Tx) error {
@@ -155,18 +147,18 @@ func unkeptApprovedGenerations(ctx context.Context, store authority.Store) ([]*a
 			if c.Generation > m.Generation {
 				continue
 			}
-			key := fmt.Sprintf("%s@%d", inst.Target, c.Generation)
+			key := fmt.Sprintf("%s@%d@%s", inst.Target, c.Generation, c.Digest)
 			if want, seen := byKey[key]; seen {
 				want.held = append(want.held, inst)
 				continue
 			}
-			if _, err := tx.ApprovedModule(inst.Target, c.Generation); !errors.Is(err, domain.ErrNotFound) {
+			if _, err := tx.ApprovedModule(inst.Target, c.Generation, c.Digest); !errors.Is(err, domain.ErrNotFound) {
 				if err != nil {
 					return err
 				}
 				continue
 			}
-			want := &approvedGeneration{target: inst.Target, generation: c.Generation, current: m, held: []domain.Installation{inst}}
+			want := &approvedGeneration{target: inst.Target, generation: c.Generation, digest: c.Digest, current: m, held: []domain.Installation{inst}}
 			byKey[key] = want
 			out = append(out, want)
 		}

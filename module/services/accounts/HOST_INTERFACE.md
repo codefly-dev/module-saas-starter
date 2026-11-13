@@ -25,7 +25,7 @@ What accounts adds, and where:
 
 | Concern | Where |
 |---|---|
-| The core's records: modules, tombstones, the installations of every solution (a module's is accounts' own record), each consent's approved declaration per generation (migration 68), role grants, delegations, epochs, owner-aware revisions, consumed nonces | migration 56 (`authority_core_*`, control-plane relations), migration 68 (`authority_core_approved_modules`) and `pkg/infra/postgres_authority_core.go` |
+| The core's records: modules, tombstones, the installations of every solution (a module's is accounts' own record), each consent's approved declaration per generation and offer digest (migrations 68, 78), role grants, delegations, epochs, owner-aware revisions, consumed nonces | migration 56 (`authority_core_*`, control-plane relations), migrations 68 and 78 (`authority_core_approved_modules`) and `pkg/infra/postgres_authority_core.go` |
 | A module declaring no roles is installed by this host's own consent and its installation is accounts' own record (`installations`, kind `module`): an administrator's install, or a closure's, within the module envelope, retired by an uninstall or by a ceiling that no longer allows the organization. The core is configured with `HostInstallsModules`, so it installs no such module itself and reads those records live, with what each consent allows: an installation whose consent allows no capability is not active for the core, and the bindings it allows (the module's grant within the envelope, intersected with the consent, as the native mint reads it) bound every issue through them (`Installation.Bindings`). The revision the core seals to is accounts' own revision, plus the core's raise when a redelivery narrows the module or a detachment ends a grant (`authority_core_module_revisions`, which also keeps what the core attached to the installation, migration 71), plus the committed envelope revision, so a narrowed consent and an envelope write each end what was issued before them | `pkg/infra/postgres_authority_core.go` (`moduleInstallations`), `pkg/business/authority_core_consent.go` |
 | Identity, read only: organizations, memberships, teams, and the organization roles a member holds, from accounts' RBAC (role assignments and live scope grants, directly or through a team, and the membership's administrator role) | `pkg/infra/postgres_authority_core.go` (`Member`, `OrgRole`) |
 | Revocation levers shared with the product: the organization's authorization revision is accounts' own, and a person's epoch includes their principal revisions | same file |
@@ -426,7 +426,12 @@ pending attempt.
 
 **Consent follows the release line.** The core records on each consent the
 generation and offer digest it approved and keeps the declaration approved
-per generation (`authority_core_approved_modules`). A redelivery whose
+per generation and offer digest (`authority_core_approved_modules`). A
+generation the core holds is read again at every start from the inbox's
+verified record of it (`ReconcileHeldDeliveries`): a host that learned a
+declaration field reads the same delivery as another declaration, which the
+core takes as a re-read of that generation, proven by the digest of its signed
+documents, and holds like a redelivery, never as a new generation. A redelivery whose
 reviewed surface asks nothing new re-converges the consent: the installation
 stays active, its approved generation advances, its revision moves, every
 grant is kept (grants of a role the new declaration drops end with the

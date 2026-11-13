@@ -93,15 +93,19 @@ func newApprovedLine(t *testing.T, digests ...string) approvedLine {
 
 // deliver applies one owner-aware generation of the line through the
 // composition interface, signed by the line's release key.
-func (line approvedLine) deliver(t *testing.T, generation uint64, roles []*compositionv1.RoleV1) {
+func (line approvedLine) deliver(t *testing.T, generation uint64, roles []*compositionv1.RoleV1, also ...func(*compositionv1.AuthorityManifestV1)) {
 	t.Helper()
 	m := &solutionhost.ModuleManifest{Schema: solutionhost.SchemaModuleManifestV1, Binding: line.alias, Alias: line.alias, Kind: solutionhost.KindSolution, Generation: generation,
 		Host: solutionhost.HostTarget{Coordinate: legacyDeliveryCoordinate, Domain: "acme"}, Release: solutionhost.Release{Publisher: "acme", Name: line.alias, Version: fmt.Sprintf("1.%d.0", generation)},
 		Workloads: []solutionhost.Workload{{Service: "api", Container: "app"}}, Authority: &solutionhost.Authority{Principal: line.alias, ResourceKinds: []string{"doc"}}}
 	raw, err := solutionhost.SignedPayload(m)
 	require.NoError(t, err)
-	doc, err := proto.Marshal(&compositionv1.AuthorityManifestV1{Module: line.alias, Generation: generation, CoreManifestDigest: delivery.Digest(raw), Roles: roles, OwnerAware: true,
-		ScopeCeilings: []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read", "write"}}}})
+	document := &compositionv1.AuthorityManifestV1{Module: line.alias, Generation: generation, CoreManifestDigest: delivery.Digest(raw), Roles: roles, OwnerAware: true,
+		ScopeCeilings: []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read", "write"}}}}
+	for _, f := range also {
+		f(document)
+	}
+	doc, err := proto.Marshal(document)
 	require.NoError(t, err)
 	envelope, err := delivery.Sign(doc, line.signer.KeyID(), line.signer.Sign)
 	require.NoError(t, err)
@@ -150,7 +154,7 @@ func (line approvedLine) kept(t *testing.T) (domain.Module, bool) {
 	var approved domain.Module
 	err := testStore.AuthorityCore().Read(testCtx, func(tx authority.Tx) error {
 		var err error
-		approved, err = tx.ApprovedModule(line.alias, 1)
+		approved, err = tx.ApprovedModule(line.alias, 1, "")
 		return err
 	})
 	if err != nil {
@@ -257,19 +261,23 @@ func TestAnApprovedDeclarationIsWrittenOnceItsDocumentsArrive(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// A rebuilt declaration is written only when it is the offer every consent
-// naming its generation approved: one installation whose consent recorded
-// another digest keeps it from being written for both, and each is refused
-// issuance by name.
-func TestAnApprovedDeclarationIsWrittenOnlyWhenEveryConsentApprovedIt(t *testing.T) {
+// A rebuilt declaration is written only for the consents that approved it:
+// approved declarations are kept by offer digest, so the consent to the offer
+// the inbox's documents compose is kept and its holder issued, and one whose
+// consent recorded another digest gets nothing and is refused issuance by
+// name, never served the other's.
+func TestAnApprovedDeclarationIsWrittenOnlyForTheConsentsThatApprovedIt(t *testing.T) {
 	line := newApprovedLine(t, "", "sha256:another-offer")
 	require.NoError(t, legacyReconcile(testCtx))
-	_, kept := line.kept(t)
-	require.False(t, kept, "one holder's consent to another offer writes nothing for any")
+	approved, kept := line.kept(t)
+	require.True(t, kept, "the consent to the composed offer is kept")
+	digest, err := authority.OfferDigest(approved)
+	require.NoError(t, err)
+	require.Equal(t, line.approved, digest)
 	core, err := testService.AuthorityCore()
 	require.NoError(t, err)
-	for _, h := range line.holders {
-		_, err = line.issue(core, h)
-		require.ErrorContains(t, err, "that installation "+h.installation+" approved is not kept")
-	}
+	_, err = line.issue(core, line.holders[0])
+	require.NoError(t, err)
+	_, err = line.issue(core, line.holders[1])
+	require.ErrorContains(t, err, "kept for installation "+line.holders[1].installation+" is not the offer it approved")
 }
