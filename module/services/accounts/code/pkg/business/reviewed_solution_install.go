@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	installationv1 "accounts/pkg/gen/host/installation/v1"
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -46,20 +47,31 @@ func (s *Service) reviewSolutionInstall(ctx context.Context, caller authority.Pe
 	if uuid.Validate(operation) != nil {
 		return nil, domain.Malformed("installation operation must be a UUID")
 	}
-	available, err := s.availableTarget(ctx, org, targetID)
-	if err != nil {
-		return nil, err
-	}
 	core, err := s.AuthorityCore()
 	if err != nil {
 		return nil, err
 	}
+	available, err := s.availableTarget(ctx, org, targetID)
+	if err != nil {
+		// Whether a target exists is answered to an administrator of org
+		// alone (the core's Offers admits nobody else): anyone else is
+		// refused as for a target they may not approve, so a member cannot
+		// tell a delivered target id from a missing one, as the core refuses
+		// before it looks a target up.
+		if _, refused := core.Offers(ctx, caller, org); isDenied(refused) {
+			return nil, reviewRefused(targetID)
+		}
+		return nil, err
+	}
 	offer, err := core.ReviewOffer(ctx, caller, org, available.RouteAlias)
+	if isDenied(err) {
+		return nil, reviewRefused(targetID)
+	}
 	if err != nil {
 		return nil, err
 	}
 	if offer.Approval.TargetID == "" {
-		return nil, domain.Refuse("installing or updating %s is approved by an administrator or owner of the organization, and a module page's update also by the holder of its installer role", available.RouteAlias)
+		return nil, reviewRefused(targetID)
 	}
 	if offer.Module.InstallationRole == "" {
 		offer.Module.InstallationRole = requestedRole
@@ -180,6 +192,19 @@ func (s *Service) reviewSolutionInstall(ctx context.Context, caller authority.Pe
 
 // availableTarget is targetID as this host offers it to org; one it does not
 // offer is not available to review.
+// reviewRefused is the one answer a caller who may not approve targetID's
+// installation gets, whether the target exists, is held by them or not: it
+// names the target as they asked for it, and who approves.
+func reviewRefused(targetID string) error {
+	return domain.Refuse("installing or updating %s is approved by an administrator or owner of the organization, and a module page's update also by the holder of its installer role", targetID)
+}
+
+// isDenied is whether err is the core's refusal of the caller.
+func isDenied(err error) bool {
+	code, ok := domain.CodeOf(err)
+	return ok && code == domain.Denied
+}
+
 func (s *Service) availableTarget(ctx context.Context, org, targetID string) (*AvailableSolutionTarget, error) {
 	var targets []*AvailableSolutionTarget
 	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
@@ -376,6 +401,13 @@ func (s *Service) installReviewedSolution(ctx context.Context, caller authority.
 			return InstalledSolution{}, err
 		}
 	case request.assignAccess:
+		// An update keeps the teams its installation holds and assigns each
+		// role it adds to that role's conventional team (upgradeAccess): it
+		// assigns no team it is asked for, so a request naming one is refused
+		// by name rather than dropped without a word.
+		if asked := request.access.named(); len(asked) > 0 {
+			return InstalledSolution{}, domain.Refuse("updating %s keeps the teams its installation holds and gives each role it adds its own team; it assigns none it is asked for (%s): set up who holds a role after the update", review.Target, strings.Join(asked, ", "))
+		}
 		if approvedBefore, err = core.RoleTeamsOf(ctx, upgraded); err != nil {
 			return InstalledSolution{}, err
 		}

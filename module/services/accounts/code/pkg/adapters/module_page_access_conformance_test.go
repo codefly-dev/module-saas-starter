@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -364,6 +365,19 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		ivy := authority.Person{ID: conformanceIvy, Organization: fixtureOrganization}
 		_, err = h.svc.ReviewSolutionInstall(h.ctx, ivy, fixtureOrganization, available(page).TargetID)
 		require.Error(t, err, "a viewer of the page does not review its update")
+		// Nor can a member who approves nothing tell a delivered target id
+		// from a missing one: both are refused alike, naming the id asked
+		// for. The page's installer approves its page alone, so a missing id
+		// is refused to her alike too; an administrator is told it is missing.
+		missing := uuid.NewString()
+		for _, member := range []authority.Person{ivy, maya} {
+			_, unknown := h.svc.ReviewSolutionInstall(h.ctx, member, fixtureOrganization, missing)
+			code, ok := domain.CodeOf(unknown)
+			require.True(t, ok && code == domain.Denied, "%v", unknown)
+			require.Equal(t, strings.ReplaceAll(err.Error(), available(page).TargetID, missing), unknown.Error())
+		}
+		_, unknown := h.svc.ReviewSolutionInstall(h.ctx, alex, fixtureOrganization, missing)
+		require.ErrorContains(t, unknown, "not available")
 		review, err := h.svc.ReviewSolutionInstall(h.ctx, maya, fixtureOrganization, available(page).TargetID)
 		require.NoError(t, err, "the page's installer reviews its update")
 		_, err = h.svc.InstallReviewedSolution(h.ctx, ivy, fixtureOrganization, review, business.InstallAccess{})
@@ -389,6 +403,13 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		deliverPage(3)
 		review, err = h.svc.ReviewSolutionInstall(h.ctx, alex, fixtureOrganization, available(page).TargetID)
 		require.NoError(t, err)
+		// An update assigns no team it is asked for: the request is refused
+		// by name, never dropped, and nothing of it is recorded.
+		_, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{RoleTeams: map[string]string{"author": viewer[0]}})
+		require.ErrorContains(t, err, "role author to team "+viewer[0])
+		_, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{InstallerRoles: []string{"author"}})
+		require.ErrorContains(t, err, "the installer in role author")
+		require.Empty(t, teamsNamed(t, h, page+"-author"))
 		approved, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{})
 		require.NoError(t, err)
 		require.Empty(t, approved.AccessProblems)
