@@ -80,6 +80,7 @@ function dependencies(
 	overrides: Partial<PluginBffDependencies> = {},
 ): Partial<PluginBffDependencies> {
 	return {
+		publicOrigin: () => "https://app.example",
 		requestID: () => "request-1",
 		fetch: vi.fn(async () => new Response("{}")) as typeof fetch,
 		resolve: () => ({
@@ -423,6 +424,42 @@ describe("generic frontend plugin BFF", () => {
 			expect(response.status).toBe(403);
 			expect(await problemCode(response)).toBe("cross_origin_request");
 		}
+	});
+
+	// A hosted cell serves the browser at its public origin through an
+	// ingress, and this server is reached at its own address: the request URL
+	// is never the origin the browser's same-origin call carries. Red before:
+	// every bundled page's call on a hosted cell was refused
+	// "cross_origin_request", while a local run, reached at its own address,
+	// passed.
+	it("admits the browser's same-origin call behind an ingress, by the configured public origin", async () => {
+		const behindIngress = (origin: string) => {
+			const incoming = new Request(
+				"http://10.0.0.7:3000/api/plugins/example/api/traffic",
+				{ headers: { authorization: TOKEN } },
+			);
+			incoming.headers.set("origin", origin);
+			incoming.headers.set("sec-fetch-site", "same-origin");
+			expect(incoming.headers.get("origin")).toBe(origin);
+			return handlePluginBffRequest(incoming, params, dependencies());
+		};
+		const admitted = await behindIngress("https://app.example");
+		expect(admitted.status).toBe(200);
+		const spoofed = await behindIngress("http://10.0.0.7:3000");
+		expect(spoofed.status).toBe(403);
+		expect(await problemCode(spoofed)).toBe("cross_origin_request");
+	});
+
+	it("refuses a call carrying an Origin when the deployment has no verified public origin", async () => {
+		const incoming = request();
+		incoming.headers.set("origin", "https://app.example");
+		const response = await handlePluginBffRequest(
+			incoming,
+			params,
+			dependencies({ publicOrigin: () => undefined }),
+		);
+		expect(response.status).toBe(403);
+		expect(await problemCode(response)).toBe("cross_origin_request");
 	});
 
 	it("distinguishes unknown aliases and unavailable Codefly endpoints", async () => {

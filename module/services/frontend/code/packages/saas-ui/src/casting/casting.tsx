@@ -131,7 +131,6 @@ export function CastingProvider({
 				const teams = await host.listTeams().catch(() => [] as CastTeam[]);
 				if (!live) return;
 				setRead({ host, generation, session: s, teams });
-				if (!s.castTeamId && s.roleView.length === 0) keepCastTeams(s.personId, s.organizationId, teams);
 			},
 			(error: unknown) => {
 				if (!live) return;
@@ -148,10 +147,25 @@ export function CastingProvider({
 	const session = ours?.session;
 	const listed = ours?.teams;
 	const reading = !ours || ours.generation !== generation;
+	// A holding is named as the menu names its target, else as it was named
+	// when it was kept: a cast's menu lists only its own pages, so a kept
+	// team's other pages would otherwise be named by their ids.
+	const named = useCallback(
+		(teams: CastTeam[]) =>
+			teams.map((t) => ({
+				...t,
+				holds: t.holds.map((h) => ({ ...h, title: titleOf?.(h.target) || h.title || h.target })),
+			})),
+		[titleOf],
+	);
+	// The person's own view keeps its list, named as its menu names each page,
+	// for the cast that lists only itself.
+	useEffect(() => {
+		if (session && listed && !session.castTeamId && session.roleView.length === 0)
+			keepCastTeams(session.personId, session.organizationId, named(listed));
+	}, [session, listed, named]);
 
 	const value = useMemo<Casting>(() => {
-		const named = (teams: CastTeam[]) =>
-			teams.map((t) => ({ ...t, holds: t.holds.map((h) => ({ ...h, title: titleOf?.(h.target) || h.target })) }));
 		const narrowed = !!session && (!!session.castTeamId || session.roleView.length > 0);
 		const kept = named(narrowed && !!session ? keptCastTeams(session.personId, session.organizationId) : []);
 		const listed_ = listed && named(listed);
@@ -206,7 +220,7 @@ export function CastingProvider({
 				}
 			},
 		};
-	}, [host, titleOf, session, listed, reading, ask, reread]);
+	}, [host, named, session, listed, reading, ask, reread]);
 	return <CastingContext.Provider value={value}>{children}</CastingContext.Provider>;
 }
 

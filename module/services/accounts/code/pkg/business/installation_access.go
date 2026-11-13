@@ -352,17 +352,20 @@ func (s *Service) GrantInstallationRoles(ctx context.Context, caller authority.P
 // installation, so its set up assigns access exactly as a solution's install
 // does (resolveInstallationAccess, applyInstallationAccess) on the
 // installation composition made, with no install of its own and no consent:
-// a module page holds no standing authority. A target that is a solution, or
-// a module declaring no roles, is refused; so is a module page composition
-// has not installed in org yet. Setting it up again changes nothing that is
-// already so.
+// a module page holds no standing authority. A module declaring no roles is
+// refused; so is a module page composition has not installed in org yet.
+// Setting it up again changes nothing that is already so.
+//
+// A solution is set up the same way once it is installed (setUpSolution):
+// each role its consent approved that nobody holds gets its team, which is
+// what an install made before a role was added leaves to an administrator.
 func (s *Service) SetUpModulePage(ctx context.Context, caller authority.Person, org, targetID string, requested InstallAccess) (InstalledSolution, error) {
 	available, err := s.availableTarget(ctx, org, targetID)
 	if err != nil {
 		return InstalledSolution{}, err
 	}
 	if available.Kind != "module" {
-		return InstalledSolution{}, domain.Refuse("%s is not a module page: a solution's access is assigned at its install", available.RouteAlias)
+		return s.setUpSolution(ctx, caller, org, available.RouteAlias, requested)
 	}
 	core, err := s.AuthorityCore()
 	if err != nil {
@@ -401,6 +404,68 @@ func (s *Service) SetUpModulePage(ctx context.Context, caller authority.Person, 
 		return InstalledSolution{}, err
 	}
 	return InstalledSolution{Installation: installed[i], AccessProblems: s.applyInstallationAccess(ctx, caller, installed[i], access)}, nil
+}
+
+// setUpSolution gives each role of the installed solution target at org that
+// nobody holds its team, as caller: its conventional team (created when
+// absent) unless requested names another, the administrator joining the
+// roles they ticked. A role someone holds is left as the organization set it:
+// a holder an administrator chose is never doubled with the conventional
+// team. A solution that is not installed is refused by name: its install
+// assigns every role.
+func (s *Service) setUpSolution(ctx context.Context, caller authority.Person, org, target string, requested InstallAccess) (InstalledSolution, error) {
+	core, err := s.AuthorityCore()
+	if err != nil {
+		return InstalledSolution{}, err
+	}
+	installed, err := core.Installations(ctx, caller, org)
+	if err != nil {
+		return InstalledSolution{}, err
+	}
+	i := slices.IndexFunc(installed, func(inst domain.Installation) bool {
+		return inst.Target == target && inst.Status == domain.Active
+	})
+	if i < 0 {
+		return InstalledSolution{}, domain.NotNow("%s is not installed in this organization: install it, and its install gives each of its roles a team", target)
+	}
+	inst := installed[i]
+	approved, err := core.RoleTeamsOf(ctx, inst.ID)
+	if err != nil {
+		return InstalledSolution{}, err
+	}
+	if len(approved) == 0 {
+		return InstalledSolution{}, domain.Refuse("%s declares no roles: there is no access of a person to set up", target)
+	}
+	grants, err := core.ListRoleGrants(ctx, caller, org, inst.ID)
+	if err != nil {
+		return InstalledSolution{}, err
+	}
+	unheld := map[string]string{}
+	for role, team := range approved {
+		if !slices.ContainsFunc(grants, func(g domain.RoleGrant) bool { return g.Role == role }) {
+			unheld[role] = team
+		}
+	}
+	if len(unheld) == 0 {
+		return InstalledSolution{Installation: inst}, nil
+	}
+	// What was asked of a role someone holds already is not this act's.
+	asked := InstallAccess{RoleTeams: map[string]string{}}
+	for role, team := range requested.RoleTeams {
+		if _, open := unheld[role]; open {
+			asked.RoleTeams[role] = team
+		}
+	}
+	for _, role := range requested.InstallerRoles {
+		if _, open := unheld[role]; open {
+			asked.InstallerRoles = append(asked.InstallerRoles, role)
+		}
+	}
+	access, err := s.resolveInstallationAccess(ctx, caller, org, target, unheld, asked)
+	if err != nil {
+		return InstalledSolution{}, err
+	}
+	return InstalledSolution{Installation: inst, AccessProblems: s.applyInstallationAccess(ctx, caller, inst, access)}, nil
 }
 
 // ApplyInstallAccess assigns, as caller, the access requested on inst, an

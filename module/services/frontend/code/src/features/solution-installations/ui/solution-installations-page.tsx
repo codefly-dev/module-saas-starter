@@ -170,8 +170,10 @@ function SolutionInstallationsForOrganization({
 	// module page: only that classification waits on the authority.
 	const modulesWithheld = showModules && !offered.isSuccess;
 	// Who holds which role on each installation the authority grants roles
-	// on (no host scope root), named as the organization names its teams and
-	// people, and what each cannot reach now: the Solutions page only.
+	// on (a solution, or a module page: its composition installation carries a
+	// host scope root, and its access is still its roles), named as the
+	// organization names its teams and people, and what each cannot reach
+	// now: the Solutions page only.
 	const held = useAuthorityInstallations(showModules ? "" : orgId);
 	const teams = useQuery({
 		...teamQueries.list(orgId),
@@ -180,10 +182,12 @@ function SolutionInstallationsForOrganization({
 	const members = useOrgMembers(showModules ? null : orgId);
 	const roleGranted = showModules
 		? []
-		: (installed.data ?? []).flatMap(({ installation, rootScopePath }) =>
-				installation?.status === InstallationStatus.ACTIVE && !rootScopePath
-					? [installation.id]
-					: [],
+		: (installed.data ?? []).flatMap(
+				({ installation, rootScopePath, target }) =>
+					installation?.status === InstallationStatus.ACTIVE &&
+					(!rootScopePath || isModulePage(target))
+						? [installation.id]
+						: [],
 			);
 	const roleGrants = useRoleGrants(orgId, roleGranted);
 	const access: AccessView = {
@@ -197,8 +201,10 @@ function SolutionInstallationsForOrganization({
 				: members.data?.find((member) => member.userId === grant.personId)
 						?.userEmail || grant.personId,
 	};
-	// A module page's composition installation, and whether anyone holds a
-	// role on it: set up, or not yet.
+	// A target's active installation (a module page's composition one, or a
+	// solution's), whether anyone holds a role on it (set up, or not yet), and
+	// which roles its consent approved that nobody holds: what Set up gives a
+	// team. Undefined while the grants are not read.
 	const pageAccess = (page: AvailableSolution) => {
 		const id = (installed.data ?? []).find(
 			(row) =>
@@ -206,9 +212,14 @@ function SolutionInstallationsForOrganization({
 				row.installation?.status === InstallationStatus.ACTIVE,
 		)?.installation?.id;
 		const grants = id ? roleGrants.grants.get(id) : undefined;
+		const approved = id ? held.data?.get(id)?.roles : undefined;
 		return {
 			installationId: id,
 			setUp: grants ? grants.length > 0 : undefined,
+			unheld:
+				grants && approved
+					? approved.filter((role) => !grants.some((g) => g.role === role))
+					: undefined,
 		};
 	};
 	const chosen = (target: AvailableSolution | undefined) =>
@@ -297,6 +308,15 @@ function SolutionInstallationsForOrganization({
 								combinedInstall.reset();
 								setInstalling(solution);
 							}}
+							pageAccess={showModules ? undefined : pageAccess}
+							onSetUp={
+								showModules
+									? undefined
+									: (solution) => {
+											setUp.reset();
+											setSettingUp(solution);
+										}
+							}
 						/>
 					)}
 					{!showModules && (
@@ -386,6 +406,11 @@ function SolutionInstallationsForOrganization({
 				<SetUpModulePageDialog
 					orgId={orgId}
 					page={settingUp}
+					roles={
+						isModulePage(settingUp)
+							? settingUp.roles
+							: (pageAccess(settingUp).unheld ?? settingUp.roles)
+					}
 					isPending={setUp.isPending}
 					error={setUp.isError ? hostRefusal(setUp.error) : undefined}
 					onSubmit={(access) =>
@@ -471,12 +496,16 @@ function AvailableSection({
 	query: ReturnType<typeof useAvailableSolutions>;
 	installing: boolean;
 	onInstall: (solution: AvailableSolution) => void;
-	/** Sets up a module page's access; absent where pages are not set up. */
+	/**
+	 * Sets up a module page's access, or gives an installed solution's roles
+	 * that nobody holds their teams; absent where nothing is set up.
+	 */
 	onSetUp?: (page: AvailableSolution) => void;
-	/** A module page's installation, and whether anyone holds a role on it. */
+	/** A target's installation, whether anyone holds a role on it, and the roles nobody holds. */
 	pageAccess?: (page: AvailableSolution) => {
 		installationId?: string;
 		setUp?: boolean;
+		unheld?: string[];
 	};
 }) {
 	const { indicator, quiet } = useLoadingPhase(query.isLoading);
@@ -572,6 +601,11 @@ function AvailableSection({
 												) : (
 													<Badge variant="outline">Module page</Badge>
 												)
+											) : row.installed &&
+												pageAccess?.(row.solution).unheld?.length ? (
+												<Badge tone="warning" dot>
+													{`Installed · ${pageAccess(row.solution).unheld?.join(", ")} held by nobody`}
+												</Badge>
 											) : row.installed ? (
 												<Badge tone="success" dot>
 													Installed
@@ -604,7 +638,17 @@ function AvailableSection({
 														Set up
 													</Button>
 												)
-											) : row.installed ? null : (
+											) : row.installed ? (
+												onSetUp && pageAccess?.(row.solution).unheld?.length ? (
+													<Button
+														size="sm"
+														aria-label={`Set up access to ${row.alias}`}
+														onClick={() => onSetUp(row.solution)}
+													>
+														Set up
+													</Button>
+												) : null
+											) : (
 												<Button
 													size="sm"
 													disabled={installing}

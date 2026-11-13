@@ -21,6 +21,7 @@ import {
 	supportsFrontendPluginContract,
 } from "@codefly-dev/saas-plugin-contract/capabilities";
 
+import { resolveVerifiedPublicOrigin } from "@/lib/codefly-gateway-context";
 import { parseTraceparent, serializeTraceparent } from "@/lib/trace-context";
 
 import {
@@ -66,11 +67,18 @@ export interface PluginBffDependencies {
 	requestLimit: number;
 	responseLimit: number;
 	timeoutMs: number;
+	/**
+	 * This deployment's configured public origin, the one a browser's
+	 * same-origin call carries. Behind an ingress the request URL is the
+	 * server's own address, never the public one, so it is not compared.
+	 */
+	publicOrigin: () => string | undefined;
 }
 
 const defaultDependencies: PluginBffDependencies = {
 	resolve: resolvePluginService,
 	fetch: globalThis.fetch,
+	publicOrigin: () => resolveVerifiedPublicOrigin(),
 	requestID: () => crypto.randomUUID(),
 	requestLimit: DEFAULT_REQUEST_LIMIT,
 	responseLimit: DEFAULT_RESPONSE_LIMIT,
@@ -159,11 +167,19 @@ function proxyableEntry(entry: FrontendServiceAllowlistEntry): boolean {
 	return entry.routePrefix !== FRONTEND_SERVICE_ROOT_PREFIX;
 }
 
-function sameOrigin(request: Request): boolean {
+// The browser's Origin is compared with the deployment's configured public
+// origin, as the solution proxy compares it: the request URL is where this
+// server was reached (an internal address behind an ingress), so comparing
+// with it refused every bundled page's call on a hosted cell while a local
+// run, reached at its own address, passed. With no verified public origin
+// there is nothing to compare against, and a call carrying an Origin is
+// refused.
+function sameOrigin(request: Request, hostOrigin: string | undefined): boolean {
 	const origin = request.headers.get("origin");
 	if (origin) {
+		if (!hostOrigin) return false;
 		try {
-			if (new URL(origin).origin !== new URL(request.url).origin) return false;
+			if (new URL(origin).origin !== hostOrigin) return false;
 		} catch {
 			return false;
 		}
@@ -329,7 +345,7 @@ export async function handlePluginBffRequest(
 	if (!authorization || !BEARER.test(authorization)) {
 		return problem("authentication_required", 401, requestID);
 	}
-	if (!sameOrigin(request)) {
+	if (!sameOrigin(request, dependencies.publicOrigin())) {
 		return problem("cross_origin_request", 403, requestID);
 	}
 	if (!safePath(request, params.path)) {

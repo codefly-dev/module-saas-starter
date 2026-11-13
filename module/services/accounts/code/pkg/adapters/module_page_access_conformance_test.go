@@ -191,9 +191,66 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		code, _ := domain.CodeOf(err)
 		require.Equal(t, domain.Denied, code, "%v", err)
 		require.ErrorContains(t, err, "already installed")
+		// An installed solution whose roles are all held is set up already:
+		// Set up returns its installation and changes nothing.
 		const solutionAlias = "conformance-access-own"
-		_, err = h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(solutionAlias).TargetID, business.InstallAccess{})
-		require.ErrorContains(t, err, "is not a module page", "a solution's access is assigned at its install")
+		all, err := h.core.Installations(h.ctx, alex, fixtureOrganization)
+		require.NoError(t, err)
+		own := slices.IndexFunc(all, func(inst domain.Installation) bool { return inst.Target == solutionAlias && inst.Status == domain.Active })
+		require.GreaterOrEqual(t, own, 0)
+		before, err := h.core.ListRoleGrants(h.ctx, alex, fixtureOrganization, all[own].ID)
+		require.NoError(t, err)
+		require.NotEmpty(t, before)
+		held, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(solutionAlias).TargetID, business.InstallAccess{})
+		require.NoError(t, err)
+		require.Empty(t, held.AccessProblems)
+		after, err := h.core.ListRoleGrants(h.ctx, alex, fixtureOrganization, held.ID)
+		require.NoError(t, err)
+		require.ElementsMatch(t, before, after)
+	})
+
+	// An installed solution a role of which nobody holds (an update approved
+	// before an approval gave added roles their teams, or a holder removed)
+	// is set up in one act, as a module page is: each such role gets its
+	// conventional team, and a role someone holds is left as it is. Red
+	// before: "is not a module page: a solution's access is assigned at its
+	// install", so a hosted administrator had no way to give `user` a team
+	// while a local fixture's install pass did.
+	t.Run("an installed solution's role nobody holds is given its team by Set up", func(t *testing.T) {
+		const target = "conformance-access-unheld"
+		solution(target)
+		created, err := h.svc.CreateTeam(h.ctx, conformanceAlex, &gen.CreateTeamRequest{OrgId: fixtureOrganization, Name: "conformance-unheld-readers"})
+		require.NoError(t, err)
+		readers := created.GetTeam().GetId()
+		inst := install(target, business.InstallAccess{RoleTeams: map[string]string{"viewer": readers}})
+		_, err = h.core.RevokeRole(h.ctx, alex, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: inst.ID, Role: "viewer", TeamID: readers})
+		require.NoError(t, err)
+		holders := func() []domain.RoleGrant {
+			t.Helper()
+			grants, err := h.core.ListRoleGrants(h.ctx, alex, fixtureOrganization, inst.ID)
+			require.NoError(t, err)
+			return grants
+		}
+		installer := teamsNamed(t, h, target+"-installer")
+		require.Len(t, installer, 1)
+		require.Equal(t, []domain.RoleGrant{{InstallationID: inst.ID, Role: "installer", TeamID: installer[0]}}, holders(), "nobody holds viewer")
+		require.Empty(t, teamsNamed(t, h, target+"-viewer"))
+
+		set, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(target).TargetID, business.InstallAccess{InstallerRoles: []string{"installer", "viewer"}})
+		require.NoError(t, err)
+		require.Equal(t, inst.ID, set.ID, "set up on the solution's installation; nothing is installed")
+		require.Empty(t, set.AccessProblems)
+		viewer := teamsNamed(t, h, target+"-viewer")
+		require.Len(t, viewer, 1, "the role nobody held gets its conventional team")
+		require.ElementsMatch(t, []domain.RoleGrant{{InstallationID: inst.ID, Role: "installer", TeamID: installer[0]}, {InstallationID: inst.ID, Role: "viewer", TeamID: viewer[0]}}, holders())
+		require.Equal(t, []string{conformanceAlex}, teamMembers(t, h, viewer[0]), "the administrator takes the role they ticked")
+		require.Empty(t, teamMembers(t, h, installer[0]), "and joins no team of a role someone held already")
+
+		again, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(target).TargetID, business.InstallAccess{InstallerRoles: []string{"viewer"}})
+		require.NoError(t, err)
+		require.Empty(t, again.AccessProblems)
+		require.Len(t, teamsNamed(t, h, target+"-viewer"), 1, "setting it up again creates nothing")
+		require.Len(t, holders(), 2)
 	})
 
 	t.Run("a widening anywhere in the reach shows update available", func(t *testing.T) {
