@@ -101,7 +101,7 @@ describe("a team cast across a reload", () => {
 
 	it("is kept for this tab only, and never without its name", async () => {
 		const cast = await castOpen(600);
-		expect(readKeptNarrowedSession()).toEqual({ live: { bearer: cast, as: "team Stewards" } });
+		expect(readKeptNarrowedSession()).toEqual({ live: { bearer: cast, as: "team Stewards", since: expect.any(Number) } });
 		expect(localStorage.getItem(KEY)).toBeNull();
 	});
 
