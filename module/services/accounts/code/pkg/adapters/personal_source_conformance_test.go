@@ -131,6 +131,11 @@ func testAMemberConnectsAPersonalSourceOfTheirOwn(t *testing.T, h reviewedClosur
 		require.True(t, strings.HasPrefix(status.Convert(err).Message(), "you do not hold"), "the refusal is the caller's, not a failure to persist: %v", err)
 		_, err = personal(nora, under(granted))
 		refused(t, err, codes.PermissionDenied, "datasource:invoke")
+		// A node that does not exist is refused exactly as one not granted,
+		// so a member learns nothing of which scope nodes exist.
+		absent := uuid.NewString()
+		_, err = personal(nora, under(&gen.ScopeNode{Id: absent}))
+		refused(t, err, codes.PermissionDenied, "you do not hold datasource:invoke on scope node "+absent)
 	})
 
 	grant(conformanceRemi, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, granted)
@@ -205,6 +210,23 @@ func testAMemberConnectsAPersonalSourceOfTheirOwn(t *testing.T, h reviewedClosur
 		refused(t, err, codes.PermissionDenied, "acts as team")
 		_, err = sources.BeginDatasourceAccountLink(casting, &gen.BeginDatasourceAccountLinkRequest{OrgId: fixtureOrganization, Connector: "github", SourceId: mine.GetId()})
 		refused(t, err, codes.PermissionDenied, "acts as team")
+
+		// A source of the person's own placed where the team holds nothing —
+		// connected in the session the cast was opened from — is not the
+		// cast's to sign in for: neither beginning a sign-in nor completing
+		// one begun in that other session. Ownership is the person's; the
+		// cast holds only what the team holds.
+		outside, err := personal(alex, under(elsewhere))
+		require.NoError(t, err, "an administrator connects their own source anywhere in their own session")
+		teamLacks := "team " + team.GetTeam().GetId() + ", which this session acts as, does not hold datasource:invoke on scope node " + elsewhere.GetId()
+		refused(t, declare(casting, outside.GetId()), codes.PermissionDenied, teamLacks)
+		_, err = link(casting, outside.GetId())
+		refused(t, err, codes.PermissionDenied, teamLacks)
+		begunElsewhere, err := link(alex, outside.GetId())
+		require.NoError(t, err)
+		_, err = sources.CompleteDatasourceAccountLink(casting, &gen.CompleteDatasourceAccountLinkRequest{OrgId: fixtureOrganization, State: begunElsewhere.GetState(), Code: "conformance-code"})
+		refused(t, err, codes.PermissionDenied, teamLacks)
+		remove(alex, outside.GetId())
 		remove(alex, mine.GetId())
 	})
 

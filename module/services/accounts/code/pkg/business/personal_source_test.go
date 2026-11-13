@@ -29,7 +29,9 @@ func TestAMemberConnectsOnlyAPersonalSourceUnderAnExistingNode(t *testing.T) {
 		"a refresh token":    func(in *AddSourceInput) { in.API.OAuth2.Grant = OAuth2RefreshToken },
 		"a bearer":           func(in *AddSourceInput) { in.API = &APIDatasourceConfig{CredentialKind: "bearer"} },
 		"another provider":   func(in *AddSourceInput) { in.Provider, in.API = DatasourceProviderGitHub, nil },
-		"governed":           func(in *AddSourceInput) { in.Governance = &SourceGovernance{InstallationID: "i", Kind: "k", Action: "write"} },
+		"governed": func(in *AddSourceInput) {
+			in.Governance = &SourceGovernance{InstallationID: "i", Kind: "k", Action: "write"}
+		},
 	} {
 		in := personal()
 		change(&in)

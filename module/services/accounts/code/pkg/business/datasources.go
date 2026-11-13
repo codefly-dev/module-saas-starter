@@ -1026,20 +1026,24 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 	// the caller's own refusal rather than wrapped as a failure to persist.
 	var refusal error
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		// A source of the caller's own is decided before its node is looked
+		// up: a node that does not exist is refused as one not granted, so
+		// the refusal says nothing of which nodes exist
+		// (admitPersonalConnect has already required an existing node's id).
+		if input.PersonalTo != nil {
+			if source.PersonalOwnerUserID != actorID {
+				return status.Error(codes.Internal, "a source connected as the caller's own did not become personal to them")
+			}
+			if err := s.requireHoldsSourceBoundaryTx(ctx, orgID, *input.PersonalTo, strings.TrimSpace(input.BoundaryNodeID)); err != nil {
+				refusal = err
+				return err
+			}
+		}
 		boundaryID, err := s.resolveSourceBoundary(ctx, orgID, input.Governance, input.BoundaryNodeID, input.CollectionLabel)
 		if err != nil {
 			return err
 		}
 		source.BoundaryNodeID = boundaryID
-		if input.PersonalTo != nil {
-			if source.PersonalOwnerUserID != actorID {
-				return status.Error(codes.Internal, "a source connected as the caller's own did not become personal to them")
-			}
-			if err := s.requireHoldsSourceBoundaryTx(ctx, orgID, *input.PersonalTo, boundaryID); err != nil {
-				refusal = err
-				return err
-			}
-		}
 		if err := s.store.InsertDatasourceSource(ctx, source); err != nil {
 			return err
 		}

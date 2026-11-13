@@ -65,8 +65,10 @@ func (h *datasourceConnectHandler) ownPersonalSource(ctx context.Context, actorI
 
 // refuseUnlessOwnPersonalSourceInView refuses a call a cast reached
 // (castAsksForItsPersonsOwnSource) unless it is about a personal source of the
-// person's own, of provider connector when one is named. A session that
-// narrows nothing passes; it is decided as before.
+// person's own, of provider connector when one is named, placed where the team
+// the cast acts as holds datasource:invoke: the person's ownership alone is
+// something of their own, which a cast does not hold. A session that narrows
+// nothing passes; it is decided as before.
 func (h *datasourceConnectHandler) refuseUnlessOwnPersonalSourceInView(ctx context.Context, actorID, orgID, sourceID, connector string) error {
 	view, err := roleViewOf(ctx)
 	if err != nil || !narrows(view) {
@@ -82,5 +84,6 @@ func (h *datasourceConnectHandler) refuseUnlessOwnPersonalSourceInView(ctx conte
 	if own == nil || (connector != "" && own.Provider != connector) {
 		return viewRefusal(view)
 	}
-	return nil
+	return h.svc.RequireHoldsSourceBoundary(ctx, orgID,
+		business.SourceBoundaryHolder{SubjectID: view.Team, SubjectKind: gen.SubjectKind_SUBJECT_KIND_TEAM}, own.BoundaryNodeID)
 }

@@ -89,6 +89,15 @@ func (s *Service) requireHoldsSourceBoundaryTx(ctx context.Context, orgID string
 		who, personalSourceBoundaryAction, nodeID)
 }
 
+// RequireHoldsSourceBoundary refuses unless holder holds datasource:invoke on
+// nodeID now, in its own organization transaction: the check
+// requireHoldsSourceBoundaryTx makes, for a caller that writes nothing.
+func (s *Service) RequireHoldsSourceBoundary(ctx context.Context, orgID string, holder SourceBoundaryHolder, nodeID string) error {
+	return s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		return s.requireHoldsSourceBoundaryTx(ctx, orgID, holder, nodeID)
+	})
+}
+
 // DeclareOwnSourceOperations replaces the operations declared on the caller's
 // own personal source, decided by holder's datasource:invoke on its boundary
 // and never by an organization role. Any other source is refused here: an
