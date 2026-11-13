@@ -236,39 +236,49 @@ func (s *Service) reviewedTargetDelivery(ctx context.Context, target *AvailableS
 	return
 }
 
-// ReviewCurrent reports whether review still names what is delivered: the
-// target composed by the core and applied by this host at the generation it
-// was reviewed at, with the delivery digest it reviewed, and every required
-// supporting module at the generation and digest it reviewed. Replaying a
-// review that is not current is refused every time
+// ReviewStale says what has moved since review, or is nil while review still
+// names what is delivered: the target composed by the core and applied by this
+// host at the generation it was reviewed at, with the delivery digest it
+// reviewed, and every required supporting module at the generation and digest
+// it reviewed. Replaying a review that is stale is refused every time
 // (INSTALLATION_APPROVAL_GENERATION_CHANGED, or a module changed since
 // review), so a pending attempt is resumed from its review only while it is
-// current and reviewed afresh otherwise. A read that fails answers false: the
-// fresh review then says why.
-func (s *Service) ReviewCurrent(ctx context.Context, review *gen.ReviewedSolutionInstall) bool {
+// current and reviewed afresh otherwise. A read that fails is answered as its
+// error: the fresh review then says why too.
+func (s *Service) ReviewStale(ctx context.Context, review *gen.ReviewedSolutionInstall) error {
 	core, err := s.AuthorityCore()
 	if err != nil {
-		return false
+		return err
 	}
-	if m, err := core.Composed(ctx, review.GetTarget()); err != nil || m.Generation != review.GetApproval().GetGeneration() {
-		return false
+	reviewed := review.GetApproval().GetGeneration()
+	m, err := core.Composed(ctx, review.GetTarget())
+	if err != nil {
+		return err
+	}
+	if m.Generation != reviewed {
+		return fmt.Errorf("%s is composed at generation %d, reviewed at %d", review.GetTarget(), m.Generation, reviewed)
 	}
 	target, err := s.availableTarget(ctx, review.GetOrgId(), review.GetTargetId())
-	if err != nil || target.BindingID != review.GetBindingId() || target.AppliedGeneration != review.GetApproval().GetGeneration() {
-		return false
+	if err != nil {
+		return err
 	}
-	if _, digest, err := s.reviewedTargetDelivery(ctx, target); err != nil || digest != review.GetDeliveryDigest() {
-		return false
+	if target.BindingID != review.GetBindingId() || target.AppliedGeneration != reviewed {
+		return fmt.Errorf("%s is applied from %s at generation %d, reviewed from %s at %d", review.GetTarget(), target.BindingID, target.AppliedGeneration, review.GetBindingId(), reviewed)
 	}
-	for _, reviewed := range review.GetModules() {
-		if !reviewed.GetRequired() {
+	if _, digest, err := s.reviewedTargetDelivery(ctx, target); err != nil {
+		return err
+	} else if digest != review.GetDeliveryDigest() {
+		return fmt.Errorf("%s is delivered as %s, reviewed as %s", review.GetTarget(), digest, review.GetDeliveryDigest())
+	}
+	for _, module := range review.GetModules() {
+		if !module.GetRequired() {
 			continue
 		}
-		if _, err := s.reviewedModuleTarget(ctx, review.GetOrgId(), reviewed); err != nil {
-			return false
+		if _, err := s.reviewedModuleTarget(ctx, review.GetOrgId(), module); err != nil {
+			return err
 		}
 	}
-	return true
+	return nil
 }
 
 // InstallReviewedSolution preserves the entire original review on the canonical
@@ -639,7 +649,8 @@ func (s *Service) reviewedModuleTarget(ctx context.Context, org string, reviewed
 		return nil, err
 	}
 	if target.TargetID != reviewed.TargetId || target.BindingID != reviewed.BindingId || target.AppliedGeneration != reviewed.GetApproval().GetGeneration() || digest != reviewed.DeliveryDigest {
-		return nil, domain.NotNow("module %q changed since review", reviewed.Principal)
+		return nil, domain.NotNow("module %q changed since review: applied from %s at generation %d as %s, reviewed from %s at %d as %s", reviewed.Principal,
+			target.BindingID, target.AppliedGeneration, digest, reviewed.BindingId, reviewed.GetApproval().GetGeneration(), reviewed.DeliveryDigest)
 	}
 	return target, nil
 }
