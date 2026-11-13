@@ -222,6 +222,13 @@ func TestDynamicInstallationDBTenancyChangeRevokesOnlyForbiddenOrganizations(t *
 	s.deliverManifest(t, s.primary, 2)
 	s.pass(t)
 	other := s.install(t, otherOrg)
+	// Its revision before the envelope that forbids its organization: the
+	// installation composition made has taken its receipt again at the
+	// manifest's later generation.
+	var installedRevision uint64
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		return storetx.Tx(ctx).QueryRow(ctx, `SELECT revision FROM installations WHERE id=$1 AND org_id=$2`, other.Id, otherOrg).Scan(&installedRevision)
+	}))
 	s.putEnvelope(t, envelopeOptions{resources: true})
 	_, err = testStore.LiveModuleAuthority(testCtx, business.ModulePrincipalID(s.prefix), otherOrg, other.Id)
 	require.ErrorIs(t, err, business.ErrModuleInstallationInactive)
@@ -234,7 +241,7 @@ func TestDynamicInstallationDBTenancyChangeRevokesOnlyForbiddenOrganizations(t *
 		var rev uint64
 		err := storetx.Tx(ctx).QueryRow(ctx, `SELECT status,revision FROM installations WHERE id=$1 AND org_id=$2`, other.Id, otherOrg).Scan(&state, &rev)
 		require.Equal(t, "revoked", state)
-		require.Equal(t, uint64(2), rev)
+		require.Equal(t, installedRevision+1, rev, "revoked in the envelope's own commit, once")
 		return err
 	}))
 }

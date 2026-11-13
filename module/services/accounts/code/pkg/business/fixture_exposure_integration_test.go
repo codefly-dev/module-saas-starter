@@ -5,11 +5,13 @@ package business_test
 import (
 	"context"
 	"crypto"
+	"crypto/ed25519"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
@@ -57,23 +59,33 @@ func wireSignedDelivery(t *testing.T) *solutionhost.InMemorySigner {
 	})
 	require.NoError(t, err)
 	testService.SetCompositionReconcile(reconciler.RunOnce)
-	legacyReconcile = reconciler.RunOnce
+	legacyReconciler, legacyReconcile = reconciler, reconciler.RunOnce
+	// A pass derives the module registry from what it applied; the next test
+	// starts from the registry this one found.
+	registry := testService.ModulePrincipals()
 	t.Cleanup(func() {
 		testService.SetSolutionDelivery(nil, nil, nil)
 		testService.SetAuthorityDocumentVerifier(nil)
 		testService.SetCompositionReconcile(nil)
+		testService.SetModulePrincipals(registry)
 	})
 	return signer
 }
 
-// legacyReconcile is the reconcile pass wireSignedDelivery wired.
-var legacyReconcile func(context.Context) error
+// legacyReconciler is the reconciler wireSignedDelivery wired, and
+// legacyReconcile its pass.
+var (
+	legacyReconciler *business.SolutionHostBindingReconciler
+	legacyReconcile  func(context.Context) error
+)
 
 // deliverSolution applies one signed solution delivery, with its authority
 // document carrying roles when roles are given. A solution delivered without
-// roles is a legacy delivery the composition interface refuses (a solution
-// declares an installer role, the authority core's contract), so it arrives
-// through the HTTP delivery endpoint and the reconcile pass, as it did.
+// roles is a legacy delivery: the composition interface refuses it, and so
+// does the authority core (a solution declares an installer role), so a pass
+// never applies it. It arrives through the HTTP delivery endpoint and is
+// applied as a host applied it before it decided through the core
+// (ApplyBeforeTheCoreForTest): the state such a host left behind.
 func deliverSolution(t *testing.T, signer *solutionhost.InMemorySigner, alias string, generation uint64, roles []*compositionv1.RoleV1) {
 	t.Helper()
 	m := &solutionhost.ModuleManifest{Schema: solutionhost.SchemaModuleManifestV1, Binding: alias, Alias: alias, Kind: solutionhost.KindSolution, Generation: generation,
@@ -82,9 +94,10 @@ func deliverSolution(t *testing.T, signer *solutionhost.InMemorySigner, alias st
 	raw, err := solutionhost.SignedPayload(m)
 	require.NoError(t, err)
 	if roles == nil {
-		_, _, err = testService.ReceiveSolutionDelivery(testCtx, deliverytest.Carrier(t, raw, signer.KeyID()), "Bearer delivery:"+alias)
+		carrier := deliverytest.Carrier(t, raw, signer.KeyID())
+		_, _, err = testService.ReceiveSolutionDelivery(testCtx, carrier, "Bearer delivery:"+alias)
 		require.NoError(t, err)
-		require.NoError(t, legacyReconcile(testCtx))
+		require.NoError(t, legacyReconciler.ApplyBeforeTheCoreForTest(testCtx, carrier))
 		return
 	}
 	req := &compositionv1.ApplyManifestRequest{Carrier: &compositionv1.SignedManifestV1{Document: raw, Envelope: deliverytest.Envelope(t, raw, signer.KeyID())}, Credential: "delivery:" + alias}
@@ -158,23 +171,46 @@ installations:
 	require.ErrorContains(t, err, "does not permit solution:use", "the built-in viewer alone exposes nothing")
 	require.ErrorContains(t, err, "delivered without its authority document", "and the refusal says why the solution's role was not used")
 
-	// The solution delivers its roles; the next pass exposes the team.
+	// The host decides through its authority core from here on, as every
+	// host does now. Its boot reconciliation meets the legacy generation and
+	// the core refuses it (a solution declares an installer role); the host
+	// keeps serving, and the core holds no installation of it: the legacy one
+	// is accounts' record alone.
+	_, key, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	require.ErrorContains(t, testService.ConfigureAuthorityCore(testCtx, "https://accounts.example.test", "legacy-viewer", key), `none is "installer"`)
+	t.Cleanup(testService.UnconfigureAuthorityCoreForTest)
+	core, err := testService.AuthorityCore()
+	require.NoError(t, err)
+	inCore, err := core.Installations(ctx, authority.Person{ID: owner, Organization: orgID}, orgID)
+	require.NoError(t, err)
+	require.Empty(t, inCore)
+
+	// The solution delivers its roles, which only a host deciding through its
+	// core composes; the legacy installation is then exposed to the team the
+	// fixture names with the solution's own viewer, through the one exposure
+	// rule the fixture's pass applies on a host without a core
+	// (ExposeHostInstallation). On a host with one, the fixture installs a
+	// role-gated target through the core instead (coreInstall), which
+	// TestAFixtureInstallsWhatItDeclaresOnceItIsDelivered covers.
 	viewer := []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read"}}}
 	deliverSolution(t, signer, alias, 2, []*compositionv1.RoleV1{
 		{Name: business.InstallerRole, Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read", "write"}}}},
 		{Name: "viewer", Scopes: viewer},
 	})
-	require.NoError(t, installations.Converge(ctx))
+	teams, err := testService.ListTeams(ctx, &gen.ListTeamsRequest{OrgId: orgID})
+	require.NoError(t, err)
+	require.Len(t, teams.GetTeams(), 1)
+	_, err = testService.ExposeHostInstallation(ctx, owner, orgID, held[0].GetId(), teams.GetTeams()[0].GetId())
+	require.NoError(t, err)
 	exposed, err := testService.ReadHostInstallation(ctx, orgID, held[0].GetId())
 	require.NoError(t, err)
 	require.Len(t, exposed.TeamIDs, 1)
 	require.Equal(t, before.RoleID, exposed.RoleID, "the standing grant is not rewritten")
 
-	authority, err := testService.DeliveredSolutionAuthority(ctx, alias)
+	delivered, err := testService.DeliveredSolutionAuthority(ctx, alias)
 	require.NoError(t, err)
-	require.NotNil(t, authority)
-	grants := authority.HeldBy(member, exposed.TeamIDs, business.SolutionRoleHolders{Owner: owner, Role: exposed.Role, Teams: exposed.TeamIDs})
-	require.Equal(t, authority.Grants("viewer"), grants)
-	require.NoError(t, installations.Converge(ctx), "converged: nothing left to expose")
-	_ = gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE
+	require.NotNil(t, delivered)
+	grants := delivered.HeldBy(member, exposed.TeamIDs, business.SolutionRoleHolders{Owner: owner, Role: exposed.Role, Teams: exposed.TeamIDs})
+	require.Equal(t, delivered.Grants("viewer"), grants)
 }

@@ -23,8 +23,7 @@ func TestCompositionPersistsOneImmutablePolicyPair(t *testing.T) {
 	d.service.SetAuthorityDocumentVerifier(func(doc, envelope []byte) (string, error) {
 		return delivery.Verify(doc, envelope, map[string]crypto.PublicKey{signer.KeyID(): signer.Public()})
 	})
-	reconciler, err := business.NewSolutionHostBindingReconciler(d.service, business.SolutionHostBindingReconcilerConfig{Source: business.NewDeliveredSolutionHostBindings(d.service), Verifier: productionVerifier(t), Coordinate: productionPathCoordinate})
-	require.NoError(t, err)
+	reconciler := newProductionPathReconciler(t, d.service)
 	d.service.SetCompositionReconcile(reconciler.RunOnce)
 	m := productionPathManifest(t, uniqueAlias("policy-pair"), 1)
 	// A module: the policy pair is what is under test, and a solution would
@@ -46,16 +45,19 @@ func TestCompositionPersistsOneImmutablePolicyPair(t *testing.T) {
 		return req
 	}
 	first := request(m, "/example.Service/Read")
-	_, err = d.service.ApplyComposition(testCtx, first)
+	_, err := d.service.ApplyComposition(testCtx, first)
 	require.NoError(t, err)
 	_, err = d.service.ApplyComposition(testCtx, first)
 	require.NoError(t, err, "exact replay")
 	require.NoError(t, d.service.CheckDeliveredMethod(testCtx, m.Alias, "/example.Service/Read", nil))
 	changed := request(m, "/example.Service/Write")
 	_, err = d.service.ApplyComposition(testCtx, changed)
+	// The authority core holds the generation from the delivery it composed
+	// and refuses another as a conflict, before accounts compares the
+	// documents it stored (precheckCoreModule).
 	require.ErrorIs(t, err, business.ErrSolutionDeliveryConflict)
-	require.ErrorContains(t, err, "authority document digest stored="+delivery.Digest(first.Authority.Document))
-	require.ErrorContains(t, err, "offered="+delivery.Digest(changed.Authority.Document))
+	require.ErrorContains(t, err, "is held from delivery")
+	require.ErrorContains(t, err, "another delivery is a new generation")
 	require.NotEqual(t, delivery.Digest(first.Authority.Document), delivery.Digest(changed.Authority.Document))
 	_, err = d.service.ApplyComposition(testCtx, request(m, ""))
 	require.ErrorIs(t, err, business.ErrSolutionDeliveryConflict, "cannot strip policy on replay")

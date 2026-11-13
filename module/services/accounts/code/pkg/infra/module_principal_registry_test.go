@@ -78,13 +78,11 @@ func newRegistryScenario(t *testing.T, label string) *registryScenario {
 }
 
 // newRegistryDelivery is a host replica: the real delivery path, the envelope
-// store and the live authority read every capability decision makes.
+// store and the live authority read every capability decision makes
+// (newProductionPathDelivery wires them all).
 func newRegistryDelivery(t *testing.T) *productionPathDelivery {
 	t.Helper()
-	delivery := newProductionPathDelivery(t)
-	delivery.service.SetModuleEnvelopeStore(testStore)
-	delivery.service.SetModuleAuthorityReads(testStore, nil)
-	return delivery
+	return newProductionPathDelivery(t)
 }
 
 func newRegistryReconciler(
@@ -240,8 +238,17 @@ func (s *registryScenario) pass(t *testing.T) {
 	}
 }
 
+// install is org's installation of the scenario's module: the one
+// composition made, as the host's pass installs a composed module at every
+// organization (KeepAuthorityCoreCurrent), or one the scenario's
+// administrator installs where composition has not.
 func (s *registryScenario) install(t *testing.T, org string) *gen.Installation {
 	t.Helper()
+	composed, err := s.delivery.service.ActiveOrPendingModuleInstallation(testCtx, org, s.primary.solutionID)
+	require.NoError(t, err)
+	if composed != nil {
+		return composed
+	}
 	available, _, err := s.delivery.service.ListAvailableSolutions(testCtx, org, "", 500)
 	require.NoError(t, err)
 	var target string
