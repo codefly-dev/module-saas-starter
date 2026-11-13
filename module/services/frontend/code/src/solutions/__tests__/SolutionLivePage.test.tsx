@@ -6,13 +6,13 @@ const state = vi.hoisted(() => ({
 		assetVersion?: string;
 		available?: boolean;
 	}>,
-	loaded: true,
+	read: "read" as "reading" | "read" | "failed",
 	router: { refresh: vi.fn() },
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => state.router }));
 vi.mock("../SolutionsMenu", () => ({
 	useRegisteredSolutions: () => state.current,
-	useRegisteredSolutionsLoaded: () => state.loaded,
+	useRegisteredSolutionsRead: () => state.read,
 }));
 vi.mock("server-only", () => ({}));
 import type { ViewerEntitlements } from "../entitlements";
@@ -21,7 +21,7 @@ import type { SolutionManifest } from "../registry";
 import { SolutionLivePage } from "../SolutionLivePage";
 beforeEach(() => {
 	state.current = [{ id: "example", assetVersion: "old", available: true }];
-	state.loaded = true;
+	state.read = "read";
 	state.router.refresh.mockClear();
 });
 afterEach(() => {
@@ -48,7 +48,7 @@ it("refreshes an upgraded page and removes a withdrawn page without reloading th
 });
 
 it("shows loading until the first viewer projection arrives", () => {
-	state.loaded = false;
+	state.read = "reading";
 	const view = render(
 		<SolutionLivePage id="example" assetVersion="old">
 			remote page
@@ -56,12 +56,34 @@ it("shows loading until the first viewer projection arrives", () => {
 	);
 	expect(screen.queryByText("Loading page…")).not.toBeNull();
 	expect(screen.queryByText("remote page")).toBeNull();
-	state.loaded = true;
+	state.read = "read";
 	view.rerender(
 		<SolutionLivePage id="example" assetVersion="old">
 			remote page
 		</SolutionLivePage>,
 	);
+	expect(screen.queryByText("remote page")).not.toBeNull();
+});
+// The first read of the person's pages can fail for good (its quick retries
+// spent, or a 429): the page says so instead of loading for ever. Red before:
+// "Loading page…" stayed for as long as the listing kept failing.
+it("says the person's pages could not be read when the first read fails, and opens once a poll answers", () => {
+	state.read = "failed";
+	const page = () => (
+		<SolutionLivePage id="example" assetVersion="old" denied={<p>Solution not found</p>}>
+			remote page
+		</SolutionLivePage>
+	);
+	const view = render(page());
+	expect(screen.queryByText("Loading page…")).toBeNull();
+	expect(screen.getByRole("alert").textContent).toContain(
+		"Could not read the pages you hold",
+	);
+	expect(screen.queryByText("Solution not found")).toBeNull();
+	expect(screen.queryByText("remote page")).toBeNull();
+	state.read = "read";
+	view.rerender(page());
+	expect(screen.queryByRole("alert")).toBeNull();
 	expect(screen.queryByText("remote page")).not.toBeNull();
 });
 it("retries a stale server render until the new generation arrives", () => {

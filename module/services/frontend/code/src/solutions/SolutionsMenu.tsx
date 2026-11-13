@@ -295,15 +295,6 @@ function titlesGroups(solutions: SolutionNav[]): boolean {
 	return solutions.some((entry) => entry.group || entry.kind === "module");
 }
 
-/** Whether this viewer's first authenticated projection has arrived. */
-export function useRegisteredSolutionsLoaded(): boolean {
-	return useSyncExternalStore(
-		subscribe,
-		() => currentViewer() === snapshotViewer && snapshotLoaded,
-		() => false,
-	);
-}
-
 /**
  * Where this viewer's first listing stands: "reading" until it answers or
  * fails, "read" once one has answered, "failed" once its first read could not

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect } from "react";
 import {
 	useRegisteredSolutions,
-	useRegisteredSolutionsLoaded,
+	useRegisteredSolutionsRead,
 } from "./SolutionsMenu";
 
 /**
@@ -37,7 +37,7 @@ export function SolutionLivePage({
 }) {
 	const router = useRouter();
 	const current = useRegisteredSolutions().find((entry) => entry.id === id);
-	const loaded = useRegisteredSolutionsLoaded();
+	const read = useRegisteredSolutionsRead();
 	const changed = current?.assetVersion !== assetVersion;
 	const updating = !!current && current.available !== false && changed;
 	useEffect(() => {
@@ -48,7 +48,19 @@ export function SolutionLivePage({
 		const retry = setInterval(() => router.refresh(), 5_000);
 		return () => clearInterval(retry);
 	}, [updating, current?.assetVersion, router]);
-	if (!loaded) return <p className="p-6 text-sm opacity-70">Loading page…</p>;
+	if (read === "reading")
+		return <p className="p-6 text-sm opacity-70">Loading page…</p>;
+	// A listing that could not be read is said, never waited on for ever; a
+	// later poll that answers opens the page.
+	if (read === "failed") {
+		return (
+			<p role="alert" className="p-6 text-sm opacity-70">
+				Could not read the pages you hold, so this page is not shown. This is
+				not a statement about your access. It is asked again shortly; reload to
+				try now.
+			</p>
+		);
+	}
 	if (!current) {
 		return (
 			denied ?? (
