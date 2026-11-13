@@ -371,6 +371,19 @@ describe("an end is never undone", () => {
 		await waitFor(() => expect(opens).toHaveLength(1));
 	});
 
+	it("a machine that slept past the lapse reopens nothing: the wall clock moved though the monotonic one did not", async () => {
+		await openCast();
+		next.push(castBearer());
+		input();
+		// Asleep for 20 minutes: the wall clock jumps, the monotonic one stands still.
+		vi.setSystemTime(Date.now() + 20 * MINUTE);
+		input();
+		await advance(4 * MINUTE + 1000);
+		input();
+		await advance(100);
+		expect(opens).toEqual([]);
+	});
+
 	it("the host's refusal of a reopen is final: no more asks, and the person's own session is never installed", async () => {
 		const cast = await openCast();
 		openAnswer.push(403);

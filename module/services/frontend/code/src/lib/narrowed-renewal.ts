@@ -55,11 +55,18 @@ export function reopenOf(session: {
 /**
  * Calls `reopen` once, in the last `RENEW_LEAD_MS` (or quarter of its life,
  * if shorter) of `bearer`'s life, if and only if the person gave input in
- * this tab since it was installed. The life is timed on this tab's own clock
- * from `installedAt` (a `performance.now()` reading) for the bearer's
- * lifetime (`exp - iat`): the host's clock and this one need not agree.
- * Never once it has lapsed: an ended session is never brought back, so
- * `reopen` is handed `live` to ask again before it installs anything.
+ * this tab since it was installed. The life is timed on this tab's own
+ * clocks from `installed` for the bearer's lifetime (`exp - iat`), so the
+ * host's clock and this one need not agree; it is live only while BOTH say
+ * so: the monotonic one (`performance.now()`), which a changed wall clock
+ * cannot stretch, and the wall one (`Date.now()`), which keeps running while
+ * the machine sleeps when the monotonic one may not. Never once it has
+ * lapsed: an ended session is never brought back, so `reopen` is handed
+ * `live` to ask again before it installs anything.
+ *
+ * Input is counted once per bearer, so an idle view can outlast its last
+ * input by up to about two lifetimes: input just after one is installed earns
+ * the next, which then lapses if nobody touches it.
  * `reopen` resolving is final (renewed, refused, or left); rejecting is a
  * transient failure the next input after `RETRY_AFTER_MS` asks again for.
  * Returns the stop; the caller stops it when the bearer is replaced or the
@@ -67,25 +74,27 @@ export function reopenOf(session: {
  */
 export function renewWhileActive(
 	bearer: string,
-	installedAt: number,
+	installed: { at: number; since: number },
 	reopen: (live: () => boolean) => Promise<void>,
 ): () => void {
 	const { exp, iat } = decodeJWTPayload(bearer);
 	if (typeof exp !== "number" || typeof iat !== "number" || exp <= iat)
 		return () => {};
 	const life = (exp - iat) * 1000;
-	const lapsesAt = installedAt + life;
+	const lapsesAt = installed.at + life;
 	const dueAt = lapsesAt - Math.min(RENEW_LEAD_MS, life / 4);
 	let active = false;
 	let asking = false;
 	let stopped = false;
 	let notBefore = 0;
-	const live = () => !stopped && performance.now() < lapsesAt;
+	const live = () =>
+		!stopped &&
+		performance.now() < lapsesAt &&
+		Date.now() < installed.since + life;
 
 	const attempt = () => {
 		const now = performance.now();
-		if (!live() || asking || !active || now < dueAt || now < notBefore)
-			return;
+		if (!live() || asking || !active || now < dueAt || now < notBefore) return;
 		asking = true;
 		reopen(live).then(
 			() => stop(),

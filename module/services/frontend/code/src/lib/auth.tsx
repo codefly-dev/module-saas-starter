@@ -608,8 +608,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	// decides per request, from the bearer that request carried.
 	const narrowedAsRef = useRef("");
 	// When the installed narrowed bearer was installed, on this tab's monotonic
-	// clock: its renewal is timed from here, never from the host's clock.
-	const installedRef = useRef<{ bearer: string; at: number } | null>(null);
+	// (`at`) and wall (`since`) clocks: its renewal is timed from here, never
+	// from the host's clock.
+	const installedRef = useRef<{ bearer: string; at: number; since: number } | null>(null);
 	// Narrowed bearers whose end the host already said: never renewed after.
 	const endedRef = useRef(new Set<string>());
 
@@ -1079,8 +1080,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			markNarrowed(accessToken);
 			applyAccessToken(accessToken);
 			narrowedAsRef.current = as;
-			installedRef.current = { bearer: accessToken, at: performance.now() };
-			keepNarrowedSession({ bearer: accessToken, as, since: Date.now() });
+			const since = Date.now();
+			installedRef.current = { bearer: accessToken, at: performance.now(), since };
+			keepNarrowedSession({ bearer: accessToken, as, since });
 		},
 		[applyAccessToken],
 	);
@@ -1118,9 +1120,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			// The same session, opened again: what the host said it is carries to
 			// the new bearer until the host's own reading of it lands.
 			setRead((prev) => (prev.token === bearer && !prev.failed ? { ...prev, token: session.bearer } : prev));
-			installedRef.current = { bearer: session.bearer, at: performance.now() };
+			const since = Date.now();
+			installedRef.current = { bearer: session.bearer, at: performance.now(), since };
 			applyAccessToken(session.bearer);
-			keepNarrowedSession({ bearer: session.bearer, as: narrowedAsRef.current, since: Date.now() });
+			keepNarrowedSession({ bearer: session.bearer, as: narrowedAsRef.current, since });
 		},
 		[applyAccessToken],
 	);
@@ -1262,7 +1265,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			// Its age carries across the reload on this tab's own clock; one kept
 			// with no install time is not renewed, and lapses.
 			installedRef.current =
-				since === undefined ? null : { bearer, at: performance.now() - Math.max(0, Date.now() - since) };
+				since === undefined
+					? null
+					: { bearer, at: performance.now() - Math.max(0, Date.now() - since), since };
 			// Marked before it is installed, as enterRoleView does, so no request
 			// can be sent with it while the store does not yet know it is narrowed.
 			markNarrowed(bearer);
@@ -1463,7 +1468,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		const installed = installedRef.current;
 		if (!bearer || !reopenKey || installed?.bearer !== bearer) return;
 		const what = JSON.parse(reopenKey) as Reopen;
-		return renewWhileActive(bearer, installed.at, (live) => renewNarrowed(bearer, what, live));
+		return renewWhileActive(bearer, installed, (live) => renewNarrowed(bearer, what, live));
 	}, [state.accessToken, reopenKey, renewNarrowed]);
 	const rolesHidden = !!state.accessToken && (sessionRead !== "confirmed" || !!castTeamId);
 
