@@ -5,26 +5,9 @@ import {
 	useCasting,
 	ViewAsTeamButton,
 } from "@codefly-dev/saas-ui/casting";
-import { createClient } from "@connectrpc/connect";
-import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { InstallationService } from "@/gen/host/installation/v1/installation_pb";
-import {
-	type RoleViewEntry,
-	SessionService,
-} from "@/gen/host/session/v1/session_pb";
+import type { RoleViewEntry } from "@/gen/host/session/v1/session_pb";
 import { useAuth } from "@/lib/auth";
-import { apiTransport } from "@/lib/connect/transport";
-
-const installations = createClient(InstallationService, apiTransport);
-const sessions = createClient(SessionService, apiTransport);
-
-/** A role the person can act as on one installation, by the roles they hold now. */
-export interface Held {
-	id: string;
-	target: string;
-	roles: string[];
-}
 
 /** What a session acts as, when it acts as less than its person. */
 export interface Narrowed {
@@ -46,10 +29,6 @@ export function useNarrowedSession(): Narrowed {
 	if (!isAuthenticated || !accessToken)
 		return { view: [], castTeamId: "", confirmed: true };
 	return { view: roleView, castTeamId, confirmed: sessionRead === "confirmed" };
-}
-
-export function useRoleView(): RoleViewEntry[] {
-	return useNarrowedSession().view;
 }
 
 const back = (exit: () => Promise<void>) => () =>
@@ -101,98 +80,6 @@ export function ActAsTeam({
 				</div>
 			)}
 		</section>
-	);
-}
-
-/** "View as": what the person holds on each installation, and a way to act as less of it. */
-export function RoleViewSelector() {
-	const { organizationId, accessToken, enterRoleView, exitRoleView } =
-		useAuth();
-	const view = useRoleView();
-	const [heldRaw, setHeld] = useState<Held[]>([]);
-	const held = organizationId && accessToken ? heldRaw : [];
-	useEffect(() => {
-		if (!organizationId || !accessToken) return;
-		let current = true;
-		installations
-			.listHeld({ organizationId })
-			.then(
-				(r) =>
-					current &&
-					setHeld(
-						r.installations.map((h) => ({
-							id: h.installation?.id ?? "",
-							target: h.installation?.target ?? "",
-							roles: h.roles,
-						})),
-					),
-			)
-			.catch(() => current && setHeld([]));
-		return () => {
-			current = false;
-		};
-	}, [organizationId, accessToken]);
-
-	const open = useCallback(
-		async (installationId: string, roles: string[]) => {
-			try {
-				const opened = await sessions.openRoleView({ installationId, roles });
-				const target =
-					heldRaw.find((h) => h.id === installationId)?.target ??
-					installationId;
-				enterRoleView(opened.bearer, `${roles.join(", ")} on ${target}`);
-				toast.success(`Viewing as ${roles.join(", ")}`);
-			} catch (error) {
-				toast.error(
-					error instanceof Error
-						? error.message
-						: "Could not open the role view.",
-				);
-			}
-		},
-		[enterRoleView, heldRaw],
-	);
-
-	const choices = held.filter(
-		(h) => h.roles.length > 1 || view.some((v) => v.installationId === h.id),
-	);
-	if (choices.length === 0) return null;
-	return (
-		<div aria-label="View as" className="flex flex-col gap-2 text-sm">
-			{choices.map((h) => (
-				<div key={h.id} className="flex flex-wrap items-center gap-2">
-					<span className="font-medium">{h.target}</span>
-					{h.roles.length > 1 && (
-						<button
-							type="button"
-							className="underline"
-							onClick={() => void open(h.id, h.roles)}
-						>
-							all of mine
-						</button>
-					)}
-					{h.roles.map((role) => (
-						<button
-							key={role}
-							type="button"
-							className="underline"
-							onClick={() => void open(h.id, [role])}
-						>
-							{role}
-						</button>
-					))}
-				</div>
-			))}
-			{view.length > 0 && (
-				<button
-					type="button"
-					className="text-left underline"
-					onClick={back(exitRoleView)}
-				>
-					Back to all my roles
-				</button>
-			)}
-		</div>
 	);
 }
 
