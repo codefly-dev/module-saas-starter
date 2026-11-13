@@ -814,6 +814,12 @@ type AddSourceInput struct {
 	// organization. A governed connect by anyone else brings its own
 	// credential and never reads through the organization's (governedCredential).
 	ByOrganizationAdministrator bool
+	// PersonalTo is set when a member connects a source of their own and is
+	// decided by no organization role: the source must be personal, placed
+	// under an existing node this holder holds datasource:invoke on, and it
+	// delegates nothing to a module (personal_source.go). Nil for every other
+	// connect, which the caller decided as an administrator or by governance.
+	PersonalTo *SourceBoundaryHolder
 
 	// GitHub provider config.
 	Repo           string
@@ -862,6 +868,9 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 		return nil, w.Wrap(err)
 	}
 	if err := input.Governance.validate(); err != nil {
+		return nil, err
+	}
+	if err := admitPersonalConnect(input); err != nil {
 		return nil, err
 	}
 	if s.datasourceCipher == nil {
@@ -1013,7 +1022,23 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 		source.WebhookSecretRef = webhookRef
 	}
 
+	// refusal is a decision the transaction made about the caller, returned as
+	// the caller's own refusal rather than wrapped as a failure to persist.
+	var refusal error
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		// A source of the caller's own is decided before its node is looked
+		// up: a node that does not exist is refused as one not granted, so
+		// the refusal says nothing of which nodes exist
+		// (admitPersonalConnect has already required an existing node's id).
+		if input.PersonalTo != nil {
+			if source.PersonalOwnerUserID != actorID {
+				return status.Error(codes.Internal, "a source connected as the caller's own did not become personal to them")
+			}
+			if err := s.requireHoldsSourceBoundaryTx(ctx, orgID, *input.PersonalTo, strings.TrimSpace(input.BoundaryNodeID)); err != nil {
+				refusal = err
+				return err
+			}
+		}
 		boundaryID, err := s.resolveSourceBoundary(ctx, orgID, input.Governance, input.BoundaryNodeID, input.CollectionLabel)
 		if err != nil {
 			return err
@@ -1033,8 +1058,17 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 		if err := s.emitTx(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID, payload); err != nil {
 			return err
 		}
+		if input.PersonalTo != nil {
+			// A source of the caller's own delegates nothing to a module:
+			// unattended authority over a source is connected by an
+			// administrator, and a cast holds nothing of its person's to give.
+			return nil
+		}
 		return s.recordSourceDelegationsOnConnectTx(ctx, actorID, orgID, source.ID)
 	}); err != nil {
+		if refusal != nil {
+			return nil, refusal
+		}
 		return nil, w.Wrapf(err, "persist datasource source")
 	}
 	if !operationsOnly {

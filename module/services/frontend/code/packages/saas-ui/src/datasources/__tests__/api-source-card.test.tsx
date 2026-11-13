@@ -344,7 +344,23 @@ describe("apiSourceRefusal", () => {
 			"This deployment cannot link api accounts: no sign-in with that provider is configured.",
 			/no sign-in configured for X/,
 		],
-		["requires org admin or owner role", /administrator or owner role/],
+		["requires org admin or owner role", /needs the administrator or owner role/],
+		[
+			"requires organization administrator or owner role",
+			/needs the administrator or owner role/,
+		],
+		[
+			"you do not hold datasource:invoke on scope node n, which every call on a source of your own placed there needs: an organization administrator grants it",
+			/cannot call sources where X would be connected/,
+		],
+		[
+			"team t, which this session acts as, does not hold datasource:invoke on scope node n",
+			/cannot call sources where X would be connected/,
+		],
+		[
+			"a source of your own is placed under an existing scope node (boundary_node_id): creating a collection for it is an organization administrator's",
+			/names no place in the organization to connect X/,
+		],
 		["source permission required", /access to the collection/],
 		["source is not owned by this member", /another member/],
 	])("words %s as something to do", (raw, words) => {

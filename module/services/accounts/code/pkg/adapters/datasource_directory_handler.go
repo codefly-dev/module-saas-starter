@@ -24,6 +24,10 @@ func (h *datasourceConnectHandler) BeginDatasourceAccountLink(ctx context.Contex
 	if err := requireOrgMember(ctx, actorID, req.Msg.GetOrgId()); err != nil {
 		return nil, translateGRPCError(err)
 	}
+	// A cast signs in only for a personal source of its person's own.
+	if err := h.refuseUnlessOwnPersonalSourceInView(ctx, actorID, req.Msg.GetOrgId(), req.Msg.GetSourceId(), req.Msg.GetConnector()); err != nil {
+		return nil, translateGRPCError(err)
+	}
 	// Linking an account to a source a solution governs changes how it reads:
 	// it is held to the source's governing scope, as any change to it is.
 	if id := req.Msg.GetSourceId(); id != "" {
@@ -53,6 +57,12 @@ func (h *datasourceConnectHandler) CompleteDatasourceAccountLink(ctx context.Con
 		return nil, err
 	}
 	if err := requireOrgMember(ctx, actorID, req.Msg.GetOrgId()); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	// A cast completes only a sign-in begun for a personal source of its
+	// person's own; the state names the source, and the host's own signature
+	// on it is checked before it is read.
+	if err := h.refuseUnlessOwnPersonalSourceInView(ctx, actorID, req.Msg.GetOrgId(), h.svc.DatasourceLinkSource(req.Msg.GetState()), ""); err != nil {
 		return nil, translateGRPCError(err)
 	}
 	link, err := h.svc.CompleteDatasourceAccountLink(ctx, actorID, req.Msg.GetOrgId(), req.Msg.GetState(), req.Msg.GetCode())

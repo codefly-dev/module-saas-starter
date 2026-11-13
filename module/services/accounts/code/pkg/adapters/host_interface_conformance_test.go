@@ -1298,6 +1298,9 @@ func runHostInterfaceFixture(t *testing.T) {
 	testAnEditorSavesAndIsOfferedTheRunnablesTheirRoleAllows(t, closures)
 	testModulesInstalledByComposition(t, closures)
 	testSolutionSourcesAreGovernedByTheirScope(t, closures)
+	t.Run("a member connects a personal source of their own", func(t *testing.T) {
+		testAMemberConnectsAPersonalSourceOfTheirOwn(t, closures)
+	})
 
 	// A fixture's solution row runs inside a delivery pass, so its install
 	// step never waits on the solution's setup: a pass with a setup that has

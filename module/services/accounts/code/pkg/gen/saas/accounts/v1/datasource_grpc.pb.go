@@ -84,7 +84,9 @@ type DatasourceServiceClient interface {
 	LookupInvokeSourceOperation(ctx context.Context, in *LookupInvokeSourceOperationRequest, opts ...grpc.CallOption) (*InvokeSourceOperationResponse, error)
 	// ListSourceOperations reads the currently admitted declarations under source authority.
 	ListSourceOperations(ctx context.Context, in *ListSourceOperationsRequest, opts ...grpc.CallOption) (*ListSourceOperationsResponse, error)
-	// DeclareSourceOperations atomically replaces the source operation set, as an administrator.
+	// DeclareSourceOperations atomically replaces the source operation set: an
+	// organization's own source's as an administrator, a personal source's as
+	// its owner.
 	DeclareSourceOperations(ctx context.Context, in *DeclareSourceOperationsRequest, opts ...grpc.CallOption) (*DeclareSourceOperationsResponse, error)
 	// AddGitHubSource registers a GitHub repository as a datasource, encrypts and
 	// stores its access token (and optional webhook signing secret), and returns
@@ -599,7 +601,9 @@ type DatasourceServiceServer interface {
 	LookupInvokeSourceOperation(context.Context, *LookupInvokeSourceOperationRequest) (*InvokeSourceOperationResponse, error)
 	// ListSourceOperations reads the currently admitted declarations under source authority.
 	ListSourceOperations(context.Context, *ListSourceOperationsRequest) (*ListSourceOperationsResponse, error)
-	// DeclareSourceOperations atomically replaces the source operation set, as an administrator.
+	// DeclareSourceOperations atomically replaces the source operation set: an
+	// organization's own source's as an administrator, a personal source's as
+	// its owner.
 	DeclareSourceOperations(context.Context, *DeclareSourceOperationsRequest) (*DeclareSourceOperationsResponse, error)
 	// AddGitHubSource registers a GitHub repository as a datasource, encrypts and
 	// stores its access token (and optional webhook signing secret), and returns

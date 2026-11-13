@@ -3001,7 +3001,7 @@
         ]
       },
       "post": {
-        "summary": "DeclareSourceOperations atomically replaces the source operation set, as an administrator.",
+        "summary": "DeclareSourceOperations atomically replaces the source operation set: an\norganization's own source's as an administrator, a personal source's as\nits owner.",
         "operationId": "DatasourceService_DeclareSourceOperations",
         "responses": {
           "200": {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"accounts/pkg/business"
 	"accounts/pkg/datasource/operations"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
@@ -68,8 +69,33 @@ func (h *datasourceConnectHandler) DeclareSourceOperations(ctx context.Context, 
 	if err != nil {
 		return nil, err
 	}
-	if err := h.authorizeSourceWrite(ctx, actor, req.Msg.OrgId, req.Msg.SourceId); err != nil {
-		return nil, err
+	if err := requireOrgMember(ctx, actor, req.Msg.OrgId); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	// On a personal source of the caller's own, a member declares, decided by
+	// who answers for the session (personalSourceHolder); an administrator in
+	// their own session declares as before. Any other source is decided as it
+	// always was, and in a session that narrows that is a refusal.
+	own, err := h.ownPersonalSource(ctx, actor, req.Msg.OrgId, req.Msg.SourceId)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	var holder *business.SourceBoundaryHolder
+	if own != nil {
+		var administrator bool
+		if holder, administrator, err = personalSourceHolder(ctx, actor, req.Msg.OrgId); err != nil {
+			return nil, translateGRPCError(err)
+		}
+		if administrator {
+			holder = nil
+		}
+	} else {
+		if err := h.refuseUnlessOwnPersonalSourceInView(ctx, actor, req.Msg.OrgId, "", ""); err != nil {
+			return nil, translateGRPCError(err)
+		}
+		if err := h.authorizeSourceWrite(ctx, actor, req.Msg.OrgId, req.Msg.SourceId); err != nil {
+			return nil, err
+		}
 	}
 	declarations := make([]operations.Declaration, 0, len(req.Msg.Operations))
 	for _, in := range req.Msg.Operations {
@@ -79,7 +105,12 @@ func (h *datasourceConnectHandler) DeclareSourceOperations(ctx context.Context, 
 		}
 		declarations = append(declarations, d)
 	}
-	out, err := h.svc.DeclareSourceOperations(ctx, actor, req.Msg.OrgId, req.Msg.SourceId, declarations)
+	var out []operations.Declaration
+	if holder != nil {
+		out, err = h.svc.DeclareOwnSourceOperations(ctx, *holder, actor, req.Msg.OrgId, req.Msg.SourceId, declarations)
+	} else {
+		out, err = h.svc.DeclareSourceOperations(ctx, actor, req.Msg.OrgId, req.Msg.SourceId, declarations)
+	}
 	if err != nil {
 		return nil, translateGRPCError(err)
 	}

@@ -167,10 +167,36 @@ to declare, it creates the person's `api` source with
 declares the operations, begins the link with that `source_id`, and completes
 it on the page the provider returns to through `DatasourceAccountLinks`
 (`connector="api"`, `sourceId`). Where the API and its declarations come from is
-the caller's decision; the card takes them as props. `AddSource` and
-`DeclareSourceOperations` require an organization administrator today, so a
-member without that role is refused and told so. The kit's README describes the
-states and the refusals it words.
+the caller's decision; the card takes them as props. The kit's README
+describes the states and the refusals it words.
+
+## Who connects a personal source
+
+A personal source (`api`, `API_CREDENTIAL_KIND_OAUTH2` +
+`GRANT_AUTHORIZATION_CODE`, no `governance`) is its connecting person's: only
+they list, read, sign in for or call it. It administers nothing, so `AddSource`
+and `DeclareSourceOperations` do not require an organization administrator for
+it. Who answers for the session decides instead (`personalSourceHolder`):
+
+- an organization administrator in their own session connects as before;
+- a member in their own session needs `datasource:invoke` on the scope node the
+  source goes under, which every call on it needs anyway;
+- a cast needs the **team** to hold it there, and nothing of the person's own
+  counts. The source is still the person's, never the team's;
+- a role view is refused, as for every operation it cannot narrow.
+
+A member's source names an existing node (`boundary_node_id`); creating a
+collection by label stays an administrator's. It records no source delegation
+for any module. Only its owner declares its operations (the administrator role
+over another member's personal source decides nothing). A cast passes the
+role-view gate only with requests that can be about a source of its own
+(`castAsksForItsPersonsOwnSource`: a personal `AddSource`, and
+`DeclareSourceOperations`, `BeginDatasourceAccountLink` and
+`CompleteDatasourceAccountLink` naming a source), and each handler refuses one
+about any other source with the cast's refusal. An organization's own source and
+a governed one are unchanged. The invoke-time check still reads the person's own
+grants, as the role-view guard says; a cast's later calls are not yet narrowed
+there.
 
 Refresh and client-credentials resolution reuse the credential row lock.
 Transport uses the resolved-IP egress guard and same-origin redirect policy.

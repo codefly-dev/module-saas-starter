@@ -13,6 +13,7 @@ import (
 
 	accountsauth "accounts/pkg/auth"
 	"accounts/pkg/business"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 	policyv1 "accounts/pkg/gen/saas/policy/v1"
 )
 
@@ -72,6 +73,12 @@ func refuseInRoleView(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	return viewRefusal(view)
+}
+
+// viewRefusal is the refusal a session that narrows gets for an operation
+// decided by organization roles; nil for a session that narrows nothing.
+func viewRefusal(view domain.RoleView) error {
 	if !narrows(view) {
 		return nil
 	}
@@ -152,7 +159,13 @@ func roleViewAdmits(fullMethod string, policy business.RPCPolicy, resolved bool)
 // host interfaces (host.*) are exempt because the authority core decides them
 // and reads the view itself; TestEveryPersonMintEntryPointHonoursOrRefusesARoleView
 // holds each of those to a stated decision.
-func enforceRoleViewPolicy(ctx context.Context, fullMethod string) error {
+//
+// One more set passes, and only for a cast: castAsksForItsPersonsOwnSource
+// names the requests by which a person connects and signs in to a personal
+// source of their own, which no organization role decides. Their handlers
+// decide each by the team the cast acts as (personalSourceHolder) and refuse
+// everything else the request could reach with this same refusal.
+func enforceRoleViewPolicy(ctx context.Context, fullMethod string, req any) error {
 	if !strings.HasPrefix(fullMethod, "/saas.accounts.v1.") {
 		return nil
 	}
@@ -160,5 +173,32 @@ func enforceRoleViewPolicy(ctx context.Context, fullMethod string) error {
 	if roleViewAdmits(fullMethod, policy, resolved) {
 		return nil
 	}
-	return refuseInRoleView(ctx)
+	view, err := roleViewOf(ctx)
+	if err != nil {
+		return err
+	}
+	if view.Team != "" && resolved && castAsksForItsPersonsOwnSource(fullMethod, req) {
+		return nil
+	}
+	return viewRefusal(view)
+}
+
+// castAsksForItsPersonsOwnSource reports whether req, made to fullMethod, can
+// only be about a personal source of the calling person's own: connecting one
+// (an api source with the authorization-code grant, governed by nothing),
+// declaring on one, or signing in for one. It reads the request's shape only;
+// whose source it names is the handler's to decide.
+func castAsksForItsPersonsOwnSource(fullMethod string, req any) bool {
+	const datasource = "/saas.accounts.v1.DatasourceService/"
+	switch m := req.(type) {
+	case *gen.AddSourceRequest:
+		return fullMethod == datasource+"AddSource" && personalSourceRequest(m)
+	case *gen.DeclareSourceOperationsRequest:
+		return fullMethod == datasource+"DeclareSourceOperations" && m.GetSourceId() != ""
+	case *gen.BeginDatasourceAccountLinkRequest:
+		return fullMethod == datasource+"BeginDatasourceAccountLink" && m.GetSourceId() != ""
+	case *gen.CompleteDatasourceAccountLinkRequest:
+		return fullMethod == datasource+"CompleteDatasourceAccountLink" && m.GetState() != ""
+	}
+	return false
 }

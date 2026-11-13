@@ -1976,7 +1976,10 @@ type AddSourceRequest struct {
 	// names (SourceGovernance): the caller must be issued that scope there now,
 	// and need not administer the organization; the boundary must be one of the
 	// installation's own collections. Omitted for an organization's own source,
-	// which an organization administrator connects.
+	// which an organization administrator connects, and for a personal source
+	// (api, the OAuth 2.0 authorization-code grant), which is its connecting
+	// person's: a member connects one under an existing boundary_node_id where
+	// they, or the team a cast acts as, hold datasource:invoke.
 	Governance    *SourceGovernance `protobuf:"bytes,14,opt,name=governance,proto3" json:"governance,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

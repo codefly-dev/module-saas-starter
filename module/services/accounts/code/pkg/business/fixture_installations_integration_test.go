@@ -26,8 +26,11 @@ import (
 // install path, as its owner, once the composition has delivered its target:
 // before that it waits, and once held it is reused, by this process and by a
 // reseed, so a fresh local run comes up installed without anyone installing by
-// hand.
-func TestAFixtureInstallsWhatItDeclaresOnceItIsDelivered(t *testing.T) {
+// hand. This host decides without an authority core, so a role-gated target is
+// installed by name here; a host with one installs it through the core, which
+// TestAFreshRunsFixtureInstallsEverySolutionActiveAndSeatsEachPersonOnTheirRole
+// covers.
+func TestAFixtureInstallsWhatItDeclaresOnAHostWithoutACoreOnceItIsDelivered(t *testing.T) {
 	for _, kind := range []business.SolutionDeclaredKind{business.SolutionDeclaredKindSolution, business.SolutionDeclaredKindModule} {
 		t.Run(string(kind), func(t *testing.T) {
 			clearData(t)

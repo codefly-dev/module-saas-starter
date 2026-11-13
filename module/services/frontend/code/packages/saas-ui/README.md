@@ -655,8 +655,14 @@ base URL and resource path, trimmed and otherwise exact (`matchPersonalApiSource
 `ListSources` never lists another member's personal source, so every match is
 the caller's; two are reported rather than one picked. The host's refusals are
 worded as something to do (`apiSourceRefusal`): no sign-in configured for the
-deployment, the administrator role that `AddSource` and `DeclareSourceOperations`
-take, no access to the source's collection, a source personal to someone else.
+deployment, no `datasource:invoke` where the source would go, no
+`boundaryNodeId` for a member's source, the administrator role anything else
+takes, no access to the source's collection, a source personal to someone else.
+A member connects their own source, and declares on it, without the
+administrator role when the surface passes `boundaryNodeId` and they — or, in a
+cast, the team it acts as — hold `datasource:invoke` there; without
+`boundaryNodeId` the card asks the host to create a collection by name, which
+only an administrator may.
 Mount the card on the page the provider returns to, and no second
 `DatasourceAccountLinks` beside it — both would redeem the one-time state.
 

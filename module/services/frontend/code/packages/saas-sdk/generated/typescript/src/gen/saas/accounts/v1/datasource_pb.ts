@@ -791,7 +791,10 @@ export type AddSourceRequest = Message<"saas.accounts.v1.AddSourceRequest"> & {
    * names (SourceGovernance): the caller must be issued that scope there now,
    * and need not administer the organization; the boundary must be one of the
    * installation's own collections. Omitted for an organization's own source,
-   * which an organization administrator connects.
+   * which an organization administrator connects, and for a personal source
+   * (api, the OAuth 2.0 authorization-code grant), which is its connecting
+   * person's: a member connects one under an existing boundary_node_id where
+   * they, or the team a cast acts as, hold datasource:invoke.
    *
    * @generated from field: saas.accounts.v1.SourceGovernance governance = 14;
    */
@@ -4332,7 +4335,9 @@ export const DatasourceService: GenService<{
     output: typeof ListSourceOperationsResponseSchema;
   },
   /**
-   * DeclareSourceOperations atomically replaces the source operation set, as an administrator.
+   * DeclareSourceOperations atomically replaces the source operation set: an
+   * organization's own source's as an administrator, a personal source's as
+   * its owner.
    *
    * @generated from rpc saas.accounts.v1.DatasourceService.DeclareSourceOperations
    */

@@ -469,7 +469,10 @@ message AddSourceRequest {
   // names (SourceGovernance): the caller must be issued that scope there now,
   // and need not administer the organization; the boundary must be one of the
   // installation's own collections. Omitted for an organization's own source,
-  // which an organization administrator connects.
+  // which an organization administrator connects, and for a personal source
+  // (api, the OAuth 2.0 authorization-code grant), which is its connecting
+  // person's: a member connects one under an existing boundary_node_id where
+  // they, or the team a cast acts as, hold datasource:invoke.
   SourceGovernance governance = 14;
 }
 
@@ -1743,7 +1746,9 @@ service DatasourceService {
     };
   }
 
-  // DeclareSourceOperations atomically replaces the source operation set, as an administrator.
+  // DeclareSourceOperations atomically replaces the source operation set: an
+  // organization's own source's as an administrator, a personal source's as
+  // its owner.
   rpc DeclareSourceOperations(DeclareSourceOperationsRequest) returns (DeclareSourceOperationsResponse) {
     option (google.api.http) = {
       post: "/v1/organizations/{org_id}/datasources/{source_id}/operations"
@@ -1752,8 +1757,10 @@ service DatasourceService {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
       // Any member reaches the handler, which holds an organization's own
-      // source to its administrators and a governed one (SourceGovernance)
-      // to the holders of its governing scope, before anything is written.
+      // source to its administrators, a governed one (SourceGovernance) to
+      // the holders of its governing scope, and a personal source to its
+      // owner where who answers for the session holds datasource:invoke,
+      // before anything is written.
       tenant: TENANT_REQUIREMENT_ORG_MEMBER
       resource_bindings: {
         request_field: "org_id"
@@ -1807,8 +1814,10 @@ service DatasourceService {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
       // Any member reaches the handler, which holds an organization's own
-      // source to its administrators and a governed one (SourceGovernance)
-      // to the holders of its governing scope, before anything is written.
+      // source to its administrators, a governed one (SourceGovernance) to
+      // the holders of its governing scope, and a personal source (api, the
+      // OAuth 2.0 authorization-code grant) to a member where who answers
+      // for the session holds datasource:invoke, before anything is written.
       tenant: TENANT_REQUIREMENT_ORG_MEMBER
       resource_bindings: {
         request_field: "org_id"

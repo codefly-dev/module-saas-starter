@@ -179,9 +179,27 @@ type pendingInstallation struct {
 	teamIDs, allTeamIDs []string
 	// memberIDs are, by declared role, the people who join its team.
 	memberIDs map[string][]string
-	// waiting is set once the first pass found the target undelivered, so the
-	// wait is said once rather than at every pass.
-	waiting bool
+	// said is what the log last said of the row, so each wait is said once,
+	// when the row comes to it, rather than at every pass.
+	said string
+}
+
+// say logs message for the row unless it is what was last said of it.
+func (row *pendingInstallation) say(w *wool.Wool, message string, fields ...*wool.LogField) {
+	if row.said == message {
+		return
+	}
+	row.said = message
+	w.Info(message, append([]*wool.LogField{wool.Field("installation", row.declared.describe())}, fields...)...)
+}
+
+// seated names, by declared role, how many of the row's people join its team.
+func seated(row pendingInstallation) string {
+	var roles []string
+	for _, role := range slices.Sorted(maps.Keys(row.memberIDs)) {
+		roles = append(roles, fmt.Sprintf("%s: %d", role, len(row.memberIDs[role])))
+	}
+	return strings.Join(roles, ", ")
 }
 
 func newInstallations(service *business.Service, declared []fixtureInstallation, orgIDs, userIDs, teamIDs map[string]string) (*Installations, error) {
@@ -312,19 +330,21 @@ func (i *Installations) Converge(ctx context.Context) error {
 	remaining := i.pending[:0]
 	for _, row := range i.pending {
 		if active, err := i.coreInstall(ctx, row); active || err != nil {
-			if err != nil {
-				switch {
-				case errors.Is(err, errCoreTargetNotComposed):
-					// Said once per row: the composition delivers the rest.
-					if !row.waiting {
-						w.Info("fixture installation waits for the composition", wool.Field("installation", row.declared.describe()), wool.ErrField(err))
-						row.waiting = true
-					}
-				case !setupPending(err):
-					failures = append(failures, fmt.Errorf("fixture installation %s: %w", row.declared.describe(), err))
-				}
-				remaining = append(remaining, row)
+			switch {
+			case err == nil:
+				// Its last word: what the row waited on is over.
+				w.Info("fixture installation installed: its people hold their roles", wool.Field("installation", row.declared.describe()), wool.Field("seated", seated(row)))
+				continue
+			case errors.Is(err, errCoreTargetNotComposed):
+				// The composition delivers the rest.
+				row.say(w, "fixture installation waits for the composition", wool.ErrField(err))
+			case setupPending(err):
+				// The target's own setup answers it; a later pass activates it.
+				row.say(w, "fixture installation waits for its target's setup to answer", wool.ErrField(err))
+			default:
+				failures = append(failures, fmt.Errorf("fixture installation %s: %w", row.declared.describe(), err))
 			}
+			remaining = append(remaining, row)
 			continue
 		}
 		// A module is installed by composition in every organization: a row
@@ -336,10 +356,7 @@ func (i *Installations) Converge(ctx context.Context) error {
 		}
 		switch {
 		case errors.Is(err, business.ErrInstallTargetNotPresent):
-			if !row.waiting {
-				w.Info("fixture installation waits for its target to be delivered", wool.Field("installation", row.declared.describe()), wool.ErrField(err))
-				row.waiting = true
-			}
+			row.say(w, "fixture installation waits for its target to be delivered", wool.ErrField(err))
 			remaining = append(remaining, row)
 		case err != nil:
 			failures = append(failures, fmt.Errorf("fixture installation %s: %w", row.declared.describe(), err))
@@ -651,11 +668,14 @@ func (i *Installations) reviewFor(ctx context.Context, caller authority.Person, 
 	if store, ok := i.service.Store().(business.CanonicalInstallationSetupStore); ok && held && inst.Status == domain.Pending {
 		plan, err := store.SolutionInstallationPlan(ctx, caller.Organization, inst.ID)
 		if err == nil && plan.Review != nil && plan.Review.ActorId == caller.ID && plan.RequestedRole == role && plan.RequestedOwner == "" {
-			if i.service.ReviewCurrent(ctx, plan.Review) {
+			stale := i.service.ReviewStale(ctx, plan.Review)
+			if stale == nil {
 				return plan.Review, nil
 			}
+			// A delivery since moved what the attempt approved: the fresh
+			// review supersedes it, and its setup is asked again.
 			wool.Get(ctx).In("fixtures.Installations").Info("a pending fixture installation's review is no longer current; it is reviewed again",
-				wool.Field("target", m.Name), wool.Field("installation_id", inst.ID), wool.Field("reviewed_generation", plan.Review.GetApproval().GetGeneration()))
+				wool.Field("target", m.Name), wool.Field("installation_id", inst.ID), wool.Field("reviewed_generation", plan.Review.GetApproval().GetGeneration()), wool.Field("moved", stale.Error()))
 		}
 	}
 	target, err := i.service.ResolveInstallationPrincipal(ctx, caller.Organization, m.Principal)

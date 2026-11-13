@@ -192,7 +192,8 @@ installations:
 	// rule the fixture's pass applies on a host without a core
 	// (ExposeHostInstallation). On a host with one, the fixture installs a
 	// role-gated target through the core instead (coreInstall), which
-	// TestAFixtureInstallsWhatItDeclaresOnceItIsDelivered covers.
+	// TestAFreshRunsFixtureInstallsEverySolutionActiveAndSeatsEachPersonOnTheirRole
+	// covers.
 	viewer := []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read"}}}
 	deliverSolution(t, signer, alias, 2, []*compositionv1.RoleV1{
 		{Name: business.InstallerRole, Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read", "write"}}}},
