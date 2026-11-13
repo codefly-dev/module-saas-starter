@@ -104,7 +104,17 @@ func (h *datasourceConnectHandler) InvokeSourceOperation(ctx context.Context, re
 		defer cancel()
 		h.svc.AuditSourceOperation(auditCtx, actor, req.Msg.OrgId, req.Msg.SourceId, declaration, effect, outcome)
 	}()
-	_, declaration, err = h.svc.SourceOperationAuthority(ctx, actor, req.Msg.OrgId, req.Msg.SourceId, req.Msg.Operation, effect, req.Msg.GetExpectedDeclarationDigest(), false)
+	// A cast calls only a source of its person's own, where the team it acts
+	// as holds datasource:invoke; and whoever answers for the session decides
+	// every check below, before the call and after the SDK's hold.
+	if err = h.refuseUnlessOwnPersonalSourceInView(ctx, actor, req.Msg.OrgId, req.Msg.SourceId, ""); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	holder, err := sourceHolderOf(ctx, actor)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	_, declaration, err = h.svc.SourceOperationAuthority(ctx, holder, actor, req.Msg.OrgId, req.Msg.SourceId, req.Msg.Operation, effect, req.Msg.GetExpectedDeclarationDigest(), false)
 	if err != nil {
 		return nil, translateGRPCError(err)
 	}
@@ -118,13 +128,13 @@ func (h *datasourceConnectHandler) InvokeSourceOperation(ctx context.Context, re
 				return err
 			}
 		}
-		_, _, err := h.svc.SourceOperationAuthority(ctx, actor, req.Msg.OrgId, req.Msg.SourceId, req.Msg.Operation, effect, req.Msg.GetExpectedDeclarationDigest(), false)
+		_, _, err := h.svc.SourceOperationAuthority(ctx, holder, actor, req.Msg.OrgId, req.Msg.SourceId, req.Msg.Operation, effect, req.Msg.GetExpectedDeclarationDigest(), false)
 		return translateGRPCError(err)
 	})
 	return connecttransport.WrapUnary(guard, business.SourceOperationMethod, func(ctx context.Context, r *connect.Request[gen.InvokeSourceOperationRequest]) (*connect.Response[gen.InvokeSourceOperationResponse], error) {
 		dispatched = true
 		var out *gen.InvokeSourceOperationResponse
-		_, err := h.svc.InvokeSourceOperation(ctx, actor, r.Msg.OrgId, r.Msg.SourceId, r.Msg.Operation, r.Msg.GetExpectedDeclarationDigest(), []byte(r.Msg.InputJson), func(ctx context.Context, result *business.SourceOperationResult) error {
+		_, err := h.svc.InvokeSourceOperation(ctx, holder, actor, r.Msg.OrgId, r.Msg.SourceId, r.Msg.Operation, r.Msg.GetExpectedDeclarationDigest(), []byte(r.Msg.InputJson), func(ctx context.Context, result *business.SourceOperationResult) error {
 			var err error
 			out, err = sourceOperationResponse(result)
 			if err != nil {
@@ -169,7 +179,11 @@ func (h *datasourceConnectHandler) LookupInvokeSourceOperation(ctx context.Conte
 	if err = h.requireAuditedSourceOperationScope(ctx, actor, org, attempt.SourceID, "read", effect); err != nil {
 		return nil, err
 	}
-	if _, _, err = h.svc.SourceOperationAuthority(ctx, actor, org, attempt.SourceID, attempt.Operation, effect, "", true); err != nil {
+	holder, err := sourceHolderOf(ctx, actor)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	if _, _, err = h.svc.SourceOperationAuthority(ctx, holder, actor, org, attempt.SourceID, attempt.Operation, effect, "", true); err != nil {
 		return nil, translateGRPCError(err)
 	}
 	store, _ := h.svc.SourceOperationReceipts()

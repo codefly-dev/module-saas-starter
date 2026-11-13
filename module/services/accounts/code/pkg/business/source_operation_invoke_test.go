@@ -164,7 +164,7 @@ func (f *operationFixture) Invoke(ctx context.Context, name, effect string, inpu
 func (f *operationFixture) invokeExpected(ctx context.Context, name, effect string, input json.RawMessage, expected string) error {
 	digest := sha256.Sum256(append([]byte(name+expected), input...))
 	ctx = receipts.WithEffect(ctx, receipts.Effect{ID: effect, Tenant: "org", Method: "/saas.accounts.v1.DatasourceService/InvokeSourceOperation", RequestDigest: digest[:]})
-	_, err := f.service.InvokeSourceOperation(ctx, "actor", "org", "source", name, expected, input, func(context.Context, *business.SourceOperationResult) error { return nil })
+	_, err := f.service.InvokeSourceOperation(ctx, business.SourceHolderFor("actor", ""), "actor", "org", "source", name, expected, input, func(context.Context, *business.SourceOperationResult) error { return nil })
 	return err
 }
 func (f *operationFixture) ProviderReply(code int, body string, lose bool) {
@@ -293,13 +293,13 @@ func TestReadOnlyCommitFailureCanRetrySameEffect(t *testing.T) {
 			f.Declare(t, []operations.Declaration{d})
 			digest := sha256.Sum256([]byte("request"))
 			ctx := receipts.WithEffect(t.Context(), receipts.Effect{ID: "commit-failed", Tenant: "org", Method: business.SourceOperationMethod, RequestDigest: digest[:]})
-			_, err := f.service.InvokeSourceOperation(ctx, "actor", "org", "source", d.Name, "", []byte(`{"id":"a"}`), func(context.Context, *business.SourceOperationResult) error { return errors.New("commit unavailable") })
+			_, err := f.service.InvokeSourceOperation(ctx, business.SourceHolderFor("actor", ""), "actor", "org", "source", d.Name, "", []byte(`{"id":"a"}`), func(context.Context, *business.SourceOperationResult) error { return errors.New("commit unavailable") })
 			if effect == operations.ReadOnly {
 				require.Equal(t, codes.Unavailable, status.Code(err))
 			} else {
 				require.Equal(t, codes.FailedPrecondition, status.Code(err))
 			}
-			_, err = f.service.InvokeSourceOperation(ctx, "actor", "org", "source", d.Name, "", []byte(`{"id":"a"}`), func(context.Context, *business.SourceOperationResult) error { return nil })
+			_, err = f.service.InvokeSourceOperation(ctx, business.SourceHolderFor("actor", ""), "actor", "org", "source", d.Name, "", []byte(`{"id":"a"}`), func(context.Context, *business.SourceOperationResult) error { return nil })
 			if effect == operations.ReadOnly {
 				require.NoError(t, err)
 				require.Equal(t, 2, f.calls)

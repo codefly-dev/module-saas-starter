@@ -36,7 +36,11 @@ func (h *datasourceConnectHandler) BeginDatasourceAccountLink(ctx context.Contex
 			return nil, translateGRPCError(err)
 		}
 		if governed {
-			if err := h.svc.AuthorizeSourceChange(ctx, sourcePerson(actorID, req.Msg.GetOrgId()), source); err != nil {
+			person, err := sourcePerson(ctx, actorID, req.Msg.GetOrgId())
+			if err != nil {
+				return nil, translateGRPCError(err)
+			}
+			if err := h.svc.AuthorizeSourceChange(ctx, person, source); err != nil {
 				return nil, translateGRPCError(err)
 			}
 		}

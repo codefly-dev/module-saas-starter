@@ -36,8 +36,10 @@ func SourceReceiptRetentionWindow() (time.Duration, error) {
 // SourceReceiptRetentionAuthority is checked before receipt replay and again
 // after acquiring the SDK serialization hold. A runtime must present the same
 // installed source scope as an invocation. Shared sources require an organization
-// admin; a personal source can be maintained only by its owning member.
-func (s *Service) SourceReceiptRetentionAuthority(ctx context.Context, actor, org, source, effectID string, lookup bool) error {
+// admin; a personal source can be maintained only by its owning member. holder's
+// grants decide on the source's boundary (sourceOperationAccess), and a cast,
+// which holds no organization role, is never the administrator.
+func (s *Service) SourceReceiptRetentionAuthority(ctx context.Context, holder SourceBoundaryHolder, actor, org, source, effectID string, lookup bool) error {
 	tenant, _, ok := auth.VerifiedDatabaseIdentity(ctx)
 	if !ok || tenant != org {
 		return status.Error(codes.PermissionDenied, "source tenant mismatch")
@@ -54,11 +56,11 @@ func (s *Service) SourceReceiptRetentionAuthority(ctx context.Context, actor, or
 		if lookup {
 			action = "read"
 		}
-		src, err := s.sourceOperationAccess(ctx, actor, org, source, action)
+		src, err := s.sourceOperationAccess(ctx, holder, actor, org, source, action)
 		if err != nil {
 			return err
 		}
-		if src.PersonalOwnerUserID != actor && !IsOrgAdminRole(orgRoleToString(member.Role)) {
+		if src.PersonalOwnerUserID != actor && (holder.Cast() || !IsOrgAdminRole(orgRoleToString(member.Role))) {
 			return status.Error(codes.PermissionDenied, "source owner or organization administrator required")
 		}
 		attempts, ok := s.store.(SourceOperationAttemptStore)
@@ -80,12 +82,12 @@ func (s *Service) SourceReceiptRetentionAuthority(ctx context.Context, actor, or
 // It removes large expired response bodies, never the compact effect markers:
 // forgetting a mutation's last marker would permit a duplicate remote effect.
 // Deletion, audit and this operation's receipt commit in the same transaction.
-func (s *Service) PruneSourceOperationReceipts(ctx context.Context, actor, org, source string, commit func(context.Context, int64) error) error {
+func (s *Service) PruneSourceOperationReceipts(ctx context.Context, holder SourceBoundaryHolder, actor, org, source string, commit func(context.Context, int64) error) error {
 	effect, ok := receipts.EffectFromContext(ctx)
 	if !ok || effect.Tenant != org || effect.Method != SourceReceiptRetentionMethod || commit == nil {
 		return operationRefused("SOURCE_EFFECT_REQUIRED")
 	}
-	if err := s.SourceReceiptRetentionAuthority(ctx, actor, org, source, effect.ID, false); err != nil {
+	if err := s.SourceReceiptRetentionAuthority(ctx, holder, actor, org, source, effect.ID, false); err != nil {
 		return err
 	}
 	retention, err := SourceReceiptRetentionWindow()

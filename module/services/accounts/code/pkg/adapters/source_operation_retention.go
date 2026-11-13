@@ -15,7 +15,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func (h *datasourceConnectHandler) requireReceiptRetention(ctx context.Context, actor, org, source, effect string, lookup bool) error {
+func (h *datasourceConnectHandler) requireReceiptRetention(ctx context.Context, holder business.SourceBoundaryHolder, actor, org, source, effect string, lookup bool) error {
 	tenant, _, ok := auth.VerifiedDatabaseIdentity(ctx)
 	if !ok || tenant != org {
 		return connect.NewError(connect.CodePermissionDenied, errors.New("source tenant mismatch"))
@@ -30,7 +30,7 @@ func (h *datasourceConnectHandler) requireReceiptRetention(ctx context.Context, 
 	if err := h.requireAuditedSourceOperationScope(ctx, actor, org, source, action, effect); err != nil {
 		return err
 	}
-	return translateGRPCError(h.svc.SourceReceiptRetentionAuthority(ctx, actor, org, source, effect, lookup))
+	return translateGRPCError(h.svc.SourceReceiptRetentionAuthority(ctx, holder, actor, org, source, effect, lookup))
 }
 
 func (h *datasourceConnectHandler) PruneSourceOperationReceipts(ctx context.Context, req *connect.Request[gen.PruneSourceOperationReceiptsRequest]) (*connect.Response[gen.PruneSourceOperationReceiptsResponse], error) {
@@ -52,17 +52,21 @@ func (h *datasourceConnectHandler) PruneSourceOperationReceipts(ctx context.Cont
 	if !sourceWireFits(normalized.Msg, 4096) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("source retention input exceeds wire bound"))
 	}
+	holder, err := sourceHolderOf(ctx, actor)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
 	check := func(ctx context.Context) error {
 		if _, present := ctx.Value(sourceOperationContextKey{}).(*basev0.WorkContextV1); present {
 			if _, err := authenticateSourceOperationContext(ctx, req.Header()); err != nil {
 				return err
 			}
 		}
-		return h.requireReceiptRetention(ctx, actor, req.Msg.OrgId, req.Msg.SourceId, effect, false)
+		return h.requireReceiptRetention(ctx, holder, actor, req.Msg.OrgId, req.Msg.SourceId, effect, false)
 	}
 	// The transport already authenticated the initial Work Context. The SDK hold
 	// gets a fresh authentication before it can replay a saved response.
-	if err := h.requireReceiptRetention(ctx, actor, req.Msg.OrgId, req.Msg.SourceId, effect, false); err != nil {
+	if err := h.requireReceiptRetention(ctx, holder, actor, req.Msg.OrgId, req.Msg.SourceId, effect, false); err != nil {
 		return nil, err
 	}
 	store, guard := h.svc.SourceOperationReceipts()
@@ -72,7 +76,7 @@ func (h *datasourceConnectHandler) PruneSourceOperationReceipts(ctx context.Cont
 	ctx = business.WithSourceOperationRecheck(ctx, check)
 	return connecttransport.WrapUnary(guard, business.SourceReceiptRetentionMethod, func(ctx context.Context, r *connect.Request[gen.PruneSourceOperationReceiptsRequest]) (*connect.Response[gen.PruneSourceOperationReceiptsResponse], error) {
 		var out *gen.PruneSourceOperationReceiptsResponse
-		err := h.svc.PruneSourceOperationReceipts(ctx, actor, r.Msg.OrgId, r.Msg.SourceId, func(ctx context.Context, removed int64) error {
+		err := h.svc.PruneSourceOperationReceipts(ctx, holder, actor, r.Msg.OrgId, r.Msg.SourceId, func(ctx context.Context, removed int64) error {
 			out = sourceRetentionResponse(effect, removed)
 			return h.svc.RecordSourceOperationReceipt(ctx, out)
 		})
@@ -110,7 +114,11 @@ func (h *datasourceConnectHandler) LookupPruneSourceOperationReceipts(ctx contex
 	if attempt == nil {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("source effect not found"))
 	}
-	if err := h.requireReceiptRetention(ctx, actor, org, attempt.SourceID, effect, true); err != nil {
+	holder, err := sourceHolderOf(ctx, actor)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	if err := h.requireReceiptRetention(ctx, holder, actor, org, attempt.SourceID, effect, true); err != nil {
 		return nil, err
 	}
 	store, _ := h.svc.SourceOperationReceipts()

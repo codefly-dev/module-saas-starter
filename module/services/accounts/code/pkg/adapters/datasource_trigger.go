@@ -212,6 +212,15 @@ func (h *datasourceConnectHandler) requireReconcile(ctx context.Context, actor, 
 	if err := requireOrgMember(ctx, actor, org); err != nil {
 		return translateGRPCError(err)
 	}
+	// Reconciling is decided by the source's owner or an organization
+	// administrator, never by a datasource grant a team can hold, so a cast,
+	// which administers nothing and holds nothing of its person's, is refused
+	// it and its receipt alike. A role view is decided as before.
+	if view, err := roleViewOf(ctx); err != nil {
+		return err
+	} else if view.Team != "" {
+		return viewRefusal(view)
+	}
 	action := "invoke"
 	if lookup {
 		action = "read"

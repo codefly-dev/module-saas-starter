@@ -191,12 +191,22 @@ for any module. Only its owner declares its operations (the administrator role
 over another member's personal source decides nothing). A cast passes the
 role-view gate only with requests that can be about a source of its own
 (`castAsksForItsPersonsOwnSource`: a personal `AddSource`, and
-`DeclareSourceOperations`, `BeginDatasourceAccountLink` and
-`CompleteDatasourceAccountLink` naming a source), and each handler refuses one
-about any other source with the cast's refusal. An organization's own source and
-a governed one are unchanged. The invoke-time check still reads the person's own
-grants, as the role-view guard says; a cast's later calls are not yet narrowed
-there.
+`DeclareSourceOperations`, `BeginDatasourceAccountLink`,
+`CompleteDatasourceAccountLink` and `InvokeSourceOperation` naming a source),
+and each handler refuses one about any other source with the cast's refusal. An
+organization's own source and a governed one are unchanged.
+
+Every read of and call on a source a cast reaches is decided by the team's
+grants alone (`sourceHolderOf`): `InvokeSourceOperation` and its lookup, and
+`ListSourceOperations`, need the team to hold `datasource:invoke` or
+`datasource:read` on the source's scope node, before the call and after the
+receipt guard's hold; `ListSources` and `GetSource` show a source of the
+person's own only where the team holds `datasource:read`; a governed source is
+read by the installation roles of the team (`sourcePerson` names the cast's
+session to the authority core). A cast is never the organization administrator
+for a receipt prune's lookup, and a reconcile's lookup is refused to it. In a
+member's or an administrator's own session, and in a role view, nothing
+changes.
 
 Refresh and client-credentials resolution reuse the credential row lock.
 Transport uses the resolved-IP egress guard and same-origin redirect policy.

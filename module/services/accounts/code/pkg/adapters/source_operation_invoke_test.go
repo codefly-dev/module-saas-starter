@@ -146,7 +146,7 @@ func TestSourceOperationRemovedSourceOnlyRecoversOwnEffect(t *testing.T) {
 			svc, err := business.NewService(store)
 			require.NoError(t, err)
 			for _, lookup := range []bool{false, true} {
-				_, _, err := svc.SourceOperationAuthority(t.Context(), "caller", "org", "source", "read_item", "effect", "", lookup)
+				_, _, err := svc.SourceOperationAuthority(t.Context(), business.SourceHolderFor("caller", ""), "caller", "org", "source", "read_item", "effect", "", lookup)
 				if owner == "caller" {
 					require.Equal(t, codes.FailedPrecondition, status.Code(err))
 				} else {

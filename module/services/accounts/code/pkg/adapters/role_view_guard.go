@@ -106,10 +106,12 @@ func viewRefusal(view domain.RoleView) error {
 // views holds none of it. That covers the handlers' organization-role gates, so the
 // declared reads a view admits (the invitation list, the installation list, the SSO
 // configuration, usage) cannot show an administrator what a viewer cannot. It is not
-// every place accounts reads an organization role: three source-operation lookups in
-// the business layer and the RBAC-grant reads (ListMyAccessibleScopes, GetSource,
-// ListSources, the resource branch of QueryAuditLog) still answer by the person's own
-// grants, and are the end state's work (the held set), not this guard's.
+// every place accounts reads an organization role: in a role view, the RBAC-grant
+// reads (ListMyAccessibleScopes, the resource branch of QueryAuditLog) and the
+// datasource reads still answer by the person's own grants, and are the end state's
+// work (the held set), not this guard's. A cast does not: every datasource read and
+// call it reaches is decided by the grants of the team it acts as alone
+// (sourceHolderOf, sourcePerson).
 //
 // roleViewWrites are the accounts writes a session may make while viewing as
 // some of its roles, because they act on the person's own account or content and
@@ -161,8 +163,8 @@ func roleViewAdmits(fullMethod string, policy business.RPCPolicy, resolved bool)
 // holds each of those to a stated decision.
 //
 // One more set passes, and only for a cast: castAsksForItsPersonsOwnSource
-// names the requests by which a person connects and signs in to a personal
-// source of their own, which no organization role decides. Their handlers
+// names the requests by which a person connects, signs in to and calls a
+// personal source of their own, which no organization role decides. Their handlers
 // decide each by the team the cast acts as (personalSourceHolder) and refuse
 // everything else the request could reach with this same refusal.
 func enforceRoleViewPolicy(ctx context.Context, fullMethod string, req any) error {
@@ -186,8 +188,8 @@ func enforceRoleViewPolicy(ctx context.Context, fullMethod string, req any) erro
 // castAsksForItsPersonsOwnSource reports whether req, made to fullMethod, can
 // only be about a personal source of the calling person's own: connecting one
 // (an api source with the authorization-code grant, governed by nothing),
-// declaring on one, or signing in for one. It reads the request's shape only;
-// whose source it names is the handler's to decide.
+// declaring on one, signing in for one, or calling one. It reads the request's
+// shape only; whose source it names is the handler's to decide.
 func castAsksForItsPersonsOwnSource(fullMethod string, req any) bool {
 	const datasource = "/saas.accounts.v1.DatasourceService/"
 	switch m := req.(type) {
@@ -199,6 +201,8 @@ func castAsksForItsPersonsOwnSource(fullMethod string, req any) bool {
 		return fullMethod == datasource+"BeginDatasourceAccountLink" && m.GetSourceId() != ""
 	case *gen.CompleteDatasourceAccountLinkRequest:
 		return fullMethod == datasource+"CompleteDatasourceAccountLink" && m.GetState() != ""
+	case *gen.InvokeSourceOperationRequest:
+		return fullMethod == datasource+"InvokeSourceOperation" && m.GetSourceId() != ""
 	}
 	return false
 }
