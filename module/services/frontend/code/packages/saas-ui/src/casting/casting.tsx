@@ -92,10 +92,16 @@ export function openTeamSwitcher() {
 
 function closeTeamSwitcher() {
 	setCastAsk({ open: false });
+}
+
+/**
+ * Where focus goes when the switcher closes: where it was opened from, or,
+ * when that is gone (a cast remounts the page), the bar's Switch team.
+ */
+function returnFocus(): HTMLElement | true {
 	const back = opener?.isConnected ? opener : document.querySelector<HTMLElement>("[data-cast-switch]");
 	opener = null;
-	// After the dialog's own focus handling, which may otherwise land on the body.
-	setTimeout(() => back?.focus(), 0);
+	return back ?? true;
 }
 
 /**
@@ -255,7 +261,7 @@ export function TeamSwitcher() {
 	const castTeamId = session?.castTeamId ?? "";
 	return (
 		<Dialog open={open} onOpenChange={(next) => (next ? setCastAsk({ open: true }) : close())}>
-			<DialogContent className="overflow-hidden p-0">
+			<DialogContent className="overflow-hidden p-0" finalFocus={returnFocus}>
 				<DialogHeader className="p-4 pb-0">
 					<DialogTitle>View as a team</DialogTitle>
 					<DialogDescription>

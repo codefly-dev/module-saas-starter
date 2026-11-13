@@ -47,7 +47,9 @@ let ask: CastAsk | null = null;
 const listeners = new Set<() => void>();
 
 export function castAsk(): CastAsk {
-	ask ??= { ...IDLE, ...read<Pick<CastAsk, "open" | "refusal">>(ASK_KEY) };
+	// A reload reopens the switcher only to say a refusal it had not said yet.
+	const kept = read<Pick<CastAsk, "open" | "refusal">>(ASK_KEY);
+	ask ??= { ...IDLE, refusal: kept?.refusal ?? null, open: !!kept?.refusal && !!kept.open };
 	return ask;
 }
 
