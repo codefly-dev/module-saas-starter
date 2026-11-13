@@ -52,6 +52,23 @@ re-emits the version-table grant in the baseline's suffix. The one-shot tools
 credential and are not gated. A rollout that starts accounts before the
 migration has finished shows as a refusal and a restart, never as `column ... does not exist` on a query.
 
+### Rolling back below a migration
+
+A store ahead of its binary is not refused (only one behind it is), so an
+image rolled back below a migration runs against the newer schema. Where the
+older binary's statements no longer fit that schema, **apply the migration's
+down file before the older image starts**, never after:
+
+- **78** (`78_authority_core_approved_reading`) keys
+  `authority_core_approved_modules` on module, generation and offer digest.
+  A binary from before it writes an approved declaration with `ON CONFLICT
+  (name, generation)`, which no constraint matches once 78 is applied, so
+  every such write fails, and with it every delivery pass that keeps an
+  approved declaration. Its down file restores the old key, keeping one
+  reading per generation (the one kept first, else the lowest digest); a
+  consent that approved another reading is then refused by name until an
+  administrator approves the delivered offer.
+
 ### Filling a column a shared contract now keeps
 
 When a library the host runs (the authority core) starts keeping a value the
