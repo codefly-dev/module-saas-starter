@@ -63,9 +63,9 @@ type solutionRegistrySnapshot struct {
 	routeEndpoints map[string][]moduleEndpoint
 	// principals come from the same applied manifest as the route endpoints.
 	principals map[string]string
-	// reaches are, per alias, the aliases of the modules its applied manifest
-	// declares it consumes (reachedModuleAliases).
-	reaches map[string][]string
+	// reaches are, per alias, the modules its applied manifest declares it
+	// consumes (reachedModuleAliases).
+	reaches map[string]moduleReach
 	// sharedPrincipals are the principals more than one alias carries, with
 	// those aliases; no reach resolves to one (principalCarriers).
 	sharedPrincipals map[string][]string
@@ -118,7 +118,7 @@ func (c *accountsSolutionRegistry) List(ctx context.Context, req *accountsv1.Lis
 }
 
 func snapshotFromAppliedBindings(resp *accountsv1.ListSolutionRegistrationsResponse, bindings *accountsv1.ListSolutionHostBindingsResponse) *solutionRegistrySnapshot {
-	out := &solutionRegistrySnapshot{ListSolutionRegistrationsResponse: resp, routeEndpoints: make(map[string][]moduleEndpoint), principals: make(map[string]string), reaches: make(map[string][]string), refusals: make(map[string]manifestRefusal)}
+	out := &solutionRegistrySnapshot{ListSolutionRegistrationsResponse: resp, routeEndpoints: make(map[string][]moduleEndpoint), principals: make(map[string]string), reaches: make(map[string]moduleReach), refusals: make(map[string]manifestRefusal)}
 	applied := make(map[string]*solutionhost.ModuleManifest)
 	for _, record := range resp.GetRegistrations() {
 		for _, binding := range bindings.GetBindings() {
@@ -149,7 +149,7 @@ func snapshotFromAppliedBindings(resp *accountsv1.ListSolutionRegistrationsRespo
 	aliasOf, shared := principalCarriers(out.principals)
 	out.sharedPrincipals = shared
 	for alias, manifest := range applied {
-		if reached := reachedModuleAliases(manifest, aliasOf); len(reached) > 0 {
+		if reached := reachedModuleAliases(manifest, aliasOf); len(reached.Aliases) > 0 {
 			out.reaches[alias] = reached
 		}
 	}
@@ -179,11 +179,26 @@ func principalCarriers(principals map[string]string) (map[string]string, map[str
 	return aliasOf, shared
 }
 
+// moduleReach is what one applied manifest declares it consumes on the asking
+// person's session, by the aliases a page can key on.
+type moduleReach struct {
+	// Aliases is every module reached, sorted.
+	Aliases []string
+	// Bound is the subset reached through a binding of the record's own that
+	// invokes for the person, sorted. Every such call is issued through that
+	// binding and carries what the person's role at the record names, cut to
+	// the binding; nothing the person holds at the module itself admits it.
+	// A module reached only as an edge dependency (the person's own Work
+	// Context) is not in it.
+	Bound []string
+}
+
 // reachedModuleAliases is what an applied manifest declares it consumes on
 // the asking person's session, named by the aliases a page can key on: every
 // edge dependency (a module the record's page calls with the person's own Work
 // Context, named by its principal), and the audience of every binding that
-// invokes for the person, other than the record's own principal.
+// invokes for the person, other than the record's own principal. The latter
+// are also its Bound reach.
 //
 // The bindings mirror the declared half of accounts' reached-module rule
 // (accounts pkg/business/installation_readiness.go, readinessFor), not the
@@ -196,28 +211,35 @@ func principalCarriers(principals map[string]string) (map[string]string, map[str
 // principal no single applied record carries resolves to nothing and is left
 // out, so a page sees it as not composed. Either way the list is a statement,
 // never a grant: what the person may do there is decided per call.
-func reachedModuleAliases(manifest *solutionhost.ModuleManifest, aliasOf map[string]string) []string {
+func reachedModuleAliases(manifest *solutionhost.ModuleManifest, aliasOf map[string]string) moduleReach {
 	own := manifest.Authority.Principal
-	seen := map[string]bool{}
-	var reached []string
-	reach := func(principal string) {
+	resolve := func(principal string) (string, bool) {
 		alias, known := aliasOf[principal]
-		if principal == own || !known || seen[alias] {
-			return
-		}
-		seen[alias] = true
-		reached = append(reached, alias)
+		return alias, known && principal != own
 	}
+	reached, bound := map[string]bool{}, map[string]bool{}
 	for _, edge := range manifest.Authority.EdgeDependencies {
-		reach(edge.Module)
+		if alias, ok := resolve(edge.Module); ok {
+			reached[alias] = true
+		}
 	}
 	for _, binding := range manifest.Authority.Bindings {
-		if len(binding.Operations[modulecontract.OperationInvoke]) > 0 {
-			reach(binding.Audience)
+		if len(binding.Operations[modulecontract.OperationInvoke]) == 0 {
+			continue
+		}
+		if alias, ok := resolve(binding.Audience); ok {
+			reached[alias], bound[alias] = true, true
 		}
 	}
-	slices.Sort(reached)
-	return reached
+	return moduleReach{Aliases: sortedKeys(reached), Bound: sortedKeys(bound)}
+}
+
+// sortedKeys is set's members, sorted; nil for an empty set.
+func sortedKeys(set map[string]bool) []string {
+	if len(set) == 0 {
+		return nil
+	}
+	return slices.Sorted(maps.Keys(set))
 }
 
 // Historical assets are read by identity, never broadcast in the route snapshot.
@@ -287,7 +309,7 @@ type solutionRegistryCache struct {
 	upstreams  map[string]*url.URL
 	principals map[string]string
 	// reaches is each alias's declared module consumption, from the same read.
-	reaches map[string][]string
+	reaches map[string]moduleReach
 	// sharedPrincipals is the last reported set of ambiguous principals.
 	sharedPrincipals map[string][]string
 	// manifestRefusals is the snapshot's dropped manifests, for the diagnostic.
@@ -778,7 +800,7 @@ func solutionRecordActive(record *accountsv1.SolutionRegistration) bool {
 // snapshot returns the cached records ordered by id, along with the registry
 // revision they were read at, whether a snapshot has ever loaded, and the
 // manifests the same read dropped.
-func (c *solutionRegistryCache) snapshot() ([]*accountsv1.SolutionRegistration, int64, bool, map[string]manifestRefusal, map[string][]string) {
+func (c *solutionRegistryCache) snapshot() ([]*accountsv1.SolutionRegistration, int64, bool, map[string]manifestRefusal, map[string]moduleReach) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	records := make([]*accountsv1.SolutionRegistration, 0, len(c.records))

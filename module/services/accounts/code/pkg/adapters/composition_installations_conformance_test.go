@@ -186,25 +186,32 @@ func testModulesInstalledByComposition(t *testing.T, h reviewedClosureHarness) {
 		require.Empty(t, grants.GetGrants())
 	})
 
-	t.Run("a page's binding is told every composed module without roles, never a module page", func(t *testing.T) {
+	t.Run("a page's binding is told every composed module, each saying whether it declares roles", func(t *testing.T) {
 		read := func(include bool, token string) *gen.ListSolutionEntitlementsResponse {
 			t.Helper()
 			out, err := h.svc.ListSolutionEntitlements(h.ctx, &gen.ListSolutionEntitlementsRequest{OrgId: fixtureOrganization, SubjectId: conformanceMaya, IncludeComposedModules: include, PageToken: token})
 			require.NoError(t, err)
 			return out
 		}
-		composed := map[string]string{}
+		composed := map[string]*gen.ComposedModuleInstallation{}
 		for _, c := range read(true, "").GetComposedModules() {
-			composed[c.GetTargetId()] = c.GetInstallationId()
+			composed[c.GetTargetId()] = c
 		}
 		for _, module := range []string{"conformance-composed", "documents"} {
 			inst := installed(fixtureOrganization, module)
-			require.Equal(t, inst.GetId(), composed[inst.GetTargetId()], "%s, declaring no roles, is named by its composition installation", module)
+			require.Contains(t, composed, inst.GetTargetId(), "%s is named by its composition installation", module)
+			require.Equal(t, inst.GetId(), composed[inst.GetTargetId()].GetInstallationId(), "%s is named by its composition installation", module)
+			require.False(t, composed[inst.GetTargetId()].GetRoleGated(), "%s declares no roles", module)
 		}
+		// A module page declaring roles is named too, as role-gated: a page
+		// consuming it through its own binding acts in this installation on
+		// the person's role at that page, whatever the person holds here.
 		page := installed(fixtureOrganization, "conformance-composed-page")
-		require.NotContains(t, composed, page.GetTargetId(), "a module declaring roles is reached by grant alone")
+		require.Contains(t, composed, page.GetTargetId(), "a module declaring roles is named by its composition installation")
+		require.Equal(t, page.GetId(), composed[page.GetTargetId()].GetInstallationId())
+		require.True(t, composed[page.GetTargetId()].GetRoleGated(), "and says it declares roles")
 		for _, e := range read(true, "").GetEntitlements() {
-			require.NotContains(t, composed, e.GetTargetId(), "naming a composed module entitles nobody to it")
+			require.NotEqual(t, page.GetTargetId(), e.GetTargetId(), "naming a composed module entitles nobody to it")
 		}
 		require.Empty(t, read(false, "").GetComposedModules(), "the navigation and the proxy do not ask, and are not answered")
 		require.Empty(t, read(true, page.GetId()).GetComposedModules(), "a later page carries none")

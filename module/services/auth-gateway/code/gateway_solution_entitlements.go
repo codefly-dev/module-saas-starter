@@ -139,8 +139,9 @@ type solutionEntitlementProjection struct {
 	Viewer string                     `json:"viewer"`
 	Usable []solutionEntitlementEntry `json:"solutions"`
 	// ComposedModules answers composedModulesQuery: the organization's
-	// installation of every composed module that declares no roles. Never
-	// entitlements: nobody was granted them, and no proxy decision reads them.
+	// installation of every composed module, each saying whether the module
+	// declares roles. Never entitlements: nobody was granted them, and no
+	// proxy decision reads them.
 	ComposedModules []composedModuleEntry `json:"composedModules,omitempty"`
 }
 
@@ -149,11 +150,13 @@ type solutionEntitlementProjection struct {
 // poll does not, and does not pay for the read.
 const composedModulesQuery = "composedModules"
 
-// composedModuleEntry is one composed module without roles, as accounts names
-// it: its target, the join key, and the organization's installation of it.
+// composedModuleEntry is one composed module, as accounts names it: its
+// target, the join key, the organization's installation of it, and whether it
+// declares roles (a page is then told it only through a binding of its own).
 type composedModuleEntry struct {
 	TargetID       string `json:"targetId"`
 	InstallationID string `json:"installationId"`
+	RoleGated      bool   `json:"roleGated"`
 }
 
 type solutionEntitlementEntry struct {
@@ -333,7 +336,7 @@ func (g *Gateway) collectSolutionEntitlements(ctx context.Context, org, viewer, 
 			return nil, nil, err
 		}
 		for _, module := range resp.GetComposedModules() {
-			modules = append(modules, composedModuleEntry{TargetID: module.GetTargetId(), InstallationID: module.GetInstallationId()})
+			modules = append(modules, composedModuleEntry{TargetID: module.GetTargetId(), InstallationID: module.GetInstallationId(), RoleGated: module.GetRoleGated()})
 		}
 		for _, entitlement := range resp.GetEntitlements() {
 			entries = append(entries, solutionEntitlementEntry{

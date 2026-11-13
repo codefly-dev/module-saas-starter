@@ -225,15 +225,22 @@ type ListSolutionEntitlementsResponse struct {
 	// Set when more entitlements remain; pass it back as page_token. Empty on the
 	// last page.
 	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
-	// The organization's installation of every composed module that declares no
-	// roles, when include_composed_modules asked for it; on the first page only.
+	// The organization's installation of every composed module, each saying
+	// whether the module declares roles, when include_composed_modules asked for
+	// it; on the first page only.
 	//
 	// Not entitlements, and never merged into them: nobody was granted these.
 	// Every composed module is installed in every organization by composition,
-	// and one declaring no roles decides each call on the caller's own
-	// organization access, so naming its installation to a page that consumes it
-	// on the person's session widens nothing. A module declaring roles is never
-	// listed here: it reaches a viewer only through entitlements, by grant.
+	// and naming an installation grants nothing: what a call there may do is
+	// decided per call. A page is told one in two cases. A module declaring no
+	// roles decides each call on the caller's own organization access, so a page
+	// consuming it on the person's session is told it. A module declaring roles
+	// is told only to a page that consumes it through one of the page's own
+	// bindings: each such call is issued through that binding and carries what
+	// the person's role at the PAGE names, cut to the binding, never anything
+	// the person holds at the module itself, so the module's own roles are not
+	// what admits it. Through the person's own session such a module reaches a
+	// viewer by grant alone, through the entitlements.
 	ComposedModules []*ComposedModuleInstallation `protobuf:"bytes,3,rep,name=composed_modules,json=composedModules,proto3" json:"composed_modules,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
@@ -291,13 +298,16 @@ func (x *ListSolutionEntitlementsResponse) GetComposedModules() []*ComposedModul
 }
 
 // ComposedModuleInstallation is an organization's installation of one composed
-// module that declares no roles, joined like an entitlement on the target.
+// module, joined like an entitlement on the target.
 type ComposedModuleInstallation struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	TargetId       string                 `protobuf:"bytes,1,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
 	InstallationId string                 `protobuf:"bytes,2,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// The module declares roles (the core's RoleGated): a page is told this
+	// installation only when it consumes the module through its own binding.
+	RoleGated     bool `protobuf:"varint,3,opt,name=role_gated,json=roleGated,proto3" json:"role_gated,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ComposedModuleInstallation) Reset() {
@@ -344,6 +354,13 @@ func (x *ComposedModuleInstallation) GetInstallationId() string {
 	return ""
 }
 
+func (x *ComposedModuleInstallation) GetRoleGated() bool {
+	if x != nil {
+		return x.RoleGated
+	}
+	return false
+}
+
 var File_saas_accounts_v1_solution_entitlements_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_solution_entitlements_proto_rawDesc = "" +
@@ -368,10 +385,12 @@ const file_saas_accounts_v1_solution_entitlements_proto_rawDesc = "" +
 	" ListSolutionEntitlementsResponse\x12I\n" +
 	"\fentitlements\x18\x01 \x03(\v2%.saas.accounts.v1.SolutionEntitlementR\fentitlements\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12W\n" +
-	"\x10composed_modules\x18\x03 \x03(\v2,.saas.accounts.v1.ComposedModuleInstallationR\x0fcomposedModules\"v\n" +
+	"\x10composed_modules\x18\x03 \x03(\v2,.saas.accounts.v1.ComposedModuleInstallationR\x0fcomposedModules\"\x95\x01\n" +
 	"\x1aComposedModuleInstallation\x12%\n" +
 	"\ttarget_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\btargetId\x121\n" +
-	"\x0finstallation_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0einstallationIdB\xc5\x01\n" +
+	"\x0finstallation_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0einstallationId\x12\x1d\n" +
+	"\n" +
+	"role_gated\x18\x03 \x01(\bR\troleGatedB\xc5\x01\n" +
 	"\x14com.saas.accounts.v1B\x19SolutionEntitlementsProtoP\x01Z0auth-gateway/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (

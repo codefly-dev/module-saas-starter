@@ -344,7 +344,10 @@ func TestGatewaySolutionEntitlements_ComposedModulesOnlyWhenAsked(t *testing.T) 
 	gw, authority, priv := entitlementGateway(t)
 	authority.pages = []*accountsv1.ListSolutionEntitlementsResponse{{
 		Entitlements:    []*accountsv1.SolutionEntitlement{{TargetId: fakeSolutionTarget("people"), InstallationId: "install-people", Healthy: true}},
-		ComposedModules: []*accountsv1.ComposedModuleInstallation{{TargetId: fakeSolutionTarget("records"), InstallationId: "install-records"}},
+		ComposedModules: []*accountsv1.ComposedModuleInstallation{
+			{TargetId: fakeSolutionTarget("records"), InstallationId: "install-records", RoleGated: true},
+			{TargetId: fakeSolutionTarget("notes"), InstallationId: "install-notes"},
+		},
 	}}
 	token := signValidToken(t, priv)
 
@@ -360,7 +363,10 @@ func TestGatewaySolutionEntitlements_ComposedModulesOnlyWhenAsked(t *testing.T) 
 	require.Equal(t, http.StatusOK, w.Code)
 	require.True(t, authority.calls[1].GetIncludeComposedModules())
 	body := decodeEntitlements(t, w.Body.Bytes())
-	require.Equal(t, []composedModuleEntry{{TargetID: fakeSolutionTarget("records"), InstallationID: "install-records"}}, body.ComposedModules)
+	require.Equal(t, []composedModuleEntry{
+		{TargetID: fakeSolutionTarget("records"), InstallationID: "install-records", RoleGated: true},
+		{TargetID: fakeSolutionTarget("notes"), InstallationID: "install-notes"},
+	}, body.ComposedModules, "each composed module says whether it declares roles")
 	require.Equal(t, []solutionEntitlementEntry{{TargetID: fakeSolutionTarget("people"), Healthy: true, InstallationID: "install-people"}}, body.Usable,
 		"a composed module is never listed as an entitlement")
 }

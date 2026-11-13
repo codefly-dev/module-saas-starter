@@ -108,23 +108,33 @@ message ListSolutionEntitlementsResponse {
   // Set when more entitlements remain; pass it back as page_token. Empty on the
   // last page.
   string next_page_token = 2;
-  // The organization's installation of every composed module that declares no
-  // roles, when include_composed_modules asked for it; on the first page only.
+  // The organization's installation of every composed module, each saying
+  // whether the module declares roles, when include_composed_modules asked for
+  // it; on the first page only.
   //
   // Not entitlements, and never merged into them: nobody was granted these.
   // Every composed module is installed in every organization by composition,
-  // and one declaring no roles decides each call on the caller's own
-  // organization access, so naming its installation to a page that consumes it
-  // on the person's session widens nothing. A module declaring roles is never
-  // listed here: it reaches a viewer only through entitlements, by grant.
+  // and naming an installation grants nothing: what a call there may do is
+  // decided per call. A page is told one in two cases. A module declaring no
+  // roles decides each call on the caller's own organization access, so a page
+  // consuming it on the person's session is told it. A module declaring roles
+  // is told only to a page that consumes it through one of the page's own
+  // bindings: each such call is issued through that binding and carries what
+  // the person's role at the PAGE names, cut to the binding, never anything
+  // the person holds at the module itself, so the module's own roles are not
+  // what admits it. Through the person's own session such a module reaches a
+  // viewer by grant alone, through the entitlements.
   repeated ComposedModuleInstallation composed_modules = 3;
 }
 
 // ComposedModuleInstallation is an organization's installation of one composed
-// module that declares no roles, joined like an entitlement on the target.
+// module, joined like an entitlement on the target.
 message ComposedModuleInstallation {
   string target_id = 1 [(buf.validate.field).string.uuid = true];
   string installation_id = 2 [(buf.validate.field).string.uuid = true];
+  // The module declares roles (the core's RoleGated): a page is told this
+  // installation only when it consumes the module through its own binding.
+  bool role_gated = 3;
 }
 
 // Deliberately NOT here: a revision or fingerprint field. A consumer that caches

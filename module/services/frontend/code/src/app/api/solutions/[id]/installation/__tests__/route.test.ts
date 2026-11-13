@@ -22,16 +22,16 @@ function manifest(id: string): string {
 }
 
 /** The registry, and the gateway-verified entitlement read for the viewer. */
-type Registered = string | { id: string; kind: "module" | "solution"; reaches?: string[]; page?: boolean };
+type Registered = string | { id: string; kind: "module" | "solution"; reaches?: string[]; boundReaches?: string[]; page?: boolean };
 
 /**
- * `composed` is the organization's composed modules without roles, which the
- * gateway answers only to a read that asks for them.
+ * `composed` is the organization's composed modules, each saying whether it
+ * declares roles, which the gateway answers only to a read that asks for them.
  */
 function gatewayServing(
 	registered: Registered[],
 	entitled: Array<{ id: string; installationId?: string; healthy?: boolean }>,
-	composed: Array<{ id: string; installationId: string }> = [],
+	composed: Array<{ id: string; installationId: string; roleGated?: boolean }> = [],
 ) {
 	return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
 		const url = new URL(input instanceof Request ? input.url : String(input));
@@ -51,7 +51,7 @@ function gatewayServing(
 					...(entry.installationId === undefined ? {} : { installationId: entry.installationId }),
 				})),
 				...(asked && composed.length > 0
-					? { composedModules: composed.map((entry) => ({ targetId: `target-${entry.id}`, installationId: entry.installationId })) }
+					? { composedModules: composed.map((entry) => ({ targetId: `target-${entry.id}`, installationId: entry.installationId, roleGated: entry.roleGated ?? false })) }
 					: {}),
 			});
 		}
@@ -127,28 +127,67 @@ describe("solution installation route", () => {
 		});
 	});
 
-	it("hands a module page each composed module without a page it consumes, by the organization's installation of it", async () => {
+	it("hands a module page each composed module without roles it consumes, by the organization's installation of it", async () => {
 		const gateway = gatewayServing([
-			{ id: "people", kind: "module", reaches: ["records", "documents", "assistant", "roled"] },
+			{ id: "people", kind: "module", reaches: ["records", "documents", "assistant", "roled", "bundled"] },
 			{ id: "records", kind: "module", page: false },
-			{ id: "documents", kind: "module", page: false },
+			{ id: "documents", kind: "module" },
 			{ id: "assistant", kind: "module", page: false },
 			{ id: "roled", kind: "module" },
+			{ id: "bundled", kind: "module", page: false },
 		], [
 			{ id: "people", installationId: "inst-people" },
 		], [
 			{ id: "records", installationId: "inst-records" },
 			{ id: "documents", installationId: "inst-documents" },
-			{ id: "roled", installationId: "inst-roled" },
+			{ id: "roled", installationId: "inst-roled", roleGated: true },
+			{ id: "bundled", installationId: "inst-bundled", roleGated: true },
 		]);
 		vi.stubGlobal("fetch", gateway);
 		const body = await (await call("people")).json();
-		// The assistant is composed in no installation of this organization, and
-		// a module with a page joins only through the viewer's own entitlement,
-		// whatever else names it.
+		// The assistant is composed in no installation of this organization.
+		// A module declaring roles that the page calls on the person's own
+		// session, remote page or host-bundled, reaches the viewer by grant
+		// alone, and this viewer holds none.
 		expect(body.reach).toEqual({ records: { installationId: "inst-records" }, documents: { installationId: "inst-documents" } });
 		const asked = gateway.mock.calls.map(([input]) => new URL(String(input))).find((url) => url.pathname === "/solutions/_entitlements");
 		expect(asked?.searchParams.get("composedModules")).toBe("true");
+	});
+
+	it("hands a page each module it consumes through its own binding, by the organization's installation, though the module declares roles the viewer holds none of", async () => {
+		// The directory case: a host-bundled role-gated page (no remote, so
+		// no manifest) and a remote role-gated page, both consumed through the
+		// page's bindings, whose calls carry the viewer's role at the PAGE.
+		vi.stubGlobal("fetch", gatewayServing([
+			{ id: "people", kind: "module", reaches: ["records", "documents", "assistant"], boundReaches: ["records", "documents"] },
+			{ id: "records", kind: "module", page: false },
+			{ id: "documents", kind: "module" },
+			{ id: "assistant", kind: "module", page: false },
+		], [
+			{ id: "people", installationId: "inst-people" },
+		], [
+			{ id: "records", installationId: "inst-records", roleGated: true },
+			{ id: "documents", installationId: "inst-documents", roleGated: true },
+			{ id: "assistant", installationId: "inst-assistant", roleGated: true },
+		]));
+		const body = await (await call("people")).json();
+		// The assistant is an edge dependency only, called on the person's own
+		// session: a role-gated module there is still reached by grant alone.
+		expect(body.reach).toEqual({ records: { installationId: "inst-records" }, documents: { installationId: "inst-documents" } });
+	});
+
+	it("hands a page a host-bundled module page the viewer holds a role on, by the viewer's installation of it", async () => {
+		vi.stubGlobal("fetch", gatewayServing([
+			{ id: "people", kind: "module", reaches: ["records"] },
+			{ id: "records", kind: "module", page: false },
+		], [
+			{ id: "people", installationId: "inst-people" },
+			{ id: "records", installationId: "inst-records" },
+		]));
+		// No composition answer is needed: the registry carries no remote for
+		// the page, so its target is the join, and the viewer's own
+		// entitlement names it.
+		expect((await (await call("people")).json()).reach).toEqual({ records: { installationId: "inst-records" } });
 	});
 
 	it("hands a solution the same binding, reaching only what it declares", async () => {

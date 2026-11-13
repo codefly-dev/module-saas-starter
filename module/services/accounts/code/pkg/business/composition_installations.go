@@ -180,18 +180,21 @@ func (s *Service) ActiveOrPendingModuleInstallation(ctx context.Context, org, mo
 }
 
 // composedModuleInstallations is org's active installation of every composed
-// module that declares no roles (ListSolutionEntitlementsResponse's
-// composed_modules): what a page consuming such a module on a person's session
-// is told it acts in. The module decides each of those calls on the person's
-// own organization access, so the installation is named to every member and
-// grants nobody anything. A module that declares roles is left out: it is
-// reached by grant alone, through the entitlements.
+// module (ListSolutionEntitlementsResponse's composed_modules), each saying
+// whether the module declares roles: what a page consuming such a module is
+// told it acts in. Naming an installation grants nobody anything; each call is
+// decided where it is made. A module that declares no roles decides each call
+// on the person's own organization access; one that declares roles is told
+// to a page only for a binding of the page's own, through which every call
+// carries the person's role at the page, cut to the binding. The frontend's
+// page binding is where those two cases are told apart.
 func (s *Service) composedModuleInstallations(ctx context.Context, org string) ([]*gen.ComposedModuleInstallation, error) {
 	core, err := s.AuthorityCore()
 	if err != nil {
 		return nil, nil // A host whose core is not built composes nothing.
 	}
-	roleless := map[string]bool{}
+	// gated is every composed module target, true when it declares roles.
+	gated := map[string]bool{}
 	for token := ""; ; {
 		available, next, err := s.ListAvailableSolutions(ctx, org, token, listInstallationsMaxPageSize)
 		if err != nil {
@@ -208,9 +211,7 @@ func (s *Service) composedModuleInstallations(ctx context.Context, org string) (
 			if err != nil {
 				return nil, err
 			}
-			if !decide.RoleGated(m) {
-				roleless[target.TargetID] = true
-			}
+			gated[target.TargetID] = decide.RoleGated(m)
 		}
 		if token = next; token == "" {
 			break
@@ -218,7 +219,7 @@ func (s *Service) composedModuleInstallations(ctx context.Context, org string) (
 	}
 	var out []*gen.ComposedModuleInstallation
 	token := ""
-	for page := 0; len(roleless) > 0; page++ {
+	for page := 0; len(gated) > 0; page++ {
 		if page == activeTargetInstallationPageLimit {
 			return nil, fmt.Errorf("installations of organization %s did not end within %d pages", org, activeTargetInstallationPageLimit)
 		}
@@ -227,8 +228,9 @@ func (s *Service) composedModuleInstallations(ctx context.Context, org string) (
 			return nil, err
 		}
 		for _, summary := range resp.GetInstallations() {
-			if inst := summary.GetInstallation(); roleless[inst.GetTargetId()] {
-				out = append(out, &gen.ComposedModuleInstallation{TargetId: inst.GetTargetId(), InstallationId: inst.GetId()})
+			inst := summary.GetInstallation()
+			if roleGated, composed := gated[inst.GetTargetId()]; composed {
+				out = append(out, &gen.ComposedModuleInstallation{TargetId: inst.GetTargetId(), InstallationId: inst.GetId(), RoleGated: roleGated})
 			}
 		}
 		if token = resp.GetNextPageToken(); token == "" {

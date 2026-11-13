@@ -85,15 +85,22 @@ export interface ViewerEntitlements {
 	 */
 	revision: string;
 	/**
-	 * The organization's installation of each composed module that declares no
-	 * roles, keyed on its target — present only when the read asked for it
-	 * (`composedModules`). Not entitlements: nobody was granted these, so no
-	 * projection of what a viewer may use reads them, and they are not part of
-	 * `revision`. A page consuming such a module on the person's session is told
-	 * the installation it acts in; the module decides every call on the
-	 * person's own access.
+	 * The organization's installation of each composed module, keyed on its
+	 * target, each saying whether the module declares roles — present only when
+	 * the read asked for it (`composedModules`). Not entitlements: nobody was
+	 * granted these, so no projection of what a viewer may use reads them, and
+	 * they are not part of `revision`. `pageBinding` decides which a page is
+	 * told: naming an installation grants nothing, and every call there is
+	 * decided where it is made.
 	 */
-	composedModules?: ReadonlyMap<string, string>;
+	composedModules?: ReadonlyMap<string, ComposedModule>;
+}
+
+/** An organization's composition installation of one module. */
+export interface ComposedModule {
+	installationId: string;
+	/** The module declares roles of its own (the core's RoleGated). */
+	roleGated: boolean;
 }
 
 /**
@@ -191,15 +198,19 @@ function entitlementRevision(entitlements: SolutionEntitlement[]): string {
 
 function parseComposedModules(
 	entries: unknown,
-): ReadonlyMap<string, string> | null {
+): ReadonlyMap<string, ComposedModule> | null {
 	if (!Array.isArray(entries)) return null;
-	const out = new Map<string, string>();
+	const out = new Map<string, ComposedModule>();
 	for (const entry of entries as Array<Record<string, unknown> | null>) {
-		const { targetId, installationId } = entry ?? {};
+		const { targetId, installationId, roleGated } = entry ?? {};
 		if (typeof targetId !== "string" || targetId === "") return null;
 		if (typeof installationId !== "string" || installationId === "")
 			return null;
-		out.set(targetId, installationId);
+		// Absent is a module without roles: the gateway always says it, so
+		// only a missing answer from an older gateway reads that way, and that
+		// gateway listed modules without roles alone.
+		if (roleGated !== undefined && typeof roleGated !== "boolean") return null;
+		out.set(targetId, { installationId, roleGated: roleGated === true });
 	}
 	return out;
 }
