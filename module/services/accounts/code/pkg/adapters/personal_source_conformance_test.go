@@ -12,6 +12,8 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"accounts/pkg/business"
+	"accounts/pkg/datasource/connector/connectortest"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
 	installationv1 "accounts/pkg/gen/host/installation/v1"
 	sessionv1 "accounts/pkg/gen/host/session/v1"
@@ -228,6 +230,135 @@ func testAMemberConnectsAPersonalSourceOfTheirOwn(t *testing.T, h reviewedClosur
 		refused(t, err, codes.PermissionDenied, teamLacks)
 		remove(alex, outside.GetId())
 		remove(alex, mine.GetId())
+	})
+
+	t.Run("a cast reads and calls its person's own source by its team's grants alone", func(t *testing.T) {
+		// The person holds datasource:invoke and datasource:read where the
+		// source is placed; the team the cast acts as holds nothing there yet.
+		calledAt := node("Personal sources: called from a cast")
+		grant(conformanceAlex, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, calledAt)
+		src, err := personal(alex, under(calledAt))
+		require.NoError(t, err)
+		declared, err := declarationToProto(connectortest.OperationDeclaration())
+		require.NoError(t, err)
+		_, err = sources.DeclareSourceOperations(alex, &gen.DeclareSourceOperationsRequest{OrgId: fixtureOrganization, SourceId: src.GetId(), Operations: []*gen.SourceOperation{declared}})
+		require.NoError(t, err)
+		listOperations := func(as context.Context) (*gen.ListSourceOperationsResponse, error) {
+			return sources.ListSourceOperations(as, &gen.ListSourceOperationsRequest{OrgId: fixtureOrganization, SourceId: src.GetId()})
+		}
+		invoke := func(as context.Context) error {
+			_, err := sources.InvokeSourceOperation(as, &gen.InvokeSourceOperationRequest{OrgId: fixtureOrganization, SourceId: src.GetId(),
+				Operation: declared.GetName(), InputJson: `{"id":"one"}`, EffectId: uuid.NewString()})
+			return err
+		}
+		read := func(as context.Context) error {
+			_, err := sources.GetSource(as, &gen.GetSourceRequest{OrgId: fixtureOrganization, Id: src.GetId()})
+			return err
+		}
+		// Calls the person made in their own session, whose receipts a lookup
+		// recovers: the effect's attempt names the person, never the session.
+		attempted := func(operation string) string {
+			effect := uuid.NewString()
+			require.NoError(t, h.store.WithOrgTx(h.ctx, fixtureOrganization, func(ctx context.Context) error {
+				_, err := h.store.CreateSourceOperationAttempt(ctx, business.SourceOperationAttempt{OrgID: fixtureOrganization, EffectID: effect,
+					ActorID: conformanceAlex, SourceID: src.GetId(), Operation: operation, DeclarationDigest: "conformance", RequestDigest: []byte("conformance")})
+				return err
+			}))
+			return effect
+		}
+		invoked, pruned, reconciled := attempted(declared.GetName()), attempted("_receipt_retention"), attempted("_reconcile")
+		lookups := map[string]func(context.Context) error{
+			"an invoke's lookup": func(as context.Context) error {
+				_, err := sources.LookupInvokeSourceOperation(as, &gen.LookupInvokeSourceOperationRequest{EffectId: invoked})
+				return err
+			},
+			"a receipt prune's lookup": func(as context.Context) error {
+				_, err := sources.LookupPruneSourceOperationReceipts(as, &gen.LookupPruneSourceOperationReceiptsRequest{EffectId: pruned})
+				return err
+			},
+		}
+		lookUpReconcile := func(as context.Context) error {
+			_, err := sources.LookupReconcileSource(as, &gen.LookupReconcileSourceRequest{EffectId: reconciled})
+			return err
+		}
+		// Each lookup is admitted and reaches the receipt store, which this
+		// harness does not configure: past every authority check.
+		pastAuthority := func(t *testing.T, err error) {
+			t.Helper()
+			refused(t, err, codes.Unavailable, "source receipts unavailable")
+		}
+		for _, lookUp := range lookups {
+			pastAuthority(t, lookUp(alex))
+		}
+		pastAuthority(t, lookUpReconcile(alex))
+		inOwnSession, err := listOperations(alex)
+		require.NoError(t, err, "the person reads their own source's operations in their own session")
+		require.Len(t, inOwnSession.GetOperations(), 1)
+		require.NoError(t, read(alex))
+		require.True(t, listed(alex, src.GetId()))
+
+		team, err := h.svc.CreateTeam(h.ctx, conformanceAlex, &gen.CreateTeamRequest{OrgId: fixtureOrganization, Name: "Personal sources: calling"})
+		require.NoError(t, err)
+		_, err = installationv1.NewInstallationServiceClient(h.conn).GrantRole(alex, &installationv1.GrantRoleRequest{OrganizationId: fixtureOrganization, InstallationId: inst.ID, Role: "viewer", TeamId: team.GetTeam().GetId()})
+		require.NoError(t, err)
+		cast, err := sessionv1.NewSessionServiceClient(h.conn).OpenTeamCast(alex, &sessionv1.OpenTeamCastRequest{TeamId: team.GetTeam().GetId()})
+		require.NoError(t, err)
+		casting := bearing(cast.GetBearer())
+
+		// The person's grant is theirs, not the cast's: the team holds
+		// nothing where the source is placed, so the cast neither reads the
+		// source, nor its operations, nor calls it.
+		_, err = listOperations(casting)
+		refused(t, err, codes.PermissionDenied, "team "+team.GetTeam().GetId()+", which this session acts as, does not hold datasource:read on scope node "+calledAt.GetId())
+		refused(t, invoke(casting), codes.PermissionDenied, "team "+team.GetTeam().GetId()+", which this session acts as, does not hold datasource:invoke on scope node "+calledAt.GetId())
+		refused(t, read(casting), codes.PermissionDenied, "team "+team.GetTeam().GetId()+", which this session acts as, does not hold datasource:read on scope node "+calledAt.GetId())
+		require.False(t, listed(casting, src.GetId()), "a cast lists no source of its person's where its team may not read it")
+		for _, lookUp := range lookups {
+			refused(t, lookUp(casting), codes.PermissionDenied, "team "+team.GetTeam().GetId()+", which this session acts as, does not hold datasource:read on scope node "+calledAt.GetId())
+		}
+		// A reconcile is decided by ownership and administration, which a
+		// cast holds neither of: its receipt is refused to the cast by name.
+		refused(t, lookUpReconcile(casting), codes.PermissionDenied, "acts as team")
+
+		// Once the team holds both there, the cast is answered.
+		grant(team.GetTeam().GetId(), gen.SubjectKind_SUBJECT_KIND_TEAM, calledAt)
+		answered, err := listOperations(casting)
+		require.NoError(t, err, "the cast reads the operations once its team may read sources there")
+		require.Len(t, answered.GetOperations(), 1)
+		require.NoError(t, read(casting))
+		require.True(t, listed(casting, src.GetId()))
+		// The call is admitted and reaches the receipt guard: past every
+		// authority check, refused for a reason that is not the cast's.
+		pastAuthority(t, invoke(casting))
+		for _, lookUp := range lookups {
+			pastAuthority(t, lookUp(casting))
+		}
+		refused(t, lookUpReconcile(casting), codes.PermissionDenied, "acts as team")
+
+		// The team holding datasource:invoke where an organization's own
+		// source is placed does not make it the cast's to call: a cast calls
+		// only a source of its person's own.
+		organizations, err := sources.AddSource(alex, &gen.AddSourceRequest{OrgId: fixtureOrganization, Provider: gen.DatasourceProvider_DATASOURCE_PROVIDER_API,
+			Config:   &gen.AddSourceRequest_Api{Api: &gen.ApiDatasourceConfig{BaseUrl: "https://api.example.test", CredentialKind: gen.ApiCredentialKind_API_CREDENTIAL_KIND_BEARER}},
+			Boundary: &gen.AddSourceRequest_BoundaryNodeId{BoundaryNodeId: calledAt.GetId()}, Credential: "example-token"})
+		require.NoError(t, err)
+		_, err = sources.InvokeSourceOperation(casting, &gen.InvokeSourceOperationRequest{OrgId: fixtureOrganization, SourceId: organizations.GetDatasource().GetId(),
+			Operation: declared.GetName(), InputJson: `{"id":"one"}`, EffectId: uuid.NewString()})
+		refused(t, err, codes.PermissionDenied, "a cast calls only a source of its person's own")
+		remove(alex, organizations.GetDatasource().GetId())
+
+		// The provider accounts linked to the person are theirs, not the team's.
+		_, err = sources.ListMyDatasourceAccountLinks(casting, &gen.ListMyDatasourceAccountLinksRequest{OrgId: fixtureOrganization})
+		refused(t, err, codes.PermissionDenied, "acts as team", "provider accounts linked to a person are their own")
+		_, err = sources.ListMyDatasourceAccountLinks(alex, &gen.ListMyDatasourceAccountLinksRequest{OrgId: fixtureOrganization})
+		require.NoError(t, err, "the person reads their own links in their own session")
+
+		// The person's own session and another member are unchanged.
+		_, err = listOperations(alex)
+		require.NoError(t, err)
+		_, err = listOperations(nora)
+		refused(t, err, codes.PermissionDenied)
+		remove(alex, src.GetId())
 	})
 
 	t.Run("a role view connects no source", func(t *testing.T) {

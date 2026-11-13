@@ -106,14 +106,14 @@ func (s *Service) declareSourceOperations(ctx context.Context, actor, org, sourc
 	return admitted, err
 }
 
-func (s *Service) ListSourceOperations(ctx context.Context, actor, org, source string) ([]operations.Declaration, error) {
+func (s *Service) ListSourceOperations(ctx context.Context, holder SourceBoundaryHolder, actor, org, source string) ([]operations.Declaration, error) {
 	store, ok := s.store.(SourceOperationStore)
 	if !ok {
 		return nil, status.Error(codes.FailedPrecondition, "source operations unavailable")
 	}
 	var out []operations.Declaration
 	err := s.store.WithOrgTx(ctx, org, func(ctx context.Context) error {
-		src, err := s.sourceOperationAccess(ctx, actor, org, source, "read")
+		src, err := s.sourceOperationAccess(ctx, holder, actor, org, source, "read")
 		if err != nil {
 			return err
 		}
@@ -128,7 +128,11 @@ func (s *Service) ListSourceOperations(ctx context.Context, actor, org, source s
 
 // This is the role/boundary layer, independent of the handler membership gate.
 // Every invoke, lookup and discovery read re-evaluates it, including replays.
-func (s *Service) sourceOperationAccess(ctx context.Context, actor, org, source, action string) (*DatasourceSource, error) {
+// actor is the person, whose source a personal one must be and whose
+// membership is required; holder is whose grants decide on the source's
+// boundary: the person, or the team a cast acts as and nothing of the
+// person's own.
+func (s *Service) sourceOperationAccess(ctx context.Context, holder SourceBoundaryHolder, actor, org, source, action string) (*DatasourceSource, error) {
 	src, err := s.store.GetDatasourceSource(ctx, org, source)
 	if err != nil {
 		return nil, status.Error(codes.Unavailable, "source unavailable")
@@ -143,9 +147,22 @@ func (s *Service) sourceOperationAccess(ctx context.Context, actor, org, source,
 	if err != nil || membership == nil {
 		return nil, status.Error(codes.PermissionDenied, "organization membership required")
 	}
-	allowed, err := s.store.CanReadScopeNode(ctx, org, actor, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "datasource", action, src.BoundaryNodeID)
+	// A cast calls only a source of its person's own that no solution governs,
+	// as the role-view gate admits it (castAsksForItsPersonsOwnSource): a
+	// governed source is decided by its installation's roles, which the cast
+	// is not asked for here. Any tie refuses, live or not, so the decision
+	// reads nothing more. Decided here, so the check after the receipt guard's
+	// hold makes it too.
+	if holder.Cast() && action == personalSourceBoundaryAction && (src.PersonalOwnerUserID != actor || src.Governance != nil) {
+		return nil, status.Errorf(codes.PermissionDenied,
+			"this session acts as team %s and as nothing else; a cast calls only a source of its person's own: use the session the cast was opened from", holder.SubjectID)
+	}
+	allowed, err := s.holdsTx(ctx, org, holder, action, src.BoundaryNodeID)
 	if err != nil {
-		return nil, status.Error(codes.Unavailable, "source authority unavailable")
+		return nil, err
+	}
+	if !allowed && holder.Cast() {
+		return nil, status.Error(codes.PermissionDenied, holder.lacks(action, src.BoundaryNodeID))
 	}
 	if !allowed {
 		return nil, status.Error(codes.PermissionDenied, "source permission required")

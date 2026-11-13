@@ -36,7 +36,11 @@ func (h *datasourceConnectHandler) BeginDatasourceAccountLink(ctx context.Contex
 			return nil, translateGRPCError(err)
 		}
 		if governed {
-			if err := h.svc.AuthorizeSourceChange(ctx, sourcePerson(actorID, req.Msg.GetOrgId()), source); err != nil {
+			_, person, err := sourceCaller(ctx, actorID, req.Msg.GetOrgId())
+			if err != nil {
+				return nil, translateGRPCError(err)
+			}
+			if err := h.svc.AuthorizeSourceChange(ctx, person, source); err != nil {
 				return nil, translateGRPCError(err)
 			}
 		}
@@ -79,6 +83,11 @@ func (h *datasourceConnectHandler) ListMyDatasourceAccountLinks(ctx context.Cont
 		return nil, err
 	}
 	if err := requireOrgMember(ctx, actorID, req.Msg.GetOrgId()); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	// The provider accounts linked to a person are their own, which a team
+	// does not hold: a cast is refused them by name.
+	if err := refuseCast(ctx, "the provider accounts linked to a person are their own"); err != nil {
 		return nil, translateGRPCError(err)
 	}
 	links, err := h.svc.ListMyDatasourceAccountLinks(ctx, actorID, req.Msg.GetOrgId())

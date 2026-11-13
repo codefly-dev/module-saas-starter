@@ -191,12 +191,34 @@ for any module. Only its owner declares its operations (the administrator role
 over another member's personal source decides nothing). A cast passes the
 role-view gate only with requests that can be about a source of its own
 (`castAsksForItsPersonsOwnSource`: a personal `AddSource`, and
-`DeclareSourceOperations`, `BeginDatasourceAccountLink` and
-`CompleteDatasourceAccountLink` naming a source), and each handler refuses one
-about any other source with the cast's refusal. An organization's own source and
-a governed one are unchanged. The invoke-time check still reads the person's own
-grants, as the role-view guard says; a cast's later calls are not yet narrowed
-there.
+`DeclareSourceOperations`, `BeginDatasourceAccountLink`,
+`CompleteDatasourceAccountLink` and `InvokeSourceOperation` naming a source),
+and each handler refuses one about any other source with the cast's refusal. An
+organization's own source and a governed one are unchanged.
+
+Every read of and call on a source a cast's session makes is decided by the
+team's grants alone (`sourceCaller`), or refused by name (`refuseCast`):
+
+- `InvokeSourceOperation` calls only a source of the person's own that no
+  solution governs, where the team holds `datasource:invoke`, decided in `sourceOperationAccess` before the
+  call and again after the receipt guard's hold. An organization's own source
+  is refused to a cast even where its team holds `datasource:invoke` there:
+  that is the member's to call in their own session.
+- `ListSourceOperations`, `LookupInvokeSourceOperation` and
+  `LookupPruneSourceOperationReceipts` need the team to hold `datasource:read`
+  on the source's scope node, and a cast is never the organization
+  administrator for a receipt prune.
+- `ListSources` and `GetSource` show a source of the person's own only where the
+  team holds `datasource:read`. A governed source is read by the team's
+  installation roles (the cast's session is named to the authority core).
+- `LookupReconcileSource`, decided by ownership or administration, and
+  `ListMyDatasourceAccountLinks`, the person's own provider accounts, are
+  refused to a cast.
+
+In a member's or an administrator's own session, and in a role view, nothing
+changes. A call borne by a Work Context carries no session and is still decided
+for the capability's owner: a capability rooted in a cast is not yet narrowed
+to the team on this host.
 
 Refresh and client-credentials resolution reuse the credential row lock.
 Transport uses the resolved-IP egress guard and same-origin redirect policy.

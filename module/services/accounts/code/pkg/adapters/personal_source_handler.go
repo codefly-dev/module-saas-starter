@@ -43,13 +43,11 @@ func personalSourceHolder(ctx context.Context, actorID, orgID string) (holder *b
 	if err := requireOrgMember(ctx, actorID, orgID); err != nil {
 		return nil, false, err
 	}
-	if view.Team != "" {
-		return &business.SourceBoundaryHolder{SubjectID: view.Team, SubjectKind: gen.SubjectKind_SUBJECT_KIND_TEAM}, false, nil
-	}
-	if requireOrgAdmin(ctx, actorID, orgID) == nil {
+	if view.Team == "" && requireOrgAdmin(ctx, actorID, orgID) == nil {
 		return nil, true, nil
 	}
-	return &business.SourceBoundaryHolder{SubjectID: actorID, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL}, false, nil
+	who := business.SourceHolderFor(actorID, view.Team)
+	return &who, false, nil
 }
 
 // ownPersonalSource is source id of orgID when it is a personal source of
@@ -84,6 +82,5 @@ func (h *datasourceConnectHandler) refuseUnlessOwnPersonalSourceInView(ctx conte
 	if own == nil || (connector != "" && own.Provider != connector) {
 		return viewRefusal(view)
 	}
-	return h.svc.RequireHoldsSourceBoundary(ctx, orgID,
-		business.SourceBoundaryHolder{SubjectID: view.Team, SubjectKind: gen.SubjectKind_SUBJECT_KIND_TEAM}, own.BoundaryNodeID)
+	return h.svc.RequireHoldsSourceBoundary(ctx, orgID, business.SourceHolderFor(actorID, view.Team), own.BoundaryNodeID)
 }

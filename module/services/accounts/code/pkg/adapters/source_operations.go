@@ -132,7 +132,11 @@ func (h *datasourceConnectHandler) ListSourceOperations(ctx context.Context, req
 	if err := requireOrgMember(ctx, actor, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	out, err := h.svc.ListSourceOperations(ctx, actor, req.Msg.OrgId, req.Msg.SourceId)
+	holder, _, err := sourceCaller(ctx, actor, req.Msg.OrgId)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	out, err := h.svc.ListSourceOperations(ctx, holder, actor, req.Msg.OrgId, req.Msg.SourceId)
 	if err != nil {
 		return nil, translateGRPCError(err)
 	}

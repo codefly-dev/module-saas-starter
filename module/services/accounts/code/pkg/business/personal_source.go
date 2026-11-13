@@ -33,12 +33,49 @@ import (
 //
 // An organization's own source, and one a solution governs, are unchanged.
 
-// SourceBoundaryHolder is who decides, for the session a person calls from,
-// whether a source of their own may be placed under, or changed at, a
-// boundary: the person, or the team a cast acts as.
+// SourceBoundaryHolder is whose datasource grants decide a call on a source,
+// for the session a person calls from: the person, or the team a cast acts as
+// and nothing of the person's own. It decides placing a source of their own
+// under a boundary, changing it there, and every read of and call on a source
+// (sourceOperationAccess).
 type SourceBoundaryHolder struct {
 	SubjectID   string
 	SubjectKind gen.SubjectKind
+}
+
+// SourceHolderFor is the holder for person's session: the team it is cast
+// onto when castTeam names one, the person otherwise. A role view names no
+// team, so it is the person, as it always was.
+func SourceHolderFor(person, castTeam string) SourceBoundaryHolder {
+	if castTeam != "" {
+		return SourceBoundaryHolder{SubjectID: castTeam, SubjectKind: gen.SubjectKind_SUBJECT_KIND_TEAM}
+	}
+	return SourceBoundaryHolder{SubjectID: person, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL}
+}
+
+// Cast reports whether the holder is the team a cast acts as, which holds no
+// organization role and nothing else of its person's.
+func (h SourceBoundaryHolder) Cast() bool { return h.SubjectKind == gen.SubjectKind_SUBJECT_KIND_TEAM }
+
+// lacks words what holder does not hold, naming the team a cast acts as.
+func (h SourceBoundaryHolder) lacks(action, nodeID string) string {
+	who := "you do"
+	if h.Cast() {
+		who = fmt.Sprintf("team %s, which this session acts as, does", h.SubjectID)
+	}
+	return fmt.Sprintf("%s not hold datasource:%s on scope node %s", who, action, nodeID)
+}
+
+// holdsTx reports whether holder holds datasource:action on nodeID now, and
+// nothing else: a team's grant query matches that team alone, with no grant of
+// a person's and no other team's. It runs inside the caller's organization
+// transaction.
+func (s *Service) holdsTx(ctx context.Context, orgID string, holder SourceBoundaryHolder, action, nodeID string) (bool, error) {
+	allowed, err := s.store.CanReadScopeNode(ctx, orgID, holder.SubjectID, holder.SubjectKind, "datasource", action, nodeID)
+	if err != nil {
+		return false, status.Error(codes.Unavailable, "source authority unavailable")
+	}
+	return allowed, nil
 }
 
 // personalSourceBoundaryAction is the permission a holder needs on a personal
@@ -73,20 +110,13 @@ func admitPersonalConnect(input AddSourceInput) error {
 // nodeID now. It runs inside the caller's organization transaction, so the
 // grant it reads is the one the write commits against.
 func (s *Service) requireHoldsSourceBoundaryTx(ctx context.Context, orgID string, holder SourceBoundaryHolder, nodeID string) error {
-	allowed, err := s.store.CanReadScopeNode(ctx, orgID, holder.SubjectID, holder.SubjectKind, "datasource", personalSourceBoundaryAction, nodeID)
-	if err != nil {
-		return status.Error(codes.Unavailable, "source authority unavailable")
-	}
-	if allowed {
-		return nil
-	}
-	who := "you do"
-	if holder.SubjectKind == gen.SubjectKind_SUBJECT_KIND_TEAM {
-		who = fmt.Sprintf("team %s, which this session acts as, does", holder.SubjectID)
+	allowed, err := s.holdsTx(ctx, orgID, holder, personalSourceBoundaryAction, nodeID)
+	if err != nil || allowed {
+		return err
 	}
 	return status.Errorf(codes.PermissionDenied,
-		"%s not hold datasource:%s on scope node %s, which every call on a source of your own placed there needs: an organization administrator grants it",
-		who, personalSourceBoundaryAction, nodeID)
+		"%s, which every call on a source of your own placed there needs: an organization administrator grants it",
+		holder.lacks(personalSourceBoundaryAction, nodeID))
 }
 
 // RequireHoldsSourceBoundary refuses unless holder holds datasource:invoke on
@@ -96,6 +126,26 @@ func (s *Service) RequireHoldsSourceBoundary(ctx context.Context, orgID string, 
 	return s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 		return s.requireHoldsSourceBoundaryTx(ctx, orgID, holder, nodeID)
 	})
+}
+
+// AuthorizeOwnSourceRead refuses a cast a personal source of its person's own
+// placed where the team it acts as does not hold datasource:read: the person's
+// ownership is something of their own, which a cast does not hold. A person's
+// own session, and a role view, read their own source as before.
+func (s *Service) AuthorizeOwnSourceRead(ctx context.Context, holder SourceBoundaryHolder, source *DatasourceSource) error {
+	if !holder.Cast() || source == nil || source.PersonalOwnerUserID == "" {
+		return nil
+	}
+	var allowed bool
+	err := s.store.WithOrgTx(ctx, source.OrgID, func(ctx context.Context) error {
+		var err error
+		allowed, err = s.holdsTx(ctx, source.OrgID, holder, "read", source.BoundaryNodeID)
+		return err
+	})
+	if err != nil || allowed {
+		return err
+	}
+	return status.Error(codes.PermissionDenied, holder.lacks("read", source.BoundaryNodeID))
 }
 
 // DeclareOwnSourceOperations replaces the operations declared on the caller's

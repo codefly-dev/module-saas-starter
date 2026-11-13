@@ -77,6 +77,10 @@ func TestACastReachesOnlyRequestsForItsPersonsOwnSource(t *testing.T) {
 		{ds + "BeginDatasourceAccountLink", &gen.BeginDatasourceAccountLinkRequest{Connector: "github"}, false},
 		{ds + "CompleteDatasourceAccountLink", &gen.CompleteDatasourceAccountLinkRequest{State: "x"}, true},
 		{ds + "CompleteDatasourceAccountLink", &gen.CompleteDatasourceAccountLinkRequest{}, false},
+		{ds + "InvokeSourceOperation", &gen.InvokeSourceOperationRequest{SourceId: "s"}, true},
+		{ds + "InvokeSourceOperation", &gen.InvokeSourceOperationRequest{}, false},
+		{ds + "PruneSourceOperationReceipts", &gen.PruneSourceOperationReceiptsRequest{SourceId: "s"}, false},
+		{ds + "ReconcileSource", &gen.ReconcileSourceRequest{SourceId: "s"}, false},
 		{ds + "DeleteSource", &gen.DeleteSourceRequest{Id: "s"}, false},
 		{ds + "AddSource", nil, false},
 	} {
