@@ -106,8 +106,24 @@ const refusals: { match: RegExp; words: (name: string) => string }[] = [
 			`This deployment has no sign-in configured for ${name}, so it cannot be connected yet. Whoever operates the deployment registers it, in the datasource-oauth configuration.`,
 	},
 	{
-		// AddSource and DeclareSourceOperations take an administrator.
-		match: /requires org admin or owner role|organization administrator required/i,
+		// A member connects a source of their own, and declares on it, only
+		// where whoever answers for their session may call sources.
+		match: /not hold datasource:invoke/i,
+		words: (name) =>
+			`You cannot call sources where ${name} would be connected. An organization administrator grants that there; then connect again.`,
+	},
+	{
+		// A member's own source goes under a place the surface names; only an
+		// administrator creates a collection for it.
+		match: /placed under an existing scope node/i,
+		words: (name) =>
+			`This page names no place in the organization to connect ${name} under, so only an administrator or owner can connect it here.`,
+	},
+	{
+		// Anything else AddSource and DeclareSourceOperations do takes an
+		// administrator.
+		match:
+			/requires org(anization)? admin(istrator)? or owner role|organization administrator required/i,
 		words: (name) =>
 			`Connecting ${name} in this organization needs the administrator or owner role, which you do not hold here.`,
 	},
@@ -117,7 +133,8 @@ const refusals: { match: RegExp; words: (name: string) => string }[] = [
 			"You do not have access to the collection this source writes into. Ask an organization administrator to grant it to you.",
 	},
 	{
-		match: /source is personal to another member|source is not owned by this member/i,
+		match:
+			/source is personal to another member|source is not owned by this member/i,
 		words: () =>
 			"This source belongs to another member of the organization. Connect your own instead.",
 	},
