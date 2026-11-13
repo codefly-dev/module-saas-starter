@@ -54,53 +54,54 @@ export function reopenOf(session: {
 
 /**
  * Calls `reopen` once, in the last `RENEW_LEAD_MS` (or quarter of its life,
- * if shorter) before `bearer` lapses, if and only if the person gave input in
- * this tab since it was installed. Never once it has lapsed: an ended session
- * is never brought back. Returns the stop; the caller stops it when the
- * bearer is replaced or the session ends.
+ * if shorter) of `bearer`'s life, if and only if the person gave input in
+ * this tab since it was installed. The life is timed on this tab's own clock
+ * from `installedAt` (a `performance.now()` reading) for the bearer's
+ * lifetime (`exp - iat`): the host's clock and this one need not agree.
+ * Never once it has lapsed: an ended session is never brought back, so
+ * `reopen` is handed `live` to ask again before it installs anything.
+ * `reopen` resolving is final (renewed, refused, or left); rejecting is a
+ * transient failure the next input after `RETRY_AFTER_MS` asks again for.
+ * Returns the stop; the caller stops it when the bearer is replaced or the
+ * session ends.
  */
 export function renewWhileActive(
 	bearer: string,
-	reopen: () => Promise<void>,
+	installedAt: number,
+	reopen: (live: () => boolean) => Promise<void>,
 ): () => void {
-	const claims = decodeJWTPayload(bearer);
-	if (typeof claims.exp !== "number") return () => {};
-	const lapsesAt = claims.exp * 1000;
-	const life =
-		typeof claims.iat === "number"
-			? lapsesAt - claims.iat * 1000
-			: 4 * RENEW_LEAD_MS;
+	const { exp, iat } = decodeJWTPayload(bearer);
+	if (typeof exp !== "number" || typeof iat !== "number" || exp <= iat)
+		return () => {};
+	const life = (exp - iat) * 1000;
+	const lapsesAt = installedAt + life;
 	const dueAt = lapsesAt - Math.min(RENEW_LEAD_MS, life / 4);
 	let active = false;
 	let asking = false;
 	let stopped = false;
 	let notBefore = 0;
+	const live = () => !stopped && performance.now() < lapsesAt;
 
 	const attempt = () => {
-		const now = Date.now();
-		if (
-			stopped ||
-			asking ||
-			!active ||
-			now < dueAt ||
-			now >= lapsesAt ||
-			now < notBefore
-		)
+		const now = performance.now();
+		if (!live() || asking || !active || now < dueAt || now < notBefore)
 			return;
 		asking = true;
-		reopen().then(
+		reopen(live).then(
 			() => stop(),
 			() => {
 				asking = false;
-				notBefore = Date.now() + RETRY_AFTER_MS;
+				notBefore = performance.now() + RETRY_AFTER_MS;
 			},
 		);
 	};
-	const onActivity = () => {
+	// Only the person's own input: a script's synthetic event is not them.
+	const onActivity = (event: Event) => {
+		if (!event.isTrusted) return;
 		active = true;
 		attempt();
 	};
-	const timer = setTimeout(attempt, Math.max(0, dueAt - Date.now()));
+	const timer = setTimeout(attempt, Math.max(0, dueAt - performance.now()));
 	const options = { capture: true, passive: true } as const;
 	for (const event of ACTIVITY)
 		window.addEventListener(event, onActivity, options);

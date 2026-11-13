@@ -417,6 +417,8 @@ interface KeptNarrowedSession {
 	/** The narrowed bearer; absent once it lapsed, leaving only what it acted as, for the notice. */
 	bearer?: string;
 	as: string;
+	/** When this tab installed the bearer, on its own wall clock (Date.now()): what times its renewal across a reload. */
+	since?: number;
 }
 
 function keepNarrowedSession(kept: KeptNarrowedSession) {
@@ -435,7 +437,10 @@ function forgetNarrowedSession() {
  * host will refuse anyway; the host still decides, and a refused bearer ends
  * the session the way any expiry does (the token store reports it).
  */
-export function readKeptNarrowedSession(): { live?: { bearer: string; as: string }; lapsed?: string } {
+export function readKeptNarrowedSession(): {
+	live?: { bearer: string; as: string; since?: number };
+	lapsed?: string;
+} {
 	const raw = sessionStorage.getItem(NARROWED_SESSION_KEY);
 	if (!raw) return {};
 	let kept: KeptNarrowedSession;
@@ -451,7 +456,8 @@ export function readKeptNarrowedSession(): { live?: { bearer: string; as: string
 	if (!kept.bearer) return { lapsed: kept.as };
 	const exp = decodeJWTPayload(kept.bearer).exp;
 	if (typeof exp !== "number" || exp * 1000 <= Date.now()) return { lapsed: kept.as };
-	return { live: { bearer: kept.bearer, as: kept.as } };
+	const since = typeof kept.since === "number" ? { since: kept.since } : {};
+	return { live: { bearer: kept.bearer, as: kept.as, ...since } };
 }
 
 interface AuthState {
@@ -554,6 +560,16 @@ interface AuthContextType extends AuthState {
 
 const NO_VIEW: RoleViewEntry[] = [];
 
+// The host could not be reached or answered for now: a renewal is asked again.
+const TRANSIENT = new Set([
+	Code.Unknown,
+	Code.Unavailable,
+	Code.DeadlineExceeded,
+	Code.ResourceExhausted,
+	Code.Aborted,
+	Code.Internal,
+]);
+
 const AuthContext = createContext<AuthContextType | null>(null);
 
 // finishSignIn sends the browser wherever this sign-in was for. A registered
@@ -591,6 +607,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	// Whether a 401 may be repaired is NOT decided from here: the token store
 	// decides per request, from the bearer that request carried.
 	const narrowedAsRef = useRef("");
+	// When the installed narrowed bearer was installed, on this tab's monotonic
+	// clock: its renewal is timed from here, never from the host's clock.
+	const installedRef = useRef<{ bearer: string; at: number } | null>(null);
+	// Narrowed bearers whose end the host already said: never renewed after.
+	const endedRef = useRef(new Set<string>());
 
 	// The host's answer to Session.Current, keyed by the token it was read for
 	// (see sessionRead below).
@@ -1058,7 +1079,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			markNarrowed(accessToken);
 			applyAccessToken(accessToken);
 			narrowedAsRef.current = as;
-			keepNarrowedSession({ bearer: accessToken, as });
+			installedRef.current = { bearer: accessToken, at: performance.now() };
+			keepNarrowedSession({ bearer: accessToken, as, since: Date.now() });
 		},
 		[applyAccessToken],
 	);
@@ -1070,22 +1092,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	// and never installed. The host decides the ask as it decided the first; a
 	// refusal throws and the session lapses as it would have.
 	const renewNarrowed = useCallback(
-		async (bearer: string, reopen: Reopen) => {
+		async (bearer: string, reopen: Reopen, live: () => boolean) => {
 			const own = await exchangeRefreshCookie();
+			// The person's own session ended: there is nothing to reopen from.
+			if (own.status === "expired") return;
 			if (own.status !== "ok") throw new Error("your own session could not be read");
 			const headers = { Authorization: `Bearer ${own.accessToken}` };
-			const session =
-				"teamId" in reopen
-					? await bearerSessionClient.openTeamCast({ teamId: reopen.teamId }, { headers })
-					: await bearerSessionClient.openRoleView(reopen, { headers });
-			// The person left it, or chose another, while the host answered: what they chose stands.
-			if (!session.bearer || getConnectToken() !== bearer) return;
+			let session: { bearer: string };
+			try {
+				session =
+					"teamId" in reopen
+						? await bearerSessionClient.openTeamCast({ teamId: reopen.teamId }, { headers })
+						: await bearerSessionClient.openRoleView(reopen, { headers });
+			} catch (error) {
+				// Only a failure to reach the host is asked again; its refusal is
+				// final, and the session lapses with the notice it always had.
+				if (TRANSIENT.has(ConnectError.from(error).code)) throw error;
+				return;
+			}
+			// Installed only if the session it renews is still the one in this
+			// tab, has not lapsed, and was not said to have ended meanwhile: an
+			// ended session is never brought back.
+			if (!session.bearer || !live() || endedRef.current.has(bearer) || getConnectToken() !== bearer) return;
 			markNarrowed(session.bearer);
 			// The same session, opened again: what the host said it is carries to
 			// the new bearer until the host's own reading of it lands.
 			setRead((prev) => (prev.token === bearer && !prev.failed ? { ...prev, token: session.bearer } : prev));
+			installedRef.current = { bearer: session.bearer, at: performance.now() };
 			applyAccessToken(session.bearer);
-			keepNarrowedSession({ bearer: session.bearer, as: narrowedAsRef.current });
+			keepNarrowedSession({ bearer: session.bearer, as: narrowedAsRef.current, since: Date.now() });
 		},
 		[applyAccessToken],
 	);
@@ -1223,7 +1258,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		// is the way back, as it was before the reload.
 		const kept = readKeptNarrowedSession();
 		if (kept.live) {
-			const { bearer, as } = kept.live;
+			const { bearer, as, since } = kept.live;
+			// Its age carries across the reload on this tab's own clock; one kept
+			// with no install time is not renewed, and lapses.
+			installedRef.current =
+				since === undefined ? null : { bearer, at: performance.now() - Math.max(0, Date.now() - since) };
 			// Marked before it is installed, as enterRoleView does, so no request
 			// can be sent with it while the store does not yet know it is narrowed.
 			markNarrowed(bearer);
@@ -1291,6 +1330,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			void refused.then((ended) => {
 				if (!ended || bearer !== getConnectToken()) return;
 				const as = narrowedAsRef.current;
+				endedRef.current.add(bearer);
 				// A lapsed bearer is not booted into again; what it acted as is kept
 				// so a reload still says, by name, that it ended.
 				keepNarrowedSession({ as });
@@ -1420,9 +1460,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	const reopenKey = reopen ? JSON.stringify(reopen) : "";
 	useEffect(() => {
 		const bearer = state.accessToken;
-		if (!bearer || !reopenKey) return;
+		const installed = installedRef.current;
+		if (!bearer || !reopenKey || installed?.bearer !== bearer) return;
 		const what = JSON.parse(reopenKey) as Reopen;
-		return renewWhileActive(bearer, () => renewNarrowed(bearer, what));
+		return renewWhileActive(bearer, installed.at, (live) => renewNarrowed(bearer, what, live));
 	}, [state.accessToken, reopenKey, renewNarrowed]);
 	const rolesHidden = !!state.accessToken && (sessionRead !== "confirmed" || !!castTeamId);
 
