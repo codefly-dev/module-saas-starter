@@ -12,12 +12,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
 import { Button } from "@/shared/ui";
-import {
-	castRefusal,
-	HoldingBadges,
-	useCastOnto,
-	useTeamDirectory,
-} from "./team-casting";
+import { HoldingBadges, useCastAsk, useTeamDirectory } from "./team-casting";
 
 const installations = createClient(InstallationService, apiTransport);
 const sessions = createClient(SessionService, apiTransport);
@@ -79,21 +74,17 @@ export function ActAsTeam({
 	const { exitRoleView } = useAuth();
 	const { castTeamId } = useNarrowedSession();
 	const { teams } = useTeamDirectory();
-	const castOnto = useCastOnto();
+	const {
+		open: switcherOpen,
+		asking: askingFor,
+		refusal: lastRefusal,
+		ask,
+	} = useCastAsk();
 	const holds = teams.find((t) => t.id === teamId)?.holds;
-	const [asking, setAsking] = useState(false);
-	const [refusal, setRefusal] = useState("");
-	const ask = async () => {
-		setAsking(true);
-		setRefusal("");
-		try {
-			await castOnto({ id: teamId, name: teamName });
-		} catch (error) {
-			setRefusal(castRefusal(error));
-		} finally {
-			setAsking(false);
-		}
-	};
+	const asking = askingFor === teamId;
+	// The switcher says its own refusals; the card says the ones it was asked.
+	const refusal =
+		!switcherOpen && lastRefusal?.teamId === teamId ? lastRefusal : null;
 	const current = castTeamId === teamId;
 	return (
 		<section
@@ -114,7 +105,10 @@ export function ActAsTeam({
 						Back to my view
 					</Button>
 				) : (
-					<Button disabled={asking} onClick={() => void ask()}>
+					<Button
+						disabled={asking}
+						onClick={() => void ask({ id: teamId, name: teamName })}
+					>
 						<Eye className="mr-2 h-4 w-4" />
 						{asking ? "Opening…" : "View as this team"}
 					</Button>
@@ -128,7 +122,9 @@ export function ActAsTeam({
 			)}
 			{refusal && (
 				<p role="alert" className="text-sm">
-					You are not viewing as {teamName}. The host answered: {refusal}
+					{refusal.backInOwn
+						? `You are back in your own view. The host did not open ${teamName}: ${refusal.reason}`
+						: `You are not viewing as ${teamName}. The host answered: ${refusal.reason}`}
 				</p>
 			)}
 		</section>

@@ -149,21 +149,40 @@ export function useTeamDirectory(): {
 	};
 }
 
-// One switcher per page, opened from the account menu, the cast bar or a team.
-let switcherOpen = false;
-const switcherListeners = new Set<() => void>();
-export function setTeamSwitcherOpen(open: boolean) {
-	switcherOpen = open;
-	for (const listener of switcherListeners) listener();
+// One switcher per page, opened from the account menu, the cast bar or a team,
+// and what the person last asked of the host. Both are kept outside React: a
+// switch's way back changes the session's authority, and the authority
+// boundary (lib/providers.tsx) remounts everything below it once the person's
+// own session is confirmed, so an "Opening…" or a refusal held in component
+// state would vanish with it and leave the person with no answer.
+interface CastAsk {
+	open: boolean;
+	asking: string;
+	refusal: {
+		teamId: string;
+		name: string;
+		backInOwn: boolean;
+		reason: string;
+	} | null;
 }
-function useTeamSwitcherOpen() {
+const IDLE: CastAsk = { open: false, asking: "", refusal: null };
+let castAsk = IDLE;
+const castAskListeners = new Set<() => void>();
+function setCastAsk(next: Partial<CastAsk>) {
+	castAsk = { ...castAsk, ...next };
+	for (const listener of castAskListeners) listener();
+}
+export function setTeamSwitcherOpen(open: boolean) {
+	setCastAsk({ open, refusal: null });
+}
+function useCastAskState() {
 	return useSyncExternalStore(
 		(listener) => {
-			switcherListeners.add(listener);
-			return () => switcherListeners.delete(listener);
+			castAskListeners.add(listener);
+			return () => castAskListeners.delete(listener);
 		},
-		() => switcherOpen,
-		() => false,
+		() => castAsk,
+		() => IDLE,
 	);
 }
 
@@ -192,24 +211,54 @@ export function useCastOnto() {
 		}
 		const opened = await sessions.openTeamCast({ teamId: team.id });
 		enterRoleView(opened.bearer, `team ${team.name}`);
+		setCastAsk({ refusal: null });
 		if (pathname.startsWith("/admin")) router.push("/");
 	};
 }
 
+/**
+ * Asks the host for a cast (useCastOnto) and keeps what it is doing and how it
+ * was refused where a remount cannot drop it. A refusal says whether the
+ * person is back in their own view: after the way back, they are.
+ */
+export function useCastAsk() {
+	const state = useCastAskState();
+	const castOnto = useCastOnto();
+	const ask = async (team: { id: string; name: string }) => {
+		setCastAsk({ asking: team.id, refusal: null });
+		let backInOwn = false;
+		try {
+			await castOnto(team, () => {
+				backInOwn = true;
+			});
+			return true;
+		} catch (error) {
+			setCastAsk({
+				refusal: {
+					teamId: team.id,
+					name: team.name,
+					backInOwn,
+					reason: castRefusal(error),
+				},
+			});
+			return false;
+		} finally {
+			setCastAsk({ asking: "" });
+		}
+	};
+	return { ...state, ask };
+}
+
 /** The "View as team" dialog: the organization's teams, grouped by what they hold, searchable. */
 export function TeamSwitcher() {
-	const open = useTeamSwitcherOpen();
+	const { open, asking, refusal, ask } = useCastAsk();
 	const { castTeamId, exitRoleView } = useAuth();
 	const { teams, loading, kept } = useTeamDirectory();
-	const castOnto = useCastOnto();
 	const { contains } = useCommandFilter();
 	const [query, setQuery] = useState("");
-	const [asking, setAsking] = useState("");
-	const [refusal, setRefusal] = useState("");
 	const close = () => {
 		setTeamSwitcherOpen(false);
 		setQuery("");
-		setRefusal("");
 	};
 	const groups = new Map<
 		string,
@@ -226,24 +275,9 @@ export function TeamSwitcher() {
 		}
 	const choose = async (team: TeamHoldings) => {
 		if (team.id === castTeamId) return close();
-		setAsking(team.id);
-		setRefusal("");
-		let backInOwn = false;
-		try {
-			await castOnto(team, () => {
-				backInOwn = true;
-			});
-			close();
-			toast.success(`Viewing as ${team.name}`);
-		} catch (error) {
-			setRefusal(
-				backInOwn
-					? `You are back in your own view. The host did not open ${team.name}: ${castRefusal(error)}`
-					: `Not viewing as ${team.name}: ${castRefusal(error)}`,
-			);
-		} finally {
-			setAsking("");
-		}
+		if (!(await ask(team))) return;
+		close();
+		toast.success(`Viewing as ${team.name}`);
 	};
 	return (
 		<Dialog
@@ -308,7 +342,9 @@ export function TeamSwitcher() {
 						role="alert"
 						className="mx-4 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm"
 					>
-						{refusal}
+						{refusal.backInOwn
+							? `You are back in your own view. The host did not open ${refusal.name}: ${refusal.reason}`
+							: `Not viewing as ${refusal.name}: ${refusal.reason}`}
 					</p>
 				)}
 				<div className="flex items-center justify-between gap-2 border-t px-4 py-3 text-xs text-muted-foreground">

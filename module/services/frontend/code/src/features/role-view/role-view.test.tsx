@@ -1,9 +1,16 @@
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+	act,
+	cleanup,
+	fireEvent,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
 import { ActAsTeam, RoleViewBanner } from "./role-view";
+import { setTeamSwitcherOpen } from "./team-casting";
 
 // The person on the page holds no role the browser knows of. Nothing here may
 // decide who can cast: that is the authority's, and these tests would pass a
@@ -74,7 +81,11 @@ beforeEach(() => {
 		),
 	);
 });
-afterEach(cleanup);
+afterEach(() => {
+	// A refusal is kept outside React (it outlives a remount): no test inherits one.
+	act(() => setTeamSwitcherOpen(false));
+	cleanup();
+});
 
 const refuse = (code: string, status: number, message: string) =>
 	server.use(
@@ -179,6 +190,25 @@ describe("view as this team", () => {
 			),
 		);
 		expect(asked).toEqual(["exit", "open"]);
+	});
+
+	it("on another team's page, a refusal after the way back says the person is in their own view, and outlives the remount that view causes", async () => {
+		current = { castTeamId: "team-other" };
+		refuse("permission_denied", 403, "holds roles you could not grant");
+		const { rerender } = renderInApp(
+			<ActAsTeam key="cast" teamId="team-stewards" teamName="Stewards" />,
+		);
+		viewAs();
+		const said =
+			"You are back in your own view. The host did not open Stewards: holds roles you could not grant (PermissionDenied)";
+		expect((await screen.findByRole("alert")).textContent).toBe(said);
+		// The person's own session is confirmed, and the authority boundary
+		// (lib/providers.tsx) remounts the page under it.
+		current = {};
+		rerender(
+			<ActAsTeam key="own" teamId="team-stewards" teamName="Stewards" />,
+		);
+		expect(screen.getByRole("alert").textContent).toBe(said);
 	});
 
 	it("shows what the team holds before anyone asks, read where the person may read it", async () => {

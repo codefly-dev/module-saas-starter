@@ -211,6 +211,34 @@ describe("the team switcher", () => {
 		expect(auth.enterRoleView).not.toHaveBeenCalled();
 	});
 
+	it("the refusal after the way back outlives the remount that the person's own session causes", async () => {
+		auth.castTeamId = "team-stewards";
+		keep(kept);
+		server.use(
+			http.post(session("OpenTeamCast"), () =>
+				HttpResponse.json(
+					{ code: "permission_denied", message: "no" },
+					{ status: 403 },
+				),
+			),
+		);
+		const { rerender } = renderInApp(<TeamSwitcher key="cast" />);
+		openSwitcher();
+		fireEvent.click(await screen.findByRole("option", { name: /Readers/ }));
+		expect((await screen.findByRole("alert")).textContent).toContain(
+			"You are back in your own view.",
+		);
+		// The person's own session is confirmed: its roles stop being hidden, and
+		// the authority boundary (lib/providers.tsx), keyed on them, remounts
+		// everything below it.
+		Object.assign(auth, { castTeamId: "" });
+		rerender(<TeamSwitcher key="own" />);
+		expect(screen.getByRole("dialog")).toBeTruthy();
+		expect(screen.getByRole("alert").textContent).toContain(
+			"You are back in your own view. The host did not open Readers: no (PermissionDenied)",
+		);
+	});
+
 	it("a switch whose way back fails says so, and opens nothing: the person is still in the cast", async () => {
 		auth.castTeamId = "team-stewards";
 		keep(kept);
