@@ -91,6 +91,18 @@ func TestASourceOperationIsDecidedByWhoeverAnswersForTheSession(t *testing.T) {
 		})
 	}
 
+	t.Run("a cast calls no source but its person's own, whatever its team holds", func(t *testing.T) {
+		for _, owner := range []string{"", "55555555-5555-4555-8555-555555555555"} {
+			store := &grantedOnlyTo{sourceWireStore: &sourceWireStore{declaration: declaration,
+				source: &business.DatasourceSource{ID: "source", OrgID: org, Provider: business.DatasourceProviderAPI, API: &business.APIDatasourceConfig{}, BoundaryNodeID: "node", PersonalOwnerUserID: owner}},
+				subject: cast.SubjectID, kind: cast.SubjectKind}
+			svc, err := business.NewService(store)
+			require.NoError(t, err)
+			_, _, err = svc.SourceOperationAuthority(ctx, cast, person, org, "source", declaration.Name, "effect", "", false)
+			require.Equal(t, codes.PermissionDenied, status.Code(err), "owner %q: %v", owner, err)
+		}
+	})
+
 	t.Run("a cast is never the organization administrator for a receipt prune", func(t *testing.T) {
 		for _, c := range []struct {
 			holder  business.SourceBoundaryHolder

@@ -148,6 +148,11 @@ func (h *datasourceConnectHandler) LookupReconcileSource(
 	if err := requireOrgMember(ctx, actor, org); err != nil {
 		return nil, translateGRPCError(err)
 	}
+	// Refused before the attempt is read, so a cast learns nothing of which
+	// effects its person made.
+	if err := refuseCast(ctx, reconcileIsAnOwnersOrAdministrators); err != nil {
+		return nil, translateGRPCError(err)
+	}
 	effect, err := sourceEffectID(req.Header(), req.Msg.EffectId)
 	if err != nil {
 		return nil, err
@@ -185,6 +190,12 @@ func (h *datasourceConnectHandler) LookupReconcileSource(
 	return connect.NewResponse(out), nil
 }
 
+// reconcileIsAnOwnersOrAdministrators is why a cast is refused a reconcile and
+// its receipt: it is decided by the source's owner or an organization
+// administrator (ReconcileSourceAuthority), never by a datasource grant a team
+// can hold.
+const reconcileIsAnOwnersOrAdministrators = "a source's reconcile is decided by its owner or an organization administrator, never by a grant a team holds"
+
 // requireReconcile is the gate both reconcile RPCs take, before the receipt
 // replay and again after the SDK's serialization hold.
 //
@@ -212,14 +223,8 @@ func (h *datasourceConnectHandler) requireReconcile(ctx context.Context, actor, 
 	if err := requireOrgMember(ctx, actor, org); err != nil {
 		return translateGRPCError(err)
 	}
-	// Reconciling is decided by the source's owner or an organization
-	// administrator, never by a datasource grant a team can hold, so a cast,
-	// which administers nothing and holds nothing of its person's, is refused
-	// it and its receipt alike. A role view is decided as before.
-	if view, err := roleViewOf(ctx); err != nil {
-		return err
-	} else if view.Team != "" {
-		return viewRefusal(view)
+	if err := refuseCast(ctx, reconcileIsAnOwnersOrAdministrators); err != nil {
+		return translateGRPCError(err)
 	}
 	action := "invoke"
 	if lookup {

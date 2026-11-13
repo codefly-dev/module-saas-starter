@@ -104,13 +104,11 @@ func (h *datasourceConnectHandler) InvokeSourceOperation(ctx context.Context, re
 		defer cancel()
 		h.svc.AuditSourceOperation(auditCtx, actor, req.Msg.OrgId, req.Msg.SourceId, declaration, effect, outcome)
 	}()
-	// A cast calls only a source of its person's own, where the team it acts
-	// as holds datasource:invoke; and whoever answers for the session decides
-	// every check below, before the call and after the SDK's hold.
-	if err = h.refuseUnlessOwnPersonalSourceInView(ctx, actor, req.Msg.OrgId, req.Msg.SourceId, ""); err != nil {
-		return nil, translateGRPCError(err)
-	}
-	holder, err := sourceHolderOf(ctx, actor)
+	// Whoever answers for the session decides every check below, before the
+	// call and after the SDK's hold: a cast calls only a source of its
+	// person's own, where the team it acts as holds datasource:invoke
+	// (business.sourceOperationAccess).
+	holder, _, err := sourceCaller(ctx, actor, req.Msg.OrgId)
 	if err != nil {
 		return nil, translateGRPCError(err)
 	}
@@ -179,7 +177,7 @@ func (h *datasourceConnectHandler) LookupInvokeSourceOperation(ctx context.Conte
 	if err = h.requireAuditedSourceOperationScope(ctx, actor, org, attempt.SourceID, "read", effect); err != nil {
 		return nil, err
 	}
-	holder, err := sourceHolderOf(ctx, actor)
+	holder, _, err := sourceCaller(ctx, actor, org)
 	if err != nil {
 		return nil, translateGRPCError(err)
 	}

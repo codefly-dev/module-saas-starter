@@ -147,6 +147,13 @@ func (s *Service) sourceOperationAccess(ctx context.Context, holder SourceBounda
 	if err != nil || membership == nil {
 		return nil, status.Error(codes.PermissionDenied, "organization membership required")
 	}
+	// A cast calls only a source of its person's own, as the role-view gate
+	// admits it (castAsksForItsPersonsOwnSource). Decided here, so the check
+	// after the receipt guard's hold makes it too.
+	if holder.Cast() && action == personalSourceBoundaryAction && src.PersonalOwnerUserID != actor {
+		return nil, status.Errorf(codes.PermissionDenied,
+			"this session acts as team %s and as nothing else; a cast calls only a source of its person's own: use the session the cast was opened from", holder.SubjectID)
+	}
 	allowed, err := s.holdsTx(ctx, org, holder, action, src.BoundaryNodeID)
 	if err != nil {
 		return nil, err

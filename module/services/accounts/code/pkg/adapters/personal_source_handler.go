@@ -50,18 +50,6 @@ func personalSourceHolder(ctx context.Context, actorID, orgID string) (holder *b
 	return &who, false, nil
 }
 
-// sourceHolderOf is whose datasource grants decide a read of, or a call on, a
-// source from the session in ctx (business.SourceHolderFor): the team a cast
-// acts as and nothing of the person's own, or else the person. A role view is
-// the person, as it always was.
-func sourceHolderOf(ctx context.Context, actorID string) (business.SourceBoundaryHolder, error) {
-	view, err := roleViewOf(ctx)
-	if err != nil {
-		return business.SourceBoundaryHolder{}, err
-	}
-	return business.SourceHolderFor(actorID, view.Team), nil
-}
-
 // ownPersonalSource is source id of orgID when it is a personal source of
 // actorID's that no solution governs; nil otherwise, so the caller decides it
 // as any other source.

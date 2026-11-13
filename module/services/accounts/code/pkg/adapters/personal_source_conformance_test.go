@@ -335,6 +335,24 @@ func testAMemberConnectsAPersonalSourceOfTheirOwn(t *testing.T, h reviewedClosur
 		}
 		refused(t, lookUpReconcile(casting), codes.PermissionDenied, "acts as team")
 
+		// The team holding datasource:invoke where an organization's own
+		// source is placed does not make it the cast's to call: a cast calls
+		// only a source of its person's own.
+		organizations, err := sources.AddSource(alex, &gen.AddSourceRequest{OrgId: fixtureOrganization, Provider: gen.DatasourceProvider_DATASOURCE_PROVIDER_API,
+			Config:   &gen.AddSourceRequest_Api{Api: &gen.ApiDatasourceConfig{BaseUrl: "https://api.example.test", CredentialKind: gen.ApiCredentialKind_API_CREDENTIAL_KIND_BEARER}},
+			Boundary: &gen.AddSourceRequest_BoundaryNodeId{BoundaryNodeId: calledAt.GetId()}, Credential: "example-token"})
+		require.NoError(t, err)
+		_, err = sources.InvokeSourceOperation(casting, &gen.InvokeSourceOperationRequest{OrgId: fixtureOrganization, SourceId: organizations.GetDatasource().GetId(),
+			Operation: declared.GetName(), InputJson: `{"id":"one"}`, EffectId: uuid.NewString()})
+		refused(t, err, codes.PermissionDenied, "a cast calls only a source of its person's own")
+		remove(alex, organizations.GetDatasource().GetId())
+
+		// The provider accounts linked to the person are theirs, not the team's.
+		_, err = sources.ListMyDatasourceAccountLinks(casting, &gen.ListMyDatasourceAccountLinksRequest{OrgId: fixtureOrganization})
+		refused(t, err, codes.PermissionDenied, "acts as team", "provider accounts linked to a person are their own")
+		_, err = sources.ListMyDatasourceAccountLinks(alex, &gen.ListMyDatasourceAccountLinksRequest{OrgId: fixtureOrganization})
+		require.NoError(t, err, "the person reads their own links in their own session")
+
 		// The person's own session and another member are unchanged.
 		_, err = listOperations(alex)
 		require.NoError(t, err)

@@ -28,20 +28,30 @@ import (
 // organization. Each is decided before anything is written.
 type datasourceConnectHandler struct{ svc *business.Service }
 
-// sourcePerson is the caller as the authority core decides a governed source
-// for them: the person, at the organization the call is for. A cast also names
-// its session, so the core reads the installation roles of the team it acts as
-// and nothing of the person's own; a role view is read as the person, as it
-// always was.
-func sourcePerson(ctx context.Context, actorID, orgID string) (authority.Person, error) {
-	person := authority.Person{ID: actorID, Organization: orgID}
+// sourceCaller is who a datasource call made from the session in ctx is
+// decided for, read from the session once:
+//
+//   - holder, whose datasource grants decide on a source's boundary
+//     (business.SourceHolderFor): the team a cast acts as and nothing of the
+//     person's own, or else the person;
+//   - person, the caller as the authority core decides a governed source for
+//     them: the person at orgID, naming the session when it is a cast, so the
+//     core reads the installation roles of the team alone.
+//
+// A role view is the person in both, as it always was. A call borne by a Work
+// Context carries no session (authenticateOwnerWorkContext), so it is decided
+// for the capability's owner, as before.
+func sourceCaller(ctx context.Context, actorID, orgID string) (business.SourceBoundaryHolder, authority.Person, error) {
 	view, err := roleViewOf(ctx)
-	if err != nil || view.Team == "" {
-		return person, err
+	if err != nil {
+		return business.SourceBoundaryHolder{}, authority.Person{}, err
 	}
-	identity, _ := accountsauth.VerifiedRequestIdentity(ctx)
-	person.SessionID = identity.SessionID.String()
-	return person, nil
+	person := authority.Person{ID: actorID, Organization: orgID}
+	if view.Team != "" {
+		identity, _ := accountsauth.VerifiedRequestIdentity(ctx)
+		person.SessionID = identity.SessionID.String()
+	}
+	return business.SourceHolderFor(actorID, view.Team), person, nil
 }
 
 // authorizeSourceWrite decides a change to source id of orgID: a member of the
@@ -60,7 +70,7 @@ func (h *datasourceConnectHandler) authorizeSourceWrite(ctx context.Context, act
 	if !governed {
 		return translateGRPCError(requireOrgAdmin(ctx, actorID, orgID))
 	}
-	person, err := sourcePerson(ctx, actorID, orgID)
+	_, person, err := sourceCaller(ctx, actorID, orgID)
 	if err != nil {
 		return translateGRPCError(err)
 	}
@@ -106,7 +116,7 @@ func (h *datasourceConnectHandler) authorizeConnect(ctx context.Context, actorID
 	if err := requireOrgMember(ctx, actorID, orgID); err != nil {
 		return nil, false, translateGRPCError(err)
 	}
-	person, err := sourcePerson(ctx, actorID, orgID)
+	_, person, err := sourceCaller(ctx, actorID, orgID)
 	if err != nil {
 		return nil, false, translateGRPCError(err)
 	}
@@ -319,15 +329,11 @@ func (h *datasourceConnectHandler) ListSources(
 	}
 	// A source a solution governs is listed only to a holder of a role on its
 	// installation.
-	person, err := sourcePerson(ctx, actorID, req.Msg.OrgId)
+	holder, person, err := sourceCaller(ctx, actorID, req.Msg.OrgId)
 	if err != nil {
 		return nil, translateGRPCError(err)
 	}
 	if sources, err = h.svc.ReadableSources(ctx, person, sources); err != nil {
-		return nil, translateGRPCError(err)
-	}
-	holder, err := sourceHolderOf(ctx, actorID)
-	if err != nil {
 		return nil, translateGRPCError(err)
 	}
 	out := make([]*gen.Datasource, 0, len(sources))
@@ -362,15 +368,11 @@ func (h *datasourceConnectHandler) GetSource(
 	if err != nil {
 		return nil, translateGRPCError(err)
 	}
-	person, err := sourcePerson(ctx, actorID, req.Msg.OrgId)
+	holder, person, err := sourceCaller(ctx, actorID, req.Msg.OrgId)
 	if err != nil {
 		return nil, translateGRPCError(err)
 	}
 	if err := h.svc.AuthorizeSourceRead(ctx, person, source); err != nil {
-		return nil, translateGRPCError(err)
-	}
-	holder, err := sourceHolderOf(ctx, actorID)
-	if err != nil {
 		return nil, translateGRPCError(err)
 	}
 	if err := h.svc.AuthorizeOwnSourceRead(ctx, holder, source); err != nil {
@@ -431,7 +433,7 @@ func (h *datasourceConnectHandler) GetSourceSync(
 	}
 	if governed {
 		var person authority.Person
-		if person, err = sourcePerson(ctx, actorID, req.Msg.OrgId); err == nil {
+		if _, person, err = sourceCaller(ctx, actorID, req.Msg.OrgId); err == nil {
 			err = h.svc.AuthorizeSourceRead(ctx, person, source)
 		}
 	} else {

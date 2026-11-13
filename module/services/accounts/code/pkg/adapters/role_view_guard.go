@@ -97,6 +97,19 @@ func viewRefusal(view domain.RoleView) error {
 		strings.Join(viewed, "; "))
 }
 
+// refuseCast refuses a cast by name, saying why: an operation decided by
+// something of the person's own, which the team a cast acts as does not hold.
+// Any other session, a role view included, passes and is decided as before.
+func refuseCast(ctx context.Context, why string) error {
+	view, err := roleViewOf(ctx)
+	if err != nil || view.Team == "" {
+		return err
+	}
+	return status.Errorf(codes.PermissionDenied,
+		"this session acts as team %s and as nothing else; %s, so it is unavailable while acting as a team: use the session the cast was opened from",
+		view.Team, why)
+}
+
 // SwitchOrganization is deliberately not here: it re-signs the access token for another
 // organisation and the new token would not be a view's, so a view refuses it by name.
 //
@@ -110,8 +123,9 @@ func viewRefusal(view domain.RoleView) error {
 // reads (ListMyAccessibleScopes, the resource branch of QueryAuditLog) and the
 // datasource reads still answer by the person's own grants, and are the end state's
 // work (the held set), not this guard's. A cast does not: every datasource read and
-// call it reaches is decided by the grants of the team it acts as alone
-// (sourceHolderOf, sourcePerson).
+// call its session makes is decided by the grants of the team it acts as alone, or
+// refused by name (sourceCaller, refuseCast). A call borne by a Work Context carries
+// no session and is decided for the capability's owner (authenticateOwnerWorkContext).
 //
 // roleViewWrites are the accounts writes a session may make while viewing as
 // some of its roles, because they act on the person's own account or content and

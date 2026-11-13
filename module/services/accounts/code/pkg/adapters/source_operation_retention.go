@@ -52,7 +52,7 @@ func (h *datasourceConnectHandler) PruneSourceOperationReceipts(ctx context.Cont
 	if !sourceWireFits(normalized.Msg, 4096) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("source retention input exceeds wire bound"))
 	}
-	holder, err := sourceHolderOf(ctx, actor)
+	holder, _, err := sourceCaller(ctx, actor, req.Msg.OrgId)
 	if err != nil {
 		return nil, translateGRPCError(err)
 	}
@@ -114,7 +114,7 @@ func (h *datasourceConnectHandler) LookupPruneSourceOperationReceipts(ctx contex
 	if attempt == nil {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("source effect not found"))
 	}
-	holder, err := sourceHolderOf(ctx, actor)
+	holder, _, err := sourceCaller(ctx, actor, org)
 	if err != nil {
 		return nil, translateGRPCError(err)
 	}
