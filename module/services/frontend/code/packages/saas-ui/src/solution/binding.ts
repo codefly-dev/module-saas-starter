@@ -116,8 +116,11 @@ export interface SolutionBinding {
 	/**
 	 * The modules this page declared it consumes, by alias, each with the
 	 * viewer organization's installation of it: the declaration the host
-	 * applied, joined to the verified viewer's own entitlements. A module the
-	 * page declares but the viewer cannot reach has no entry, so a remote reads
+	 * applied, joined to the verified viewer's own entitlements, or to the
+	 * organization's composition installation of a module the page consumes
+	 * through a binding of its own (each call there carries the viewer's role
+	 * at the page) or of one declaring no roles. A module the page declares but
+	 * the viewer cannot reach has no entry, so a remote reads
 	 * an absent alias as "not reachable here" and never supplies one itself.
 	 * An entry is not admission: the module still admits each call, and refuses
 	 * one whose binding the platform withheld, with its reason.

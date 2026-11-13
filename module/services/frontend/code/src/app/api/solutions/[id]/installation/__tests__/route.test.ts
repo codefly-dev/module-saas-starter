@@ -31,7 +31,7 @@ type Registered = string | { id: string; kind: "module" | "solution"; reaches?: 
 function gatewayServing(
 	registered: Registered[],
 	entitled: Array<{ id: string; installationId?: string; healthy?: boolean }>,
-	composed: Array<{ id: string; installationId: string; roleGated?: boolean }> = [],
+	composed: Array<{ id: string; installationId: string; roleGated?: boolean | null }> = [],
 ) {
 	return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
 		const url = new URL(input instanceof Request ? input.url : String(input));
@@ -51,7 +51,14 @@ function gatewayServing(
 					...(entry.installationId === undefined ? {} : { installationId: entry.installationId }),
 				})),
 				...(asked && composed.length > 0
-					? { composedModules: composed.map((entry) => ({ targetId: `target-${entry.id}`, installationId: entry.installationId, roleGated: entry.roleGated ?? false })) }
+					? {
+							composedModules: composed.map((entry) => ({
+								targetId: `target-${entry.id}`,
+								installationId: entry.installationId,
+								// null: a gateway older than the field, which omits it.
+								...(entry.roleGated === null ? {} : { roleGated: entry.roleGated ?? false }),
+							})),
+						}
 					: {}),
 			});
 		}
@@ -187,6 +194,23 @@ describe("solution installation route", () => {
 		// No composition answer is needed: the registry carries no remote for
 		// the page, so its target is the join, and the viewer's own
 		// entitlement names it.
+		expect((await (await call("people")).json()).reach).toEqual({ records: { installationId: "inst-records" } });
+	});
+
+	it("reads a composed module an older gateway does not flag as role-gated, so only a bound reach names it", async () => {
+		vi.stubGlobal("fetch", gatewayServing([
+			{ id: "people", kind: "module", reaches: ["records", "assistant", "absent"], boundReaches: ["records", "absent"] },
+			{ id: "records", kind: "module", page: false },
+			{ id: "assistant", kind: "module", page: false },
+			{ id: "absent", kind: "module", page: false },
+		], [
+			{ id: "people", installationId: "inst-people" },
+		], [
+			{ id: "records", installationId: "inst-records", roleGated: null },
+			{ id: "assistant", installationId: "inst-assistant", roleGated: null },
+		]));
+		// The assistant is an edge reach and unflagged, so it fails closed; a
+		// bound reach with no composition installation stays absent.
 		expect((await (await call("people")).json()).reach).toEqual({ records: { installationId: "inst-records" } });
 	});
 

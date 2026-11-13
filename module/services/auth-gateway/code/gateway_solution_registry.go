@@ -189,7 +189,10 @@ type moduleReach struct {
 	// binding and carries what the person's role at the record names, cut to
 	// the binding; nothing the person holds at the module itself admits it.
 	// A module reached only as an edge dependency (the person's own Work
-	// Context) is not in it.
+	// Context) is not in it, nor yet one a binding reaches on lookup scopes
+	// alone, which the core would also route a page call through: such a
+	// module stays out of a page's reach unless the person may open it
+	// (fails closed).
 	Bound []string
 }
 

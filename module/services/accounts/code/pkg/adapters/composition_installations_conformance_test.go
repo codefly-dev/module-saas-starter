@@ -212,6 +212,9 @@ func testModulesInstalledByComposition(t *testing.T, h reviewedClosureHarness) {
 		require.True(t, composed[page.GetTargetId()].GetRoleGated(), "and says it declares roles")
 		for _, e := range read(true, "").GetEntitlements() {
 			require.NotEqual(t, page.GetTargetId(), e.GetTargetId(), "naming a composed module entitles nobody to it")
+			if c, ok := composed[e.GetTargetId()]; ok {
+				require.True(t, c.GetRoleGated(), "a module without roles is never an entitlement")
+			}
 		}
 		require.Empty(t, read(false, "").GetComposedModules(), "the navigation and the proxy do not ask, and are not answered")
 		require.Empty(t, read(true, page.GetId()).GetComposedModules(), "a later page carries none")

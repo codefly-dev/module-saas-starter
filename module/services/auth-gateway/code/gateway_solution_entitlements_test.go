@@ -343,7 +343,7 @@ func TestGatewaySolutionEntitlements_NamesItsOwnRefusals(t *testing.T) {
 func TestGatewaySolutionEntitlements_ComposedModulesOnlyWhenAsked(t *testing.T) {
 	gw, authority, priv := entitlementGateway(t)
 	authority.pages = []*accountsv1.ListSolutionEntitlementsResponse{{
-		Entitlements:    []*accountsv1.SolutionEntitlement{{TargetId: fakeSolutionTarget("people"), InstallationId: "install-people", Healthy: true}},
+		Entitlements: []*accountsv1.SolutionEntitlement{{TargetId: fakeSolutionTarget("people"), InstallationId: "install-people", Healthy: true}},
 		ComposedModules: []*accountsv1.ComposedModuleInstallation{
 			{TargetId: fakeSolutionTarget("records"), InstallationId: "install-records", RoleGated: true},
 			{TargetId: fakeSolutionTarget("notes"), InstallationId: "install-notes"},

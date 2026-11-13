@@ -206,11 +206,13 @@ function parseComposedModules(
 		if (typeof targetId !== "string" || targetId === "") return null;
 		if (typeof installationId !== "string" || installationId === "")
 			return null;
-		// Absent is a module without roles: the gateway always says it, so
-		// only a missing answer from an older gateway reads that way, and that
-		// gateway listed modules without roles alone.
+		// Absent reads as role-gated: the gateway always says it, so only one
+		// older than the field omits it, and a module is then named only where
+		// a role-gated one would be (a bound reach). Failing closed costs an
+		// edge reach during the skew; failing open would name a role-gated
+		// module to a page that calls it on the person's own session.
 		if (roleGated !== undefined && typeof roleGated !== "boolean") return null;
-		out.set(targetId, { installationId, roleGated: roleGated === true });
+		out.set(targetId, { installationId, roleGated: roleGated !== false });
 	}
 	return out;
 }
