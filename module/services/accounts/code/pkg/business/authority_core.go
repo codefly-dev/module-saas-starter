@@ -76,15 +76,19 @@ func (k staticKeys) PublicKeys(context.Context) (map[string]ed25519.PublicKey, e
 // module registry (moduleConsent), which a reconcile pass derives and which a
 // host starts without. Run before that pass, it is refused for every consent
 // ("the registry was derived from envelope revision 0"), so on a host whose
-// pass derives the registry it waits for that pass: the pass runs it once the
-// registry is derived and every later pass retries it until it completes
-// (completeAuthorityCoreBoot). An error with the core built (AuthorityCore
+// pass derives the registry it always waits for a pass: the pass runs it once
+// the registry is derived and every later pass retries it until it completes
+// (completeAuthorityCoreBoot). It never asks whether a pass has derived the
+// registry already: the host holds a registry before any pass has run (the
+// empty one boot wiring stores, SetModuleCapabilities), and the first pass
+// races this call, so the answer would be a guess. The pass it asks for
+// below runs it either way. An error with the core built (AuthorityCore
 // answers it) is a reconciliation that did not complete; it never stops the
 // host.
 func (s *Service) ConfigureAuthorityCore(ctx context.Context, issuer, keyID string, key ed25519.PrivateKey) error {
 	state := s.authorityCoreState()
 	core, err := s.newAuthorityCore(issuer, keyID, key)
-	waits := err == nil && s.registryPassTrigger != nil && s.modulePrincipals.Load() == nil
+	waits := err == nil && s.registryPassTrigger != nil
 	state.mu.Lock()
 	state.core, state.err, state.bootPending = core, err, waits
 	state.mu.Unlock()
@@ -94,7 +98,8 @@ func (s *Service) ConfigureAuthorityCore(ctx context.Context, issuer, keyID stri
 	// A delivery that arrived before the core was built is pending on it
 	// (applyCoreModule): a pass now applies it, rather than the next interval.
 	// On a host whose pass derives the registry, that pass also runs the boot
-	// reconciliation a pass before bootPending was set did not.
+	// reconciliation, which a pass already in flight may have passed by
+	// before bootPending was set.
 	s.requestRegistryPass()
 	if waits {
 		return nil

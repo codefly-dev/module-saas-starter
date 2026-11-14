@@ -61,17 +61,18 @@ func configurePermissionServerKeys() error {
 	})
 	// The host interfaces are decided by the shared authority core, which signs
 	// with the same Work Context key Keys publishes. A core that is built but
-	// whose boot reconciliation did not complete serves; the delivery pass
-	// retries what did not complete. On a host whose reconcile pass derives
-	// the module registry, the reconciliation waits for that pass and is not
-	// run here (ConfigureAuthorityCore).
+	// whose boot reconciliation did not complete serves. On a host whose
+	// reconcile pass derives the module registry, the reconciliation waits
+	// for that pass, which retries it until it completes, and is not run here
+	// (ConfigureAuthorityCore); an error here is therefore from a host with
+	// no such pass, which runs it again only at its next start.
 	if service != nil {
 		if err := service.ConfigureAuthorityCore(context.Background(), plugin.WorkContextIssuer(), plugin.WorkContextKeyID(), plugin.Ed25519Key()); err != nil {
 			log := wool.Get(context.Background()).In("configurePermissionServerKeys")
 			if _, coreErr := service.AuthorityCore(); coreErr != nil {
 				log.Warn("the authority core is not configured; every host interface call answers Unavailable", wool.ErrField(err))
 			} else {
-				log.Error("the authority core is configured and serving, and its boot reconciliation did not complete; every delivery pass retries it", wool.ErrField(err))
+				log.Error("the authority core is configured and serving, and its boot reconciliation did not complete; this host runs no reconcile pass, so its next start retries it", wool.ErrField(err))
 			}
 		}
 	}

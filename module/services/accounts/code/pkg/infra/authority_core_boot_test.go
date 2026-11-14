@@ -46,8 +46,13 @@ func TestAuthorityCoreBootReconciliationWaitsForTheRegistryPass(t *testing.T) {
 	require.ErrorContains(t, err, "derived from envelope revision 0")
 
 	// A restart whose pass derives the registry: the core serves at once and
-	// its reconciliation waits for that pass, which it asks for.
+	// its reconciliation waits for that pass, which it asks for. The host is
+	// wired as work() wires it: the module capability surface is set before
+	// the core is built, with no registry, so the registry it holds then is
+	// the empty one, read as derived from envelope revision 0 (seen again on
+	// a hosted cell, 2026-11-13, every start since the wait was added).
 	restarted := newRegistryDelivery(t).service
+	restarted.SetModuleCapabilities(testStore, nil, nil)
 	reconciler := newRegistryReconciler(t, restarted, productionVerifier(t), restarted)
 	asked := 0
 	restarted.SetModuleRegistryPassTrigger(func() { asked++ })
