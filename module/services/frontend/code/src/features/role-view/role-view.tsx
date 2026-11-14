@@ -89,11 +89,16 @@ export function ActAsTeam({
  * expired one is left for them to leave: their own session is not installed
  * behind their back; one that had lapsed by a reload is acknowledged), and one
  * the host has not confirmed yet. A live cast or role view is said by the
- * calmer CastBar (the kit's) in the page itself.
+ * calmer CastBar (the kit's) in the page itself. One the host refused to
+ * reopen is said as soon as that is known, with when it will end.
  */
 export function RoleViewBanner() {
-	const { exitRoleView, narrowedSessionEnd, dismissNarrowedSessionEnd } =
-		useAuth();
+	const {
+		exitRoleView,
+		narrowedSessionEnd,
+		narrowedSessionEnding,
+		dismissNarrowedSessionEnd,
+	} = useAuth();
 	const { confirmed } = useNarrowedSession();
 	const { sessionRead } = useAuth();
 	if (narrowedSessionEnd) {
@@ -116,6 +121,31 @@ export function RoleViewBanner() {
 					onClick={expired ? back(exitRoleView) : dismissNarrowedSessionEnd}
 				>
 					{expired ? "Return to my own session" : "Understood"}
+				</button>
+			</div>
+		);
+	}
+	if (narrowedSessionEnding) {
+		const at = new Date(narrowedSessionEnding.endsAt).toLocaleTimeString([], {
+			hour: "2-digit",
+			minute: "2-digit",
+		});
+		return (
+			<div
+				role="status"
+				className="fixed bottom-0 left-0 right-0 z-[9999] border-t-2 border-amber-600 bg-amber-200 px-4 py-2 text-sm text-amber-950"
+			>
+				<span className="font-bold">
+					Your session acting as {narrowedSessionEnding.as} will end at {at}
+				</span>{" "}
+				&mdash; it could not be renewed. Nothing is done as them after that, and
+				you are not back in your own session until you choose to be.
+				<button
+					type="button"
+					className="ml-3 rounded bg-amber-900 px-3 py-1 text-amber-50"
+					onClick={back(exitRoleView)}
+				>
+					Return to my own session
 				</button>
 			</div>
 		);

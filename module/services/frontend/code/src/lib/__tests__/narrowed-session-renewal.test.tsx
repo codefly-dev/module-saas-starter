@@ -14,6 +14,7 @@ import { server } from "@/test/setup";
 import {
 	AuthProvider,
 	type NarrowedSessionEnd,
+	type NarrowedSessionEnding,
 	readKeptNarrowedSession,
 	useAuth,
 } from "../auth";
@@ -78,9 +79,11 @@ const advance = (ms: number) =>
 const handles: {
 	enter: (bearer: string, as: string) => void;
 	ended: NarrowedSessionEnd | null;
+	ending: NarrowedSessionEnding | null;
 } = {
 	enter: () => {},
 	ended: null,
+	ending: null,
 };
 let mounts = 0;
 function Probe() {
@@ -89,10 +92,15 @@ function Probe() {
 		isLoading,
 		enterRoleView,
 		narrowedSessionEnd,
+		narrowedSessionEnding,
 		castTeamId,
 	} = useAuth();
 	useEffect(() => {
-		Object.assign(handles, { enter: enterRoleView, ended: narrowedSessionEnd });
+		Object.assign(handles, {
+			enter: enterRoleView,
+			ended: narrowedSessionEnd,
+			ending: narrowedSessionEnding ?? null,
+		});
 	});
 	return (
 		<span data-testid="authed">
@@ -466,6 +474,37 @@ describe("an end is never undone", () => {
 		expect(installed).not.toContain(FULL2);
 	});
 
+	// Red before: a refused reopen said nothing; the person learned the cast
+	// was over from the first request after it lapsed.
+	it("the host's refusal of a reopen is said at once, with when the session ends, and nothing is ended early", async () => {
+		const installedAt = Date.now();
+		const cast = await openCast();
+		openAnswer.push(403);
+		input();
+		await advance(4 * MINUTE + 1000);
+		await waitFor(() => expect(handles.ending).not.toBeNull());
+		expect(handles.ending?.as).toBe("team Stewards");
+		const endsAt = handles.ending?.endsAt ?? 0;
+		expect(endsAt).toBeGreaterThan(Date.now());
+		expect(endsAt).toBeGreaterThanOrEqual(installedAt + 5 * MINUTE);
+		expect(endsAt).toBeLessThan(installedAt + 5 * MINUTE + 10_000);
+		expect(handles.ended).toBeNull();
+		expect(getToken()).toBe(cast);
+	});
+
+	it("the person's own session having ended is said at once too: there is nothing to reopen from", async () => {
+		await openCast();
+		server.use(
+			http.post("/v1/auth/refresh", () =>
+				HttpResponse.json({ code: "unauthenticated" }, { status: 401 }),
+			),
+		);
+		input();
+		await advance(4 * MINUTE + 1000);
+		await waitFor(() => expect(handles.ending?.as).toBe("team Stewards"));
+		expect(opens).toEqual([]);
+	});
+
 	it("a host that could not answer is asked again on the next input", async () => {
 		await openCast();
 		const renewed = castBearer();
@@ -474,9 +513,11 @@ describe("an end is never undone", () => {
 		input();
 		await advance(4 * MINUTE + 1000);
 		await waitFor(() => expect(opens).toHaveLength(1));
+		expect(handles.ending).toBeNull();
 		await advance(6000);
 		input();
 		await waitFor(() => expect(getToken()).toBe(renewed));
 		expect(opens).toHaveLength(2);
+		expect(handles.ending).toBeNull();
 	});
 });

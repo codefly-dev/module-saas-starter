@@ -402,6 +402,18 @@ export interface NarrowedSessionEnd {
 }
 
 /**
+ * A narrowed session the host definitively refused to reopen (or whose
+ * person's own session ended, leaving nothing to reopen it from): it is still
+ * live, and ends at `endsAt` (this tab's wall clock, epoch ms). The person is
+ * told as soon as the refusal is known, not by the first request after it
+ * lapsed. Cleared by installing any token.
+ */
+export interface NarrowedSessionEnding {
+	as: string;
+	endsAt: number;
+}
+
+/**
  * The narrowed session this tab has open, kept PER TAB (sessionStorage) so a
  * reload or a hard navigation keeps the person acting as what they chose,
  * until they stop (exitRoleView) or the credential lapses. A narrowed session
@@ -463,6 +475,7 @@ export function readKeptNarrowedSession(): {
 interface AuthState {
 	user: { id: string; email?: string; name?: string } | null;
 	narrowedSessionEnd: NarrowedSessionEnd | null;
+	narrowedSessionEnding?: NarrowedSessionEnding | null;
 	accessToken: string | null;
 	organizationId?: string;
 	platformRole?: PlatformRole;
@@ -1095,9 +1108,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	// refusal throws and the session lapses as it would have.
 	const renewNarrowed = useCallback(
 		async (bearer: string, reopen: Reopen, live: () => boolean) => {
+			// A definitive refusal: the session is not renewed, so the person is
+			// told now when it ends, rather than by the first request after.
+			const sayEnding = () => {
+				if (!live() || endedRef.current.has(bearer) || getConnectToken() !== bearer) return;
+				const { exp, iat } = decodeJWTPayload(bearer);
+				const installed = installedRef.current;
+				const endsAt =
+					installed?.bearer === bearer && typeof exp === "number" && typeof iat === "number"
+						? installed.since + (exp - iat) * 1000
+						: typeof exp === "number"
+							? exp * 1000
+							: Date.now();
+				const as = narrowedAsRef.current;
+				setState((s) => (s.narrowedSessionEnd ? s : { ...s, narrowedSessionEnding: { as, endsAt } }));
+			};
 			const own = await exchangeRefreshCookie();
 			// The person's own session ended: there is nothing to reopen from.
-			if (own.status === "expired") return;
+			if (own.status === "expired") return sayEnding();
 			if (own.status !== "ok") throw new Error("your own session could not be read");
 			const headers = { Authorization: `Bearer ${own.accessToken}` };
 			let session: { bearer: string };
@@ -1108,9 +1136,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 						: await bearerSessionClient.openRoleView(reopen, { headers });
 			} catch (error) {
 				// Only a failure to reach the host is asked again; its refusal is
-				// final, and the session lapses with the notice it always had.
+				// final: the session lapses, and the person is told when.
 				if (TRANSIENT.has(ConnectError.from(error).code)) throw error;
-				return;
+				return sayEnding();
 			}
 			// Installed only if the session it renews is still the one in this
 			// tab, has not lapsed, and was not said to have ended meanwhile: an

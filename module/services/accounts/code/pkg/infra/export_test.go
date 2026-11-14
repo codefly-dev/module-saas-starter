@@ -322,3 +322,21 @@ func AuthoritySnapshotStatements(ctx context.Context) (sent, replayed int) {
 	defer snap.reads.mu.Unlock()
 	return snap.reads.sent, snap.reads.replayed
 }
+
+// AuthoritySnapshotServes is whether a Read of s under ctx is answered from
+// the question's snapshot rather than a transaction of its own.
+func AuthoritySnapshotServes(ctx context.Context, s *PostgresStore) bool {
+	return snapshotOf(ctx, s) != nil
+}
+
+// AuthoritySnapshotQuery sends sql through the snapshot ctx carries, as a
+// source's statement inside one Read is sent, even once a failure has ended
+// it for later Reads. False when ctx carries none.
+func AuthoritySnapshotQuery(ctx context.Context, sql string) (bool, error) {
+	snap, ok := ctx.Value(authoritySnapshotKey{}).(*authoritySnapshot)
+	if !ok {
+		return false, nil
+	}
+	var out any
+	return true, snap.reads.QueryRow(snap.ctx, sql).Scan(&out)
+}

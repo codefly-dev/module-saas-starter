@@ -60,6 +60,7 @@ func TestAuthorityCoreBootReconciliationWaitsForTheRegistryPass(t *testing.T) {
 	_, err = restarted.AuthorityCore()
 	require.NoError(t, err, "the core serves while its reconciliation waits")
 	require.Equal(t, 1, asked, "the reconciliation asks for the pass it waits for")
+	require.True(t, restarted.AuthorityCoreBootPending(), "the reconciliation waits for the pass")
 
 	// The pass derives the registry from the committed envelope, then
 	// completes the reconciliation against it. The inbox is host-wide, so the
@@ -69,4 +70,5 @@ func TestAuthorityCoreBootReconciliationWaitsForTheRegistryPass(t *testing.T) {
 	}
 	_, present := entryOn(restarted, s.prefix)
 	require.True(t, present, "the pass derived the registry at revision %d", revision)
+	require.False(t, restarted.AuthorityCoreBootPending(), "the pass ran the reconciliation it waited for, and it completed")
 }
