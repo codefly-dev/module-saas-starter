@@ -69,7 +69,13 @@ func (s *PostgresStore) AuthorityCoreWithConsent(consent business.ModuleConsent)
 // carries one (WithAuthoritySnapshot), else a transaction of its own.
 func (c AuthorityCoreStore) Read(ctx context.Context, fn func(authority.Tx) error) error {
 	if snap := snapshotOf(ctx, c.s); snap != nil {
-		return fn(coreTx{ctx: snap.ctx, q: snap.reads, consent: c.consent, hostSolutions: c.hostSolutions})
+		if err := fn(coreTx{ctx: snap.ctx, q: snap.reads, consent: c.consent, hostSolutions: c.hostSolutions}); err != nil {
+			return err
+		}
+		// A statement that failed during this Read fails it, whatever fn made
+		// of it, as its own COMMIT did when it had one: a source that set the
+		// failure aside never decides from what is left.
+		return snap.reads.failure()
 	}
 	recordControlPlane(ctx)
 	return c.s.withControlPlaneTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(ctx context.Context) error {

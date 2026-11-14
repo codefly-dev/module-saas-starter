@@ -17,6 +17,7 @@ import (
 
 	accountsauth "accounts/pkg/auth"
 	"accounts/pkg/business"
+	"accounts/pkg/business/executiontest"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
@@ -26,7 +27,11 @@ import (
 // the control-plane pool a dozen times or more, and a burst of them queued to
 // the caller's deadline. The store here counts the core's reads made outside
 // a question's snapshot, so a handler that asks the core without its wrapper
-// fails this test, whatever the core answers.
+// fails this test, whatever the core answers. Every Issue shape is driven past
+// its own authentication (the session, the module edge, the workload) to the
+// core's question; the question is the test, so a shape the core then refuses
+// (an installation the solution does not act for, a delegation never granted)
+// counts as long as it was asked inside its snapshot.
 
 type snapshotProbeStore struct {
 	business.Store
@@ -96,6 +101,15 @@ func TestEveryHostAuthorityQuestionIsOneSnapshot(t *testing.T) {
 	require.NoError(t, err)
 	svc.SetModuleRegistryPassTrigger(func() {})
 	require.NoError(t, svc.ConfigureAuthorityCore(ctx, "https://probe.test", "k1", private))
+	// The workloads that authenticate: the solution's own, declared in the
+	// module registry (stated directly, so no envelope fences it), and the
+	// module edge a page's call comes through.
+	cluster := executiontest.New()
+	svc.SetExecutionBinding(cluster)
+	svc.SetModulePrincipals(business.ModulePrincipalRegistry{business.ModulePrincipalID(solution): {
+		Prefix: solution, Tenant: org, Workloads: []business.ModuleWorkload{{Namespace: solution, ServiceAccount: solution, Container: "app"}}}})
+	workload := &authorityv1.WorkloadCredential{Credential: cluster.Run(executiontest.Workload{Namespace: solution, ServiceAccount: solution, Container: "app"})}
+	edge := &authorityv1.WorkloadCredential{Credential: cluster.Run(executiontest.Workload{Namespace: business.HopModule, ServiceAccount: business.ModuleEdgeService, Container: "app"})}
 	previous := service
 	service = svc
 	t.Cleanup(func() { service = previous })
@@ -135,25 +149,35 @@ func TestEveryHostAuthorityQuestionIsOneSnapshot(t *testing.T) {
 	signedIn = withCredentialKind(accountsauth.WithVerifiedDatabaseIdentity(signedIn, member, org), credentialKindSession)
 
 	server := &HostAuthorityServer{}
+	issue := func(ctx context.Context, req *authorityv1.IssueRequest) func() error {
+		return func() error { _, err := server.Issue(ctx, req); return err }
+	}
 	for _, handler := range []struct {
-		name string
-		call func() error
+		name     string
+		call     func() error
+		refusals bool // the core may refuse it: the question is what is counted
 	}{
-		{"Check", func() error {
+		{name: "Check", call: func() error {
 			_, err := server.Check(ctx, &authorityv1.CheckRequest{Token: child.Token, Audience: records})
 			return err
 		}},
-		{"ListResources", func() error {
+		{name: "ListResources", call: func() error {
 			_, err := server.ListResources(ctx, &authorityv1.ListResourcesRequest{Token: child.Token, Audience: records, ResourceKind: kind, Action: "read"})
 			return err
 		}},
-		{"Issue for a person", func() error {
-			_, err := server.Issue(signedIn, &authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: solution})
-			return err
-		}},
+		{name: "Issue for a person", call: issue(signedIn, &authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: solution})},
+		{name: "Issue from a parent token", call: issue(ctx, &authorityv1.IssueRequest{As: &authorityv1.IssueRequest_ParentToken{ParentToken: root.Token}, Actor: workload, OperationBindingId: "records"})},
+		{name: "Issue for a page", refusals: true, call: issue(signedIn, &authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, PageTarget: solution, Actor: edge, Audience: records})},
+		{name: "Issue for a workload", refusals: true, call: issue(ctx, &authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Workload{Workload: workload}, OperationBindingId: "records"})},
+		{name: "Issue for an installation", refusals: true, call: issue(ctx, &authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Installation{Installation: &authorityv1.InstallationRef{InstallationId: installation.ID}}, Actor: workload, Audience: solution})},
+		{name: "Issue through a delegation", refusals: true, call: issue(ctx, &authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Delegation{Delegation: &authorityv1.DelegationRef{DelegationId: uuid.NewString()}}, Actor: workload})},
 	} {
 		asked, outside := probe.asked.Load(), probe.outside.Load()
-		require.NoError(t, handler.call(), handler.name)
+		if err := handler.call(); !handler.refusals {
+			require.NoError(t, err, handler.name)
+		} else if err != nil {
+			t.Logf("%s: the core answered %v", handler.name, err)
+		}
 		require.Equal(t, int64(1), probe.asked.Load()-asked, "%s asks the core one question", handler.name)
 		require.Zero(t, probe.outside.Load()-outside, "%s: every read the core makes is the question's snapshot", handler.name)
 	}

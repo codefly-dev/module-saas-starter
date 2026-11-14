@@ -50,6 +50,12 @@ package infra
 // does: a later Read of the question reads fresh, and a statement still asked
 // on the aborted transaction is not sent and answers with the failure that
 // aborted it.
+//
+// It never ends in an allow. A source may set a failed statement aside and
+// decide without it; read source by source, that Read's own COMMIT then failed
+// and refused it. So the Read a statement failed in returns that failure
+// whatever its callback made of it, and a question whose snapshot saw a
+// failure is never answered nil: it is refused, naming the read that failed.
 
 import (
 	"bytes"
@@ -105,22 +111,26 @@ func (s *PostgresStore) WithAuthoritySnapshot(ctx context.Context, fn func(conte
 	}
 	recordControlPlane(ctx)
 	var answer error
-	answered := false
+	var reads *snapshotReads
 	err := withControlPlaneTxOn(ctx, s.authorityRead, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(txCtx context.Context) error {
 		// txCtx carries the transaction for the core's Read alone; fn runs
 		// under ctx, so nothing else the question does joins a read-only
 		// transaction.
 		tx := storetx.Tx(txCtx)
-		reads := &snapshotReads{q: tx, typeMap: tx.Conn().TypeMap(), results: map[string]*snapshotResult{}}
+		reads = &snapshotReads{q: tx, typeMap: tx.Conn().TypeMap(), results: map[string]*snapshotResult{}}
 		answer = fn(context.WithValue(ctx, authoritySnapshotKey{}, &authoritySnapshot{store: s, ctx: txCtx, reads: reads}))
-		answered = true
 		return answer
 	})
-	if answered {
-		// The transaction only read, so its commit decides nothing the
-		// question has not answered; after a failed statement it would report
-		// only the rollback, a reason the question never had.
+	if answer != nil {
+		// The question's own refusal names its reason.
 		return answer
+	}
+	if reads != nil {
+		if failed := reads.failure(); failed != nil {
+			// Answered nil over a failed statement: refused, by the read that
+			// failed rather than by the rollback its commit reports.
+			return fmt.Errorf("authority snapshot: a read of this question failed: %w", failed)
+		}
 	}
 	return err
 }

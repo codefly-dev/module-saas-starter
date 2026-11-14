@@ -270,12 +270,13 @@ func TestAWriteInsideASnapshotIsReadBack(t *testing.T) {
 	}))
 }
 
-// A failed statement aborts the snapshot's transaction. The question is
-// refused for the read that failed, never for the abort a later statement
-// meets, and a later Read reads fresh, as it did source by source.
+// A failed statement aborts the snapshot's transaction. A statement asked on
+// it later names the read that failed, never the abort; a later Read reads
+// fresh, as it did source by source; and the question, though it set the
+// failure aside and answered nil, is refused, by the read that failed.
 func TestAFailedReadIsTheReasonItsQuestionGives(t *testing.T) {
 	sc := newSnapshotScenario(t)
-	require.NoError(t, testStore.WithAuthoritySnapshot(testCtx, func(ctx context.Context) error {
+	err := testStore.WithAuthoritySnapshot(testCtx, func(ctx context.Context) error {
 		open, err := infra.AuthoritySnapshotQuery(ctx, "SELECT 1/0")
 		require.True(t, open)
 		require.ErrorContains(t, err, "division by zero")
@@ -288,8 +289,32 @@ func TestAFailedReadIsTheReasonItsQuestionGives(t *testing.T) {
 		granted, err := sc.list(ctx)
 		require.NoError(t, err)
 		require.NotEmpty(t, granted)
+		return nil // the failure set aside
+	})
+	require.ErrorContains(t, err, "division by zero", "a question that saw a failed read is refused, by that read")
+	require.NotContains(t, err.Error(), "commit unexpectedly resulted in rollback")
+}
+
+// The core sets some store errors aside and decides without them (a seal read
+// takes a module it could not read as not owner-aware). Read source by source,
+// the Read's own COMMIT failed and refused such a decision. Under a snapshot
+// the Read a statement failed in is refused the same way, and so is its
+// question: a failure set aside never ends in an allow.
+func TestAReadThatSetsAFailureAsideIsRefused(t *testing.T) {
+	swallowing := func(tx authority.Tx) error {
+		_, _ = tx.Module("bad\x00principal") // the server refuses a NUL byte, which aborts the transaction
+		_, _ = tx.ModuleNamed("anything")
 		return nil
-	}))
+	}
+	require.Error(t, testStore.AuthorityCore().Read(testCtx, swallowing), "source by source, the Read's commit refuses it")
+
+	var read error
+	err := testStore.WithAuthoritySnapshot(testCtx, func(ctx context.Context) error {
+		read = testStore.AuthorityCore().Read(ctx, swallowing)
+		return nil // the question sets the Read's refusal aside too
+	})
+	require.ErrorContains(t, read, "22021", "the Read is refused by the statement that failed in it")
+	require.ErrorContains(t, err, "22021", "and the question is never answered nil")
 }
 
 // The pools are taken snapshot first, control plane second: a snapshot asked
