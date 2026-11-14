@@ -232,7 +232,10 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 		// binding to the audience when the target declares one.
 		if page := req.GetPageTarget(); page != "" {
 			if err := service.RequireModuleEdge(ctx, req.GetActor().GetCredential()); err != nil {
-				return nil, status.Error(codes.PermissionDenied, err.Error())
+				if errors.Is(err, business.ErrNotTheModuleEdge) {
+					return nil, status.Error(codes.PermissionDenied, err.Error())
+				}
+				return nil, credentialRefusal(err, "the actor")
 			}
 			err = oneRead(ctx, func(ctx context.Context) (err error) { out, err = core.IssueForPage(ctx, person, page, r); return err })
 			// Through a binding it is the target's hop, recorded as a child.
@@ -464,10 +467,11 @@ func (s *HostInstallationServer) Current(ctx context.Context, req *installationv
 		return nil, err
 	}
 	// Current answers a module about itself alone, so a credential that proves
-	// no module is refused the read, whatever made it fail to.
+	// no module is refused the read. A credential that could not be read is
+	// answered as that failure: nothing was decided about the caller.
 	actor, err := workload(ctx, req.GetActorCredential(), "the actor")
 	if err != nil {
-		return nil, status.Error(codes.PermissionDenied, status.Convert(err).Message())
+		return nil, refusedUnlessFailed(err)
 	}
 	// The namespace is where the parent authors: the installation's own, or,
 	// for a parent owned by a solution installation, that installation's.
@@ -729,8 +733,17 @@ func workContextToWire(in proto.Message) (*authorityv1.WorkContextV1, error) {
 //     to;
 //   - a workload declared by more than one principal: PermissionDenied, a
 //     composition fault no re-mint repairs.
+//
+// A credential that could not be read is never refused: the request ended
+// (Canceled), its deadline passed (DeadlineExceeded), the review could not run
+// (Unavailable), or anything else (Internal). Nothing about the caller was
+// decided, and PermissionDenied would tell it its credential proves no module.
 func credentialRefusal(err error, which string) error {
 	switch {
+	case errors.Is(err, context.Canceled), status.Code(err) == codes.Canceled:
+		return status.Errorf(codes.Canceled, "%s credential could not be read, the request ended: %v", which, err)
+	case errors.Is(err, context.DeadlineExceeded), status.Code(err) == codes.DeadlineExceeded:
+		return status.Errorf(codes.DeadlineExceeded, "%s credential could not be read in time: %v", which, err)
 	case errors.Is(err, business.ErrExecutionUnbound):
 		return status.Errorf(codes.Unavailable, "%s credential: %v", which, err)
 	case errors.Is(err, business.ErrExecutionNotBoundToken), errors.Is(err, business.ErrModuleIdentityDenied):
@@ -740,7 +753,19 @@ func credentialRefusal(err error, which string) error {
 	case errors.Is(err, business.ErrExecutionWorkloadAmbiguous):
 		return status.Errorf(codes.PermissionDenied, "%s credential refused: %v", which, err)
 	}
-	return status.Errorf(codes.PermissionDenied, "%s credential refused: %v", which, err)
+	return status.Errorf(codes.Internal, "%s credential could not be read: %v", which, err)
+}
+
+// refusedUnlessFailed is a workload-credential error as a method that refuses
+// any credential proving no module answers it: a verdict (Unauthenticated,
+// PermissionDenied) is PermissionDenied with its reason, and a credential
+// that could not be read keeps the failure's own code.
+func refusedUnlessFailed(err error) error {
+	switch status.Code(err) {
+	case codes.Canceled, codes.DeadlineExceeded, codes.Unavailable, codes.Internal:
+		return err
+	}
+	return status.Error(codes.PermissionDenied, status.Convert(err).Message())
 }
 
 // HostSessionServer serves codefly.dev/session over fixture authentication.

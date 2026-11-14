@@ -69,18 +69,22 @@ type checkRefusal struct {
 }
 
 // refusalOf reads the perimeter's Check answer, and reports whether it
-// admits the request. Only an OK status with no denied response admits it.
+// admits the request. Only an explicit OK status with no denied response
+// admits it: an answer with no status says nothing, and is a failure.
 func refusalOf(ctx context.Context, checked *authv3.CheckResponse, err error) (checkRefusal, bool) {
 	if err != nil {
 		code, httpStatus := failureStatus(failureOf(ctx, err))
 		return checkRefusal{httpStatus: httpStatus, code: code, reason: "auth check failed: " + code.String()}, false
+	}
+	if checked.GetStatus() == nil {
+		return checkRefusal{httpStatus: http.StatusInternalServerError, code: codes.Internal, reason: "auth check failed: the check gave no answer"}, false
 	}
 	code := codes.Code(checked.GetStatus().GetCode())
 	denied := checked.GetDeniedResponse()
 	switch {
 	case code == codes.OK && denied == nil:
 		return checkRefusal{}, true
-	case code == codes.OK, code == codes.PermissionDenied, code == codes.Unauthenticated:
+	case code == codes.OK, isVerdict(code):
 		httpStatus := int(denied.GetStatus().GetCode())
 		if httpStatus == 0 {
 			httpStatus = http.StatusForbidden

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
+	typev3 "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 	"github.com/stretchr/testify/require"
 	rpcstatus "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
@@ -38,6 +39,13 @@ func TestRefusalOfTellsADenialFromAFailure(t *testing.T) {
 		"unknown code":                 {checked: &authv3.CheckResponse{Status: &rpcstatus.Status{Code: int32(codes.DataLoss)}}, code: codes.Internal, httpStatus: http.StatusInternalServerError},
 		"check error":                  {err: errors.New("boom"), code: codes.Unavailable, httpStatus: http.StatusServiceUnavailable},
 		"check error, caller gone":     {ctx: cancelled, err: errors.New("boom"), code: codes.Canceled, httpStatus: 499},
+		// One definition of a verdict: a denial under any verdict code is a
+		// denial, never a failure answered 500.
+		"invalid argument verdict": {checked: &authv3.CheckResponse{Status: &rpcstatus.Status{Code: int32(codes.InvalidArgument)}, HttpResponse: &authv3.CheckResponse_DeniedResponse{DeniedResponse: &authv3.DeniedHttpResponse{Status: &typev3.HttpStatus{Code: typev3.StatusCode_BadRequest}, Body: "malformed credential"}}}, denied: true, code: codes.InvalidArgument, httpStatus: http.StatusBadRequest},
+		"not found verdict":        {checked: &authv3.CheckResponse{Status: &rpcstatus.Status{Code: int32(codes.NotFound)}}, denied: true, code: codes.NotFound, httpStatus: http.StatusForbidden},
+		// Only an explicit OK admits: an empty answer is a failure.
+		"nil answer":       {checked: nil, code: codes.Internal, httpStatus: http.StatusInternalServerError},
+		"answer no status": {checked: &authv3.CheckResponse{}, code: codes.Internal, httpStatus: http.StatusInternalServerError},
 	} {
 		t.Run(name, func(t *testing.T) {
 			ctx := tc.ctx

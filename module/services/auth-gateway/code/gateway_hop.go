@@ -255,8 +255,14 @@ func (g *Gateway) serveBrowser(w http.ResponseWriter, r *http.Request) bool {
 				// Asked, but no answer: the person's request ended, the
 				// deadline passed, or the authority did not answer. Refused,
 				// and said as what it is.
+				//
+				// The authority's message for a failure can carry internal
+				// error text or a transport address, so the person is told the
+				// module and the code, and the message is logged here.
 				code, httpStatus = failureStatus(failureOf(r.Context(), err))
-				reason = "the authority gave no answer for this person at " + module + " (" + code.String() + "): " + status.Convert(err).Message()
+				reason = "the authority gave no answer for this person at " + module + " (" + code.String() + ")"
+				log.Printf("WARN: hop: the authority gave no answer for a person at %s: code=%s reason=%q",
+					module, status.Code(err), status.Convert(err).Message())
 			}
 			hopBrowserError(w, r, httpStatus, code, reason)
 			return

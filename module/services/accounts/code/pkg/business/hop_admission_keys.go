@@ -191,7 +191,13 @@ var ErrNotTheModuleEdge = errors.New("a page is named by this host's module edge
 func (s *Service) RequireModuleEdge(ctx context.Context, credential string) error {
 	reviewed, err := s.reviewWorkloadCredential(ctx, credential)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrNotTheModuleEdge, err)
+		// A credential the review refused, or none, is not the module edge.
+		// A review that could not run decided nothing: it is returned as
+		// the failure it was, never as this refusal.
+		if errors.Is(err, ErrExecutionTokenRejected) || errors.Is(err, ErrExecutionNotBoundToken) {
+			return fmt.Errorf("%w: %v", ErrNotTheModuleEdge, err)
+		}
+		return err
 	}
 	edges := []string{s.moduleNamespaces.Namespace(HopModule) + "/" + ModuleEdgeService}
 	if s.hostModule != "" {

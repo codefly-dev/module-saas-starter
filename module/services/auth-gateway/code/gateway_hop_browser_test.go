@@ -234,7 +234,14 @@ func TestHopBrowserConnectClientKeepsAuthorityRefusal(t *testing.T) {
 			request.Header().Set("Authorization", "Bearer "+bearer)
 			_, err := client.CallUnary(context.Background(), request)
 			require.Equal(t, connect.Code(code), connect.CodeOf(err))
-			require.ErrorContains(t, err, reason)
+			if code == codes.Unavailable {
+				// A failure names the module and the code; the authority's
+				// message stays in the gateway's log.
+				require.ErrorContains(t, err, "the authority gave no answer for this person at documents (Unavailable)")
+				require.NotContains(t, err.Error(), reason)
+			} else {
+				require.ErrorContains(t, err, reason)
+			}
 			require.Zero(t, face.calls)
 		})
 	}
@@ -365,7 +372,14 @@ func TestBrowserAliasConnectClientKeepsAuthorityRefusal(t *testing.T) {
 			request.Header().Set("Authorization", "Bearer "+bearer)
 			_, err := client.CallUnary(context.Background(), request)
 			require.Equal(t, connect.Code(code), connect.CodeOf(err))
-			require.ErrorContains(t, err, reason)
+			if code == codes.Unavailable {
+				// A failure names the module and the code; the authority's
+				// message stays in the gateway's log.
+				require.ErrorContains(t, err, "the authority gave no answer for this person at documents (Unavailable)")
+				require.NotContains(t, err.Error(), reason)
+			} else {
+				require.ErrorContains(t, err, reason)
+			}
 			require.Zero(t, face.calls)
 		})
 	}
