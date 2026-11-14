@@ -31,7 +31,6 @@ import (
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
-	"google.golang.org/grpc/codes"
 )
 
 // Gateway is an HTTP reverse proxy that delegates auth decisions to a
@@ -320,36 +319,17 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Public route: call Check to get identity headers if a token is present,
 		// but don't reject if no token.
 		checkResp, err := g.authz.Check(r.Context(), buildCheckRequest(r))
-		if err != nil {
-			httpError(w, http.StatusInternalServerError, "auth check failed")
-			return
-		}
-
-		hasAuth := r.Header.Get("authorization") != ""
-
-		if denied := checkResp.GetDeniedResponse(); denied != nil {
-			if hasAuth {
-				// Caller presented a bad token — reject even on public routes.
-				code := int(denied.GetStatus().GetCode())
-				if code == 0 {
-					code = http.StatusForbidden
-				}
-				httpError(w, code, denied.GetBody())
+		if refusal, admitted := refusalOf(r.Context(), checkResp, err); !admitted {
+			// Only a denial of a request that presented no credential goes on,
+			// without identity. A presented credential the check refused is
+			// rejected even on a public route, and a check that reached no
+			// verdict forwards nothing.
+			if refusal.denied && r.Header.Get("authorization") == "" {
+				stripAllIdentityHeaders(r)
+				g.rateLimitThenProxy(w, r, upstream, entry)
 				return
 			}
-			// No token on public route — forward without identity.
-			stripAllIdentityHeaders(r)
-			g.rateLimitThenProxy(w, r, upstream, entry)
-			return
-		}
-
-		if int(checkResp.GetStatus().GetCode()) != int(codes.OK) {
-			if hasAuth {
-				httpError(w, http.StatusForbidden, "forbidden")
-				return
-			}
-			stripAllIdentityHeaders(r)
-			g.rateLimitThenProxy(w, r, upstream, entry)
+			httpError(w, refusal.httpStatus, refusal.reason)
 			return
 		}
 
@@ -360,22 +340,8 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "required":
 		// Protected route: must have valid auth.
 		checkResp, err := g.authz.Check(r.Context(), buildCheckRequest(r))
-		if err != nil {
-			httpError(w, http.StatusInternalServerError, "auth check failed")
-			return
-		}
-
-		if denied := checkResp.GetDeniedResponse(); denied != nil {
-			code := int(denied.GetStatus().GetCode())
-			if code == 0 {
-				code = http.StatusForbidden
-			}
-			httpError(w, code, denied.GetBody())
-			return
-		}
-
-		if int(checkResp.GetStatus().GetCode()) != int(codes.OK) {
-			httpError(w, http.StatusForbidden, "forbidden")
+		if refusal, admitted := refusalOf(r.Context(), checkResp, err); !admitted {
+			httpError(w, refusal.httpStatus, refusal.reason)
 			return
 		}
 
@@ -396,22 +362,8 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// For now, delegate to the same Check flow — the ext_authz check accepts
 		// mfa_token on these paths.
 		checkResp, err := g.authz.Check(r.Context(), buildCheckRequest(r))
-		if err != nil {
-			httpError(w, http.StatusInternalServerError, "auth check failed")
-			return
-		}
-
-		if denied := checkResp.GetDeniedResponse(); denied != nil {
-			code := int(denied.GetStatus().GetCode())
-			if code == 0 {
-				code = http.StatusForbidden
-			}
-			httpError(w, code, denied.GetBody())
-			return
-		}
-
-		if int(checkResp.GetStatus().GetCode()) != int(codes.OK) {
-			httpError(w, http.StatusForbidden, "forbidden")
+		if refusal, admitted := refusalOf(r.Context(), checkResp, err); !admitted {
+			httpError(w, refusal.httpStatus, refusal.reason)
 			return
 		}
 

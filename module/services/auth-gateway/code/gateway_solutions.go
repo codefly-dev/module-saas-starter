@@ -12,7 +12,6 @@ import (
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
-	"google.golang.org/grpc/codes"
 )
 
 // Solution routing reads the durable declared registry. Every authenticated
@@ -235,15 +234,7 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// identity, run ext_authz, and require a valid credential.
 	stripAllIdentityHeaders(r)
 	checkResp, err := g.authz.Check(r.Context(), buildCheckRequest(r))
-	if err != nil {
-		httpError(w, http.StatusInternalServerError, "auth check failed")
-		return true
-	}
-	if denied := checkResp.GetDeniedResponse(); denied != nil {
-		code := int(denied.GetStatus().GetCode())
-		if code == 0 {
-			code = http.StatusForbidden
-		}
+	if refusal, admitted := refusalOf(r.Context(), checkResp, err); !admitted {
 		// The discovery challenge rides on a 401 and ONLY on a 401.
 		//
 		// An MCP client discovers how to authenticate from the 401 itself: the
@@ -261,16 +252,12 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		// endpoints, adding load while a dependency is already down.
 		//
 		// Stamped here rather than before the check, so there is no state to
-		// undo on the paths that must not carry it: the 500 above, the 403
-		// below, and every served response.
-		if code == http.StatusUnauthorized {
+		// undo on the paths that must not carry it: a check that reached no
+		// verdict, a 403, and every served response.
+		if refusal.httpStatus == http.StatusUnauthorized {
 			stampResourceChallenge(w, id, g.authz.publicBase)
 		}
-		httpError(w, code, denied.GetBody())
-		return true
-	}
-	if int(checkResp.GetStatus().GetCode()) != int(codes.OK) {
-		httpError(w, http.StatusForbidden, "forbidden")
+		httpError(w, refusal.httpStatus, refusal.reason)
 		return true
 	}
 	injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
