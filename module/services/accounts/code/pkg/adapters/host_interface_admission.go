@@ -61,7 +61,7 @@ func (s *HostAuthorityServer) RegisterAdmissionKey(ctx context.Context, req *aut
 		return nil, status.Error(codes.Unavailable, err.Error())
 	case errors.Is(err, business.ErrExecutionUnbound), errors.Is(err, business.ErrExecutionNotBoundToken),
 		errors.Is(err, business.ErrExecutionTokenRejected), errors.Is(err, business.ErrModuleIdentityDenied):
-		return nil, credentialRefusal(err, "actor")
+		return nil, credentialRefusal(ctx, err, "actor", req.GetActor().GetCredential())
 	default:
 		return nil, status.Errorf(codes.Unavailable, "the admission key could not be registered: %v", err)
 	}

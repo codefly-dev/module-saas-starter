@@ -34,7 +34,7 @@ func TestCredentialRefusalTellsAFailureFromARefusal(t *testing.T) {
 		"ambiguous":         {fmt.Errorf("%w: example/api", business.ErrExecutionWorkloadAmbiguous), codes.PermissionDenied},
 	} {
 		t.Run(name, func(t *testing.T) {
-			err := credentialRefusal(tc.err, "the actor")
+			err := credentialRefusal(context.Background(), tc.err, "the actor", "")
 			require.Equal(t, tc.code, status.Code(err), "%v", err)
 			require.Contains(t, status.Convert(err).Message(), "the actor credential", "every refusal names what it is about")
 		})
@@ -53,4 +53,20 @@ func TestAnAdmissionKeyWhoseCredentialCouldNotBeReviewedIsUnavailable(t *testing
 	f.cluster.Unreachable = false
 	_, err = f.register(t, "a-credential-no-cluster-issued", public)
 	require.Equal(t, codes.PermissionDenied, status.Code(err), "a refused credential stays refused: %v", err)
+}
+
+// A credential that could not be read is answered with what failed and the
+// code, never the reviewer's own error: that can carry the API server's
+// address or a transport error, and an in-mesh caller may relay it. The error
+// goes to accounts' log instead.
+func TestACredentialReadFailureKeepsTheReviewersErrorInTheLog(t *testing.T) {
+	f := newAdmissionFixture(t)
+	f.cluster.Unreachable = true
+	logs := captureAdapterLogs(t)
+	_, public := hopPublicKey(t, "the-hop")
+	_, err := f.register(t, f.hop, public)
+	require.Equal(t, codes.Unavailable, status.Code(err), "%v", err)
+	require.Contains(t, status.Convert(err).Message(), "actor credential")
+	require.NotContains(t, status.Convert(err).Message(), "the api server did not answer", "the reviewer's error stays in accounts")
+	require.Contains(t, logs(), "the api server did not answer")
 }

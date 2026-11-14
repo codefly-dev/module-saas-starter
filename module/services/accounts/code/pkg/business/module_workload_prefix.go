@@ -21,6 +21,11 @@ func (s *Service) ModulePrefixOfWorkload(ctx context.Context, credential string)
 			if credential != "" {
 				reason = strings.ReplaceAll(reason, credential, "[redacted workload credential]")
 			}
+			// A caller ending its own request carries no operational signal.
+			if errors.Is(err, context.Canceled) {
+				wool.Get(ctx).In("ModulePrefixOfWorkload").Info("workload credential refused", wool.Field("reason", reason))
+				return
+			}
 			wool.Get(ctx).In("ModulePrefixOfWorkload").Warn("workload credential refused", wool.Field("reason", reason))
 		}
 	}()

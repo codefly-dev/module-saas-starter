@@ -818,7 +818,15 @@ jobs:
     # on a tag as a failure rather than as a scoping decision.
     if: ${{ needs.codefly-plan.outputs.has_work == 'true' || startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/module-package/v') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The test phase runs accounts' store-backed suites, the host-interface
+    # conformance suite among them: that suite alone has measured 575 s and
+    # 1004 s on two runs of the same tree, starting about 3.5 minutes into the
+    # job, and a run finished at 26 m 50 s of a 30-minute budget. 45 minutes
+    # leaves the suite its own 25-minute ceiling
+    # (host_interface_conformance_test.go), its teardown and the services
+    # after it, so a slow suite fails by name instead of the job being
+    # cancelled with no test named. The other phases keep 30.
+    timeout-minutes: ${{ matrix.phase == 'test' && 45 || 30 }}
     strategy:
       fail-fast: false
       matrix:

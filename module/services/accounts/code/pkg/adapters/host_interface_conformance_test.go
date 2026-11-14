@@ -88,9 +88,40 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 	runHostInterfaceFixture(t)
 }
 
+// conformanceDestroyBudget is how long tearing the suite's dependencies down
+// may take once the suite has stopped.
+const conformanceDestroyBudget = time.Minute
+
+// conformanceCeiling is the most the suite may run, from its own start. CI
+// measured the whole suite at 575 s and 1004 s on two runs of the same tree
+// (the same 176 cases, 432 s against 784 s of case time, the slower run
+// slower from start to end: runner speed, not a step or the packages beside
+// it), and about 300 s locally. 25 minutes is half again the slowest. In CI
+// the test starts about 3.5 minutes into the quality job, so the suite, its
+// teardown and what the job runs after it fit inside the job's 45 minutes
+// (ci.yml): a slow suite fails by name and tears down rather than the job
+// being cancelled with no test named.
+const conformanceCeiling = 25 * time.Minute
+
+// conformanceContext is the suite's context. It ends at the earlier of the
+// ceiling and the point where the test binary's own deadline (go test
+// -timeout) leaves time to tear the dependencies down, so the suite fails by
+// name rather than the binary being killed mid-cleanup. A run with no deadline
+// (-timeout 0) is held to the ceiling alone.
+func conformanceContext(t *testing.T) (context.Context, context.CancelFunc) {
+	t.Helper()
+	end := time.Now().Add(conformanceCeiling)
+	if deadline, ok := t.Deadline(); ok {
+		if teardown := deadline.Add(-(conformanceDestroyBudget + 30*time.Second)); teardown.Before(end) {
+			end = teardown
+		}
+	}
+	return context.WithDeadline(context.Background(), end)
+}
+
 func runHostInterfaceFixture(t *testing.T) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	ctx, cancel := conformanceContext(t)
 	defer cancel()
 	// The SDK starts its CLI with this context. Its lifetime must extend past
 	// service cancellation so Destroy can stop the dependencies through the CLI.
@@ -99,7 +130,7 @@ func runHostInterfaceFixture(t *testing.T) {
 	deps, err := sdk.WithDependencies(dependencyCtx, sdk.WithExcludedDependencies("cache"), sdk.WithNamingScope("host-interface-conformance"), sdk.WithTimeout(10*time.Minute), sdk.WithSilence("store"))
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), conformanceDestroyBudget)
 		defer cleanupCancel()
 		if err := deps.Destroy(cleanupCtx); err != nil {
 			t.Errorf("destroy the conformance dependencies: %v", err)
