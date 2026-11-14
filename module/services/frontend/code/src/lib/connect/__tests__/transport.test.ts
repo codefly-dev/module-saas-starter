@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	authedFetch,
 	markNarrowed,
+	narrowedSession,
 	refreshToken,
 	setNarrowedRequestRefusedHandler,
 	setRefreshHandler,
@@ -15,6 +16,25 @@ afterEach(() => {
 	setRefreshHandler(null);
 	setNarrowedRequestRefusedHandler(null);
 	vi.unstubAllGlobals();
+});
+
+// A renewal is the same narrowed session under a new bearer: the page keys what
+// it keeps per viewer by the session, so a renewal is not a change of viewer,
+// while a fresh open (even of the same team) is a session of its own.
+describe("which narrowed session a bearer belongs to", () => {
+	it("a renewal belongs to the session it renews; a fresh open and the person's own token do not", () => {
+		markNarrowed("session-a-1");
+		markNarrowed("session-a-2", "session-a-1");
+		markNarrowed("session-a-3", "session-a-2");
+		markNarrowed("session-b-1");
+		markNarrowed("session-c-1", "not-narrowed");
+		expect(narrowedSession("session-a-3")).toBe("session-a-1");
+		expect(narrowedSession("session-a-2")).toBe("session-a-1");
+		expect(narrowedSession("session-b-1")).toBe("session-b-1");
+		expect(narrowedSession("session-c-1")).toBe("session-c-1");
+		expect(narrowedSession("own-bearer")).toBe("");
+		expect(narrowedSession(null)).toBe("");
+	});
 });
 
 // A narrowed session (a role view or a team cast) has no refresh half: the

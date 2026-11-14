@@ -1116,7 +1116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			// tab, has not lapsed, and was not said to have ended meanwhile: an
 			// ended session is never brought back.
 			if (!session.bearer || !live() || endedRef.current.has(bearer) || getConnectToken() !== bearer) return;
-			markNarrowed(session.bearer);
+			markNarrowed(session.bearer, bearer);
 			// The same session, opened again: what the host said it is carries to
 			// the new bearer until the host's own reading of it lands.
 			setRead((prev) => (prev.token === bearer && !prev.failed ? { ...prev, token: session.bearer } : prev));

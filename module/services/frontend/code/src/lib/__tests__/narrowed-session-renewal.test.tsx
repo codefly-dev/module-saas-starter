@@ -9,6 +9,7 @@ import {
 import { HttpResponse, http } from "msw";
 import { useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SolutionLivePage } from "@/solutions/SolutionLivePage";
 import { server } from "@/test/setup";
 import {
 	AuthProvider,
@@ -23,6 +24,10 @@ import {
 	setRefreshHandler,
 	setToken,
 } from "../connect/token-store";
+
+vi.mock("next/navigation", () => ({
+	useRouter: () => ({ refresh: () => {} }),
+}));
 
 // A narrowed session (a team cast, a role view) is access-only and capped at a
 // few minutes, so a forgotten tab cannot keep acting as a team. Before this, a
@@ -105,6 +110,32 @@ function Page() {
 	return <span data-testid="page">{draft}</span>;
 }
 
+// A module page as the host mounts it: behind the viewer's page listing
+// (SolutionLivePage), holding the tab the person chose in its own state.
+let tabMounts = 0;
+function TabbedPage() {
+	const [tab, setTab] = useState(() => {
+		tabMounts += 1;
+		return "employees";
+	});
+	return (
+		<button type="button" data-testid="tab" onClick={() => setTab("import")}>
+			{tab}
+		</button>
+	);
+}
+const listing = () =>
+	HttpResponse.json({
+		solutions: [
+			{
+				id: "directory",
+				assetVersion: "v1",
+				nav: { title: "Directory", path: "/s/directory" },
+				available: true,
+			},
+		],
+	});
+
 // The host: the refresh cookie answers the person's own session in turn; a
 // reading names the cast or role view a narrowed bearer is; each open is
 // recorded with the bearer it was asked from, and answered with `next`, or
@@ -134,6 +165,7 @@ beforeEach(() => {
 	reading = { castTeamId: TEAM };
 	installed.length = 0;
 	mounts = 0;
+	tabMounts = 0;
 	window.addEventListener("codefly:auth-changed", recordInstalled);
 	server.use(
 		http.post("/v1/auth/refresh", () =>
@@ -236,6 +268,42 @@ describe("a narrowed session the person is using", () => {
 		expect(screen.getByTestId("authed").textContent).toBe(`yes cast:${TEAM}`);
 		expect(mounts).toBe(1);
 		expect(handles.ended).toBeNull();
+	});
+
+	// Red before: the page listing keyed its viewer by the narrowed bearer
+	// itself, so the renewed bearer read as a new viewer: the listing was
+	// dropped, the page behind it unmounted ("Loading page…"), and it mounted
+	// again on its default tab — every renewal, mid-import.
+	it("a renewed cast keeps the page behind the viewer's listing mounted, on the tab the person chose", async () => {
+		server.use(http.get("/api/solutions", listing));
+		await boot(
+			<>
+				<Probe />
+				<SolutionLivePage id="directory" assetVersion="v1">
+					<TabbedPage />
+				</SolutionLivePage>
+			</>,
+		);
+		const cast = castBearer();
+		act(() => handles.enter(cast, "team Stewards"));
+		await waitFor(() =>
+			expect(screen.getByTestId("authed").textContent).toBe(`yes cast:${TEAM}`),
+		);
+		// Entering the cast IS a change of viewer: the cast's page, read afresh.
+		const tab = await screen.findByTestId("tab");
+		fireEvent.click(tab);
+		expect(screen.getByTestId("tab").textContent).toBe("import");
+		const before = tabMounts;
+
+		const renewed = castBearer();
+		next.push(renewed);
+		input();
+		await advance(4 * MINUTE + 1000);
+		await waitFor(() => expect(getToken()).toBe(renewed));
+		await advance(0);
+		expect(screen.queryByText("Loading page…")).toBeNull();
+		expect(screen.getByTestId("tab").textContent).toBe("import");
+		expect(tabMounts).toBe(before);
 	});
 
 	it("input in the last minute opens it again then", async () => {

@@ -5,13 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // with its own token and fetch stubs.
 const tokenState = vi.hoisted(() => ({
 	token: null as string | null,
-	narrowed: new Set<string>(),
+	// Each narrowed bearer, by the session it belongs to.
+	narrowed: new Map<string, string>(),
 	fetch: vi.fn<(input: string) => Promise<Response>>(),
 }));
 
 vi.mock("@/lib/connect/token-store", () => ({
 	getToken: () => tokenState.token,
-	isNarrowed: (token: string | null) => token !== null && tokenState.narrowed.has(token),
+	narrowedSession: (token: string | null) =>
+		(token !== null && tokenState.narrowed.get(token)) || "",
 	authedFetch: (input: string) => tokenState.fetch(input),
 	subscribeToken: (listener: () => void) => {
 		window.addEventListener("codefly:auth-changed", listener);
@@ -331,7 +333,7 @@ describe("SolutionsMenu ownership (#949)", () => {
 		expect(screen.queryByText("AUDIT")).not.toBeNull();
 
 		const cast = token({ ...ALICE, jti: "cast" });
-		tokenState.narrowed.add(cast);
+		tokenState.narrowed.set(cast, cast);
 		tokenState.fetch.mockResolvedValueOnce(listing("directory"));
 		await act(async () => {
 			tokenState.token = cast;
@@ -349,6 +351,28 @@ describe("SolutionsMenu ownership (#949)", () => {
 		expect(screen.queryByText("AUDIT")).not.toBeNull();
 		expect(tokenState.fetch).toHaveBeenCalledTimes(3);
 	});
+	// Red before: the cast's own bearer was the viewer, so the renewed bearer
+	// dropped the list and every page mounted behind it remounted.
+	it("keeps the cast's list across a renewal of the same cast", async () => {
+		const cast = token({ ...ALICE, jti: "cast" });
+		tokenState.narrowed.set(cast, cast);
+		tokenState.token = cast;
+		tokenState.fetch.mockResolvedValueOnce(listing("directory"));
+		await mountMenu();
+		await settle();
+		expect(screen.queryByText("DIRECTORY")).not.toBeNull();
+
+		const renewed = token({ ...ALICE, jti: "cast-renewed" });
+		tokenState.narrowed.set(renewed, cast);
+		await act(async () => {
+			tokenState.token = renewed;
+			window.dispatchEvent(new Event("codefly:auth-changed"));
+		});
+		await settle();
+		expect(screen.queryByText("DIRECTORY")).not.toBeNull();
+		expect(tokenState.fetch).toHaveBeenCalledTimes(1);
+	});
+
 	it("publishes a generation change even when navigation and availability are unchanged", async () => {
 		vi.useFakeTimers();
 		try {

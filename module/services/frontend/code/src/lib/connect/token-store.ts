@@ -73,15 +73,32 @@ let inflightRefresh: Promise<string | null> | null = null;
  * stays here for the life of the page, so a late 401 after the person returned
  * to their own session is refused the same way.
  */
-const narrowedBearers = new Set<string>();
+// Each bearer maps to the narrowed session it belongs to: the first bearer
+// that session was opened with.
+const narrowedBearers = new Map<string, string>();
 let narrowedRequestRefusedHandler: ((bearer: string) => void) | null = null;
 
-export function markNarrowed(token: string) {
-	narrowedBearers.add(token);
+/**
+ * Records `token` as a narrowed bearer. `renews` is the narrowed bearer it
+ * replaces when the host opened the SAME session again (narrowed-renewal): the
+ * new bearer then belongs to that session, not to a new one.
+ */
+export function markNarrowed(token: string, renews?: string) {
+	narrowedBearers.set(token, (renews && narrowedBearers.get(renews)) || token);
 }
 
 export function isNarrowed(token: string | null): boolean {
 	return token !== null && narrowedBearers.has(token);
+}
+
+/**
+ * Which narrowed session `token` belongs to, stable across its renewals, or ""
+ * for a token that is not narrowed. It only says whether two bearers are one
+ * session to this page, for keying what the page keeps per viewer; it decides
+ * nothing anyone may do.
+ */
+export function narrowedSession(token: string | null): string {
+	return (token !== null && narrowedBearers.get(token)) || "";
 }
 
 /**
