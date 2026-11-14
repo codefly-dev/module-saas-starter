@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/codefly-dev/core/wool"
 	"github.com/stretchr/testify/require"
 )
 
@@ -50,3 +51,37 @@ func TestAWorkloadReviewThatCouldNotRunIsNotARejection(t *testing.T) {
 		})
 	}
 }
+
+// A caller that ended its own request is no operational signal: the refusal is
+// still logged, below WARN. Every other refusal stays a WARN.
+func TestAWorkloadReviewTheCallerEndedIsLoggedBelowWarn(t *testing.T) {
+	for name, tc := range map[string]struct {
+		reviewErr error
+		warn      bool
+	}{
+		"request ended":   {fmt.Errorf("post tokenreviews: %w", context.Canceled), false},
+		"api unreachable": {errors.New("dial tcp: connection refused"), true},
+		"review refused":  {fmt.Errorf("%w: the token has expired", ErrExecutionTokenRejected), true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var levels []wool.Loglevel
+			capture := &levelCapture{levels: &levels}
+			wool.SetFallbackLogger(capture)
+			t.Cleanup(func() { wool.SetFallbackLogger(nil) })
+			svc := reviewService()
+			svc.executionReviewer = &fakeExecutionReviewer{reviewErr: tc.reviewErr}
+			_, err := svc.ModulePrefixOfWorkload(context.Background(), "a-workload-credential")
+			require.Error(t, err)
+			require.Len(t, levels, 1)
+			if tc.warn {
+				require.Equal(t, wool.WARN, levels[0])
+			} else {
+				require.Less(t, levels[0], wool.WARN)
+			}
+		})
+	}
+}
+
+type levelCapture struct{ levels *[]wool.Loglevel }
+
+func (c *levelCapture) Process(msg *wool.Log) { *c.levels = append(*c.levels, msg.Level) }

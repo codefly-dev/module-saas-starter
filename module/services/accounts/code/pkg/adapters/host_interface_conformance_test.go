@@ -92,24 +92,31 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 // may take once the suite has stopped.
 const conformanceDestroyBudget = time.Minute
 
-// conformanceContext is the suite's context: it ends where the test binary's
-// own deadline (go test -timeout) leaves just enough time to tear the
-// dependencies down, so the suite fails by name rather than the binary being
-// killed mid-cleanup. A run with no deadline (-timeout 0) asked for none.
-//
-// The budget is the runner's, not a constant here. The suite is serial and
-// store-bound: a CI run executes this package beside three others (the Go
-// runner's -p 4) on a shared runner, where the same 142 cases measured 3.1x
-// their isolated local time (417 s against 136 s), every case alike rather
-// than one slow step. A fixed ten minutes sat below the runner's 30-minute
-// budget and ran out first.
+// conformanceCeiling is the most the suite may run, from its own start. CI
+// measured the whole suite at 575 s and 1004 s on two runs of the same tree
+// (the same 176 cases, 432 s against 784 s of case time, the slower run
+// slower from start to end: runner speed, not a step or the packages beside
+// it), and about 300 s locally. 25 minutes is half again the slowest. In CI
+// the test starts about 3.5 minutes into the quality job, so the suite, its
+// teardown and what the job runs after it fit inside the job's 45 minutes
+// (ci.yml): a slow suite fails by name and tears down rather than the job
+// being cancelled with no test named.
+const conformanceCeiling = 25 * time.Minute
+
+// conformanceContext is the suite's context. It ends at the earlier of the
+// ceiling and the point where the test binary's own deadline (go test
+// -timeout) leaves time to tear the dependencies down, so the suite fails by
+// name rather than the binary being killed mid-cleanup. A run with no deadline
+// (-timeout 0) is held to the ceiling alone.
 func conformanceContext(t *testing.T) (context.Context, context.CancelFunc) {
 	t.Helper()
-	deadline, ok := t.Deadline()
-	if !ok {
-		return context.WithCancel(context.Background())
+	end := time.Now().Add(conformanceCeiling)
+	if deadline, ok := t.Deadline(); ok {
+		if teardown := deadline.Add(-(conformanceDestroyBudget + 30*time.Second)); teardown.Before(end) {
+			end = teardown
+		}
 	}
-	return context.WithDeadline(context.Background(), deadline.Add(-(conformanceDestroyBudget + 30*time.Second)))
+	return context.WithDeadline(context.Background(), end)
 }
 
 func runHostInterfaceFixture(t *testing.T) {

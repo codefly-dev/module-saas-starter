@@ -21,14 +21,14 @@ func TestCurrentRefusesOnlyACredentialThatProvesNoModule(t *testing.T) {
 		err  error
 		code codes.Code
 	}{
-		"request ended":    {credentialRefusal(context.Background(), fmt.Errorf("%w: %w", business.ErrExecutionUnbound, context.Canceled), "the actor"), codes.Canceled},
-		"deadline passed":  {credentialRefusal(context.Background(), fmt.Errorf("%w: %w", business.ErrExecutionUnbound, context.DeadlineExceeded), "the actor"), codes.DeadlineExceeded},
-		"review unbound":   {credentialRefusal(context.Background(), fmt.Errorf("%w: the api server did not answer", business.ErrExecutionUnbound), "the actor"), codes.Unavailable},
+		"request ended":    {credentialRefusal(context.Background(), fmt.Errorf("%w: %w", business.ErrExecutionUnbound, context.Canceled), "the actor", ""), codes.Canceled},
+		"deadline passed":  {credentialRefusal(context.Background(), fmt.Errorf("%w: %w", business.ErrExecutionUnbound, context.DeadlineExceeded), "the actor", ""), codes.DeadlineExceeded},
+		"review unbound":   {credentialRefusal(context.Background(), fmt.Errorf("%w: the api server did not answer", business.ErrExecutionUnbound), "the actor", ""), codes.Unavailable},
 		"registry unread":  {status.Error(codes.Unavailable, "the module registry could not be read current"), codes.Unavailable},
-		"unknown failure":  {credentialRefusal(context.Background(), fmt.Errorf("the reviewer panicked"), "the actor"), codes.Internal},
-		"review refused":   {credentialRefusal(context.Background(), fmt.Errorf("%w: expired", business.ErrExecutionTokenRejected), "the actor"), codes.PermissionDenied},
-		"identity refused": {credentialRefusal(context.Background(), fmt.Errorf("%w: moved tenant", business.ErrModuleIdentityDenied), "the actor"), codes.PermissionDenied},
-		"no credential":    {credentialRefusal(context.Background(), fmt.Errorf("%w: none", business.ErrExecutionNotBoundToken), "the actor"), codes.PermissionDenied},
+		"unknown failure":  {credentialRefusal(context.Background(), fmt.Errorf("the reviewer panicked"), "the actor", ""), codes.Internal},
+		"review refused":   {credentialRefusal(context.Background(), fmt.Errorf("%w: expired", business.ErrExecutionTokenRejected), "the actor", ""), codes.PermissionDenied},
+		"identity refused": {credentialRefusal(context.Background(), fmt.Errorf("%w: moved tenant", business.ErrModuleIdentityDenied), "the actor", ""), codes.PermissionDenied},
+		"no credential":    {credentialRefusal(context.Background(), fmt.Errorf("%w: none", business.ErrExecutionNotBoundToken), "the actor", ""), codes.PermissionDenied},
 	} {
 		t.Run(name, func(t *testing.T) {
 			err := refusedUnlessFailed(tc.err)

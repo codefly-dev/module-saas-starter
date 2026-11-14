@@ -127,7 +127,10 @@ func workload(ctx context.Context, credential, which string) (authority.Workload
 	}
 	module, err := service.ModulePrefixOfWorkload(ctx, credential)
 	if err != nil {
-		return authority.Workload{}, credentialRefusal(ctx, err, which)
+		// ModulePrefixOfWorkload has logged the refusal, redacted; it is
+		// answered here without a second line.
+		refusal, _ := classifyCredentialError(err, which)
+		return authority.Workload{}, refusal
 	}
 	tenant, err := service.ModuleTenant(ctx, module)
 	if err != nil {
@@ -236,7 +239,7 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 				if errors.Is(err, business.ErrNotTheModuleEdge) {
 					return nil, status.Error(codes.PermissionDenied, err.Error())
 				}
-				return nil, credentialRefusal(ctx, err, "the actor")
+				return nil, credentialRefusal(ctx, err, "the actor", req.GetActor().GetCredential())
 			}
 			err = oneRead(ctx, func(ctx context.Context) (err error) { out, err = core.IssueForPage(ctx, person, page, r); return err })
 			// Through a binding it is the target's hop, recorded as a child.
@@ -739,32 +742,53 @@ func workContextToWire(in proto.Message) (*authorityv1.WorkContextV1, error) {
 // (Canceled), its deadline passed (DeadlineExceeded), the review could not run
 // (Unavailable), or anything else (Internal). Nothing about the caller was
 // decided, and PermissionDenied would tell it its credential proves no module.
-func credentialRefusal(ctx context.Context, err error, which string) error {
-	switch {
-	case errors.Is(err, context.Canceled), status.Code(err) == codes.Canceled:
-		return credentialReadFailed(ctx, err, which, codes.Canceled, "%s credential could not be read: the request ended")
-	case errors.Is(err, context.DeadlineExceeded), status.Code(err) == codes.DeadlineExceeded:
-		return credentialReadFailed(ctx, err, which, codes.DeadlineExceeded, "%s credential could not be read in time")
-	case errors.Is(err, business.ErrExecutionUnbound):
-		return credentialReadFailed(ctx, err, which, codes.Unavailable, "%s credential could not be reviewed: the review could not run")
-	case errors.Is(err, business.ErrExecutionNotBoundToken), errors.Is(err, business.ErrModuleIdentityDenied):
-		return status.Errorf(codes.Unauthenticated, "%s credential refused: %v", which, err)
-	case errors.Is(err, business.ErrExecutionTokenRejected):
-		return status.Errorf(codes.PermissionDenied, "%s credential refused: %v", which, business.ErrExecutionTokenRejected)
-	case errors.Is(err, business.ErrExecutionWorkloadAmbiguous):
-		return status.Errorf(codes.PermissionDenied, "%s credential refused: %v", which, err)
+func credentialRefusal(ctx context.Context, err error, which, credential string) error {
+	refusal, failed := classifyCredentialError(err, which)
+	if failed {
+		logCredentialReadFailure(ctx, err, which, credential, status.Code(refusal))
 	}
-	return credentialReadFailed(ctx, err, which, codes.Internal, "%s credential could not be read")
+	return refusal
 }
 
-// credentialReadFailed answers a credential that could not be read with what
-// failed and the code. The reviewer's own error can carry the API server's
-// address or a transport error, and an in-mesh caller may relay what it is
-// told, so the error goes to accounts' log and never to the caller.
-func credentialReadFailed(ctx context.Context, err error, which string, code codes.Code, reason string) error {
-	wool.Get(ctx).In("credentialRefusal").Warn("a workload credential could not be read",
-		wool.Field("credential", which), wool.Field("code", code.String()), wool.ErrField(err))
-	return status.Errorf(code, reason, which)
+// classifyCredentialError is credentialRefusal's answer without its log line,
+// and whether the credential could not be read (a failure, not a verdict). A
+// failure is answered with what failed and the code: the reviewer's own error
+// can carry the API server's address or a transport error, and an in-mesh
+// caller may relay what it is told.
+func classifyCredentialError(err error, which string) (error, bool) {
+	switch {
+	case errors.Is(err, context.Canceled), status.Code(err) == codes.Canceled:
+		return status.Errorf(codes.Canceled, "%s credential could not be read: the request ended", which), true
+	case errors.Is(err, context.DeadlineExceeded), status.Code(err) == codes.DeadlineExceeded:
+		return status.Errorf(codes.DeadlineExceeded, "%s credential could not be read in time", which), true
+	case errors.Is(err, business.ErrExecutionUnbound):
+		return status.Errorf(codes.Unavailable, "%s credential could not be reviewed: the review could not run", which), true
+	case errors.Is(err, business.ErrExecutionNotBoundToken), errors.Is(err, business.ErrModuleIdentityDenied):
+		return status.Errorf(codes.Unauthenticated, "%s credential refused: %v", which, err), false
+	case errors.Is(err, business.ErrExecutionTokenRejected):
+		return status.Errorf(codes.PermissionDenied, "%s credential refused: %v", which, business.ErrExecutionTokenRejected), false
+	case errors.Is(err, business.ErrExecutionWorkloadAmbiguous):
+		return status.Errorf(codes.PermissionDenied, "%s credential refused: %v", which, err), false
+	}
+	return status.Errorf(codes.Internal, "%s credential could not be read", which), true
+}
+
+// logCredentialReadFailure logs the reviewer's error for a credential that
+// could not be read, with the credential redacted as ModulePrefixOfWorkload
+// redacts it. A caller ending its own request carries no operational signal,
+// so it is logged below WARN.
+func logCredentialReadFailure(ctx context.Context, err error, which, credential string, code codes.Code) {
+	reason := err.Error()
+	if credential != "" {
+		reason = strings.ReplaceAll(reason, credential, "[redacted workload credential]")
+	}
+	log := wool.Get(ctx).In("credentialRefusal")
+	fields := []*wool.LogField{wool.Field("credential", which), wool.Field("code", code.String()), wool.Field("reason", reason)}
+	if code == codes.Canceled {
+		log.Info("a workload credential could not be read", fields...)
+		return
+	}
+	log.Warn("a workload credential could not be read", fields...)
 }
 
 // refusedUnlessFailed is a workload-credential error as a method that refuses

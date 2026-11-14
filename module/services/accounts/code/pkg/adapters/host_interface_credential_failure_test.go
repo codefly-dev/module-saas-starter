@@ -34,7 +34,7 @@ func TestCredentialRefusalTellsAFailureFromARefusal(t *testing.T) {
 		"ambiguous":         {fmt.Errorf("%w: example/api", business.ErrExecutionWorkloadAmbiguous), codes.PermissionDenied},
 	} {
 		t.Run(name, func(t *testing.T) {
-			err := credentialRefusal(context.Background(), tc.err, "the actor")
+			err := credentialRefusal(context.Background(), tc.err, "the actor", "")
 			require.Equal(t, tc.code, status.Code(err), "%v", err)
 			require.Contains(t, status.Convert(err).Message(), "the actor credential", "every refusal names what it is about")
 		})
