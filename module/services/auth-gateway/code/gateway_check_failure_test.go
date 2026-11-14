@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -112,24 +115,29 @@ func TestHopBrowserCallADeniedCheckStaysADenial(t *testing.T) {
 }
 
 // The authority's Issue of the person's Work Context, asked and not answered,
-// is not the authority refusing the person.
+// is not the authority refusing the person. A verdict keeps the authority's
+// reason; a failure names only the module and the code, because the
+// authority's message for a failure can carry internal error text or a
+// transport address. That message goes to the gateway's log instead.
 func TestHopBrowserCallTheAuthorityNotAnsweringIsNotARefusal(t *testing.T) {
+	const message = "dial tcp 10.0.0.7:9090: connection refused"
 	for _, tc := range []struct {
 		refusal    codes.Code
 		code       connect.Code
 		httpStatus int
 		reason     string
 	}{
-		{codes.PermissionDenied, connect.CodePermissionDenied, http.StatusForbidden, "the authority refused this person at documents: "},
-		{codes.Canceled, connect.CodeCanceled, 499, "the authority gave no answer for this person at documents (Canceled): "},
-		{codes.DeadlineExceeded, connect.CodeDeadlineExceeded, http.StatusServiceUnavailable, "the authority gave no answer for this person at documents (DeadlineExceeded): "},
-		{codes.Unavailable, connect.CodeUnavailable, http.StatusServiceUnavailable, "the authority gave no answer for this person at documents (Unavailable): "},
-		{codes.Internal, connect.CodeInternal, http.StatusInternalServerError, "the authority gave no answer for this person at documents (Internal): "},
+		{codes.PermissionDenied, connect.CodePermissionDenied, http.StatusForbidden, "the authority refused this person at documents: " + message},
+		{codes.Canceled, connect.CodeCanceled, 499, "the authority gave no answer for this person at documents (Canceled)"},
+		{codes.DeadlineExceeded, connect.CodeDeadlineExceeded, http.StatusServiceUnavailable, "the authority gave no answer for this person at documents (DeadlineExceeded)"},
+		{codes.Unavailable, connect.CodeUnavailable, http.StatusServiceUnavailable, "the authority gave no answer for this person at documents (Unavailable)"},
+		{codes.Internal, connect.CodeInternal, http.StatusInternalServerError, "the authority gave no answer for this person at documents (Internal)"},
 	} {
-		const message = "the reason the authority gave"
+		leaks := tc.refusal != codes.PermissionDenied
 		t.Run(tc.refusal.String()+"/connect", func(t *testing.T) {
 			gw, issuer, face, bearer := hopBrowserHarness(t)
 			issuer.refuse = status.Error(tc.refusal, message)
+			logs := captureGatewayLog(t)
 			server := httptest.NewServer(gw)
 			defer server.Close()
 			client := connect.NewClient[emptypb.Empty, emptypb.Empty](server.Client(), server.URL+listCollection)
@@ -137,7 +145,11 @@ func TestHopBrowserCallTheAuthorityNotAnsweringIsNotARefusal(t *testing.T) {
 			request.Header().Set("Authorization", "Bearer "+bearer)
 			_, err := client.CallUnary(context.Background(), request)
 			require.Equal(t, tc.code, connect.CodeOf(err), "%v", err)
-			require.ErrorContains(t, err, tc.reason+message)
+			require.ErrorContains(t, err, tc.reason)
+			if leaks {
+				require.NotContains(t, err.Error(), "10.0.0.7", "a failure's raw message stays on the server")
+				require.Contains(t, logs(), message, "the gateway logs what the authority said")
+			}
 			require.Zero(t, face.calls)
 		})
 		t.Run(tc.refusal.String()+"/rest", func(t *testing.T) {
@@ -148,10 +160,40 @@ func TestHopBrowserCallTheAuthorityNotAnsweringIsNotARefusal(t *testing.T) {
 			w := httptest.NewRecorder()
 			gw.ServeHTTP(w, req)
 			require.Equal(t, tc.httpStatus, w.Code, w.Body.String())
-			require.Contains(t, w.Body.String(), tc.reason+message)
+			require.Contains(t, w.Body.String(), tc.reason)
+			if leaks {
+				require.NotContains(t, w.Body.String(), "10.0.0.7")
+			}
 			require.Zero(t, face.calls)
 		})
 	}
+}
+
+// captureGatewayLog collects what the gateway logs for the rest of the test.
+func captureGatewayLog(t *testing.T) func() string {
+	t.Helper()
+	var buf safeBuffer
+	previous := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(previous) })
+	return buf.String
+}
+
+type safeBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *safeBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *safeBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 // The catalog's own routes answer the same way, and forward nothing.

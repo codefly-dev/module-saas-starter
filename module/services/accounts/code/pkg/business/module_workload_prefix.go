@@ -2,6 +2,7 @@ package business
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -48,7 +49,14 @@ func (s *Service) reviewWorkloadCredential(ctx context.Context, credential strin
 	}
 	reviewed, err := s.executionReviewer.ReviewToken(ctx, credential, executionTokenAudience)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrExecutionTokenRejected, err)
+		// The review RAN and refused the token: a verdict on the caller, as
+		// the reviewer marked it. Anything else is a review that could not
+		// run (the request ended, the API server did not answer), which
+		// decided nothing about the caller, the rule BindExecution applies.
+		if errors.Is(err, ErrExecutionTokenRejected) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%w: %w", ErrExecutionUnbound, err)
 	}
 	if reviewed == nil {
 		return nil, fmt.Errorf("%w: execution reviewer returned no workload identity", ErrExecutionUnbound)
