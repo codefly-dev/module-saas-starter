@@ -6,7 +6,7 @@ import { decodeJWTPayload } from "@/lib/auth-session";
 import {
 	authedFetch,
 	getToken,
-	isNarrowed,
+	narrowedSession,
 	subscribeToken,
 } from "@/lib/connect/token-store";
 import {
@@ -61,7 +61,9 @@ let snapshotViewer: string | null = null;
  * view or a team cast), that session itself: the server answers a cast the
  * team's pages and none of the person's own, so the list is the cast's, not the
  * person's, and entering or leaving one is a change of viewer. A routine
- * refresh of the person's own session is not narrowed and changes nothing.
+ * refresh of the person's own session is not narrowed and changes nothing, and
+ * neither does the renewal of a narrowed one (the same session, opened again
+ * under a new bearer): a page mounted behind this list stays mounted.
  *
  * This reads the token's claims without verifying them, which is deliberate and
  * safe HERE: the answer only decides whether to throw away a client-side copy of a
@@ -80,7 +82,7 @@ function currentViewer(): string | null {
 				? claims.sub
 				: "";
 	const org = typeof claims.org === "string" ? claims.org : "";
-	const narrowed = isNarrowed(token) ? token : "";
+	const narrowed = narrowedSession(token);
 	return `${subject}\u0000${org}\u0000${narrowed}`;
 }
 
