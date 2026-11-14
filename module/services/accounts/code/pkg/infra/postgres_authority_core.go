@@ -82,8 +82,10 @@ func (c AuthorityCoreStore) Read(ctx context.Context, fn func(authority.Tx) erro
 // requires.
 func (c AuthorityCoreStore) Write(ctx context.Context, fn func(authority.Tx) error) error {
 	if snap := snapshotOf(ctx, c.s); snap != nil {
-		// Whatever the question reads after its own write is read fresh.
-		defer snap.ended.Store(true)
+		// Whatever the question reads from the moment it writes is read
+		// fresh: set before the write, so no read while it commits, or after
+		// it, is answered from the state before it.
+		snap.ended.Store(true)
 	}
 	recordControlPlane(ctx)
 	var err error

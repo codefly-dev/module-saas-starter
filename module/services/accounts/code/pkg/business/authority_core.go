@@ -145,6 +145,15 @@ func (s *Service) completeAuthorityCoreBoot(ctx context.Context) error {
 	return nil
 }
 
+// AuthorityCoreBootPending is whether the core's boot reconciliation still
+// waits for a reconcile pass to run it (completeAuthorityCoreBoot).
+func (s *Service) AuthorityCoreBootPending() bool {
+	state := s.authorityCoreState()
+	state.mu.RLock()
+	defer state.mu.RUnlock()
+	return state.bootPending
+}
+
 // KeepAuthorityCoreCurrent is what boot and every delivery pass run once the
 // applied deliveries are composed: every declaration a live consent approved
 // that the store does not keep yet is written where it can be rebuilt and is

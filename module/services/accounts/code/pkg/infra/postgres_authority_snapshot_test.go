@@ -219,13 +219,11 @@ func TestARevocationCommittedBeforeAQuestionIsWhatItReads(t *testing.T) {
 // that starts after it, even while the first is still open.
 func TestAnOpenSnapshotIsNotSharedWithTheNextQuestion(t *testing.T) {
 	sc := newSnapshotScenario(t)
-	opened, revoked := make(chan struct{}), make(chan struct{})
-	var inside error
-	var wg sync.WaitGroup
-	wg.Add(1)
+	opened, revoked, finished := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var inside, outer error
 	go func() {
-		defer wg.Done()
-		_ = testStore.WithAuthoritySnapshot(testCtx, func(ctx context.Context) error {
+		defer close(finished)
+		outer = testStore.WithAuthoritySnapshot(testCtx, func(ctx context.Context) error {
 			_, inside = sc.list(ctx)
 			close(opened)
 			<-revoked
@@ -234,8 +232,14 @@ func TestAnOpenSnapshotIsNotSharedWithTheNextQuestion(t *testing.T) {
 	}()
 	// Released however the test ends, so a failed assertion never leaves the
 	// first question holding its connection.
-	defer func() { close(revoked); wg.Wait() }()
-	<-opened
+	defer func() { close(revoked); <-finished }()
+	// A first question that fails before it is open never closes opened: it
+	// ends the test with its reason rather than hanging it.
+	select {
+	case <-opened:
+	case <-finished:
+		t.Fatalf("the first question never opened its snapshot: %v", outer)
+	}
 	require.NoError(t, inside)
 	require.NoError(t, testStore.AuthorityCore().Write(testCtx, func(tx authority.Tx) error { return tx.BumpAuthorizationRevision(sc.org) }))
 	err := testStore.WithAuthoritySnapshot(testCtx, func(ctx context.Context) error { _, err := sc.list(ctx); return err })
@@ -255,10 +259,49 @@ func TestAWriteInsideASnapshotIsReadBack(t *testing.T) {
 	}
 	require.NoError(t, testStore.WithAuthoritySnapshot(testCtx, func(ctx context.Context) error {
 		before := read(ctx)
-		require.NoError(t, testStore.AuthorityCore().Write(ctx, func(tx authority.Tx) error { return tx.BumpAuthorizationRevision(sc.org) }))
+		servedWhileWriting := true
+		require.NoError(t, testStore.AuthorityCore().Write(ctx, func(tx authority.Tx) error {
+			servedWhileWriting = infra.AuthoritySnapshotServes(ctx, testStore)
+			return tx.BumpAuthorizationRevision(sc.org)
+		}))
+		require.False(t, servedWhileWriting, "the snapshot ends when the write starts, not when it returns")
 		require.Greater(t, read(ctx), before)
 		return nil
 	}))
+}
+
+// A failed statement aborts the snapshot's transaction. The question is
+// refused for the read that failed, never for the abort a later statement
+// meets, and a later Read reads fresh, as it did source by source.
+func TestAFailedReadIsTheReasonItsQuestionGives(t *testing.T) {
+	sc := newSnapshotScenario(t)
+	require.NoError(t, testStore.WithAuthoritySnapshot(testCtx, func(ctx context.Context) error {
+		open, err := infra.AuthoritySnapshotQuery(ctx, "SELECT 1/0")
+		require.True(t, open)
+		require.ErrorContains(t, err, "division by zero")
+		// A statement still asked on the aborted transaction names that read.
+		_, err = infra.AuthoritySnapshotQuery(ctx, "SELECT 1")
+		require.ErrorContains(t, err, "division by zero")
+		require.NotContains(t, err.Error(), "current transaction is aborted")
+		// A later Read of the question is answered as it was read source by source.
+		require.False(t, infra.AuthoritySnapshotServes(ctx, testStore))
+		granted, err := sc.list(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, granted)
+		return nil
+	}))
+}
+
+// The pools are taken snapshot first, control plane second: a snapshot asked
+// for by a caller already holding a control-plane transaction is refused
+// rather than waited for while that connection is held.
+func TestASnapshotIsNotOpenedUnderAControlPlaneTransaction(t *testing.T) {
+	ran := false
+	err := testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		return testStore.WithAuthoritySnapshot(ctx, func(context.Context) error { ran = true; return nil })
+	})
+	require.ErrorContains(t, err, "holding a control-plane transaction")
+	require.False(t, ran)
 }
 
 // A burst of questions from one caller, as a directory import fans out: each

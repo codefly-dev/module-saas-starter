@@ -28,6 +28,7 @@ const auth = vi.hoisted(() => ({
 		reason: "expired" | "reloaded";
 		as: string;
 	} | null,
+	narrowedSessionEnding: null as { as: string; endsAt: number } | null,
 	dismissNarrowedSessionEnd: vi.fn(),
 }));
 const router = vi.hoisted(() => ({ push: vi.fn() }));
@@ -63,6 +64,7 @@ beforeEach(() => {
 	auth.dismissNarrowedSessionEnd.mockClear();
 	router.push.mockClear();
 	auth.narrowedSessionEnd = null;
+	auth.narrowedSessionEnding = null;
 	auth.sessionRead = "confirmed";
 	auth.orgRole = undefined;
 	sessionStorage.clear();
@@ -259,6 +261,36 @@ describe("the notice that a narrowed session ended or is unconfirmed", () => {
 		);
 		expect(auth.exitRoleView).toHaveBeenCalledTimes(1);
 		expect(auth.dismissNarrowedSessionEnd).not.toHaveBeenCalled();
+	});
+
+	it("a cast the host refused to reopen is said before it ends, with when, and the way back to your own session", async () => {
+		const endsAt = new Date(2026, 10, 14, 15, 42).getTime();
+		auth.narrowedSessionEnding = { as: "team Stewards", endsAt };
+		current = { castTeamId: "team-stewards" };
+		renderInApp(<RoleViewBanner />);
+		const bar = await screen.findByRole("status");
+		const at = new Date(endsAt).toLocaleTimeString([], {
+			hour: "2-digit",
+			minute: "2-digit",
+		});
+		expect(bar.textContent).toContain(
+			`Your session acting as team Stewards will end at ${at}`,
+		);
+		expect(bar.textContent).toContain("it could not be renewed");
+		fireEvent.click(
+			screen.getByRole("button", { name: "Return to my own session" }),
+		);
+		expect(auth.exitRoleView).toHaveBeenCalledTimes(1);
+	});
+
+	it("an end already said outranks the notice that it would end", async () => {
+		auth.narrowedSessionEnd = { reason: "expired", as: "team Stewards" };
+		auth.narrowedSessionEnding = { as: "team Stewards", endsAt: Date.now() };
+		renderInApp(<RoleViewBanner />);
+		expect((await screen.findByRole("alert")).textContent).toContain(
+			"has ended",
+		);
+		expect(screen.queryByRole("status")).toBeNull();
 	});
 
 	it("a cast a reload ended is said by name, with the person told they are themselves again", async () => {
