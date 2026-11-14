@@ -25,6 +25,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	"github.com/codefly-dev/core/wool"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -126,7 +127,7 @@ func workload(ctx context.Context, credential, which string) (authority.Workload
 	}
 	module, err := service.ModulePrefixOfWorkload(ctx, credential)
 	if err != nil {
-		return authority.Workload{}, credentialRefusal(err, which)
+		return authority.Workload{}, credentialRefusal(ctx, err, which)
 	}
 	tenant, err := service.ModuleTenant(ctx, module)
 	if err != nil {
@@ -235,7 +236,7 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 				if errors.Is(err, business.ErrNotTheModuleEdge) {
 					return nil, status.Error(codes.PermissionDenied, err.Error())
 				}
-				return nil, credentialRefusal(err, "the actor")
+				return nil, credentialRefusal(ctx, err, "the actor")
 			}
 			err = oneRead(ctx, func(ctx context.Context) (err error) { out, err = core.IssueForPage(ctx, person, page, r); return err })
 			// Through a binding it is the target's hop, recorded as a child.
@@ -738,14 +739,14 @@ func workContextToWire(in proto.Message) (*authorityv1.WorkContextV1, error) {
 // (Canceled), its deadline passed (DeadlineExceeded), the review could not run
 // (Unavailable), or anything else (Internal). Nothing about the caller was
 // decided, and PermissionDenied would tell it its credential proves no module.
-func credentialRefusal(err error, which string) error {
+func credentialRefusal(ctx context.Context, err error, which string) error {
 	switch {
 	case errors.Is(err, context.Canceled), status.Code(err) == codes.Canceled:
-		return status.Errorf(codes.Canceled, "%s credential could not be read, the request ended: %v", which, err)
+		return credentialReadFailed(ctx, err, which, codes.Canceled, "%s credential could not be read: the request ended")
 	case errors.Is(err, context.DeadlineExceeded), status.Code(err) == codes.DeadlineExceeded:
-		return status.Errorf(codes.DeadlineExceeded, "%s credential could not be read in time: %v", which, err)
+		return credentialReadFailed(ctx, err, which, codes.DeadlineExceeded, "%s credential could not be read in time")
 	case errors.Is(err, business.ErrExecutionUnbound):
-		return status.Errorf(codes.Unavailable, "%s credential: %v", which, err)
+		return credentialReadFailed(ctx, err, which, codes.Unavailable, "%s credential could not be reviewed: the review could not run")
 	case errors.Is(err, business.ErrExecutionNotBoundToken), errors.Is(err, business.ErrModuleIdentityDenied):
 		return status.Errorf(codes.Unauthenticated, "%s credential refused: %v", which, err)
 	case errors.Is(err, business.ErrExecutionTokenRejected):
@@ -753,7 +754,17 @@ func credentialRefusal(err error, which string) error {
 	case errors.Is(err, business.ErrExecutionWorkloadAmbiguous):
 		return status.Errorf(codes.PermissionDenied, "%s credential refused: %v", which, err)
 	}
-	return status.Errorf(codes.Internal, "%s credential could not be read: %v", which, err)
+	return credentialReadFailed(ctx, err, which, codes.Internal, "%s credential could not be read")
+}
+
+// credentialReadFailed answers a credential that could not be read with what
+// failed and the code. The reviewer's own error can carry the API server's
+// address or a transport error, and an in-mesh caller may relay what it is
+// told, so the error goes to accounts' log and never to the caller.
+func credentialReadFailed(ctx context.Context, err error, which string, code codes.Code, reason string) error {
+	wool.Get(ctx).In("credentialRefusal").Warn("a workload credential could not be read",
+		wool.Field("credential", which), wool.Field("code", code.String()), wool.ErrField(err))
+	return status.Errorf(code, reason, which)
 }
 
 // refusedUnlessFailed is a workload-credential error as a method that refuses

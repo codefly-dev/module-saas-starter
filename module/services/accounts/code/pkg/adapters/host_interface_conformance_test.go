@@ -88,9 +88,33 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 	runHostInterfaceFixture(t)
 }
 
+// conformanceDestroyBudget is how long tearing the suite's dependencies down
+// may take once the suite has stopped.
+const conformanceDestroyBudget = time.Minute
+
+// conformanceContext is the suite's context: it ends where the test binary's
+// own deadline (go test -timeout) leaves just enough time to tear the
+// dependencies down, so the suite fails by name rather than the binary being
+// killed mid-cleanup. A run with no deadline (-timeout 0) asked for none.
+//
+// The budget is the runner's, not a constant here. The suite is serial and
+// store-bound: a CI run executes this package beside three others (the Go
+// runner's -p 4) on a shared runner, where the same 142 cases measured 3.1x
+// their isolated local time (417 s against 136 s), every case alike rather
+// than one slow step. A fixed ten minutes sat below the runner's 30-minute
+// budget and ran out first.
+func conformanceContext(t *testing.T) (context.Context, context.CancelFunc) {
+	t.Helper()
+	deadline, ok := t.Deadline()
+	if !ok {
+		return context.WithCancel(context.Background())
+	}
+	return context.WithDeadline(context.Background(), deadline.Add(-(conformanceDestroyBudget + 30*time.Second)))
+}
+
 func runHostInterfaceFixture(t *testing.T) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	ctx, cancel := conformanceContext(t)
 	defer cancel()
 	// The SDK starts its CLI with this context. Its lifetime must extend past
 	// service cancellation so Destroy can stop the dependencies through the CLI.
@@ -99,7 +123,7 @@ func runHostInterfaceFixture(t *testing.T) {
 	deps, err := sdk.WithDependencies(dependencyCtx, sdk.WithExcludedDependencies("cache"), sdk.WithNamingScope("host-interface-conformance"), sdk.WithTimeout(10*time.Minute), sdk.WithSilence("store"))
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), conformanceDestroyBudget)
 		defer cleanupCancel()
 		if err := deps.Destroy(cleanupCtx); err != nil {
 			t.Errorf("destroy the conformance dependencies: %v", err)
