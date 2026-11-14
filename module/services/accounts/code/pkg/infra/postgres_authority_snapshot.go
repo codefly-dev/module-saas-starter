@@ -39,7 +39,23 @@ package infra
 // a single-use capability is consumed on a control-plane transaction while
 // the question's snapshot is still open — so the order is always snapshot
 // first, control plane second, and nothing that holds a control-plane
-// connection opens a snapshot.
+// connection opens a snapshot: WithAuthoritySnapshot refuses a context that
+// carries a control-plane transaction (errSnapshotUnderControlPlane).
+//
+// A statement that fails aborts the transaction, and Postgres answers every
+// later one "current transaction is aborted". Read source by source, each
+// later read opened its own transaction and gave its own answer; inside one
+// snapshot they would all fail with that abort, and the question would be
+// refused for a read that never ran. So a failure ends the snapshot as a write
+// does: a later Read of the question reads fresh, and a statement still asked
+// on the aborted transaction is not sent and answers with the failure that
+// aborted it.
+//
+// It never ends in an allow. A source may set a failed statement aside and
+// decide without it; read source by source, that Read's own COMMIT then failed
+// and refused it. So the Read a statement failed in returns that failure
+// whatever its callback made of it, and a question whose snapshot saw a
+// failure is never answered nil: it is refused, naming the read that failed.
 
 import (
 	"bytes"
@@ -55,14 +71,21 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"accounts/pkg/infra/internal/txbind"
 	"accounts/pkg/infra/storetx"
 )
 
 type authoritySnapshotKey struct{}
 
-// authoritySnapshot is one question's transaction. ended is set by a write
-// made inside the question: what is read after it is read fresh, never the
-// state from before the question's own write.
+// errSnapshotUnderControlPlane refuses a snapshot opened by a caller already
+// holding a control-plane connection: waiting on the snapshot pool while
+// holding one is the wait that lets a burst exhaust both pools against each
+// other (see the file comment).
+var errSnapshotUnderControlPlane = errors.New("authority snapshot: opened while holding a control-plane transaction; a question takes its snapshot first and the control plane second")
+
+// authoritySnapshot is one question's transaction. ended is set when a write
+// inside the question starts: what is read from then on is read fresh, never
+// the state from before the question's own write.
 type authoritySnapshot struct {
 	store *PostgresStore
 	ctx   context.Context
@@ -80,24 +103,42 @@ func (s *PostgresStore) WithAuthoritySnapshot(ctx context.Context, fn func(conte
 	if snap, ok := ctx.Value(authoritySnapshotKey{}).(*authoritySnapshot); ok && snap.store == s {
 		return fn(ctx)
 	}
+	if held, ok := txbind.Lookup(ctx); ok && held.Pool == txbind.ControlPlane {
+		return errSnapshotUnderControlPlane
+	}
 	if s.authorityRead == nil {
 		return fn(ctx)
 	}
 	recordControlPlane(ctx)
-	return withControlPlaneTxOn(ctx, s.authorityRead, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(txCtx context.Context) error {
+	var answer error
+	var reads *snapshotReads
+	err := withControlPlaneTxOn(ctx, s.authorityRead, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(txCtx context.Context) error {
 		// txCtx carries the transaction for the core's Read alone; fn runs
 		// under ctx, so nothing else the question does joins a read-only
 		// transaction.
 		tx := storetx.Tx(txCtx)
-		reads := &snapshotReads{q: tx, typeMap: tx.Conn().TypeMap(), results: map[string]*snapshotResult{}}
-		return fn(context.WithValue(ctx, authoritySnapshotKey{}, &authoritySnapshot{store: s, ctx: txCtx, reads: reads}))
+		reads = &snapshotReads{q: tx, typeMap: tx.Conn().TypeMap(), results: map[string]*snapshotResult{}}
+		answer = fn(context.WithValue(ctx, authoritySnapshotKey{}, &authoritySnapshot{store: s, ctx: txCtx, reads: reads}))
+		return answer
 	})
+	if answer != nil {
+		// The question's own refusal names its reason.
+		return answer
+	}
+	if reads != nil {
+		if failed := reads.failure(); failed != nil {
+			// Answered nil over a failed statement: refused, by the read that
+			// failed rather than by the rollback its commit reports.
+			return fmt.Errorf("authority snapshot: a read of this question failed: %w", failed)
+		}
+	}
+	return err
 }
 
 // snapshotOf is the open snapshot of store s that ctx carries, if any.
 func snapshotOf(ctx context.Context, s *PostgresStore) *authoritySnapshot {
 	snap, ok := ctx.Value(authoritySnapshotKey{}).(*authoritySnapshot)
-	if !ok || snap.store != s || snap.ended.Load() {
+	if !ok || snap.store != s || snap.ended.Load() || snap.reads.failure() != nil {
 		return nil
 	}
 	return snap
@@ -106,7 +147,8 @@ func snapshotOf(ctx context.Context, s *PostgresStore) *authoritySnapshot {
 // snapshotReads is a snapshot's query executor: each distinct query, with its
 // arguments, is sent once and its rows replayed after that. Only a query whose
 // every argument has a key (snapshotKey) is replayed; any other is sent every
-// time. A failed query is never kept.
+// time. A failed query is never kept, and the first failure is kept instead:
+// the transaction is aborted, so nothing more is sent on it.
 type snapshotReads struct {
 	q       QueryExecutor
 	typeMap *pgtype.Map
@@ -115,6 +157,34 @@ type snapshotReads struct {
 	// sent and replayed count the statements this snapshot sent to the
 	// database and the ones it answered from a kept result.
 	sent, replayed int
+	// failed is the first statement that failed: it aborted the transaction.
+	failed error
+}
+
+func (r *snapshotReads) failure() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.failed
+}
+
+// fail records err as the failure that aborted the transaction, unless one
+// already did, and returns it.
+func (r *snapshotReads) fail(err error) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.failed == nil {
+		r.failed = err
+	}
+	return err
+}
+
+// aborted answers a statement asked after the transaction was aborted, without
+// sending it: with the failure that aborted it, which is the read that failed.
+func (r *snapshotReads) aborted() error {
+	if failed := r.failure(); failed != nil {
+		return fmt.Errorf("authority snapshot: not sent, an earlier read of this question failed: %w", failed)
+	}
+	return nil
 }
 
 type snapshotResult struct {
@@ -125,7 +195,14 @@ type snapshotResult struct {
 
 // Exec is sent as it is: the transaction is read only, so a write fails there.
 func (r *snapshotReads) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-	return r.q.Exec(ctx, sql, args...)
+	if err := r.aborted(); err != nil {
+		return pgconn.CommandTag{}, err
+	}
+	tag, err := r.q.Exec(ctx, sql, args...)
+	if err != nil {
+		return tag, r.fail(err)
+	}
+	return tag, nil
 }
 
 func (r *snapshotReads) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
@@ -141,16 +218,19 @@ func (r *snapshotReads) Query(ctx context.Context, sql string, args ...any) (pgx
 			return &replayedRows{result: kept, typeMap: r.typeMap}, nil
 		}
 	}
+	if err := r.aborted(); err != nil {
+		return nil, err
+	}
 	r.mu.Lock()
 	r.sent++
 	r.mu.Unlock()
 	rows, err := r.q.Query(ctx, sql, args...)
 	if err != nil {
-		return nil, err
+		return nil, r.fail(err)
 	}
 	result, err := readResult(rows)
 	if err != nil {
-		return nil, err
+		return nil, r.fail(err)
 	}
 	if keyed {
 		r.mu.Lock()

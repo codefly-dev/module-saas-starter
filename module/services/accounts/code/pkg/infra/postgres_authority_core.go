@@ -69,7 +69,13 @@ func (s *PostgresStore) AuthorityCoreWithConsent(consent business.ModuleConsent)
 // carries one (WithAuthoritySnapshot), else a transaction of its own.
 func (c AuthorityCoreStore) Read(ctx context.Context, fn func(authority.Tx) error) error {
 	if snap := snapshotOf(ctx, c.s); snap != nil {
-		return fn(coreTx{ctx: snap.ctx, q: snap.reads, consent: c.consent, hostSolutions: c.hostSolutions})
+		if err := fn(coreTx{ctx: snap.ctx, q: snap.reads, consent: c.consent, hostSolutions: c.hostSolutions}); err != nil {
+			return err
+		}
+		// A statement that failed during this Read fails it, whatever fn made
+		// of it, as its own COMMIT did when it had one: a source that set the
+		// failure aside never decides from what is left.
+		return snap.reads.failure()
 	}
 	recordControlPlane(ctx)
 	return c.s.withControlPlaneTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(ctx context.Context) error {
@@ -82,8 +88,10 @@ func (c AuthorityCoreStore) Read(ctx context.Context, fn func(authority.Tx) erro
 // requires.
 func (c AuthorityCoreStore) Write(ctx context.Context, fn func(authority.Tx) error) error {
 	if snap := snapshotOf(ctx, c.s); snap != nil {
-		// Whatever the question reads after its own write is read fresh.
-		defer snap.ended.Store(true)
+		// Whatever the question reads from the moment it writes is read
+		// fresh: set before the write, so no read while it commits, or after
+		// it, is answered from the state before it.
+		snap.ended.Store(true)
 	}
 	recordControlPlane(ctx)
 	var err error
