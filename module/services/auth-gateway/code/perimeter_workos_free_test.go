@@ -194,6 +194,10 @@ var httpAllowedPerimeterFiles = map[string]bool{
 	// Issue and Check on accounts and the hop library's forward to the listener
 	// hop-routes names. It reaches no external IdP.
 	"gateway_hop.go": true,
+	// check_refusal.go maps a Check answer the gateway did not admit to the
+	// HTTP status it is refused with. It makes no call and verifies nothing;
+	// the verifier's own failure classification stays in ext_authz.go.
+	"check_refusal.go": true,
 	// gateway_cors.go answers cross-origin access for registered clients. It
 	// decides from the registry snapshot and from the client id the ext_authz
 	// check already resolved from a locally verified token; it makes no network

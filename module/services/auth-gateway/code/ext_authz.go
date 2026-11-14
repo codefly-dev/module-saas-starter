@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	grpcstatus "google.golang.org/grpc/status"
 
 	apigen "auth-gateway/external/saas-starter/accounts"
 )
@@ -253,7 +254,7 @@ const tokenClockSkewLeeway = 60 * time.Second
 func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*authv3.CheckResponse, error) {
 	if s.keys == nil {
 		recordJWTRejection(ctx, jwtRejectionKeysUnavailable)
-		return deny(503, "JWT validation not configured"), nil
+		return unavailable(ctx, nil, "JWT validation not configured"), nil
 	}
 
 	claims := &accessClaims{}
@@ -288,7 +289,7 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 	switch {
 	case errors.Is(keyErr, errNoVerificationKeys):
 		recordJWTRejection(ctx, jwtRejectionKeysUnavailable)
-		return deny(503, "JWT validation not configured"), nil
+		return unavailable(ctx, keyErr, "JWT validation not configured"), nil
 	case errors.Is(keyErr, errUnknownKeyID):
 		recordJWTRejection(ctx, jwtRejectionUnknownKeyID)
 		return deny(401, "invalid or expired token"), nil
@@ -318,7 +319,7 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 			// a Redis outage.
 			log.Printf("revocation check failed, denying (fail-closed): %v", err)
 			recordJWTRejection(ctx, jwtRejectionRevocationUnavailable)
-			return deny(503, "revocation check unavailable"), nil
+			return unavailable(ctx, err, "revocation check unavailable"), nil
 		case err != nil:
 			log.Printf("revocation check failed, admitting (fail-open): %v", err)
 		case revoked:
@@ -352,7 +353,7 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		case err != nil && !s.revocationFailOpen:
 			log.Printf("session revocation check failed, denying (fail-closed): %v", err)
 			recordJWTRejection(ctx, jwtRejectionRevocationUnavailable)
-			return deny(503, "revocation check unavailable"), nil
+			return unavailable(ctx, err, "revocation check unavailable"), nil
 		case err != nil:
 			log.Printf("session revocation check failed, admitting (fail-open): %v", err)
 		case revoked:
@@ -643,7 +644,7 @@ func isLoopbackResourceHost(host string) bool {
 // and verifies, and we just thread the result.
 func (s *ExtAuthz) checkAPIKey(ctx context.Context, key string) (*authv3.CheckResponse, error) {
 	if s.gatewayToken == "" {
-		return deny(503, "gateway identity signing is not configured"), nil
+		return unavailable(ctx, nil, "gateway identity signing is not configured"), nil
 	}
 	if s.internalToken != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-codefly-internal-token", s.internalToken)
@@ -651,7 +652,7 @@ func (s *ExtAuthz) checkAPIKey(ctx context.Context, key string) (*authv3.CheckRe
 	resp, err := s.apiKey.ValidateAPIKey(ctx, &apigen.ValidateAPIKeyRequest{Key: key})
 	if err != nil {
 		log.Printf("api key validate error: %v", err)
-		return deny(503, "api key validation failed"), nil
+		return unavailable(ctx, err, "api key validation failed"), nil
 	}
 	if !resp.Valid {
 		return deny(401, "invalid api key"), nil
@@ -766,6 +767,60 @@ func deny(httpCode int, body string) *authv3.CheckResponse {
 		HttpResponse: &authv3.CheckResponse_DeniedResponse{
 			DeniedResponse: &authv3.DeniedHttpResponse{
 				Status: &typev3.HttpStatus{Code: typev3.StatusCode(httpCode)},
+				Body:   body,
+			},
+		},
+	}
+}
+
+// failureOf is what happened to a check that reached no verdict. The caller's
+// own request decides first: a store read or an authority call made under a
+// request that ended fails because it ended, whatever the dependency reports.
+// Otherwise the error's own code, and Unavailable when it names none (a store
+// that did not answer, a check with no dependency configured).
+func failureOf(ctx context.Context, err error) codes.Code {
+	for _, cause := range []error{ctx.Err(), err} {
+		switch {
+		case errors.Is(cause, context.Canceled), grpcstatus.Code(cause) == codes.Canceled:
+			return codes.Canceled
+		case errors.Is(cause, context.DeadlineExceeded), grpcstatus.Code(cause) == codes.DeadlineExceeded:
+			return codes.DeadlineExceeded
+		}
+	}
+	if code := grpcstatus.Code(err); code != codes.OK && code != codes.Unknown {
+		return code
+	}
+	return codes.Unavailable
+}
+
+// failureCode is the code a failure is answered under: a transient failure
+// keeps a code that tells the client to retry, and anything else is Internal.
+// Never PermissionDenied: that is a verdict, and a failure reached none.
+func failureCode(code codes.Code) codes.Code {
+	switch code {
+	case codes.Canceled, codes.DeadlineExceeded:
+		return code
+	case codes.Unavailable, codes.Aborted, codes.ResourceExhausted:
+		return codes.Unavailable
+	}
+	return codes.Internal
+}
+
+// unavailable is a Check that reached no verdict: the caller's request ended,
+// its deadline passed, or something the check needs (the key set, the
+// revocation store, accounts' key validation) did not answer. It is not an
+// allow — Envoy denies any status but OK, and the gateway forwards nothing
+// (refusalOf) — but its status says what happened rather than
+// PermissionDenied, so no consumer reads it as a verdict on the caller.
+//
+// The denied response carries 503 for Envoy, whose HttpStatus cannot spell
+// 499; the gateway answers from the status code instead.
+func unavailable(ctx context.Context, err error, body string) *authv3.CheckResponse {
+	return &authv3.CheckResponse{
+		Status: &status.Status{Code: int32(failureCode(failureOf(ctx, err))), Message: body},
+		HttpResponse: &authv3.CheckResponse_DeniedResponse{
+			DeniedResponse: &authv3.DeniedHttpResponse{
+				Status: &typev3.HttpStatus{Code: typev3.StatusCode_ServiceUnavailable},
 				Body:   body,
 			},
 		},

@@ -227,21 +227,11 @@ func (g *Gateway) serveBrowser(w http.ResponseWriter, r *http.Request) bool {
 	// The person, as on every protected route: drop what a caller said about
 	// who it is, then the access-token check, revocation included.
 	stripAllIdentityHeaders(r)
+	// A check that reached no verdict is refused under its own code, never as a
+	// denial: a request a person abandoned mid-way is not a person refused.
 	checked, err := g.authz.Check(r.Context(), buildCheckRequest(r))
-	if err != nil {
-		hopBrowserError(w, r, http.StatusInternalServerError, codes.Internal, "auth check failed")
-		return true
-	}
-	if denied := checked.GetDeniedResponse(); denied != nil {
-		code := int(denied.GetStatus().GetCode())
-		if code == 0 {
-			code = http.StatusForbidden
-		}
-		hopBrowserError(w, r, code, codes.Code(checked.GetStatus().GetCode()), denied.GetBody())
-		return true
-	}
-	if codes.Code(checked.GetStatus().GetCode()) != codes.OK {
-		hopBrowserError(w, r, http.StatusForbidden, codes.PermissionDenied, "forbidden")
+	if refusal, admitted := refusalOf(r.Context(), checked, err); !admitted {
+		hopBrowserError(w, r, refusal.httpStatus, refusal.code, refusal.reason)
 		return true
 	}
 	injectHeaders(r, checked.GetOkResponse().GetHeaders())
@@ -256,14 +246,19 @@ func (g *Gateway) serveBrowser(w http.ResponseWriter, r *http.Request) bool {
 	g.rateLimitThenServe(w, r, entry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token, err := h.workContext(r.Context(), bearer, module, browserPage(r))
 		if err != nil {
-			code := http.StatusForbidden
-			switch status.Code(err) {
-			case codes.Unauthenticated:
-				code = http.StatusUnauthorized
-			case codes.Unavailable, codes.DeadlineExceeded:
-				code = http.StatusServiceUnavailable
+			code, httpStatus := status.Code(err), http.StatusForbidden
+			reason := "the authority refused this person at " + module + ": " + status.Convert(err).Message()
+			switch {
+			case code == codes.Unauthenticated:
+				httpStatus = http.StatusUnauthorized
+			case !isVerdict(code):
+				// Asked, but no answer: the person's request ended, the
+				// deadline passed, or the authority did not answer. Refused,
+				// and said as what it is.
+				code, httpStatus = failureStatus(failureOf(r.Context(), err))
+				reason = "the authority gave no answer for this person at " + module + " (" + code.String() + "): " + status.Convert(err).Message()
 			}
-			hopBrowserError(w, r, code, status.Code(err), "the authority refused this person at "+module+": "+status.Convert(err).Message())
+			hopBrowserError(w, r, httpStatus, code, reason)
 			return
 		}
 		h.face.ServeHTTP(w, withOnlyWorkContext(r, token))

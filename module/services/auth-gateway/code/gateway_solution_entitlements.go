@@ -218,20 +218,8 @@ func (g *Gateway) handleSolutionEntitlements(w http.ResponseWriter, r *http.Requ
 	// run ext_authz and stamp what it returns.
 	stripAllIdentityHeaders(r)
 	checkResp, err := g.authz.Check(r.Context(), buildCheckRequest(r))
-	if err != nil {
-		httpError(w, http.StatusInternalServerError, "auth check failed")
-		return
-	}
-	if denied := checkResp.GetDeniedResponse(); denied != nil {
-		code := int(denied.GetStatus().GetCode())
-		if code == 0 {
-			code = http.StatusUnauthorized
-		}
-		httpError(w, code, denied.GetBody())
-		return
-	}
-	if int(checkResp.GetStatus().GetCode()) != 0 {
-		httpError(w, http.StatusForbidden, "forbidden")
+	if refusal, admitted := refusalOf(r.Context(), checkResp, err); !admitted {
+		httpError(w, refusal.httpStatus, refusal.reason)
 		return
 	}
 	injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
