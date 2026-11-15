@@ -129,7 +129,7 @@ func workload(ctx context.Context, credential, which string) (authority.Workload
 	if err != nil {
 		// ModulePrefixOfWorkload has logged the refusal, redacted; it is
 		// answered here without a second line.
-		refusal, _ := classifyCredentialError(err, which)
+		refusal, _ := classifyCredentialError(ctx, err, which)
 		return authority.Workload{}, refusal
 	}
 	tenant, err := service.ModuleTenant(ctx, module)
@@ -743,7 +743,7 @@ func workContextToWire(in proto.Message) (*authorityv1.WorkContextV1, error) {
 // (Unavailable), or anything else (Internal). Nothing about the caller was
 // decided, and PermissionDenied would tell it its credential proves no module.
 func credentialRefusal(ctx context.Context, err error, which, credential string) error {
-	refusal, failed := classifyCredentialError(err, which)
+	refusal, failed := classifyCredentialError(ctx, err, which)
 	if failed {
 		logCredentialReadFailure(ctx, err, which, credential, status.Code(refusal))
 	}
@@ -755,20 +755,36 @@ func credentialRefusal(ctx context.Context, err error, which, credential string)
 // failure is answered with what failed and the code: the reviewer's own error
 // can carry the API server's address or a transport error, and an in-mesh
 // caller may relay what it is told.
-func classifyCredentialError(err error, which string) (error, bool) {
+//
+// Whether the caller ended its request is the caller's context's to say, as
+// the gateway decides it: a dependency answering Canceled while the caller is
+// live is a review that could not run, Unavailable.
+func classifyCredentialError(ctx context.Context, err error, which string) (error, bool) {
+	// A verdict first, whatever became of the caller: a refused credential
+	// is a refusal, logged at WARN, even when the caller has since ended its
+	// request; otherwise a prober that cancels every call keeps its forged
+	// credentials out of WARN.
 	switch {
-	case errors.Is(err, context.Canceled), status.Code(err) == codes.Canceled:
-		return status.Errorf(codes.Canceled, "%s credential could not be read: the request ended", which), true
-	case errors.Is(err, context.DeadlineExceeded), status.Code(err) == codes.DeadlineExceeded:
-		return status.Errorf(codes.DeadlineExceeded, "%s credential could not be read in time", which), true
-	case errors.Is(err, business.ErrExecutionUnbound):
-		return status.Errorf(codes.Unavailable, "%s credential could not be reviewed: the review could not run", which), true
 	case errors.Is(err, business.ErrExecutionNotBoundToken), errors.Is(err, business.ErrModuleIdentityDenied):
 		return status.Errorf(codes.Unauthenticated, "%s credential refused: %v", which, err), false
 	case errors.Is(err, business.ErrExecutionTokenRejected):
 		return status.Errorf(codes.PermissionDenied, "%s credential refused: %v", which, business.ErrExecutionTokenRejected), false
 	case errors.Is(err, business.ErrExecutionWorkloadAmbiguous):
 		return status.Errorf(codes.PermissionDenied, "%s credential refused: %v", which, err), false
+	}
+	switch ended := ctx.Err(); {
+	case errors.Is(ended, context.Canceled):
+		return status.Errorf(codes.Canceled, "%s credential could not be read: the request ended", which), true
+	case errors.Is(ended, context.DeadlineExceeded):
+		return status.Errorf(codes.DeadlineExceeded, "%s credential could not be read in time", which), true
+	}
+	switch {
+	case errors.Is(err, context.Canceled), status.Code(err) == codes.Canceled:
+		return status.Errorf(codes.Unavailable, "%s credential could not be reviewed: the review could not run", which), true
+	case errors.Is(err, context.DeadlineExceeded), status.Code(err) == codes.DeadlineExceeded:
+		return status.Errorf(codes.DeadlineExceeded, "%s credential could not be read in time", which), true
+	case errors.Is(err, business.ErrExecutionUnbound):
+		return status.Errorf(codes.Unavailable, "%s credential could not be reviewed: the review could not run", which), true
 	}
 	return status.Errorf(codes.Internal, "%s credential could not be read", which), true
 }
@@ -778,10 +794,7 @@ func classifyCredentialError(err error, which string) (error, bool) {
 // redacts it. A caller ending its own request carries no operational signal,
 // so it is logged below WARN.
 func logCredentialReadFailure(ctx context.Context, err error, which, credential string, code codes.Code) {
-	reason := err.Error()
-	if credential != "" {
-		reason = strings.ReplaceAll(reason, credential, "[redacted workload credential]")
-	}
+	reason := business.RedactWorkloadCredential(err.Error(), credential)
 	log := wool.Get(ctx).In("credentialRefusal")
 	fields := []*wool.LogField{wool.Field("credential", which), wool.Field("code", code.String()), wool.Field("reason", reason)}
 	if code == codes.Canceled {
