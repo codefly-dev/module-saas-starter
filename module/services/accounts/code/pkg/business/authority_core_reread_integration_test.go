@@ -26,7 +26,8 @@ func TestABootReadsAGenerationAnOlderHostComposedWithoutAFieldAgainOnce(t *testi
 	clearData(t)
 	withAuthorityCore(t)
 	line := approvedLine{alias: uniqueAlias("reread-line"), signer: wireSignedDelivery(t)}
-	roles := []*compositionv1.RoleV1{{Name: domain.AdminRole, Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read", "write"}}}}}
+	doc := []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read", "write"}}}
+	roles := []*compositionv1.RoleV1{{Name: domain.AdminRole, Scopes: doc}, {Name: domain.UserRole, Scopes: doc}}
 	line.deliver(t, 1, roles, func(doc *compositionv1.AuthorityManifestV1) { doc.SharedKinds = []string{"doc"} })
 
 	// As the older host composed it: the shared kinds unread, no source kept.

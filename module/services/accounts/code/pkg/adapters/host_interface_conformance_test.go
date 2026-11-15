@@ -740,7 +740,8 @@ func runHostInterfaceFixture(t *testing.T) {
 	t.Run("reviewed roles remain from the review after redelivery", func(t *testing.T) {
 		const target = "conformance-review-snapshot"
 		scopes := []*authorityv1.WorkScopeV1{wireScope(target+".item", "read")}
-		declared := conformanceSolution{alias: target, generation: 1, ceilings: scopes,
+		wider := []*authorityv1.WorkScopeV1{wireScope(target+".item", "read", "write")}
+		declared := conformanceSolution{alias: target, generation: 1, ceilings: wider,
 			roles: map[string][]*authorityv1.WorkScopeV1{"admin": scopes, "user": scopes}}
 		deliverSolution(t, ctx, conn, signer, declared)
 		_, err := installConformanceSolution(ctx, svc, core, target, "user", conformanceAlex)
@@ -750,11 +751,11 @@ func runHostInterfaceFixture(t *testing.T) {
 
 		// Delivery changes after the consistent read, before its wire mapping.
 		declared.generation = 2
-		declared.roles = map[string][]*authorityv1.WorkScopeV1{"admin": scopes, "user": scopes, "later": scopes}
+		declared.roles = map[string][]*authorityv1.WorkScopeV1{"admin": wider, "user": scopes}
 		deliverSolution(t, ctx, conn, signer, declared)
 		current, err := core.Composed(ctx, target)
 		require.NoError(t, err)
-		require.Contains(t, current.Roles, "later")
+		require.Equal(t, []string{"read", "write"}, current.Roles["admin"][0].GetActions())
 
 		wire, err := reviewedOffer(reviewed, nil)
 		require.NoError(t, err)
@@ -765,6 +766,9 @@ func runHostInterfaceFixture(t *testing.T) {
 			roles = append(roles, role.GetName())
 		}
 		require.Equal(t, wire.GetInstallation().GetRoles(), roles)
+		for _, role := range wire.GetRoles() {
+			require.Equal(t, []string{"read"}, role.GetScopes()[0].GetActions(), "role %s reads as reviewed, not as redelivered", role.GetName())
+		}
 	})
 
 	// Beyond the suite: a delegation never reaches past what its grantor holds
