@@ -215,12 +215,12 @@ func isolateBindingFixture(t *testing.T) {
 }
 
 // adminDocument is the signed authority document of a solution that
-// declares its admin role, reading what it serves, and nothing more,
-// paired with manifest.
+// declares its two roles, admin and user, each reading what it serves, and
+// nothing more, paired with manifest.
 func adminDocument(manifest *solutionhost.ModuleManifest, payload []byte) (document, envelope []byte, err error) {
 	reads := []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read"}}}
 	document, err = proto.Marshal(&compositionv1.AuthorityManifestV1{Module: manifest.Alias, Generation: manifest.Generation,
-		CoreManifestDigest: delivery.Digest(payload), Roles: []*compositionv1.RoleV1{{Name: domain.AdminRole, Scopes: reads}}})
+		CoreManifestDigest: delivery.Digest(payload), Roles: []*compositionv1.RoleV1{{Name: domain.AdminRole, Scopes: reads}, {Name: domain.UserRole, Scopes: reads}}})
 	if err != nil {
 		return nil, nil, err
 	}

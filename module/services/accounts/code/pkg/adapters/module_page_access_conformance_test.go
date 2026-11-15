@@ -386,24 +386,23 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		require.Equal(t, approved.Revision, again.Revision, "and records nothing again")
 	})
 
-	// Every role a page declares has its team, a role its update adds
-	// included; and the holder of the page's admin role approves that update,
-	// as the core admits them (its approver), while a member holding no role
-	// there, and an administrator of nothing, are refused. Red before: the
-	// host gated the review and the approval on an organization
-	// administrator, and an approved update assigned no team, so an added
-	// role read "nobody". Each page declares admin alone, then its update
-	// adds user.
+	// Every role a page declares has its team; and the holder of the page's
+	// admin role approves its update, as the core admits them (its approver),
+	// while a member holding no role there, and an administrator of nothing,
+	// are refused. Red before: the host gated the review and the approval on
+	// an organization administrator. A page declares exactly admin and user
+	// (decide.PageRoles), so an update never adds a role: each page's update
+	// widens what its user may do.
 	rolePage := func(page string) (deliverPage func(generation uint64), set business.InstalledSolution, adminTeam string, grantedRoles func() []string) {
 		t.Helper()
-		entry := wireScope(page+".entry", "read")
-		roles := map[string][]*authorityv1.WorkScopeV1{"admin": {entry}}
+		read, write := wireScope(page+".entry", "read"), wireScope(page+".entry", "read", "write")
+		roles := map[string][]*authorityv1.WorkScopeV1{"admin": {write}, "user": {read}}
 		deliverPage = func(generation uint64) {
 			if generation > 1 {
-				roles["user"] = []*authorityv1.WorkScopeV1{entry}
+				roles["user"] = []*authorityv1.WorkScopeV1{write}
 			}
-			deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: page, generation: generation, ceilings: []*authorityv1.WorkScopeV1{entry}, installationRole: domain.NoInstallationRole,
-				page: &solutionhost.Frontend{Title: "Role added page", ExposedModule: "./Page", HostContract: 1, Payload: h.pagePayload}, roles: roles})
+			deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: page, generation: generation, ceilings: []*authorityv1.WorkScopeV1{write}, installationRole: domain.NoInstallationRole,
+				page: &solutionhost.Frontend{Title: "Role widened page", ExposedModule: "./Page", HostContract: 1, Payload: h.pagePayload}, roles: roles})
 		}
 		deliverPage(1)
 		require.NoError(t, consentModule(h.ctx, h.svc, h.store, fixtureOrganization, conformanceAlex, page))
@@ -424,22 +423,22 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 			slices.Sort(out)
 			return out
 		}
-		require.Equal(t, []string{"admin"}, grantedRoles())
+		require.Len(t, teamsNamed(t, h, page+"-user"), 1)
+		require.Equal(t, []string{"admin", "user"}, grantedRoles())
 		return deliverPage, set, admins[0], grantedRoles
 	}
 
-	t.Run("a page's update adds a role with its team, approved by the page's admin", func(t *testing.T) {
-		const page = "conformance-role-added-page"
+	t.Run("a page's update is approved by the page's admin", func(t *testing.T) {
+		const page = "conformance-role-widened-page"
 		deliverPage, set, adminTeam, grantedRoles := rolePage(page)
 		require.NoError(t, h.svc.AddTeamMember(h.ctx, conformanceAlex, &gen.AddTeamMemberRequest{TeamId: adminTeam, UserId: conformanceMaya}))
 
-		// The update adds `user`. Set up while it waits sets up what was
-		// approved and asks the core for no role it would refuse.
+		// The update widens `user`. Set up while it waits sets up what was
+		// approved and asks the core for nothing it would refuse.
 		deliverPage(2)
 		pending, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(page).TargetID, business.InstallAccess{})
 		require.NoError(t, err)
-		require.Empty(t, pending.AccessProblems, "a role nobody approved yet is not set up")
-		require.Empty(t, teamsNamed(t, h, page+"-user"))
+		require.Empty(t, pending.AccessProblems)
 
 		maya := authority.Person{ID: conformanceMaya, Organization: fixtureOrganization}
 		ivy := authority.Person{ID: conformanceIvy, Organization: fixtureOrganization}
@@ -466,15 +465,8 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		require.NoError(t, err, "the page's admin approves its update")
 		require.Equal(t, set.ID, approved.ID)
 		require.Equal(t, review.GetApproval().GetOperationId(), approved.Consent.OperationID)
-		require.Len(t, approved.AccessProblems, 1, "the role the update adds waits for an administrator's team")
-		require.Equal(t, "user", approved.AccessProblems[0].Role)
-		require.Empty(t, teamsNamed(t, h, page+"-user"), "the page's admin creates no team of the organization")
-
-		// An administrator's Set up gives it its team, now that it is approved.
-		again, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(page).TargetID, business.InstallAccess{})
-		require.NoError(t, err)
-		require.Empty(t, again.AccessProblems)
-		require.Len(t, teamsNamed(t, h, page+"-user"), 1)
+		require.Empty(t, approved.AccessProblems, "no role was added, so none waits for a team")
+		require.Len(t, teamsNamed(t, h, page+"-user"), 1, "the page's admin creates no team of the organization")
 		require.Equal(t, []string{"admin", "user"}, grantedRoles())
 	})
 
@@ -533,10 +525,10 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		require.Empty(t, approved.AccessProblems, "no role was added, so none waits for a team")
 	})
 
-	// An administrator's approval of an update that adds a role gives it its
-	// team at once.
-	t.Run("an administrator's approval of a page's update gives the added role its team", func(t *testing.T) {
-		const page = "conformance-role-added-by-administrator-page"
+	// An administrator approves a page's update; the update assigns no team
+	// and no installer role it is asked for.
+	t.Run("an administrator's approval of a page's update assigns no team", func(t *testing.T) {
+		const page = "conformance-role-widened-by-administrator-page"
 		deliverPage, _, adminTeam, grantedRoles := rolePage(page)
 		deliverPage(2)
 		review, err := h.svc.ReviewSolutionInstall(h.ctx, alex, fixtureOrganization, available(page).TargetID)
@@ -547,12 +539,11 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		require.ErrorContains(t, err, "role user to team "+adminTeam)
 		_, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{InstallerRoles: []string{"user"}})
 		require.ErrorContains(t, err, "the installer in role user")
-		require.Empty(t, teamsNamed(t, h, page+"-user"))
 		approved, err := h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{})
 		require.NoError(t, err)
 		require.Empty(t, approved.AccessProblems)
 		users := teamsNamed(t, h, page+"-user")
-		require.Len(t, users, 1, "the added role's conventional team is created")
+		require.Len(t, users, 1, "the user role keeps its one conventional team")
 		require.Empty(t, teamMembers(t, h, users[0]), "with nobody in it: the update gives no person anything")
 		require.Equal(t, []string{"admin", "user"}, grantedRoles())
 	})
