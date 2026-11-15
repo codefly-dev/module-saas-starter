@@ -46,7 +46,7 @@ func TestAPersonHoldsASolutionRoleAtItsInstallation(t *testing.T) {
 	require.Equal(t, a.Grants(domain.AdminRole), a.HeldBy("alex", nil, at))
 	require.Equal(t, a.Grants(domain.UserRole), a.HeldBy("maya", []string{"finance"}, at))
 	require.Empty(t, a.HeldBy("omar", []string{"ops"}, at))
-	require.Equal(t, domain.UserRole, SolutionRoleOf(solutionRoleNamePrefix+solutionRoleProvenance("org", "target", domain.UserRole)))
+	require.Equal(t, domain.UserRole, SolutionRoleOf(solutionRoleNamePrefix+"org=org;solution=target;role="+domain.UserRole))
 	require.Equal(t, "Module viewer", SolutionRoleOf("Module viewer"))
 }
 

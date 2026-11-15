@@ -118,12 +118,12 @@ func deliverSolution(t *testing.T, signer *solutionhost.InMemorySigner, alias st
 
 // The legacy case: an installation made before the solution's roles were
 // read holds a catalogue role as its standing role. Once the solution declares
-// its roles (exactly admin and user, Codefly's module contract), the host
-// exposes it to a team with the solution's own role it is named, here user,
-// and never guesses one from the catalogue role's name: exposing it without a
-// role is refused by name, for the catalogue's viewer and for its admin alike,
-// so the organization's admin is never the page's admin.
-func TestALegacyInstallationIsExposedWithTheSolutionsUserAndNeverByCatalogueName(t *testing.T) {
+// its roles (exactly admin and user, Codefly's module contract), exposing it
+// to a team without a role is refused by name, for the catalogue's viewer and
+// for its admin alike, and points to reinstalling it through the review:
+// nothing guesses a solution role from a catalogue role's name, so the
+// organization's admin is never the page's admin.
+func TestALegacyInstallationIsNeverExposedByItsCatalogueRolesName(t *testing.T) {
 	clearData(t)
 	ctx := testCtx
 	signer := wireSignedDelivery(t)
@@ -168,7 +168,6 @@ installations:
 	err = installations.Converge(ctx)
 	require.Error(t, err, "a pending installation is not exposed yet")
 	owner := seededUUIDFor(t, ctx, "fixture-legacy-owner")
-	member := seededUUIDFor(t, ctx, "fixture-legacy-member")
 	orgID := seededOrgIDFor(t, ctx, owner, "Legacy Org")
 	require.Len(t, organizationInstallations(t, orgID), 2)
 	// Acknowledging one can complete the other's queued step, so each is read
@@ -235,25 +234,14 @@ installations:
 	finance := teams.GetTeams()[0].GetId()
 	_, err = testService.ExposeHostInstallation(ctx, owner, orgID, held[0].GetId(), finance)
 	require.ErrorContains(t, err, `standing role "viewer" is not one of them`, "the catalogue's viewer is no role of the solution")
+	require.ErrorContains(t, err, "reinstall it through the review", "and the refusal points to the review, never to naming a role")
+	exposed, err := testService.ReadHostInstallation(ctx, orgID, held[0].GetId())
+	require.NoError(t, err)
+	require.Empty(t, exposed.TeamIDs, "the team holds nothing of it")
+	require.Equal(t, before.RoleID, exposed.RoleID, "the standing grant is not rewritten")
 	_, err = testService.ExposeHostInstallation(ctx, owner, orgID, adminHeld[0].GetId(), finance)
 	require.ErrorContains(t, err, `standing role "admin" is not one of them`, "nor is the catalogue's admin the page's admin")
 	adminExposed, err := testService.ReadHostInstallation(ctx, orgID, adminHeld[0].GetId())
 	require.NoError(t, err)
 	require.Empty(t, adminExposed.TeamIDs, "the team holds nothing of it")
-
-	// Named, the solution's user exposes it, and the team's member holds what
-	// user grants.
-	user, err := testService.SolutionRoleIDForTest(ctx, orgID, held[0].GetId(), domain.UserRole)
-	require.NoError(t, err)
-	granted, err := testService.GrantInstallationToTeam(ctx, owner, orgID, held[0].GetId(), finance, user)
-	require.NoError(t, err)
-	require.Equal(t, user, granted.Grant.GetRoleId())
-	exposed, err := testService.ReadHostInstallation(ctx, orgID, held[0].GetId())
-	require.NoError(t, err)
-	require.Equal(t, []string{finance}, exposed.TeamIDs)
-	require.Equal(t, before.RoleID, exposed.RoleID, "the standing grant is not rewritten")
-	delivered, err := testService.DeliveredSolutionAuthority(ctx, alias)
-	require.NoError(t, err)
-	require.NotNil(t, delivered)
-	require.Equal(t, delivered.Grants(domain.UserRole), delivered.HeldBy(member, exposed.TeamIDs, business.SolutionRoleHolders{Owner: owner, Role: domain.UserRole, Teams: exposed.TeamIDs}))
 }
