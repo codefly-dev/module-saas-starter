@@ -49,8 +49,8 @@ const installation = {
 	target: exampleTarget,
 	status: HostInstallationStatus.ACTIVE,
 	revision: BigInt(4),
-	role: "viewer",
-	roles: ["editor", "viewer"],
+	role: "user",
+	roles: ["admin", "user"],
 };
 
 /**
@@ -102,7 +102,7 @@ export function reviewedOffer({
 		],
 		roles: [
 			{
-				name: "editor",
+				name: "admin",
 				scopes: [scope("example-pages.page", "read", "write")],
 				reach: [
 					reach([exampleTarget], "role", [
@@ -129,7 +129,7 @@ export function reviewedOffer({
 				],
 			},
 			{
-				name: "viewer",
+				name: "user",
 				scopes: [scope("example-pages.page", "read")],
 				reach: [
 					reach([exampleTarget], "role", [scope("example-pages.page", "read")]),
@@ -164,8 +164,8 @@ export interface SetupFixture {
 export function setupFixture({
 	offer = reviewedOffer({ tools: true }),
 	grants = [
-		{ role: "viewer", personId: "", teamId: "team-finance" },
-		{ role: "editor", personId: "person-jane", teamId: "" },
+		{ role: "user", personId: "", teamId: "team-finance" },
+		{ role: "admin", personId: "person-jane", teamId: "" },
 	],
 	refuse = {},
 }: {

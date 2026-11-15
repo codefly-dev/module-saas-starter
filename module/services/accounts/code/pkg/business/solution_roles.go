@@ -230,11 +230,13 @@ func SolutionRoleOf(name string) string {
 }
 
 // solutionExposureRole is the role a team is granted when an installation of
-// target is exposed to it without a role named: the solution's own role of the
-// installation's standing role's name, which permits using the solution. An
-// installation made before solution roles were read, whose standing role is a
-// catalogue role of that name, is exposed this way too, its standing grant
-// untouched. An empty id says the standing role itself is granted, and why.
+// target is exposed to it without a role named. A target that declares no
+// roles is exposed with the installation's standing role (an empty id says so,
+// and why). One that declares roles is exposed only with one of its own: the
+// standing role must be that solution's role (solutionRoleNamePrefix), and a
+// standing role from the organization's catalogue is refused by name. Nothing
+// guesses a solution role from a catalogue role's name, so the catalogue's
+// admin is never the page's admin.
 func (s *Service) solutionExposureRole(ctx context.Context, orgID, installationID string, target *AvailableSolutionTarget) (string, string, error) {
 	if target == nil {
 		return "", "the installation's target is no longer offered to this organization", nil
@@ -255,9 +257,12 @@ func (s *Service) solutionExposureRole(ctx context.Context, orgID, installationI
 	}); err != nil {
 		return "", "", err
 	}
+	provenance, isSolutionRole := strings.CutPrefix(standing, solutionRoleNamePrefix)
+	org, solution, _ := SolutionRoleOrigin(provenance)
 	role := SolutionRoleOf(standing)
-	if _, declared := authority.Roles[role]; !declared {
-		return "", fmt.Sprintf("%s declares no role named after the standing role %q; its roles are %s", target.RouteAlias, role, strings.Join(authority.RoleNames(), ", ")), nil
+	if _, declared := authority.Roles[role]; !isSolutionRole || org != orgID || solution != target.TargetID || !declared {
+		return "", "", NewStoreError(fmt.Errorf("%s declares its own roles (%s) and this installation's standing role %q is not one of them: name the role to expose it with",
+			target.RouteAlias, strings.Join(authority.RoleNames(), ", "), standing), ErrTypeValidation)
 	}
 	id, err := s.solutionRoleID(ctx, orgID, target.TargetID, target.RouteAlias, authority, role)
 	return id, "", err

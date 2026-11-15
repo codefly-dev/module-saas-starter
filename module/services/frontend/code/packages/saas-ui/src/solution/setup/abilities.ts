@@ -60,9 +60,12 @@ export function roleLabel(title: string | undefined, role: string): string {
 	return `${named[0]?.toUpperCase()}${named.slice(1)} ${role}`;
 }
 
-/** "A" or "An", for a role named in a sentence. */
+/**
+ * "A" or "An", for a role named in a sentence: by sound, so "a user" and
+ * "a unit" but "an admin" and "an update".
+ */
 export function article(word: string): string {
-	return /^[aeiou]/i.test(word) ? "An" : "A";
+	return /^(?:[aeio]|u(?!s|ni|ri))/i.test(word) ? "An" : "A";
 }
 
 /** "a", "a and b", "a, b and c". */

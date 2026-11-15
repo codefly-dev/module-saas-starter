@@ -536,7 +536,7 @@ describe("SolutionInstallationsPage admin container", () => {
 						{
 							code: "failed_precondition",
 							message:
-								'cannot revoke installation from team: role "viewer" is not granted to that team here',
+								'cannot revoke installation from team: role "user" is not granted to that team here',
 						},
 						{ status: 400 },
 					);
@@ -558,7 +558,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		).toBeTruthy();
 		expect(
 			screen.getByText(
-				'cannot revoke installation from team: role "viewer" is not granted to that team here',
+				'cannot revoke installation from team: role "user" is not granted to that team here',
 			),
 		).toBeTruthy();
 		expect(toast.success).not.toHaveBeenCalled();
@@ -1359,7 +1359,7 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 	const ARCHIVE_TARGET = "aaaaaaaa-0000-4000-8000-000000000005";
 	const DIRECTORY_INSTALLATION = "bbbbbbbb-0000-4000-8000-000000000004";
 	// A module page: a module declaring roles (AvailableSolution.roles).
-	const page = { ...available.solutions[1], roles: ["installer", "viewer"] };
+	const page = { ...available.solutions[1], roles: ["admin", "user"] };
 	const catalogue = {
 		solutions: [
 			{
@@ -1498,9 +1498,8 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 				name: "Add me to this team",
 			}) as HTMLInputElement;
 		// Every role ticked for the administrator; nothing must be picked.
-		for (const role of ["installer", "viewer"])
-			expect(me(role).checked).toBe(true);
-		fireEvent.click(me("installer"));
+		for (const role of ["admin", "user"]) expect(me(role).checked).toBe(true);
+		fireEvent.click(me("admin"));
 		fireEvent.click(
 			within(dialog).getByRole("button", { name: "Set up access" }),
 		);
@@ -1508,7 +1507,7 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 		expect(reads.setUp[0]).toEqual({
 			orgId: "org-1",
 			targetId: LEDGER_TARGET,
-			installerRoles: ["viewer"],
+			installerRoles: ["user"],
 		});
 		await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 		expect(toast.success).toHaveBeenCalledWith(
@@ -1517,8 +1516,8 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 	});
 
 	it("an installed solution a role of which nobody holds offers Set up, for that role alone", async () => {
-		// The installed solution's approved roles are installer, user and
-		// viewer; nobody holds user (an update added it before an approval
+		// The installed solution's approved roles are admin and user; nobody
+		// holds user (an update added it before an approval
 		// gave added roles their teams). Red before: the Solutions table said
 		// "Installed" and offered nothing, so only a fixture's install pass
 		// could give user a team.
@@ -1527,7 +1526,7 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 		const payroll = {
 			...catalogue.solutions[0],
 			installed: true,
-			roles: ["installer", "user", "viewer"],
+			roles: ["admin", "user"],
 		};
 		const solutionInstalled = structuredClone(installed);
 		solutionInstalled.installations.push({
@@ -1557,7 +1556,7 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 						installations: [
 							{
 								id: PAYROLL_INSTALLATION,
-								roles: ["installer", "user", "viewer"],
+								roles: ["admin", "user"],
 							},
 						],
 					}),
@@ -1571,10 +1570,7 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 					return HttpResponse.json({
 						grants:
 							installationId === PAYROLL_INSTALLATION
-								? [
-										{ role: "installer", teamId: FINANCE_TEAM },
-										{ role: "viewer", teamId: FINANCE_TEAM },
-									]
+								? [{ role: "admin", teamId: FINANCE_TEAM }]
 								: [],
 					});
 				},
@@ -1596,10 +1592,7 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 		const dialog = await screen.findByRole("dialog");
 		await within(dialog).findByRole("region", { name: "Role user" });
 		expect(
-			within(dialog).queryByRole("region", { name: "Role viewer" }),
-		).toBeNull();
-		expect(
-			within(dialog).queryByRole("region", { name: "Role installer" }),
+			within(dialog).queryByRole("region", { name: "Role admin" }),
 		).toBeNull();
 		fireEvent.click(
 			within(
@@ -1632,7 +1625,7 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 				() =>
 					HttpResponse.json({
 						installations: [
-							{ id: DIRECTORY_INSTALLATION, roles: ["installer", "viewer"] },
+							{ id: DIRECTORY_INSTALLATION, roles: ["admin", "user"] },
 						],
 					}),
 			),
@@ -1640,7 +1633,7 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 				"http://localhost:3000/host.installation.v1.InstallationService/ListRoleGrants",
 				() =>
 					HttpResponse.json({
-						grants: [{ role: "viewer", teamId: FINANCE_TEAM }],
+						grants: [{ role: "user", teamId: FINANCE_TEAM }],
 					}),
 			),
 		);
@@ -1673,8 +1666,8 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 		const holders = await screen.findByRole("list", {
 			name: "Who has access to directory",
 		});
-		expect(holders.textContent).toContain("viewer: Finance");
-		expect(holders.textContent).toContain("installer: nobody");
+		expect(holders.textContent).toContain("user: Finance");
+		expect(holders.textContent).toContain("admin: nobody");
 		// Its install date sits under its name.
 		const installedRow = holders.closest("tr") as HTMLElement;
 		expect(
@@ -1814,12 +1807,12 @@ describe("an installation survives delivery: the host offers an update, and the 
 						orgId: "org-1",
 						targetId: PAYROLL_TARGET,
 					});
-					// The editor was approved to read collections through the agent.
+					// The user was approved to read collections through the agent.
 					return HttpResponse.json({
 						...review,
 						approvedRoles: [
-							{ name: "installer" },
-							{ name: "editor", reach: [collections(["read"])] },
+							{ name: "admin" },
+							{ name: "user", reach: [collections(["read"])] },
 						],
 					});
 				},
@@ -1830,8 +1823,8 @@ describe("an installation survives delivery: the host offers an update, and the 
 					installationRole: "none",
 					approval: { ...approval, operationId: "" },
 					roles: [
-						{ name: "editor", reach: [collections(["read", "create"])] },
-						{ name: "installer", scopes: [] },
+						{ name: "user", reach: [collections(["read", "create"])] },
+						{ name: "admin", scopes: [] },
 					],
 					rolesDeclared: true,
 					installation: {
@@ -1873,9 +1866,7 @@ describe("an installation survives delivery: the host offers an update, and the 
 				name: "What this update adds",
 			}),
 		);
-		expect(
-			adds.getByText("A Payroll editor would also be able to"),
-		).toBeTruthy();
+		expect(adds.getByText("A Payroll user would also be able to")).toBeTruthy();
 		expect(
 			adds.getByText("Through payroll and agent, in documents"),
 		).toBeTruthy();
@@ -1907,7 +1898,7 @@ describe("an installation survives delivery: the host offers an update, and the 
 		const expenses = {
 			...available.solutions[0],
 			appliedGeneration: "4",
-			roles: ["installer", "viewer"],
+			roles: ["admin", "user"],
 		};
 		let installedWith: unknown;
 		serve({
@@ -1948,7 +1939,7 @@ describe("an installation survives delivery: the host offers an update, and the 
 						targetId: EXPENSES_TARGET,
 						target: "expenses",
 						approval: pageApproval,
-						approvedRoles: [{ name: "installer" }, { name: "viewer" }],
+						approvedRoles: [{ name: "admin" }, { name: "user" }],
 					});
 				},
 			),
@@ -1958,8 +1949,8 @@ describe("an installation survives delivery: the host offers an update, and the 
 					installationRole: "none",
 					approval: { ...pageApproval, operationId: "" },
 					roles: [
-						{ name: "viewer", reach: [collections(["read"])] },
-						{ name: "installer", scopes: [] },
+						{ name: "user", reach: [collections(["read"])] },
+						{ name: "admin", scopes: [] },
 					],
 					rolesDeclared: true,
 					page: true,

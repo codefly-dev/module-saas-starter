@@ -289,14 +289,14 @@ describe("combined reviewed installation", () => {
 		expect(requests).toEqual([]);
 	});
 	it('the install dialog shows "You will get" with every role ticked and untickable', async () => {
-		roles = [{ name: "installer" }, { name: "viewer" }];
-		teams = [{ id: "team-viewers", name: "Example-Solution-Viewer" }];
+		roles = [{ name: "admin" }, { name: "user" }];
+		teams = [{ id: "team-users", name: "Example-Solution-User" }];
 		renderInApp(<Page />);
 		const dialog = await open();
 		const access = await within(dialog).findByRole("region", {
 			name: "Roles",
 		});
-		await within(access).findByText(/existing team Example-Solution-Viewer/);
+		await within(access).findByText(/existing team Example-Solution-User/);
 		// It opens at its top: focus is on the dialog, not a control below.
 		expect(document.activeElement).toBe(dialog);
 		const me = (role: string) =>
@@ -305,14 +305,14 @@ describe("combined reviewed installation", () => {
 			).getByRole("checkbox", {
 				name: "Add me to this team",
 			}) as HTMLInputElement;
-		expect(me("installer").checked).toBe(true);
-		expect(me("viewer").checked).toBe(true);
+		expect(me("admin").checked).toBe(true);
+		expect(me("user").checked).toBe(true);
 		expect(
-			within(access).getByText(/example-solution-installer will be created/),
+			within(access).getByText(/example-solution-admin will be created/),
 		).toBeTruthy();
-		fireEvent.click(me("viewer"));
-		expect(me("viewer").checked).toBe(false);
-		expect(me("installer").checked).toBe(true);
+		fireEvent.click(me("user"));
+		expect(me("user").checked).toBe(false);
+		expect(me("admin").checked).toBe(true);
 		// Nothing is picked: approving is all Install waits on.
 		fireEvent.click(
 			within(dialog).getByRole("checkbox", { name: /I approve this solution/ }),
@@ -326,17 +326,17 @@ describe("combined reviewed installation", () => {
 		).toBe(false);
 	});
 	it("Install is one click", async () => {
-		roles = [{ name: "installer" }, { name: "viewer" }];
-		teams = [{ id: "team-viewers", name: "Example-Solution-Viewer" }];
+		roles = [{ name: "admin" }, { name: "user" }];
+		teams = [{ id: "team-users", name: "Example-Solution-User" }];
 		renderInApp(<Page />);
 		const dialog = await open();
 		const access = await within(dialog).findByRole("region", {
 			name: "Roles",
 		});
-		await within(access).findByText(/existing team Example-Solution-Viewer/);
+		await within(access).findByText(/existing team Example-Solution-User/);
 		fireEvent.click(
 			within(
-				within(access).getByRole("region", { name: "Role installer" }),
+				within(access).getByRole("region", { name: "Role admin" }),
 			).getByRole("checkbox", { name: "Add me to this team" }),
 		);
 		fireEvent.click(
@@ -346,8 +346,8 @@ describe("combined reviewed installation", () => {
 		await waitFor(() => expect(requests).toHaveLength(1));
 		expect(requests[0]).toMatchObject({
 			orgId: "org-1",
-			roleTeams: { viewer: "team-viewers" },
-			installerRoles: ["viewer"],
+			roleTeams: { user: "team-users" },
+			installerRoles: ["user"],
 		});
 	});
 	it("the install review leads with what each role can do, grouped by where", async () => {
@@ -373,7 +373,7 @@ describe("combined reviewed installation", () => {
 		});
 		roles = [
 			{
-				name: "editor",
+				name: "admin",
 				scopes: [writePage],
 				reach: [
 					row(
@@ -394,7 +394,7 @@ describe("combined reviewed installation", () => {
 				],
 			},
 			{
-				name: "viewer",
+				name: "user",
 				scopes: [page],
 				reach: [
 					row("role", review.target, ["GET /pages/{id}"], "installation"),
@@ -408,26 +408,26 @@ describe("combined reviewed installation", () => {
 		});
 		// Each role reads what its holder can do, grouped by where: direct
 		// first, then through the solution, then the holder's own access.
-		const editor = within(reach).getByRole("list", {
-			name: "What an Example Solution editor can do",
+		const admin = within(reach).getByRole("list", {
+			name: "What an Example Solution admin can do",
 		});
-		const text = editor.textContent ?? "";
+		const text = admin.textContent ?? "";
 		const groups = [
 			"In Example Solution",
 			"Through Example Solution, in documents",
 			"With their own access in directory",
 		];
 		for (const group of groups)
-			expect(within(editor).getByText(group)).toBeTruthy();
+			expect(within(admin).getByText(group)).toBeTruthy();
 		expect(groups.map((g) => text.indexOf(g))).toEqual(
 			[...groups.map((g) => text.indexOf(g))].sort((a, b) => a - b),
 		);
 		// What each role grants there, never the operations a target with no
 		// operation policy lets every role reach.
-		expect(within(editor).getByText("Read and edit pages")).toBeTruthy();
-		expect(within(editor).getByText("Read documents")).toBeTruthy();
+		expect(within(admin).getByText("Read and edit pages")).toBeTruthy();
+		expect(within(admin).getByText("Read documents")).toBeTruthy();
 		expect(
-			within(editor).getByText(
+			within(admin).getByText(
 				"Nothing more than they already have there themselves",
 			),
 		).toBeTruthy();
@@ -435,7 +435,7 @@ describe("combined reviewed installation", () => {
 		expect(
 			within(
 				within(reach).getByRole("list", {
-					name: "What an Example Solution viewer can do",
+					name: "What an Example Solution user can do",
 				}),
 			).getByText("Read pages"),
 		).toBeTruthy();
@@ -448,7 +448,7 @@ describe("combined reviewed installation", () => {
 			name: "Technical details",
 		});
 		expect(technical.textContent).toContain(
-			"editor — binding Example Solution → documents: /docs.Documents/ReadDocument, /docs.Documents/ListDocuments",
+			"admin — binding Example Solution → documents: /docs.Documents/ReadDocument, /docs.Documents/ListDocuments",
 		);
 		const supporting = within(dialog).getByRole("region", {
 			name: "Supporting modules",
@@ -539,9 +539,9 @@ describe("combined reviewed installation", () => {
 		);
 	});
 	it("an install whose access is not fully applied says what is left to grant", async () => {
-		roles = [{ name: "installer" }, { name: "viewer" }];
+		roles = [{ name: "admin" }, { name: "user" }];
 		accessProblems = [
-			"viewer: the role could not be granted to its team: refused",
+			"user: the role could not be granted to its team: refused",
 		];
 		renderInApp(<Page />);
 		const install = async () => {
@@ -561,7 +561,7 @@ describe("combined reviewed installation", () => {
 		await install();
 		await waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
 		expect(vi.mocked(toast.warning).mock.calls[0][0]).toContain(
-			"viewer: the role could not be granted to its team: refused",
+			"user: the role could not be granted to its team: refused",
 		);
 		expect(toast.success).not.toHaveBeenCalledWith(
 			"Installed. Each role's team holds it now.",

@@ -364,7 +364,7 @@ it("shows the solution's roles, what they grant and who holds them, from the aut
 				target: "suite",
 				status: "STATUS_ACTIVE",
 				revision: "2",
-				role: "viewer",
+				role: "user",
 			},
 			ceiling: [
 				{
@@ -375,7 +375,7 @@ it("shows the solution's roles, what they grant and who holds them, from the aut
 			],
 			roles: [
 				{
-					name: "viewer",
+					name: "user",
 					scopes: [{ resourceKind: "suite.page", actions: ["read"] }],
 					capabilities: [
 						{
@@ -388,19 +388,17 @@ it("shows the solution's roles, what they grant and who holds them, from the aut
 			],
 		}),
 		host("InstallationService/ListRoleGrants", {
-			grants: [{ role: "viewer", teamId: SUPPORT_TEAM }],
+			grants: [{ role: "user", teamId: SUPPORT_TEAM }],
 		}),
 	);
 	render();
 
 	// Each role reads what its holder can do and who has it, a team linked to
 	// its page; the operations, by module, wait behind the technical details.
-	const viewer = within(
-		await screen.findByRole("region", { name: "Role viewer" }),
-	);
-	expect(viewer.getByText("Read pages")).toBeTruthy();
+	const user = within(await screen.findByRole("region", { name: "Role user" }));
+	expect(user.getByText("Read pages")).toBeTruthy();
 	expect(
-		(await viewer.findByRole("link", { name: "Team Support" })).getAttribute(
+		(await user.findByRole("link", { name: "Team Support" })).getAttribute(
 			"href",
 		),
 	).toBe(`/admin/teams/${SUPPORT_TEAM}`);
@@ -668,7 +666,7 @@ it("says what an update asks and what can't be reached, and reviews the update f
 				target: "suite",
 				installationRole: "none",
 				approval: { targetId: "suite", generation: "5", digest: "d" },
-				approvedRoles: [{ name: "editor", reach: [collections(["read"])] }],
+				approvedRoles: [{ name: "admin", reach: [collections(["read"])] }],
 			}),
 		),
 		http.post(
@@ -683,10 +681,10 @@ it("says what an update asks and what can't be reached, and reviews the update f
 						status: "STATUS_ACTIVE",
 						upgradeAvailable: true,
 						unreached: [
-							"role viewer reaches nothing of model.profile:invoke through agent: no module agent reaches consumes it for a person",
+							"role user reaches nothing of model.profile:invoke through agent: no module agent reaches consumes it for a person",
 						],
 					},
-					roles: [{ name: "editor", reach: [collections(["read", "create"])] }],
+					roles: [{ name: "admin", reach: [collections(["read", "create"])] }],
 				}),
 		),
 		http.post(
@@ -696,13 +694,13 @@ it("says what an update asks and what can't be reached, and reviews the update f
 	);
 	render();
 	const added = await screen.findByRole("list", {
-		name: "What the update adds for an editor",
+		name: "What the update adds for an admin",
 	});
 	expect(within(added).getByText("Create collections")).toBeTruthy();
 	expect(within(added).queryByText("Read collections")).toBeNull();
 	expect(
 		screen.getByText(
-			"A viewer can't use profiles through agent right now: agent no longer passes it on.",
+			"A user can't use profiles through agent right now: agent no longer passes it on.",
 		),
 	).toBeTruthy();
 	fireEvent.click(screen.getByRole("button", { name: "Review update" }));

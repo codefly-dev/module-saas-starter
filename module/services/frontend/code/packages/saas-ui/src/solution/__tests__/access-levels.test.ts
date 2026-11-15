@@ -65,8 +65,8 @@ describe("the access one operation demands", () => {
 
 	it("names several things as a sentence would", () => {
 		expect(listText([])).toBe("");
-		expect(listText(["editor"])).toBe("editor");
-		expect(listText(["editor", "installer"])).toBe("editor and installer");
+		expect(listText(["user"])).toBe("user");
+		expect(listText(["user", "admin"])).toBe("user and admin");
 		expect(listText(["a", "b", "c"])).toBe("a, b and c");
 	});
 });

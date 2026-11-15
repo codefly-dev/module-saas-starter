@@ -324,7 +324,7 @@ describe("access through solutions and module pages", () => {
 			http.post(`${HOST}/ListRoleGrants`, async () => {
 				await gate;
 				return HttpResponse.json({
-					grants: [{ role: "editor", teamId: team.id }],
+					grants: [{ role: "admin", teamId: team.id }],
 				});
 			}),
 		);
@@ -335,6 +335,6 @@ describe("access through solutions and module pages", () => {
 			screen.queryByText(/holds no role on any solution or module page/),
 		).toBeNull();
 		answer();
-		expect(await screen.findByText("expenses: editor")).toBeTruthy();
+		expect(await screen.findByText("expenses: admin")).toBeTruthy();
 	});
 });

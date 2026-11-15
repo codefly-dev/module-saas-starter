@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 
 	"accounts/pkg/business"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
@@ -478,11 +479,14 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 	})
 
 	// A holder of the page's user role reads its offer, as a member holding a
-	// role there does, but the core answers it without the approval tuple, so
-	// the host refuses them both the update's review and its approval
-	// (installationsAt): only the page's admin approves it. Red before: an
-	// offer read without its approval would hand a user the page as theirs to
-	// approve.
+	// role there does, but the core answers it without the approval tuple. The
+	// review half proves the host's own refusal of the review on that empty
+	// tuple (reviewSolutionInstall). The approval half proves installationsAt's:
+	// the admin's review resubmitted by the user is refused as another actor's,
+	// and the same review forged as her own reaches installationsAt, which
+	// refuses it on the empty tuple before the core's consent check would. The
+	// forged case asserts installationsAt's own message, so dropping that check
+	// fails it even though the core would still refuse.
 	t.Run("a user of the page neither reviews nor approves its update", func(t *testing.T) {
 		const page = "conformance-user-widened-page"
 		read, write := wireScope(page+".entry", "read"), wireScope(page+".entry", "read", "write")
@@ -515,8 +519,14 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		review, err := h.svc.ReviewSolutionInstall(h.ctx, maya, fixtureOrganization, available(page).TargetID)
 		require.NoError(t, err, "the page's admin reviews it")
 		_, err = h.svc.InstallReviewedSolution(h.ctx, ivy, fixtureOrganization, review, business.InstallAccess{})
+		require.ErrorContains(t, err, "belongs to another actor", "nor approves the admin's review")
+		forged := proto.Clone(review).(*gen.ReviewedSolutionInstall)
+		forged.ActorId = conformanceIvy
+		_, err = h.svc.InstallReviewedSolution(h.ctx, ivy, fixtureOrganization, forged, business.InstallAccess{})
 		code, ok = domain.CodeOf(err)
-		require.True(t, ok && code == domain.Denied, "nor approves the admin's review: %v", err)
+		require.True(t, ok && code == domain.Denied, "nor the admin's review forged as her own: %v", err)
+		require.ErrorContains(t, err, "installation administration requires an administrator or owner of organization",
+			"refused by the host's installationsAt, not left to the core's consent check")
 		approved, err := h.svc.InstallReviewedSolution(h.ctx, maya, fixtureOrganization, review, business.InstallAccess{})
 		require.NoError(t, err, "the page's admin approves it")
 		require.Equal(t, review.GetApproval().GetOperationId(), approved.Consent.OperationID)

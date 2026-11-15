@@ -6,8 +6,8 @@ import {
 } from "./solution-installations-page";
 
 const NAMES = new Map([
-	["team-1", "expenses-editor"],
-	["team-2", "expenses-viewer"],
+	["team-1", "expenses-admin"],
+	["team-2", "expenses-user"],
 ]);
 
 function view(grants: Partial<RoleGrant>[] | undefined): AccessView {
@@ -15,7 +15,7 @@ function view(grants: Partial<RoleGrant>[] | undefined): AccessView {
 		grants: new Map(grants ? [["inst-1", grants as RoleGrant[]]] : []),
 		failed: new Set(),
 		unreached: () => [],
-		roles: () => ["editor", "viewer"],
+		roles: () => ["admin", "user"],
 		// As the page does: the team's name when read, else its id.
 		name: (grant) => NAMES.get(grant.teamId ?? "") ?? grant.teamId ?? "",
 	};
@@ -33,21 +33,21 @@ describe("uninstallLosers", () => {
 			uninstallLosers(
 				row,
 				view([
-					{ role: "editor", teamId: "team-1", personId: "" },
-					{ role: "viewer", teamId: "team-2", personId: "" },
-					{ role: "viewer", teamId: "team-1", personId: "" },
+					{ role: "admin", teamId: "team-1", personId: "" },
+					{ role: "user", teamId: "team-2", personId: "" },
+					{ role: "user", teamId: "team-1", personId: "" },
 				]),
 			),
-		).toBe("expenses-editor and expenses-viewer lose");
+		).toBe("expenses-admin and expenses-user lose");
 	});
 
 	it("agrees with a single holder", () => {
 		expect(
 			uninstallLosers(
 				row,
-				view([{ role: "editor", teamId: "team-1", personId: "" }]),
+				view([{ role: "admin", teamId: "team-1", personId: "" }]),
 			),
-		).toBe("expenses-editor loses");
+		).toBe("expenses-admin loses");
 	});
 
 	it("names nobody by an id while a holder's name is not read yet", () => {
@@ -55,8 +55,8 @@ describe("uninstallLosers", () => {
 			uninstallLosers(
 				row,
 				view([
-					{ role: "editor", teamId: "team-1", personId: "" },
-					{ role: "viewer", teamId: "team-unread", personId: "" },
+					{ role: "admin", teamId: "team-1", personId: "" },
+					{ role: "user", teamId: "team-unread", personId: "" },
 				]),
 			),
 		).toBe("");
