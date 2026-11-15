@@ -65,19 +65,23 @@ func captureLeveledLogs(t *testing.T) *leveledLogs {
 // is a WARN.
 func TestACredentialReadFailureIsLoggedRedactedAndByCause(t *testing.T) {
 	const credential = "workload-credential-not-for-logs"
+	ended, end := context.WithCancel(context.Background())
+	end()
 	for name, tc := range map[string]struct {
+		ctx   context.Context
 		err   error
 		code  codes.Code
 		level wool.Loglevel
 	}{
-		"request ended":   {fmt.Errorf("%w: post for %s: %w", business.ErrExecutionUnbound, credential, context.Canceled), codes.Canceled, wool.INFO},
-		"deadline passed": {fmt.Errorf("%w: post for %s: %w", business.ErrExecutionUnbound, credential, context.DeadlineExceeded), codes.DeadlineExceeded, wool.WARN},
-		"review unbound":  {fmt.Errorf("%w: post for %s: dial tcp 10.0.0.1:443", business.ErrExecutionUnbound, credential), codes.Unavailable, wool.WARN},
-		"unknown failure": {fmt.Errorf("the reviewer read %s and panicked", credential), codes.Internal, wool.WARN},
+		"request ended":        {ended, fmt.Errorf("%w: post for %s: %w", business.ErrExecutionUnbound, credential, context.Canceled), codes.Canceled, wool.INFO},
+		"dependency cancelled": {context.Background(), fmt.Errorf("%w: post for %s: %w", business.ErrExecutionUnbound, credential, context.Canceled), codes.Unavailable, wool.WARN},
+		"deadline passed":      {context.Background(), fmt.Errorf("%w: post for %s: %w", business.ErrExecutionUnbound, credential, context.DeadlineExceeded), codes.DeadlineExceeded, wool.WARN},
+		"review unbound":       {context.Background(), fmt.Errorf("%w: post for %s: dial tcp 10.0.0.1:443", business.ErrExecutionUnbound, credential), codes.Unavailable, wool.WARN},
+		"unknown failure":      {context.Background(), fmt.Errorf("the reviewer read %s and panicked", credential), codes.Internal, wool.WARN},
 	} {
 		t.Run(name, func(t *testing.T) {
 			logs := captureLeveledLogs(t)
-			err := credentialRefusal(context.Background(), tc.err, "the actor", credential)
+			err := credentialRefusal(tc.ctx, tc.err, "the actor", credential)
 			require.Equal(t, tc.code, status.Code(err), "%v", err)
 			require.Len(t, logs.at(tc.level, "a workload credential could not be read"), 1, "logged once, at %v: %s", tc.level, logs.all())
 			require.NotContains(t, logs.all(), credential, "the credential is never logged")
@@ -95,4 +99,14 @@ func TestAWorkloadCredentialReadFailureIsLoggedOnce(t *testing.T) {
 	_, err := workload(context.Background(), f.hop, "the actor")
 	require.Equal(t, codes.Unavailable, status.Code(err), "%v", err)
 	require.Len(t, logs.at(wool.WARN, "the api server did not answer"), 1, "one WARN for one failed read: %s", logs.all())
+}
+
+// A credential shorter than the redaction floor is not replaced: a caller
+// presenting "e" would otherwise rewrite every "e" in its own log line.
+func TestAShortCredentialDoesNotGarbleTheLogLine(t *testing.T) {
+	logs := captureLeveledLogs(t)
+	err := credentialRefusal(context.Background(), fmt.Errorf("%w: the api server did not answer", business.ErrExecutionUnbound), "the actor", "e")
+	require.Equal(t, codes.Unavailable, status.Code(err))
+	require.Contains(t, logs.all(), "the api server did not answer", "the reason is logged as it was")
+	require.NotContains(t, logs.all(), "[redacted workload credential]")
 }

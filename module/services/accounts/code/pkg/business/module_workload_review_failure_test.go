@@ -55,13 +55,17 @@ func TestAWorkloadReviewThatCouldNotRunIsNotARejection(t *testing.T) {
 // A caller that ended its own request is no operational signal: the refusal is
 // still logged, below WARN. Every other refusal stays a WARN.
 func TestAWorkloadReviewTheCallerEndedIsLoggedBelowWarn(t *testing.T) {
+	ended, end := context.WithCancel(context.Background())
+	end()
 	for name, tc := range map[string]struct {
+		ctx       context.Context
 		reviewErr error
 		warn      bool
 	}{
-		"request ended":   {fmt.Errorf("post tokenreviews: %w", context.Canceled), false},
-		"api unreachable": {errors.New("dial tcp: connection refused"), true},
-		"review refused":  {fmt.Errorf("%w: the token has expired", ErrExecutionTokenRejected), true},
+		"request ended":        {ended, fmt.Errorf("post tokenreviews: %w", context.Canceled), false},
+		"dependency cancelled": {context.Background(), fmt.Errorf("post tokenreviews: %w", context.Canceled), true},
+		"api unreachable":      {context.Background(), errors.New("dial tcp: connection refused"), true},
+		"review refused":       {context.Background(), fmt.Errorf("%w: the token has expired", ErrExecutionTokenRejected), true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var levels []wool.Loglevel
@@ -70,7 +74,7 @@ func TestAWorkloadReviewTheCallerEndedIsLoggedBelowWarn(t *testing.T) {
 			t.Cleanup(func() { wool.SetFallbackLogger(nil) })
 			svc := reviewService()
 			svc.executionReviewer = &fakeExecutionReviewer{reviewErr: tc.reviewErr}
-			_, err := svc.ModulePrefixOfWorkload(context.Background(), "a-workload-credential")
+			_, err := svc.ModulePrefixOfWorkload(tc.ctx, "a-workload-credential")
 			require.Error(t, err)
 			require.Len(t, levels, 1)
 			if tc.warn {
@@ -85,3 +89,12 @@ func TestAWorkloadReviewTheCallerEndedIsLoggedBelowWarn(t *testing.T) {
 type levelCapture struct{ levels *[]wool.Loglevel }
 
 func (c *levelCapture) Process(msg *wool.Log) { *c.levels = append(*c.levels, msg.Level) }
+
+// Redaction replaces a credential only from the floor up; a shorter one is
+// left alone so it cannot garble the line.
+func TestRedactWorkloadCredentialHasAFloor(t *testing.T) {
+	const long = "a-workload-credential-long-enough"
+	require.Equal(t, "post for [redacted workload credential] failed", RedactWorkloadCredential("post for "+long+" failed", long))
+	require.Equal(t, "the reviewer did not answer", RedactWorkloadCredential("the reviewer did not answer", "e"))
+	require.Equal(t, "no credential", RedactWorkloadCredential("no credential", ""))
+}

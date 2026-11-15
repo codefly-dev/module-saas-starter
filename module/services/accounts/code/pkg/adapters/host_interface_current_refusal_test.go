@@ -17,11 +17,13 @@ import (
 // credential read the request's end cut short was refused as one that proves
 // no module. It now keeps the failure's code.
 func TestCurrentRefusesOnlyACredentialThatProvesNoModule(t *testing.T) {
+	ended, end := context.WithCancel(context.Background())
+	end()
 	for name, tc := range map[string]struct {
 		err  error
 		code codes.Code
 	}{
-		"request ended":    {credentialRefusal(context.Background(), fmt.Errorf("%w: %w", business.ErrExecutionUnbound, context.Canceled), "the actor", ""), codes.Canceled},
+		"request ended":    {credentialRefusal(ended, fmt.Errorf("%w: %w", business.ErrExecutionUnbound, context.Canceled), "the actor", ""), codes.Canceled},
 		"deadline passed":  {credentialRefusal(context.Background(), fmt.Errorf("%w: %w", business.ErrExecutionUnbound, context.DeadlineExceeded), "the actor", ""), codes.DeadlineExceeded},
 		"review unbound":   {credentialRefusal(context.Background(), fmt.Errorf("%w: the api server did not answer", business.ErrExecutionUnbound), "the actor", ""), codes.Unavailable},
 		"registry unread":  {status.Error(codes.Unavailable, "the module registry could not be read current"), codes.Unavailable},

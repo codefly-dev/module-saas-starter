@@ -9,6 +9,21 @@ import (
 	"github.com/codefly-dev/core/wool"
 )
 
+// minRedactedCredential is the shortest presented credential redacted from a
+// log line. Replacing a shorter one would let a caller garble its own log line
+// (a credential "e" would rewrite every "e"), and a credential that short
+// proves nothing a log line could leak.
+const minRedactedCredential = 16
+
+// RedactWorkloadCredential is text with the presented workload credential
+// replaced, for a log line.
+func RedactWorkloadCredential(text, credential string) string {
+	if len(credential) < minRedactedCredential {
+		return text
+	}
+	return strings.ReplaceAll(text, credential, "[redacted workload credential]")
+}
+
 // ModulePrefixOfWorkload names the one composed module a workload credential
 // authenticates, from the credential alone: the host's interface reading of a
 // workload-owned issue, where no caller types a module name. The credential is
@@ -17,12 +32,11 @@ import (
 func (s *Service) ModulePrefixOfWorkload(ctx context.Context, credential string) (prefix string, err error) {
 	defer func() {
 		if err != nil {
-			reason := err.Error()
-			if credential != "" {
-				reason = strings.ReplaceAll(reason, credential, "[redacted workload credential]")
-			}
+			reason := RedactWorkloadCredential(err.Error(), credential)
 			// A caller ending its own request carries no operational signal.
-			if errors.Is(err, context.Canceled) {
+			// It is the caller's context that says so: a dependency answering
+			// Canceled while the caller is live is a failure, logged as one.
+			if errors.Is(ctx.Err(), context.Canceled) {
 				wool.Get(ctx).In("ModulePrefixOfWorkload").Info("workload credential refused", wool.Field("reason", reason))
 				return
 			}
