@@ -755,7 +755,8 @@ export type InstallReviewedSolutionRequest = Message<"saas.accounts.v1.InstallRe
 
   /**
    * The declared roles the installing person takes: they join the team of each
-   * once the installation is active, and no other. Empty takes none.
+   * once the installation is active, and no other. Empty takes none. The name
+   * says who takes them; it is not a role named "installer".
    *
    * @generated from field: repeated string installer_roles = 4;
    */
@@ -800,6 +801,9 @@ export type SetUpModulePageRequest = Message<"saas.accounts.v1.SetUpModulePageRe
   roleTeams: { [key: string]: string };
 
   /**
+   * The declared roles the acting administrator takes, joining the team of
+   * each. The name says who takes them; it is not a role named "installer".
+   *
    * @generated from field: repeated string installer_roles = 4;
    */
   installerRoles: string[];

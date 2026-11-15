@@ -116,12 +116,13 @@ func deliverSolution(t *testing.T, signer *solutionhost.InMemorySigner, alias st
 
 }
 
-// The live case: an installation made before the solution's roles were read
-// holds the built-in viewer as its standing role, which does not permit using
-// a solution. Once the solution delivers its roles, the fixture installer
-// exposes it to the team it names with the solution's own viewer, through the
-// one exposure rule, and the team's member holds that role's grant.
-func TestTheFixtureExposesAnInstallationHoldingTheBuiltInViewerWithTheSolutionsViewer(t *testing.T) {
+// The legacy case: an installation made before the solution's roles were
+// read holds the built-in viewer as its standing role, which does not permit
+// using a solution. The exposure rule exposes it with the solution's own role
+// of the standing role's name, and a solution declares exactly admin and user
+// (Codefly's module contract), so no role of the solution is named "viewer":
+// the exposure is refused, saying why, and the team holds nothing.
+func TestALegacyInstallationHoldingTheBuiltInViewerIsNotExposedThroughAdminAndUser(t *testing.T) {
 	clearData(t)
 	ctx := testCtx
 	signer := wireSignedDelivery(t)
@@ -189,31 +190,30 @@ installations:
 	require.Empty(t, inCore)
 
 	// The solution delivers its roles, which only a host deciding through its
-	// core composes; the legacy installation is then exposed to the team the
-	// fixture names with the solution's own viewer, through the one exposure
-	// rule the fixture's pass applies on a host without a core
-	// (ExposeHostInstallation). On a host with one, the fixture installs a
+	// core composes; exposing the legacy installation to the team the fixture
+	// names, through the one exposure rule the fixture's pass applies on a
+	// host without a core (ExposeHostInstallation), finds no solution role of
+	// the standing role's name and is refused. On a host with one, the fixture installs a
 	// role-gated target through the core instead (coreInstall), which
 	// TestAFreshRunsFixtureInstallsEverySolutionActiveAndSeatsEachPersonOnTheirRole
 	// covers.
-	viewer := []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read"}}}
 	deliverSolution(t, signer, alias, 2, []*compositionv1.RoleV1{
 		{Name: domain.AdminRole, Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read", "write"}}}},
-		{Name: "viewer", Scopes: viewer},
+		{Name: domain.UserRole, Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read"}}}},
 	})
 	teams, err := testService.ListTeams(ctx, &gen.ListTeamsRequest{OrgId: orgID})
 	require.NoError(t, err)
 	require.Len(t, teams.GetTeams(), 1)
 	_, err = testService.ExposeHostInstallation(ctx, owner, orgID, held[0].GetId(), teams.GetTeams()[0].GetId())
-	require.NoError(t, err)
+	require.ErrorContains(t, err, "does not permit solution:use", "the built-in viewer alone exposes nothing")
+	require.ErrorContains(t, err, `declares no role named after the standing role "viewer"`, "and the refusal says why")
 	exposed, err := testService.ReadHostInstallation(ctx, orgID, held[0].GetId())
 	require.NoError(t, err)
-	require.Len(t, exposed.TeamIDs, 1)
+	require.Empty(t, exposed.TeamIDs, "the team holds nothing")
 	require.Equal(t, before.RoleID, exposed.RoleID, "the standing grant is not rewritten")
 
 	delivered, err := testService.DeliveredSolutionAuthority(ctx, alias)
 	require.NoError(t, err)
 	require.NotNil(t, delivered)
-	grants := delivered.HeldBy(member, exposed.TeamIDs, business.SolutionRoleHolders{Owner: owner, Role: exposed.Role, Teams: exposed.TeamIDs})
-	require.Equal(t, delivered.Grants("viewer"), grants)
+	require.Empty(t, delivered.HeldBy(member, exposed.TeamIDs, business.SolutionRoleHolders{Owner: owner, Role: exposed.Role, Teams: exposed.TeamIDs}), "the member holds no role of the solution")
 }

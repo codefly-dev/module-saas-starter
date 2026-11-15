@@ -20,7 +20,10 @@ import (
 // (InstallerRoles). Access is only ever by grant: the installer holds exactly
 // the roles whose teams they join.
 type InstallAccess struct {
-	RoleTeams      map[string]string
+	RoleTeams map[string]string
+	// InstallerRoles are the declared roles the installing person takes
+	// (admin, user, or both); the name says who takes them, not a role named
+	// "installer".
 	InstallerRoles []string
 }
 

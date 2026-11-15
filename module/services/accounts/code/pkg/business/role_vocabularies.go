@@ -50,8 +50,9 @@ func RoleVocabularies() []RoleVocabulary {
 			Words: installationRoleWords(),
 			Decides: "What a person holds through one installation of a solution or of a module page that declares roles: " +
 				"its page, its navigation entry, its Setup tab, and what a Work Context at its audience carries. " +
-				"Every solution, and every module page that declares roles, declares `admin`, which the shared authority core requires, " +
-				"and the standard `user` beside it; a role a target declares beyond those two is its own. " +
+				"A solution, and a module page that declares roles, declares exactly `admin` and `user`: Codefly's module contract " +
+				"refuses any other role and requires both whenever roles are declared. The authority core checks only for `admin` at delivery " +
+				"and tolerates a further role; that is the runtime's leniency, not part of the contract. " +
 				"The installation's owner holds `admin`, whose holder also grants the installation's roles and approves a module page's update; " +
 				"`user` carries only the scopes it declares. The page names each qualified by its product (\"<Product> admin\"), " +
 				"never to be read as the organisation's `admin`.",
@@ -95,8 +96,8 @@ func catalogueBuiltInRoleWords() []string {
 	return words
 }
 
-// installationRoleWords are the standard roles of an installation target: the
-// shared authority core's admin, which it requires, and user beside it.
+// installationRoleWords are the two roles Codefly's module contract allows an
+// installation target, both required once it declares any: admin and user.
 func installationRoleWords() []string {
 	return []string{domain.AdminRole, domain.UserRole}
 }

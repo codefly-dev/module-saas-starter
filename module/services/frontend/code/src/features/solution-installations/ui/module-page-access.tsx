@@ -112,7 +112,10 @@ export function ModulePageAccess({
 									? roleLabel(title, role)
 									: `${role[0]?.toUpperCase()}${role.slice(1)}`}
 							</h4>
-							<ul aria-label={`Who has ${role}`} className="space-y-2">
+							<ul
+								aria-label={`Who has ${roleLabel(title, role)}`}
+								className="space-y-2"
+							>
 								{holders.length === 0 && (
 									<li className="text-muted-foreground">Nobody has it yet.</li>
 								)}
@@ -137,6 +140,7 @@ export function ModulePageAccess({
 												)}
 												<RemoveHolder
 													role={role}
+													title={title}
 													target={target}
 													name={name}
 													last={holders.length === 1}

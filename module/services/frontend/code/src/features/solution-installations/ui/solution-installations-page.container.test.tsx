@@ -1873,7 +1873,9 @@ describe("an installation survives delivery: the host offers an update, and the 
 				name: "What this update adds",
 			}),
 		);
-		expect(adds.getByText("An editor would also be able to")).toBeTruthy();
+		expect(
+			adds.getByText("A Payroll editor would also be able to"),
+		).toBeTruthy();
 		expect(
 			adds.getByText("Through payroll and agent, in documents"),
 		).toBeTruthy();

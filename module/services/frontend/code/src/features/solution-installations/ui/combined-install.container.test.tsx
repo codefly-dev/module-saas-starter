@@ -409,7 +409,7 @@ describe("combined reviewed installation", () => {
 		// Each role reads what its holder can do, grouped by where: direct
 		// first, then through the solution, then the holder's own access.
 		const editor = within(reach).getByRole("list", {
-			name: "What an editor can do",
+			name: "What an Example Solution editor can do",
 		});
 		const text = editor.textContent ?? "";
 		const groups = [
@@ -434,7 +434,9 @@ describe("combined reviewed installation", () => {
 		expect(text).not.toMatch(/delete pages/);
 		expect(
 			within(
-				within(reach).getByRole("list", { name: "What a viewer can do" }),
+				within(reach).getByRole("list", {
+					name: "What an Example Solution viewer can do",
+				}),
 			).getByText("Read pages"),
 		).toBeTruthy();
 		// Operations in plain words; identifiers only behind the disclosure.
@@ -492,7 +494,9 @@ describe("combined reviewed installation", () => {
 			...["Alpha", "Bravo", "Charlie", "Delta"].map((name) =>
 				supportingModule(name, false),
 			),
-			...["Echo", "Foxtrot", "Golf", "Hotel"].map((name) => supportingModule(name, true)),
+			...["Echo", "Foxtrot", "Golf", "Hotel"].map((name) =>
+				supportingModule(name, true),
+			),
 		];
 		renderInApp(<Page />);
 		const dialog = await open();

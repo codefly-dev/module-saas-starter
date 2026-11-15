@@ -5,6 +5,7 @@ import {
 	article,
 	RoleAbilitiesList,
 	roleAbilities,
+	roleLabel,
 	updateAsks,
 } from "@codefly-dev/saas-ui/solution";
 import { useState } from "react";
@@ -17,8 +18,11 @@ import { DeclaredOperations } from "./declared-access";
 /** What each declared role lets people do, one card per role. */
 export function RoleReach({
 	offer,
+	title,
 }: {
 	offer: Pick<ReviewedOffer, "roles" | "target">;
+	/** How the host titles the target; each role reads as its ("<Title> admin"). */
+	title?: string;
 }) {
 	if (!offer.roles.length) return null;
 	return (
@@ -31,9 +35,13 @@ export function RoleReach({
 					className="space-y-2 rounded-lg border p-3"
 				>
 					<h4 className="font-medium">
-						What {article(abilities.role).toLowerCase()} {abilities.role} can do
+						What {article(roleLabel(title, abilities.role)).toLowerCase()}{" "}
+						{roleLabel(title, abilities.role)} can do
 					</h4>
-					<RoleAbilitiesList abilities={abilities} />
+					<RoleAbilitiesList
+						abilities={abilities}
+						label={`What ${article(roleLabel(title, abilities.role)).toLowerCase()} ${roleLabel(title, abilities.role)} can do`}
+					/>
 				</section>
 			))}
 		</section>
@@ -48,9 +56,12 @@ export function RoleReach({
 export function UpdateAsks({
 	offer,
 	approved,
+	title,
 }: {
 	offer: Pick<ReviewedOffer, "roles" | "target">;
 	approved: readonly AbilityRole[];
+	/** How the host titles the target, for each role's words. */
+	title?: string;
 }) {
 	const asks = approved.length
 		? updateAsks(offer.target, offer.roles, approved)
@@ -75,11 +86,12 @@ export function UpdateAsks({
 				asks.map((role) => (
 					<div key={role.role}>
 						<p className="font-medium">
-							{article(role.role)} {role.role} would also be able to
+							{article(roleLabel(title, role.role))}{" "}
+							{roleLabel(title, role.role)} would also be able to
 						</p>
 						<RoleAbilitiesList
 							abilities={role}
-							label={`What the update adds for ${article(role.role).toLowerCase()} ${role.role}`}
+							label={`What the update adds for ${article(roleLabel(title, role.role)).toLowerCase()} ${roleLabel(title, role.role)}`}
 						/>
 					</div>
 				))

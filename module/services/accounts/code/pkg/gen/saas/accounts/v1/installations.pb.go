@@ -1620,7 +1620,8 @@ type InstallReviewedSolutionRequest struct {
 	// attempt recorded, never this one.
 	RoleTeams map[string]string `protobuf:"bytes,3,rep,name=role_teams,json=roleTeams,proto3" json:"role_teams,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// The declared roles the installing person takes: they join the team of each
-	// once the installation is active, and no other. Empty takes none.
+	// once the installation is active, and no other. Empty takes none. The name
+	// says who takes them; it is not a role named "installer".
 	InstallerRoles []string `protobuf:"bytes,4,rep,name=installer_roles,json=installerRoles,proto3" json:"installer_roles,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -1696,9 +1697,11 @@ type SetUpModulePageRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	OrgId string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
 	// The module page, as ListAvailableSolutions names it.
-	TargetId       string            `protobuf:"bytes,2,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
-	RoleTeams      map[string]string `protobuf:"bytes,3,rep,name=role_teams,json=roleTeams,proto3" json:"role_teams,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	InstallerRoles []string          `protobuf:"bytes,4,rep,name=installer_roles,json=installerRoles,proto3" json:"installer_roles,omitempty"`
+	TargetId  string            `protobuf:"bytes,2,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	RoleTeams map[string]string `protobuf:"bytes,3,rep,name=role_teams,json=roleTeams,proto3" json:"role_teams,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// The declared roles the acting administrator takes, joining the team of
+	// each. The name says who takes them; it is not a role named "installer".
+	InstallerRoles []string `protobuf:"bytes,4,rep,name=installer_roles,json=installerRoles,proto3" json:"installer_roles,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }

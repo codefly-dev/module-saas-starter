@@ -563,16 +563,18 @@ it("a set-up module page's grants are edited from its Setup page", async () => {
 
 	const user = within(await screen.findByRole("region", { name: "Role user" }));
 	const holders = within(
-		await user.findByRole("list", { name: "Who has user" }),
+		await user.findByRole("list", { name: "Who has Suite user" }),
 	);
 	await holders.findByRole("link", { name: "Team Support" });
 	fireEvent.click(
 		holders.getByRole("button", {
-			name: "Remove user from Team Support",
+			name: "Remove Suite user from Team Support",
 		}),
 	);
 	// Support is the user role's only holder: it asks before leaving nobody.
-	expect(user.getByText("Nobody will have user access to suite.")).toBeTruthy();
+	expect(
+		user.getByText("Nobody will have Suite user access to suite."),
+	).toBeTruthy();
 	expect(changes).toHaveLength(0);
 	fireEvent.click(user.getByRole("button", { name: "Remove anyway" }));
 	await waitFor(() => expect(changes).toHaveLength(1));

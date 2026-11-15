@@ -4,6 +4,7 @@ import {
 	article,
 	type RoleAbilities,
 	RoleAbilitiesList,
+	roleLabel,
 } from "@codefly-dev/saas-ui/solution";
 import type { Team } from "@/gen/saas/accounts/v1/common_pb";
 import {
@@ -33,6 +34,7 @@ export function InstallationTeamAssignment({
 	onChoose,
 	onTake,
 	abilities = [],
+	title,
 }: {
 	assignment: readonly RoleTeam[];
 	/** Each role's conventional assignment, offered back after a change. */
@@ -46,6 +48,8 @@ export function InstallationTeamAssignment({
 	onTake: (role: string, take: boolean) => void;
 	/** What each role can do, from the review; a module page has none to show. */
 	abilities?: readonly RoleAbilities[];
+	/** How the host titles the target; each role reads as its ("<Title> admin"). */
+	title?: string;
 }) {
 	return (
 		<section aria-label="Roles" className="space-y-3">
@@ -70,6 +74,7 @@ export function InstallationTeamAssignment({
 				for (const team of teams)
 					if (team.id !== fallback.team?.id) items[team.id] = team.name;
 				const can = abilities.find((a) => a.role === entry.role);
+				const words = roleLabel(title, entry.role);
 				return (
 					<section
 						key={entry.role}
@@ -78,10 +83,15 @@ export function InstallationTeamAssignment({
 					>
 						<h4 className="font-medium">
 							{can
-								? `What ${article(entry.role).toLowerCase()} ${entry.role} can do`
-								: `${entry.role[0]?.toUpperCase() ?? ""}${entry.role.slice(1)}`}
+								? `What ${article(words).toLowerCase()} ${words} can do`
+								: `${words[0]?.toUpperCase() ?? ""}${words.slice(1)}`}
 						</h4>
-						{can && <RoleAbilitiesList abilities={can} />}
+						{can && (
+							<RoleAbilitiesList
+								abilities={can}
+								label={`What ${article(words).toLowerCase()} ${words} can do`}
+							/>
+						)}
 						<div className="flex flex-wrap items-center gap-2">
 							<span>Goes to team</span>
 							<Select
@@ -96,7 +106,7 @@ export function InstallationTeamAssignment({
 								disabled={disabled || teams.length === 0}
 							>
 								<SelectTrigger
-									aria-label={`Team for ${entry.role}`}
+									aria-label={`Team for ${words}`}
 									className="w-56"
 								>
 									<SelectValue />

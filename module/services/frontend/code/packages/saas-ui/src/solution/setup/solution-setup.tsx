@@ -541,6 +541,7 @@ function RolesSection({
 								) : (
 									<Holders
 										role={role.role}
+										title={title}
 										target={offer.target}
 										grants={(grants ?? []).filter((g) => g.role === role.role)}
 										subjects={subjects}
@@ -585,6 +586,7 @@ function RolesSection({
  */
 export function RemoveHolder({
 	role,
+	title,
 	target,
 	name,
 	last,
@@ -592,6 +594,8 @@ export function RemoveHolder({
 	onRemove,
 }: {
 	role: string;
+	/** How the host titles the target, for the role's words ({@link roleLabel}). */
+	title?: string;
 	target: string;
 	name: string;
 	/** Whether this is the role's only holder. */
@@ -606,7 +610,7 @@ export function RemoveHolder({
 				role="alert"
 				className="flex flex-wrap items-center gap-2 text-warning"
 			>
-				Nobody will have {role} access to {target}.
+				Nobody will have {roleLabel(title, role)} access to {target}.
 				<Button
 					size="sm"
 					variant="destructive"
@@ -632,7 +636,7 @@ export function RemoveHolder({
 			size="sm"
 			variant="outline"
 			disabled={busy}
-			aria-label={`Remove ${role} from ${name}`}
+			aria-label={`Remove ${roleLabel(title, role)} from ${name}`}
 			onClick={() => (last ? setConfirming(true) : onRemove())}
 		>
 			Remove
@@ -643,6 +647,7 @@ export function RemoveHolder({
 /** The teams and people holding one role, each removable. */
 function Holders({
 	role,
+	title,
 	target,
 	grants,
 	subjects,
@@ -651,6 +656,8 @@ function Holders({
 	onRevoke,
 }: {
 	role: string;
+	/** How the host titles the target, for the role's words. */
+	title?: string;
 	target: string;
 	grants: readonly RoleGrant[];
 	subjects?: readonly SetupSubject[];
@@ -661,7 +668,10 @@ function Holders({
 	if (!grants.length)
 		return <p className="text-muted-foreground">Nobody has it yet.</p>;
 	return (
-		<ul className="flex flex-col gap-2" aria-label={`Who has ${role}`}>
+		<ul
+			className="flex flex-col gap-2"
+			aria-label={`Who has ${roleLabel(title, role)}`}
+		>
 			{grants.map((g) => {
 				const kind = g.teamId ? "team" : "person";
 				const subject = subjects?.find(
@@ -695,6 +705,7 @@ function Holders({
 							</span>
 							<RemoveHolder
 								role={role}
+								title={title}
 								target={target}
 								name={name}
 								last={grants.length === 1}

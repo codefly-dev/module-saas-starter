@@ -41,6 +41,7 @@ import {
 	UpdateAsks,
 } from "./install-review-summary";
 import { InstallationTeamAssignment } from "./installation-team-assignment";
+import { useTargetTitles } from "./target-name";
 
 const offers = createClient(OfferService, apiTransport);
 
@@ -71,6 +72,9 @@ export function InstallSolutionDialog({
 	upgrade?: boolean;
 }) {
 	const service = useInstallationService();
+	// Each role reads as the target's ("<Title> admin"), by this host's title.
+	const title =
+		useTargetTitles().get(solution.routeAlias) ?? solution.routeAlias;
 	const { user } = useAuth();
 	const top = useRef<HTMLDivElement>(null);
 	const [chosen, setChosen] = useState<Record<string, string>>({});
@@ -148,11 +152,12 @@ export function InstallSolutionDialog({
 						{upgrade && (
 							<UpdateAsks
 								offer={data.offer}
+								title={title}
 								approved={data.consent.approvedRoles}
 							/>
 						)}
 						{(upgrade || roles.length === 0) && (
-							<RoleReach offer={data.offer} />
+							<RoleReach offer={data.offer} title={title} />
 						)}
 						{!upgrade && roles.length > 0 && (
 							<InstallationTeamAssignment
@@ -161,6 +166,7 @@ export function InstallSolutionDialog({
 								teams={teamList}
 								taken={new Set(access.installerRoles)}
 								abilities={roleAbilities(target, data.offer.roles)}
+								title={title}
 								teamsError={
 									teams.isError ? hostRefusal(teams.error) : undefined
 								}

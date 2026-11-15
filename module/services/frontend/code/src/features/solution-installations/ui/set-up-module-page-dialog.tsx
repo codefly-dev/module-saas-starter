@@ -20,6 +20,7 @@ import {
 	teamAssignment,
 } from "../model/team-assignment";
 import { InstallationTeamAssignment } from "./installation-team-assignment";
+import { useTargetTitles } from "./target-name";
 
 /**
  * Set up who may use a module page, in one act: a module page is installed by
@@ -51,6 +52,8 @@ export function SetUpModulePageDialog({
 	onClose: () => void;
 }) {
 	const top = useRef<HTMLDivElement>(null);
+	// Each role reads as the target's ("<Title> admin"), by this host's title.
+	const title = useTargetTitles().get(page.routeAlias) ?? page.routeAlias;
 	const [chosen, setChosen] = useState<Record<string, string>>({});
 	const [untaken, setUntaken] = useState<ReadonlySet<string>>(new Set());
 	const teams = useQuery({
@@ -83,6 +86,7 @@ export function SetUpModulePageDialog({
 				</DialogHeader>
 				<InstallationTeamAssignment
 					assignment={assignment}
+					title={title}
 					conventional={teamAssignment(target, roles, teamList, {})}
 					teams={teamList}
 					taken={new Set(access.installerRoles)}

@@ -477,6 +477,52 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		require.Equal(t, []string{"admin", "user"}, grantedRoles())
 	})
 
+	// A holder of the page's user role reads its offer, as a member holding a
+	// role there does, but the core answers it without the approval tuple, so
+	// the host refuses them both the update's review and its approval
+	// (installationsAt): only the page's admin approves it. Red before: an
+	// offer read without its approval would hand a user the page as theirs to
+	// approve.
+	t.Run("a user of the page neither reviews nor approves its update", func(t *testing.T) {
+		const page = "conformance-user-widened-page"
+		read, write := wireScope(page+".entry", "read"), wireScope(page+".entry", "read", "write")
+		deliverPage := func(generation uint64, user *authorityv1.WorkScopeV1) {
+			deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: page, generation: generation, ceilings: []*authorityv1.WorkScopeV1{write}, installationRole: domain.NoInstallationRole,
+				page:  &solutionhost.Frontend{Title: "User widened page", ExposedModule: "./Page", HostContract: 1, Payload: h.pagePayload},
+				roles: map[string][]*authorityv1.WorkScopeV1{"admin": {write}, "user": {user}}})
+		}
+		deliverPage(1, read)
+		require.NoError(t, consentModule(h.ctx, h.svc, h.store, fixtureOrganization, conformanceAlex, page))
+		require.NoError(t, h.core.AdoptLegacyReach(h.ctx), "composition holds the page at what it approved")
+		_, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(page).TargetID, business.InstallAccess{})
+		require.NoError(t, err)
+		admins, users := teamsNamed(t, h, page+"-admin"), teamsNamed(t, h, page+"-user")
+		require.Len(t, admins, 1)
+		require.Len(t, users, 1)
+		require.NoError(t, h.svc.AddTeamMember(h.ctx, conformanceAlex, &gen.AddTeamMemberRequest{TeamId: admins[0], UserId: conformanceMaya}))
+		require.NoError(t, h.svc.AddTeamMember(h.ctx, conformanceAlex, &gen.AddTeamMemberRequest{TeamId: users[0], UserId: conformanceIvy}))
+
+		// Generation 2 widens what a user may do: an update waits.
+		deliverPage(2, write)
+		maya := authority.Person{ID: conformanceMaya, Organization: fixtureOrganization}
+		ivy := authority.Person{ID: conformanceIvy, Organization: fixtureOrganization}
+		offer, err := h.core.ReviewOffer(h.ctx, ivy, fixtureOrganization, page)
+		require.NoError(t, err, "a user of the page reads its offer")
+		require.Empty(t, offer.Approval.TargetID, "without the approval tuple, which is the approver's")
+		_, err = h.svc.ReviewSolutionInstall(h.ctx, ivy, fixtureOrganization, available(page).TargetID)
+		code, ok := domain.CodeOf(err)
+		require.True(t, ok && code == domain.Denied, "a user of the page does not review its update: %v", err)
+		review, err := h.svc.ReviewSolutionInstall(h.ctx, maya, fixtureOrganization, available(page).TargetID)
+		require.NoError(t, err, "the page's admin reviews it")
+		_, err = h.svc.InstallReviewedSolution(h.ctx, ivy, fixtureOrganization, review, business.InstallAccess{})
+		code, ok = domain.CodeOf(err)
+		require.True(t, ok && code == domain.Denied, "nor approves the admin's review: %v", err)
+		approved, err := h.svc.InstallReviewedSolution(h.ctx, maya, fixtureOrganization, review, business.InstallAccess{})
+		require.NoError(t, err, "the page's admin approves it")
+		require.Equal(t, review.GetApproval().GetOperationId(), approved.Consent.OperationID)
+		require.Empty(t, approved.AccessProblems, "no role was added, so none waits for a team")
+	})
+
 	// An administrator's approval of an update that adds a role gives it its
 	// team at once.
 	t.Run("an administrator's approval of a page's update gives the added role its team", func(t *testing.T) {

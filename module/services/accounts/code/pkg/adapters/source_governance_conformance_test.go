@@ -261,6 +261,37 @@ func testSolutionSourcesAreGovernedByTheirScope(t *testing.T, h reviewedClosureH
 		require.NoError(t, remove(maya, mine.GetId()))
 	})
 
+	t.Run("governance follows the declared scope, never the stronger role", func(t *testing.T) {
+		// Users write and admins publish: the write governs, so a user who
+		// administers nothing connects and manages the source, and the
+		// solution's admin, who holds no write, does neither.
+		const byUsersSolution = "conformance-governed-by-users"
+		note := byUsersSolution + ".page"
+		deliverSolution(t, h.ctx, h.conn, h.signer, conformanceSolution{alias: byUsersSolution, generation: 1,
+			ceilings: []*authorityv1.WorkScopeV1{wireScope(note, "read", "write", "publish")},
+			roles: map[string][]*authorityv1.WorkScopeV1{
+				"admin": {wireScope(note, "read", "publish")},
+				"user":  {wireScope(note, "read", "write")},
+			},
+			governance: []string{note + ":write"},
+		})
+		installed, err := installConformanceSolution(h.ctx, h.svc, h.core, byUsersSolution, "user", conformanceAlex)
+		require.NoError(t, err)
+		for person, role := range map[string]string{conformanceRemi: "user", conformanceMaya: "admin"} {
+			_, err := h.core.GrantRoleAsHost(h.ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: installed.ID, Role: role, PersonID: person})
+			require.NoError(t, err)
+		}
+		byUsers := &gen.SourceGovernance{InstallationId: installed.ID, ResourceKind: note, Action: "write"}
+		_, err = connect(maya, "Governed sources: by users, the solution admin's", byUsers)
+		refused(t, err, codes.PermissionDenied, "may not connect a source governed by "+note+":write")
+		source, err := connect(remi, "Governed sources: by users, a user's", byUsers)
+		require.NoError(t, err, "a user holding the governing write connects it, administering nothing")
+		usersRefusal := "belongs to installation " + installed.ID
+		refused(t, sync(maya, source.GetId()), codes.PermissionDenied, usersRefusal, "requires "+note+":write")
+		refused(t, remove(maya, source.GetId()), codes.PermissionDenied, usersRefusal)
+		require.NoError(t, remove(remi, source.GetId()))
+	})
+
 	t.Run("a solution declaring no governing scope governs no source: its sources stay the administrators'", func(t *testing.T) {
 		const undeclared = "conformance-governed-undeclared"
 		note := undeclared + ".page"
