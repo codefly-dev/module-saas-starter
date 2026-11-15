@@ -58,7 +58,7 @@ func TestRedeliveryKeepsSolutionEntitled(t *testing.T) {
 	// core's declaration and the host's applied binding.
 	deliver := func(generation uint64, roles map[string][]*basev0.WorkScopeV1) {
 		t.Helper()
-		roles[domain.InstallerRole] = all
+		roles[domain.AdminRole] = all
 		m := domain.Module{Name: alias, Principal: "solution:" + alias, Kind: domain.KindSolution, Generation: generation,
 			ResourceKinds: all, InstallationRole: domain.NoInstallationRole, Roles: roles, OwnerAware: true}
 		_, err := core.ApplyModule(testCtx, m)
@@ -110,7 +110,7 @@ func TestRedeliveryKeepsSolutionEntitled(t *testing.T) {
 		}))
 	}
 
-	deliver(1, map[string][]*basev0.WorkScopeV1{"viewer": read(page, draft)})
+	deliver(1, map[string][]*basev0.WorkScopeV1{domain.UserRole: read(page, draft)})
 	approval, err := core.Review(testCtx, caller, org, alias)
 	require.NoError(t, err)
 	approval.OperationID = business.NewIDString()
@@ -129,21 +129,21 @@ func TestRedeliveryKeepsSolutionEntitled(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, domain.Active, inst.Status)
-	_, err = core.GrantRole(testCtx, caller, authority.RoleRequest{Organization: org, InstallationID: inst.ID, Role: "viewer", PersonID: owner})
+	_, err = core.GrantRole(testCtx, caller, authority.RoleRequest{Organization: org, InstallationID: inst.ID, Role: domain.UserRole, PersonID: owner})
 	require.NoError(t, err)
 	installed := stands(1, false)
 	require.Equal(t, 1, grants(inst.ID))
 	approved(1)
 
 	t.Run("a redelivery asking nothing new re-converges the consent and keeps the grants", func(t *testing.T) {
-		deliver(2, map[string][]*basev0.WorkScopeV1{"viewer": read(page)})
+		deliver(2, map[string][]*basev0.WorkScopeV1{domain.UserRole: read(page)})
 		current := stands(2, false)
 		require.Greater(t, current.Revision, installed.Revision, "the revision moves with the re-convergence")
 		require.Equal(t, 1, grants(inst.ID))
 		approved(2)
 	})
 	t.Run("a redelivery asking more leaves the installation healthy on its consent, offering an upgrade", func(t *testing.T) {
-		deliver(3, map[string][]*basev0.WorkScopeV1{"viewer": read(page, draft), "editor": {{ResourceKind: page, Actions: []string{"read", "write"}}}})
+		deliver(3, map[string][]*basev0.WorkScopeV1{domain.UserRole: read(page, draft), "author": {{ResourceKind: page, Actions: []string{"read", "write"}}}})
 		stands(2, true)
 		require.Equal(t, 1, grants(inst.ID))
 	})

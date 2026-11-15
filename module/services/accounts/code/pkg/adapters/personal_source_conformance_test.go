@@ -36,9 +36,9 @@ func testAMemberConnectsAPersonalSourceOfTheirOwn(t *testing.T, h reviewedClosur
 	page := target + ".page"
 	deliverSolution(t, h.ctx, h.conn, h.signer, conformanceSolution{alias: target, generation: 1,
 		ceilings: []*authorityv1.WorkScopeV1{wireScope(page, "read")},
-		roles:    map[string][]*authorityv1.WorkScopeV1{"installer": {wireScope(page, "read")}, "viewer": {wireScope(page, "read")}},
+		roles:    map[string][]*authorityv1.WorkScopeV1{"admin": {wireScope(page, "read")}, "user": {wireScope(page, "read")}},
 	})
-	inst, err := installConformanceSolution(h.ctx, h.svc, h.core, target, "viewer", conformanceAlex)
+	inst, err := installConformanceSolution(h.ctx, h.svc, h.core, target, "user", conformanceAlex)
 	require.NoError(t, err)
 
 	h.svc.SetDatasourceConnector(staticCipher{}, nil, "")
@@ -182,7 +182,7 @@ func testAMemberConnectsAPersonalSourceOfTheirOwn(t *testing.T, h reviewedClosur
 		team, err := h.svc.CreateTeam(h.ctx, conformanceAlex, &gen.CreateTeamRequest{OrgId: fixtureOrganization, Name: "Personal sources: casting"})
 		require.NoError(t, err)
 		installations := installationv1.NewInstallationServiceClient(h.conn)
-		_, err = installations.GrantRole(alex, &installationv1.GrantRoleRequest{OrganizationId: fixtureOrganization, InstallationId: inst.ID, Role: "viewer", TeamId: team.GetTeam().GetId()})
+		_, err = installations.GrantRole(alex, &installationv1.GrantRoleRequest{OrganizationId: fixtureOrganization, InstallationId: inst.ID, Role: "user", TeamId: team.GetTeam().GetId()})
 		require.NoError(t, err)
 		cast, err := sessionv1.NewSessionServiceClient(h.conn).OpenTeamCast(alex, &sessionv1.OpenTeamCastRequest{TeamId: team.GetTeam().GetId()})
 		require.NoError(t, err)
@@ -299,7 +299,7 @@ func testAMemberConnectsAPersonalSourceOfTheirOwn(t *testing.T, h reviewedClosur
 
 		team, err := h.svc.CreateTeam(h.ctx, conformanceAlex, &gen.CreateTeamRequest{OrgId: fixtureOrganization, Name: "Personal sources: calling"})
 		require.NoError(t, err)
-		_, err = installationv1.NewInstallationServiceClient(h.conn).GrantRole(alex, &installationv1.GrantRoleRequest{OrganizationId: fixtureOrganization, InstallationId: inst.ID, Role: "viewer", TeamId: team.GetTeam().GetId()})
+		_, err = installationv1.NewInstallationServiceClient(h.conn).GrantRole(alex, &installationv1.GrantRoleRequest{OrganizationId: fixtureOrganization, InstallationId: inst.ID, Role: "user", TeamId: team.GetTeam().GetId()})
 		require.NoError(t, err)
 		cast, err := sessionv1.NewSessionServiceClient(h.conn).OpenTeamCast(alex, &sessionv1.OpenTeamCastRequest{TeamId: team.GetTeam().GetId()})
 		require.NoError(t, err)

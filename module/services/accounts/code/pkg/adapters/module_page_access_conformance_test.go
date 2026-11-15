@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 
 	"accounts/pkg/business"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
@@ -62,9 +63,9 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 	}
 	solution := func(alias string, bindings ...solutionhost.AuthorityBinding) {
 		note := wireScope(alias+".note", "read")
-		roles := map[string][]*authorityv1.WorkScopeV1{"installer": {note}, "viewer": {note}}
+		roles := map[string][]*authorityv1.WorkScopeV1{"admin": {note}, "user": {note}}
 		if len(bindings) > 0 {
-			roles["viewer"] = append(roles["viewer"], wireScope("conformance-reach-host-store.item", "read", "write"))
+			roles["user"] = append(roles["user"], wireScope("conformance-reach-host-store.item", "read", "write"))
 		}
 		deliverSolution(t, h.ctx, h.conn, h.signer, conformanceSolution{alias: alias, generation: 1, installationRole: domain.NoInstallationRole,
 			ceilings: []*authorityv1.WorkScopeV1{note}, roles: roles, bindings: bindings})
@@ -73,8 +74,8 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 	t.Run("the installer can use the solution at once; another administrator cannot", func(t *testing.T) {
 		const target = "conformance-access-own"
 		solution(target)
-		inst := install(target, business.InstallAccess{InstallerRoles: []string{"viewer"}})
-		require.Contains(t, entitled(conformanceAlex), inst.ID, "the installer took the viewer role and uses the solution")
+		inst := install(target, business.InstallAccess{InstallerRoles: []string{"user"}})
+		require.Contains(t, entitled(conformanceAlex), inst.ID, "the installer took the user role and uses the solution")
 		require.NotContains(t, entitled(conformanceAlice), inst.ID, "an administrator who took no role holds none")
 	})
 
@@ -83,9 +84,9 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		solution(target)
 		inst := install(target, business.InstallAccess{})
 		require.NotContains(t, entitled(conformanceMaya), inst.ID)
-		viewers := teamsNamed(t, h, target+"-viewer")
-		require.Len(t, viewers, 1)
-		require.NoError(t, h.svc.AddTeamMember(h.ctx, conformanceAlex, &gen.AddTeamMemberRequest{TeamId: viewers[0], UserId: conformanceMaya}))
+		users := teamsNamed(t, h, target+"-user")
+		require.Len(t, users, 1)
+		require.NoError(t, h.svc.AddTeamMember(h.ctx, conformanceAlex, &gen.AddTeamMemberRequest{TeamId: users[0], UserId: conformanceMaya}))
 		require.Contains(t, entitled(conformanceMaya), inst.ID, "the team's role is its new member's")
 	})
 
@@ -95,7 +96,7 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 	entry := wireScope(page+".entry", "read")
 	deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: page, ceilings: []*authorityv1.WorkScopeV1{entry}, installationRole: domain.NoInstallationRole,
 		page:  &solutionhost.Frontend{Title: "Set-up page", ExposedModule: "./Page", HostContract: 1, Payload: h.pagePayload},
-		roles: map[string][]*authorityv1.WorkScopeV1{"installer": {entry}, "viewer": {entry}}})
+		roles: map[string][]*authorityv1.WorkScopeV1{"admin": {entry}, "user": {entry}}})
 	require.NoError(t, consentModule(h.ctx, h.svc, h.store, fixtureOrganization, conformanceAlex, page))
 	composed := func() domain.Installation {
 		t.Helper()
@@ -116,7 +117,7 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		for _, person := range []string{conformanceAlex, conformanceAlice, conformanceMaya} {
 			require.NotContains(t, entitled(person), inst.ID, "navigation lists it for nobody, administrators included")
 		}
-		require.Equal(t, []string{"installer", "viewer"}, available(page).Roles, "Admin lists it with its roles, to set up")
+		require.Equal(t, []string{"admin", "user"}, available(page).Roles, "Admin lists it with its roles, to set up")
 		// The organization's installations name the page's roles on its
 		// target as the catalogue does: its composition installation carries a
 		// host scope root, and the roles are what tells Admin to read who
@@ -128,29 +129,29 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 			return row.Target != nil && row.Target.RouteAlias == page
 		})
 		require.GreaterOrEqual(t, i, 0, "the module page's installation is listed")
-		require.Equal(t, []string{"installer", "viewer"}, rows[i].Target.Roles)
+		require.Equal(t, []string{"admin", "user"}, rows[i].Target.Roles)
 	})
 
 	t.Run("setting up a module page is one act", func(t *testing.T) {
 		inst := composed()
-		set, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(page).TargetID, business.InstallAccess{InstallerRoles: []string{"viewer"}})
+		set, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(page).TargetID, business.InstallAccess{InstallerRoles: []string{"user"}})
 		require.NoError(t, err)
 		require.Empty(t, set.AccessProblems)
 		require.Equal(t, inst.ID, set.ID, "set up on the composition installation; nothing is installed")
-		installer, viewer := teamsNamed(t, h, page+"-installer"), teamsNamed(t, h, page+"-viewer")
-		require.Len(t, installer, 1)
-		require.Len(t, viewer, 1)
+		admins, users := teamsNamed(t, h, page+"-admin"), teamsNamed(t, h, page+"-user")
+		require.Len(t, admins, 1)
+		require.Len(t, users, 1)
 		grants, err := h.core.ListRoleGrants(h.ctx, alex, fixtureOrganization, inst.ID)
 		require.NoError(t, err)
-		require.ElementsMatch(t, []domain.RoleGrant{{InstallationID: inst.ID, Role: "installer", TeamID: installer[0]}, {InstallationID: inst.ID, Role: "viewer", TeamID: viewer[0]}}, grants)
-		require.Equal(t, []string{conformanceAlex}, teamMembers(t, h, viewer[0]), "the administrator joins the team of the role they ticked")
-		require.Empty(t, teamMembers(t, h, installer[0]), "and of no other")
+		require.ElementsMatch(t, []domain.RoleGrant{{InstallationID: inst.ID, Role: "admin", TeamID: admins[0]}, {InstallationID: inst.ID, Role: "user", TeamID: users[0]}}, grants)
+		require.Equal(t, []string{conformanceAlex}, teamMembers(t, h, users[0]), "the administrator joins the team of the role they ticked")
+		require.Empty(t, teamMembers(t, h, admins[0]), "and of no other")
 		require.Contains(t, entitled(conformanceAlex), inst.ID, "navigation lists it for them")
 		require.NotContains(t, entitled(conformanceAlice), inst.ID)
-		again, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(page).TargetID, business.InstallAccess{InstallerRoles: []string{"viewer"}})
+		again, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(page).TargetID, business.InstallAccess{InstallerRoles: []string{"user"}})
 		require.NoError(t, err)
 		require.Empty(t, again.AccessProblems)
-		require.Len(t, teamsNamed(t, h, page+"-viewer"), 1, "setting it up again creates nothing")
+		require.Len(t, teamsNamed(t, h, page+"-user"), 1, "setting it up again creates nothing")
 	})
 
 	// A session cast onto a team (OpenTeamCast) is listed what the team holds
@@ -160,15 +161,15 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 	// listed every page the administrator held and none of the team's.
 	t.Run("a session cast onto a team lists the team's pages, not its person's", func(t *testing.T) {
 		inst := composed()
-		installer := teamsNamed(t, h, page+"-installer")
-		require.Len(t, installer, 1)
-		require.Empty(t, teamMembers(t, h, installer[0]), "the administrator is not in the installer team")
+		admins := teamsNamed(t, h, page+"-admin")
+		require.Len(t, admins, 1)
+		require.Empty(t, teamMembers(t, h, admins[0]), "the administrator is not in the admin team")
 		own := entitled(conformanceAlex)
-		require.Contains(t, own, inst.ID, "as themselves, through the viewer team they joined")
+		require.Contains(t, own, inst.ID, "as themselves, through the user team they joined")
 		require.Greater(t, len(own), 1, "and more of their own, which a cast must not list")
 		parent, cast := uuid.NewString(), uuid.NewString()
 		_, err := h.core.OpenTeamCast(h.ctx, authority.Person{ID: conformanceAlex, Organization: fixtureOrganization, SessionID: parent},
-			authority.TeamCastRequest{Organization: fixtureOrganization, Team: installer[0], SessionID: cast})
+			authority.TeamCastRequest{Organization: fixtureOrganization, Team: admins[0], SessionID: cast})
 		require.NoError(t, err, "an administrator casts onto a team they could grant")
 		out, err := h.svc.ListSolutionEntitlements(h.ctx, &gen.ListSolutionEntitlementsRequest{OrgId: fixtureOrganization, SubjectId: conformanceAlex, SessionId: cast})
 		require.NoError(t, err)
@@ -176,7 +177,7 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		for _, e := range out.GetEntitlements() {
 			listed = append(listed, e.GetInstallationId())
 		}
-		require.Equal(t, []string{inst.ID}, listed, "the page the installer team holds, and nothing the person holds as themselves")
+		require.Equal(t, []string{inst.ID}, listed, "the page the admin team holds, and nothing the person holds as themselves")
 		asked, err := h.svc.ListSolutionEntitlements(h.ctx, &gen.ListSolutionEntitlementsRequest{OrgId: fixtureOrganization, SubjectId: conformanceAlex, SessionId: parent})
 		require.NoError(t, err)
 		require.Len(t, asked.GetEntitlements(), len(own), "the session the cast was opened from lists the person's own, as before")
@@ -236,8 +237,8 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		created, err := h.svc.CreateTeam(h.ctx, conformanceAlex, &gen.CreateTeamRequest{OrgId: fixtureOrganization, Name: "conformance-unheld-readers"})
 		require.NoError(t, err)
 		readers := created.GetTeam().GetId()
-		inst := install(target, business.InstallAccess{RoleTeams: map[string]string{"viewer": readers}})
-		_, err = h.core.RevokeRole(h.ctx, alex, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: inst.ID, Role: "viewer", TeamID: readers})
+		inst := install(target, business.InstallAccess{RoleTeams: map[string]string{"user": readers}})
+		_, err = h.core.RevokeRole(h.ctx, alex, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: inst.ID, Role: "user", TeamID: readers})
 		require.NoError(t, err)
 		holders := func() []domain.RoleGrant {
 			t.Helper()
@@ -245,25 +246,25 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 			require.NoError(t, err)
 			return grants
 		}
-		installer := teamsNamed(t, h, target+"-installer")
-		require.Len(t, installer, 1)
-		require.Equal(t, []domain.RoleGrant{{InstallationID: inst.ID, Role: "installer", TeamID: installer[0]}}, holders(), "nobody holds viewer")
-		require.Empty(t, teamsNamed(t, h, target+"-viewer"))
+		admins := teamsNamed(t, h, target+"-admin")
+		require.Len(t, admins, 1)
+		require.Equal(t, []domain.RoleGrant{{InstallationID: inst.ID, Role: "admin", TeamID: admins[0]}}, holders(), "nobody holds user")
+		require.Empty(t, teamsNamed(t, h, target+"-user"))
 
-		set, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(target).TargetID, business.InstallAccess{InstallerRoles: []string{"installer", "viewer"}})
+		set, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(target).TargetID, business.InstallAccess{InstallerRoles: []string{"admin", "user"}})
 		require.NoError(t, err)
 		require.Equal(t, inst.ID, set.ID, "set up on the solution's installation; nothing is installed")
 		require.Empty(t, set.AccessProblems)
-		viewer := teamsNamed(t, h, target+"-viewer")
-		require.Len(t, viewer, 1, "the role nobody held gets its conventional team")
-		require.ElementsMatch(t, []domain.RoleGrant{{InstallationID: inst.ID, Role: "installer", TeamID: installer[0]}, {InstallationID: inst.ID, Role: "viewer", TeamID: viewer[0]}}, holders())
-		require.Equal(t, []string{conformanceAlex}, teamMembers(t, h, viewer[0]), "the administrator takes the role they ticked")
-		require.Empty(t, teamMembers(t, h, installer[0]), "and joins no team of a role someone held already")
+		users := teamsNamed(t, h, target+"-user")
+		require.Len(t, users, 1, "the role nobody held gets its conventional team")
+		require.ElementsMatch(t, []domain.RoleGrant{{InstallationID: inst.ID, Role: "admin", TeamID: admins[0]}, {InstallationID: inst.ID, Role: "user", TeamID: users[0]}}, holders())
+		require.Equal(t, []string{conformanceAlex}, teamMembers(t, h, users[0]), "the administrator takes the role they ticked")
+		require.Empty(t, teamMembers(t, h, admins[0]), "and joins no team of a role someone held already")
 
-		again, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(target).TargetID, business.InstallAccess{InstallerRoles: []string{"viewer"}})
+		again, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(target).TargetID, business.InstallAccess{InstallerRoles: []string{"user"}})
 		require.NoError(t, err)
 		require.Empty(t, again.AccessProblems)
-		require.Len(t, teamsNamed(t, h, target+"-viewer"), 1, "setting it up again creates nothing")
+		require.Len(t, teamsNamed(t, h, target+"-user"), 1, "setting it up again creates nothing")
 		require.Len(t, holders(), 2)
 		_, err = h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(target).TargetID, business.InstallAccess{InstallerRoles: []string{"author"}})
 		require.ErrorContains(t, err, `declares no role "author"`, "a role the solution never declared is refused by name, never dropped")
@@ -283,7 +284,7 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		}
 		deliverStore(1, "admin")
 		solution(target, solutionhost.AuthorityBinding{ID: "store", Audience: store, Operations: map[string][]string{"invoke": {item + ":read", item + ":write"}}})
-		inst := install(target, business.InstallAccess{InstallerRoles: []string{"viewer"}})
+		inst := install(target, business.InstallAccess{InstallerRoles: []string{"user"}})
 		upgrade := func() bool {
 			t.Helper()
 			read, _, err := h.svc.GetInstallation(h.ctx, fixtureOrganization, inst.ID)
@@ -296,13 +297,13 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		require.NotNil(t, read.GetCreatedAt(), "the listing says when it was installed")
 		require.WithinDuration(t, time.Now(), read.GetCreatedAt().AsTime(), 10*time.Minute)
 		// The store, not the solution, changes: Purge now needs write, which
-		// the viewer reaches through the solution's binding.
+		// the user reaches through the solution's binding.
 		deliverStore(2, "write")
 		require.True(t, upgrade(), "the solution's reach widened, so an update is offered on it")
 		offer, err := h.core.ReviewOffer(h.ctx, alex, fixtureOrganization, target)
 		require.NoError(t, err)
-		require.Contains(t, reachOperations(offer, "viewer", store), "/conformance.reach.Store/Purge", "the administrator reviews the wider reach")
-		require.NotContains(t, approvedOperations(t, h, inst.Installation, "viewer", store), "/conformance.reach.Store/Purge", "holders keep the approved reach")
+		require.Contains(t, reachOperations(offer, "user", store), "/conformance.reach.Store/Purge", "the administrator reviews the wider reach")
+		require.NotContains(t, approvedOperations(t, h, inst.Installation, "user", store), "/conformance.reach.Store/Purge", "holders keep the approved reach")
 		// The update's review carries the approved reach beside it, so the
 		// administrator is told what the update asks beyond it.
 		review, err := h.svc.ReviewSolutionInstall(h.ctx, alex, fixtureOrganization, available(target).TargetID)
@@ -310,12 +311,12 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		var approvedAtStore []string
 		for _, role := range review.GetApprovedRoles() {
 			for _, row := range role.GetReach() {
-				if role.GetName() == "viewer" && row.GetModule() == store {
+				if role.GetName() == "user" && row.GetModule() == store {
 					approvedAtStore = append(approvedAtStore, row.GetOperations()...)
 				}
 			}
 		}
-		require.Contains(t, approvedAtStore, "/conformance.reach.Store/Get", "the review names what the viewer was approved to reach")
+		require.Contains(t, approvedAtStore, "/conformance.reach.Store/Get", "the review names what the user was approved to reach")
 		require.NotContains(t, approvedAtStore, "/conformance.reach.Store/Purge", "and not what the update asks beyond it")
 	})
 
@@ -342,7 +343,7 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: upgraded, ceilings: []*authorityv1.WorkScopeV1{entry}, installationRole: domain.NoInstallationRole,
 			page:     &solutionhost.Frontend{Title: "Upgraded page", ExposedModule: "./Page", HostContract: 1, Payload: h.pagePayload},
 			bindings: []solutionhost.AuthorityBinding{{ID: "store", Audience: store, Operations: map[string][]string{"invoke": {item + ":read", item + ":write"}}}},
-			roles:    map[string][]*authorityv1.WorkScopeV1{"installer": reach, "viewer": reach}})
+			roles:    map[string][]*authorityv1.WorkScopeV1{"admin": reach, "user": reach}})
 		require.NoError(t, consentModule(h.ctx, h.svc, h.store, fixtureOrganization, conformanceAlex, upgraded))
 		require.NoError(t, h.core.AdoptLegacyReach(h.ctx), "composition holds the page at its reach")
 		installation := func() domain.Installation {
@@ -368,13 +369,13 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		require.Equal(t, held.ID, approved.ID, "on composition's installation")
 		require.Empty(t, approved.InstalledBy, "whose installer stays none")
 		require.Equal(t, review.GetApproval().GetOperationId(), approved.Consent.OperationID, "its receipt now the administrator's")
-		set, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(upgraded).TargetID, business.InstallAccess{InstallerRoles: []string{"viewer"}})
+		set, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(upgraded).TargetID, business.InstallAccess{InstallerRoles: []string{"user"}})
 		require.NoError(t, err, "the upgraded page is set up")
 		require.Empty(t, set.AccessProblems)
 		require.Equal(t, held.ID, set.ID, "on the installation composition made")
-		viewer := teamsNamed(t, h, upgraded+"-viewer")
-		require.Len(t, viewer, 1)
-		require.Equal(t, []string{conformanceAlex}, teamMembers(t, h, viewer[0]))
+		users := teamsNamed(t, h, upgraded+"-user")
+		require.Len(t, users, 1)
+		require.Equal(t, []string{conformanceAlex}, teamMembers(t, h, users[0]))
 		require.Contains(t, entitled(conformanceAlex), held.ID, "navigation lists it for them")
 
 		// The same review sent again, as a retry whose answer was lost, is
@@ -386,17 +387,21 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 	})
 
 	// Every role a page declares has its team, a role its update adds
-	// included; and the holder of the page's installer role approves that
-	// update, as the core admits them (its approver), while a member holding
-	// another role, and an administrator of nothing, are refused. Red before:
-	// the host gated the review and the approval on an organization
+	// included; and the holder of the page's admin role approves that update,
+	// as the core admits them (its approver), while a member holding no role
+	// there, and an administrator of nothing, are refused. Red before: the
+	// host gated the review and the approval on an organization
 	// administrator, and an approved update assigned no team, so an added
-	// role read "nobody".
-	t.Run("a page's update adds a role with its team, approved by the page's installer", func(t *testing.T) {
-		const page = "conformance-role-added-page"
+	// role read "nobody". Each page declares admin alone, then its update
+	// adds user.
+	rolePage := func(page string) (deliverPage func(generation uint64), set business.InstalledSolution, adminTeam string, grantedRoles func() []string) {
+		t.Helper()
 		entry := wireScope(page+".entry", "read")
-		roles := map[string][]*authorityv1.WorkScopeV1{"installer": {entry}, "viewer": {entry}}
-		deliverPage := func(generation uint64) {
+		roles := map[string][]*authorityv1.WorkScopeV1{"admin": {entry}}
+		deliverPage = func(generation uint64) {
+			if generation > 1 {
+				roles["user"] = []*authorityv1.WorkScopeV1{entry}
+			}
 			deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: page, generation: generation, ceilings: []*authorityv1.WorkScopeV1{entry}, installationRole: domain.NoInstallationRole,
 				page: &solutionhost.Frontend{Title: "Role added page", ExposedModule: "./Page", HostContract: 1, Payload: h.pagePayload}, roles: roles})
 		}
@@ -406,13 +411,9 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		set, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(page).TargetID, business.InstallAccess{})
 		require.NoError(t, err)
 		require.Empty(t, set.AccessProblems)
-		installer := teamsNamed(t, h, page+"-installer")
-		require.Len(t, installer, 1)
-		require.NoError(t, h.svc.AddTeamMember(h.ctx, conformanceAlex, &gen.AddTeamMemberRequest{TeamId: installer[0], UserId: conformanceMaya}))
-		viewer := teamsNamed(t, h, page+"-viewer")
-		require.Len(t, viewer, 1)
-		require.NoError(t, h.svc.AddTeamMember(h.ctx, conformanceAlex, &gen.AddTeamMemberRequest{TeamId: viewer[0], UserId: conformanceIvy}))
-		grantedRoles := func() []string {
+		admins := teamsNamed(t, h, page+"-admin")
+		require.Len(t, admins, 1)
+		grantedRoles = func() []string {
 			t.Helper()
 			grants, err := h.core.ListRoleGrants(h.ctx, alex, fixtureOrganization, set.ID)
 			require.NoError(t, err)
@@ -423,11 +424,17 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 			slices.Sort(out)
 			return out
 		}
-		require.Equal(t, []string{"installer", "viewer"}, grantedRoles())
+		require.Equal(t, []string{"admin"}, grantedRoles())
+		return deliverPage, set, admins[0], grantedRoles
+	}
+
+	t.Run("a page's update adds a role with its team, approved by the page's admin", func(t *testing.T) {
+		const page = "conformance-role-added-page"
+		deliverPage, set, adminTeam, grantedRoles := rolePage(page)
+		require.NoError(t, h.svc.AddTeamMember(h.ctx, conformanceAlex, &gen.AddTeamMemberRequest{TeamId: adminTeam, UserId: conformanceMaya}))
 
 		// The update adds `user`. Set up while it waits sets up what was
 		// approved and asks the core for no role it would refuse.
-		roles["user"] = []*authorityv1.WorkScopeV1{entry}
 		deliverPage(2)
 		pending, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(page).TargetID, business.InstallAccess{})
 		require.NoError(t, err)
@@ -437,11 +444,11 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		maya := authority.Person{ID: conformanceMaya, Organization: fixtureOrganization}
 		ivy := authority.Person{ID: conformanceIvy, Organization: fixtureOrganization}
 		_, err = h.svc.ReviewSolutionInstall(h.ctx, ivy, fixtureOrganization, available(page).TargetID)
-		require.Error(t, err, "a viewer of the page does not review its update")
+		require.Error(t, err, "a member holding no role on the page does not review its update")
 		// Nor can a member who approves nothing tell a delivered target id
 		// from a missing one: both are refused alike, naming the id asked
-		// for. The page's installer approves its page alone, so a missing id
-		// is refused to her alike too; an administrator is told it is missing.
+		// for. The page's admin approves its page alone, so a missing id is
+		// refused to her alike too; an administrator is told it is missing.
 		missing := uuid.NewString()
 		for _, member := range []authority.Person{ivy, maya} {
 			_, unknown := h.svc.ReviewSolutionInstall(h.ctx, member, fixtureOrganization, missing)
@@ -452,44 +459,102 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		_, unknown := h.svc.ReviewSolutionInstall(h.ctx, alex, fixtureOrganization, missing)
 		require.ErrorContains(t, unknown, "not available")
 		review, err := h.svc.ReviewSolutionInstall(h.ctx, maya, fixtureOrganization, available(page).TargetID)
-		require.NoError(t, err, "the page's installer reviews its update")
+		require.NoError(t, err, "the page's admin reviews its update")
 		_, err = h.svc.InstallReviewedSolution(h.ctx, ivy, fixtureOrganization, review, business.InstallAccess{})
 		require.Error(t, err, "nor approves another's review")
 		approved, err := h.svc.InstallReviewedSolution(h.ctx, maya, fixtureOrganization, review, business.InstallAccess{})
-		require.NoError(t, err, "the page's installer approves its update")
+		require.NoError(t, err, "the page's admin approves its update")
 		require.Equal(t, set.ID, approved.ID)
 		require.Equal(t, review.GetApproval().GetOperationId(), approved.Consent.OperationID)
 		require.Len(t, approved.AccessProblems, 1, "the role the update adds waits for an administrator's team")
 		require.Equal(t, "user", approved.AccessProblems[0].Role)
-		require.Empty(t, teamsNamed(t, h, page+"-user"), "the installer creates no team of the organization")
+		require.Empty(t, teamsNamed(t, h, page+"-user"), "the page's admin creates no team of the organization")
 
 		// An administrator's Set up gives it its team, now that it is approved.
 		again, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(page).TargetID, business.InstallAccess{})
 		require.NoError(t, err)
 		require.Empty(t, again.AccessProblems)
 		require.Len(t, teamsNamed(t, h, page+"-user"), 1)
-		require.Equal(t, []string{"installer", "user", "viewer"}, grantedRoles())
+		require.Equal(t, []string{"admin", "user"}, grantedRoles())
+	})
 
-		// An administrator's approval of an update that adds a role gives it
-		// its team at once.
-		roles["author"] = []*authorityv1.WorkScopeV1{entry}
-		deliverPage(3)
-		review, err = h.svc.ReviewSolutionInstall(h.ctx, alex, fixtureOrganization, available(page).TargetID)
+	// A holder of the page's user role reads its offer, as a member holding a
+	// role there does, but the core answers it without the approval tuple. The
+	// review half proves the host's own refusal of the review on that empty
+	// tuple (reviewSolutionInstall). The approval half proves installationsAt's:
+	// the admin's review resubmitted by the user is refused as another actor's,
+	// and the same review forged as her own reaches installationsAt, which
+	// refuses it on the empty tuple before the core's consent check would. The
+	// forged case asserts installationsAt's own message, so dropping that check
+	// fails it even though the core would still refuse.
+	t.Run("a user of the page neither reviews nor approves its update", func(t *testing.T) {
+		const page = "conformance-user-widened-page"
+		read, write := wireScope(page+".entry", "read"), wireScope(page+".entry", "read", "write")
+		deliverPage := func(generation uint64, user *authorityv1.WorkScopeV1) {
+			deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: page, generation: generation, ceilings: []*authorityv1.WorkScopeV1{write}, installationRole: domain.NoInstallationRole,
+				page:  &solutionhost.Frontend{Title: "User widened page", ExposedModule: "./Page", HostContract: 1, Payload: h.pagePayload},
+				roles: map[string][]*authorityv1.WorkScopeV1{"admin": {write}, "user": {user}}})
+		}
+		deliverPage(1, read)
+		require.NoError(t, consentModule(h.ctx, h.svc, h.store, fixtureOrganization, conformanceAlex, page))
+		require.NoError(t, h.core.AdoptLegacyReach(h.ctx), "composition holds the page at what it approved")
+		_, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(page).TargetID, business.InstallAccess{})
+		require.NoError(t, err)
+		admins, users := teamsNamed(t, h, page+"-admin"), teamsNamed(t, h, page+"-user")
+		require.Len(t, admins, 1)
+		require.Len(t, users, 1)
+		require.NoError(t, h.svc.AddTeamMember(h.ctx, conformanceAlex, &gen.AddTeamMemberRequest{TeamId: admins[0], UserId: conformanceMaya}))
+		require.NoError(t, h.svc.AddTeamMember(h.ctx, conformanceAlex, &gen.AddTeamMemberRequest{TeamId: users[0], UserId: conformanceIvy}))
+
+		// Generation 2 widens what a user may do: an update waits.
+		deliverPage(2, write)
+		maya := authority.Person{ID: conformanceMaya, Organization: fixtureOrganization}
+		ivy := authority.Person{ID: conformanceIvy, Organization: fixtureOrganization}
+		offer, err := h.core.ReviewOffer(h.ctx, ivy, fixtureOrganization, page)
+		require.NoError(t, err, "a user of the page reads its offer")
+		require.Empty(t, offer.Approval.TargetID, "without the approval tuple, which is the approver's")
+		_, err = h.svc.ReviewSolutionInstall(h.ctx, ivy, fixtureOrganization, available(page).TargetID)
+		code, ok := domain.CodeOf(err)
+		require.True(t, ok && code == domain.Denied, "a user of the page does not review its update: %v", err)
+		review, err := h.svc.ReviewSolutionInstall(h.ctx, maya, fixtureOrganization, available(page).TargetID)
+		require.NoError(t, err, "the page's admin reviews it")
+		_, err = h.svc.InstallReviewedSolution(h.ctx, ivy, fixtureOrganization, review, business.InstallAccess{})
+		require.ErrorContains(t, err, "belongs to another actor", "nor approves the admin's review")
+		forged := proto.Clone(review).(*gen.ReviewedSolutionInstall)
+		forged.ActorId = conformanceIvy
+		_, err = h.svc.InstallReviewedSolution(h.ctx, ivy, fixtureOrganization, forged, business.InstallAccess{})
+		code, ok = domain.CodeOf(err)
+		require.True(t, ok && code == domain.Denied, "nor the admin's review forged as her own: %v", err)
+		require.ErrorContains(t, err, "installation administration requires an administrator or owner of organization",
+			"refused by the host's installationsAt, not left to the core's consent check")
+		approved, err := h.svc.InstallReviewedSolution(h.ctx, maya, fixtureOrganization, review, business.InstallAccess{})
+		require.NoError(t, err, "the page's admin approves it")
+		require.Equal(t, review.GetApproval().GetOperationId(), approved.Consent.OperationID)
+		require.Empty(t, approved.AccessProblems, "no role was added, so none waits for a team")
+	})
+
+	// An administrator's approval of an update that adds a role gives it its
+	// team at once.
+	t.Run("an administrator's approval of a page's update gives the added role its team", func(t *testing.T) {
+		const page = "conformance-role-added-by-administrator-page"
+		deliverPage, _, adminTeam, grantedRoles := rolePage(page)
+		deliverPage(2)
+		review, err := h.svc.ReviewSolutionInstall(h.ctx, alex, fixtureOrganization, available(page).TargetID)
 		require.NoError(t, err)
 		// An update assigns no team it is asked for: the request is refused
 		// by name, never dropped, and nothing of it is recorded.
-		_, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{RoleTeams: map[string]string{"author": viewer[0]}})
-		require.ErrorContains(t, err, "role author to team "+viewer[0])
-		_, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{InstallerRoles: []string{"author"}})
-		require.ErrorContains(t, err, "the installer in role author")
-		require.Empty(t, teamsNamed(t, h, page+"-author"))
-		approved, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{})
+		_, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{RoleTeams: map[string]string{"user": adminTeam}})
+		require.ErrorContains(t, err, "role user to team "+adminTeam)
+		_, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{InstallerRoles: []string{"user"}})
+		require.ErrorContains(t, err, "the installer in role user")
+		require.Empty(t, teamsNamed(t, h, page+"-user"))
+		approved, err := h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{})
 		require.NoError(t, err)
 		require.Empty(t, approved.AccessProblems)
-		author := teamsNamed(t, h, page+"-author")
-		require.Len(t, author, 1, "the added role's conventional team is created")
-		require.Empty(t, teamMembers(t, h, author[0]), "with nobody in it: the update gives no person anything")
-		require.Equal(t, []string{"author", "installer", "user", "viewer"}, grantedRoles())
+		users := teamsNamed(t, h, page+"-user")
+		require.Len(t, users, 1, "the added role's conventional team is created")
+		require.Empty(t, teamMembers(t, h, users[0]), "with nobody in it: the update gives no person anything")
+		require.Equal(t, []string{"admin", "user"}, grantedRoles())
 	})
 }
 
@@ -534,7 +599,7 @@ func approvedOperations(t *testing.T, h reviewedClosureHarness, inst domain.Inst
 // page's holders reach it through the binding at once, with no update offered
 // for an administrator to approve, since composition growing approves nothing
 // anyone declared. Red at authority 05e4e62f: the page's receipt froze the
-// module's absence, so its viewer was refused "holds nothing at <store>
+// module's absence, so its user was refused "holds nothing at <store>
 // through binding" and no update was offered either.
 func testAPageDeliveredBeforeItsReachHoldsItOnceComposed(t *testing.T, h reviewedClosureHarness) {
 	const page, store = "conformance-page-first", "conformance-page-first-store"
@@ -543,8 +608,8 @@ func testAPageDeliveredBeforeItsReachHoldsItOnceComposed(t *testing.T, h reviewe
 		page:     &solutionhost.Frontend{Title: "Page first", ExposedModule: "./Page", HostContract: 1, Payload: h.pagePayload},
 		bindings: []solutionhost.AuthorityBinding{{ID: "rows", Audience: store, Operations: map[string][]string{"invoke": {row + ":read", row + ":write"}}}},
 		roles: map[string][]*authorityv1.WorkScopeV1{
-			"installer": {wireScope(entry, "read", "write"), wireScope(row, "read", "write")},
-			"viewer":    {wireScope(entry, "read"), wireScope(row, "read")},
+			"admin": {wireScope(entry, "read", "write"), wireScope(row, "read", "write")},
+			"user":  {wireScope(entry, "read"), wireScope(row, "read")},
 		}})
 	pass := func() {
 		t.Helper()
@@ -566,13 +631,13 @@ func testAPageDeliveredBeforeItsReachHoldsItOnceComposed(t *testing.T, h reviewe
 	}
 	held := installation()
 	require.Equal(t, domain.ComposedConsent, held.Consent.OperationID, "held by composition, at a reach without the store")
-	_, err := h.core.GrantRoleAsHost(h.ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: held.ID, Role: "viewer", PersonID: conformanceMaya})
+	_, err := h.core.GrantRoleAsHost(h.ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: held.ID, Role: "user", PersonID: conformanceMaya})
 	require.NoError(t, err)
 	maya := authority.Person{ID: conformanceMaya, Organization: fixtureOrganization}
 	through := func() (authority.Issued, error) {
 		t.Helper()
 		parent, err := h.core.IssueForPerson(h.ctx, maya, authority.IssueRequest{Audience: page})
-		require.NoError(t, err, "the viewer is issued at the page")
+		require.NoError(t, err, "the user is issued at the page")
 		return h.core.IssueChild(h.ctx, parent.Token, authority.Workload{Module: page}, authority.IssueRequest{Binding: "rows"})
 	}
 	_, err = through()
@@ -584,19 +649,19 @@ func testAPageDeliveredBeforeItsReachHoldsItOnceComposed(t *testing.T, h reviewe
 	require.NoError(t, err)
 	require.False(t, upgrade, "the store composed for the first time widens nothing anyone declared: no update to approve")
 	child, err := through()
-	require.NoError(t, err, "the viewer reaches the store through the page's binding once it is composed")
+	require.NoError(t, err, "the user reaches the store through the page's binding once it is composed")
 	chain := child.Context.GetActorChain()
 	require.NotEmpty(t, chain)
 	granted := chain[len(chain)-1].GetGrantedScopes()
 	require.Len(t, granted, 1)
 	require.Equal(t, row, granted[0].GetResourceKind())
-	require.Equal(t, []string{"read"}, granted[0].GetActions(), "the viewer's role, cut to the binding")
+	require.Equal(t, []string{"read"}, granted[0].GetActions(), "the user's role, cut to the binding")
 	require.Equal(t, store, child.Context.GetAudience())
 }
 
 // testModulePageRoleReachesThroughItsBinding holds the host to a module
 // page's roles reaching through the page's own bindings as a solution's do:
-// a person holding only the page's viewer role is issued, through the page's
+// a person holding only the page's user role is issued, through the page's
 // binding, a child narrowed to the role intersected with the binding, and
 // nothing beyond it, without the role, or on their own session at the module
 // the page reaches.
@@ -608,15 +673,15 @@ func testModulePageRoleReachesThroughItsBinding(t *testing.T, h reviewedClosureH
 		page:     &solutionhost.Frontend{Title: "Reaching page", ExposedModule: "./Page", HostContract: 1, Payload: h.pagePayload},
 		bindings: []solutionhost.AuthorityBinding{{ID: "rows", Audience: store, Operations: map[string][]string{"invoke": {row + ":read", row + ":write"}}}},
 		roles: map[string][]*authorityv1.WorkScopeV1{
-			"installer": {wireScope(entry, "read", "write"), wireScope(row, "read", "write")},
-			"viewer":    {wireScope(entry, "read"), wireScope(row, "read")},
+			"admin": {wireScope(entry, "read", "write"), wireScope(row, "read", "write")},
+			"user":  {wireScope(entry, "read"), wireScope(row, "read")},
 		}})
 	alex := authority.Person{ID: conformanceAlex, Organization: fixtureOrganization}
 	all, err := h.core.Installations(h.ctx, alex, fixtureOrganization)
 	require.NoError(t, err)
 	i := slices.IndexFunc(all, func(inst domain.Installation) bool { return inst.Target == page && inst.Status == domain.Active })
 	require.GreaterOrEqual(t, i, 0, "the module page is installed by composition")
-	_, err = h.core.GrantRoleAsHost(h.ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: all[i].ID, Role: "viewer", PersonID: conformanceMaya})
+	_, err = h.core.GrantRoleAsHost(h.ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: all[i].ID, Role: "user", PersonID: conformanceMaya})
 	require.NoError(t, err)
 
 	maya := authority.Person{ID: conformanceMaya, Organization: fixtureOrganization}
@@ -629,7 +694,7 @@ func testModulePageRoleReachesThroughItsBinding(t *testing.T, h reviewedClosureH
 		return h.core.IssueChild(h.ctx, parent.Token, authority.Workload{Module: page}, authority.IssueRequest{Binding: "rows", Scopes: scopes})
 	}
 
-	t.Run("a module page's viewer is issued, through its binding, the role cut to the binding", func(t *testing.T) {
+	t.Run("a module page's user is issued, through its binding, the role cut to the binding", func(t *testing.T) {
 		child, err := through(maya)
 		require.NoError(t, err)
 		chain := child.Context.GetActorChain()
@@ -655,7 +720,7 @@ func testModulePageRoleReachesThroughItsBinding(t *testing.T, h reviewedClosureH
 
 	t.Run("and nothing beyond it", func(t *testing.T) {
 		_, err := through(maya, &basev0.WorkScopeV1{ResourceKind: row, Actions: []string{"write"}})
-		require.ErrorContains(t, err, `widens what its owner holds through binding "rows"`, "the binding carries write; the viewer role does not")
+		require.ErrorContains(t, err, `widens what its owner holds through binding "rows"`, "the binding carries write; the user role does not")
 		_, err = through(authority.Person{ID: conformanceAlice, Organization: fixtureOrganization})
 		require.ErrorContains(t, err, "holds no role on "+page, "an administrator holding no role is refused like any member")
 		_, err = h.core.IssueForPerson(h.ctx, maya, authority.IssueRequest{Audience: store})
@@ -689,7 +754,7 @@ func testModulePageRoleReachesThroughItsBinding(t *testing.T, h reviewedClosureH
 		granted := chain[len(chain)-1].GetGrantedScopes()
 		require.Len(t, granted, 1)
 		require.Equal(t, row, granted[0].GetResourceKind())
-		require.Equal(t, []string{"read"}, granted[0].GetActions(), "the viewer's role cut to the binding")
+		require.Equal(t, []string{"read"}, granted[0].GetActions(), "the user's role cut to the binding")
 		_, err = issue(store, wireScope(row, "write"))
 		require.ErrorContains(t, err, `widens what its owner holds through binding "rows"`, "refused what the role lacks")
 		_, err = issue(other)
@@ -722,19 +787,19 @@ func testADeliveryTheCoreRefusesIsNeverApplied(t *testing.T, h reviewedClosureHa
 	deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: legacy, ceilings: []*authorityv1.WorkScopeV1{wireScope(item, "read")}})
 	// pageAt is the page at generation, binding the store's rows for its
 	// roles; beyondReach adds a binding carrying the legacy item's read and
-	// names its write through it for the viewer, which the composition does
+	// names its write through it for the user, which the composition does
 	// not reach: refused by name (decide.Unreached).
 	pageAt := func(generation uint64, beyondReach bool) conformanceModule {
 		m := conformanceModule{alias: page, generation: generation, ceilings: []*authorityv1.WorkScopeV1{wireScope(entry, "read", "write")}, installationRole: domain.NoInstallationRole,
 			page:     &solutionhost.Frontend{Title: "Pair page", ExposedModule: "./Page", HostContract: 1, Payload: h.pagePayload},
 			bindings: []solutionhost.AuthorityBinding{{ID: "rows", Audience: store, Operations: map[string][]string{"invoke": {row + ":read", row + ":write"}}}},
 			roles: map[string][]*authorityv1.WorkScopeV1{
-				"installer": {wireScope(entry, "read", "write"), wireScope(row, "read", "write")},
-				"viewer":    {wireScope(entry, "read"), wireScope(row, "read")},
+				"admin": {wireScope(entry, "read", "write"), wireScope(row, "read", "write")},
+				"user":  {wireScope(entry, "read"), wireScope(row, "read")},
 			}}
 		if beyondReach {
 			m.bindings = append(m.bindings, solutionhost.AuthorityBinding{ID: "legacy", Audience: legacy, Operations: map[string][]string{"invoke": {item + ":read"}}})
-			m.through = map[string]map[string][]*authorityv1.WorkScopeV1{"viewer": {"legacy": {wireScope(item, "write")}}}
+			m.through = map[string]map[string][]*authorityv1.WorkScopeV1{"user": {"legacy": {wireScope(item, "write")}}}
 		}
 		return m
 	}
@@ -742,9 +807,9 @@ func testADeliveryTheCoreRefusesIsNeverApplied(t *testing.T, h reviewedClosureHa
 	alex := authority.Person{ID: conformanceAlex, Organization: fixtureOrganization}
 	installation, ok := h.coreInstallation(t, alex, page)
 	require.True(t, ok, "the module page is installed by composition")
-	_, err := h.core.GrantRoleAsHost(h.ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: installation.ID, Role: "viewer", PersonID: conformanceMaya})
+	_, err := h.core.GrantRoleAsHost(h.ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: installation.ID, Role: "user", PersonID: conformanceMaya})
 	require.NoError(t, err)
-	_, err = h.core.GrantRoleAsHost(h.ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: installation.ID, Role: "installer", PersonID: conformanceAlex})
+	_, err = h.core.GrantRoleAsHost(h.ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: installation.ID, Role: "admin", PersonID: conformanceAlex})
 	require.NoError(t, err)
 	grants, err := h.core.ListRoleGrants(h.ctx, alex, fixtureOrganization, installation.ID)
 	require.NoError(t, err)
@@ -777,7 +842,7 @@ func testADeliveryTheCoreRefusesIsNeverApplied(t *testing.T, h reviewedClosureHa
 
 	for _, generation := range []uint64{8, 8, 9} {
 		err := tryDeliverModule(t, h.ctx, h.conn, h.signer, pageAt(generation, true))
-		require.ErrorContains(t, err, `role "viewer" of `+page+` names `+item+`:write through binding "legacy", which reaches it nowhere in the composition`, "generation %d", generation)
+		require.ErrorContains(t, err, `role "user" of `+page+` names `+item+`:write through binding "legacy", which reaches it nowhere in the composition`, "generation %d", generation)
 		agree(7, installation.Revision)
 	}
 
@@ -825,7 +890,9 @@ func testPagesReachThroughTheAgent(t *testing.T, h reviewedClosureHarness) {
 		for name := range roles {
 			roles[name] = append([]*authorityv1.WorkScopeV1{note}, roles[name]...)
 		}
-		roles["installer"] = []*authorityv1.WorkScopeV1{note}
+		if _, declared := roles["admin"]; !declared {
+			roles["admin"] = []*authorityv1.WorkScopeV1{note}
+		}
 		reach := map[string]map[string][]*authorityv1.WorkScopeV1{}
 		for name, scopes := range through {
 			reach[name] = map[string][]*authorityv1.WorkScopeV1{"agent": scopes}
@@ -835,13 +902,13 @@ func testPagesReachThroughTheAgent(t *testing.T, h reviewedClosureHarness) {
 			bindings: []solutionhost.AuthorityBinding{{ID: "agent", Audience: agent, Operations: invoke(binding...)}}})
 	}
 	solution(notes, []string{intents + ":read", intents + ":run", tasks + ":execute"},
-		map[string][]*authorityv1.WorkScopeV1{"viewer": {wireScope(intents, "read", "run"), wireScope(tasks, "execute")}},
-		map[string][]*authorityv1.WorkScopeV1{"viewer": turn})
+		map[string][]*authorityv1.WorkScopeV1{"user": {wireScope(intents, "read", "run"), wireScope(tasks, "execute")}},
+		map[string][]*authorityv1.WorkScopeV1{"user": turn})
 	solution(studio, []string{intents + ":read", intents + ":configure", intents + ":activate", intents + ":run", tasks + ":execute"},
 		map[string][]*authorityv1.WorkScopeV1{
-			"editor": {wireScope(intents, "read", "configure", "activate", "run"), wireScope(tasks, "execute")},
-			"viewer": {wireScope(intents, "read", "run"), wireScope(tasks, "execute")}},
-		map[string][]*authorityv1.WorkScopeV1{"editor": author, "viewer": turn})
+			"admin": {wireScope(intents, "read", "configure", "activate", "run"), wireScope(tasks, "execute")},
+			"user":  {wireScope(intents, "read", "run"), wireScope(tasks, "execute")}},
+		map[string][]*authorityv1.WorkScopeV1{"admin": author, "user": turn})
 	alex := authority.Person{ID: conformanceAlex, Organization: fixtureOrganization}
 	installed := map[string]string{}
 	for _, target := range []string{notes, studio} {
@@ -855,9 +922,9 @@ func testPagesReachThroughTheAgent(t *testing.T, h reviewedClosureHarness) {
 		_, err := h.core.GrantRoleAsHost(h.ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: installed[target], Role: role, PersonID: person})
 		require.NoError(t, err)
 	}
-	grant(notes, "viewer", conformanceMaya)
-	grant(studio, "editor", conformanceIvy)
-	grant(studio, "viewer", conformanceAlice)
+	grant(notes, "user", conformanceMaya)
+	grant(studio, "admin", conformanceIvy)
+	grant(studio, "user", conformanceAlice)
 	person := func(id string) authority.Person { return authority.Person{ID: id, Organization: fixtureOrganization} }
 	atAgent := func(who, page string) authority.Issued {
 		out, err := h.core.IssueForPage(h.ctx, person(who), page, authority.IssueRequest{Audience: agent})
@@ -880,7 +947,7 @@ func testPagesReachThroughTheAgent(t *testing.T, h reviewedClosureHarness) {
 		return inst[i].PrincipalID
 	}
 
-	t.Run("a non-admin notes viewer's turn reaches the model and reads the evidence, and writes nothing", func(t *testing.T) {
+	t.Run("a notes user's turn, administering no organization, reaches the model and reads the evidence, and writes nothing", func(t *testing.T) {
 		at := atAgent(conformanceMaya, notes)
 		toModel, err := onward(at, "model")
 		require.NoError(t, err, "the model's profiles are shared")
@@ -893,7 +960,7 @@ func testPagesReachThroughTheAgent(t *testing.T, h reviewedClosureHarness) {
 		_, err = onward(at, "configuration-write")
 		require.ErrorContains(t, err, "holds nothing at "+docs)
 	})
-	t.Run("a non-admin studio editor publishes, activates and runs", func(t *testing.T) {
+	t.Run("a studio admin who administers no organization publishes, activates and runs", func(t *testing.T) {
 		at := atAgent(conformanceIvy, studio)
 		write, err := onward(at, "configuration-write")
 		require.NoError(t, err)
@@ -910,7 +977,7 @@ func testPagesReachThroughTheAgent(t *testing.T, h reviewedClosureHarness) {
 			require.NoError(t, err, action)
 		}
 	})
-	t.Run("a studio viewer runs and neither writes a configuration nor activates", func(t *testing.T) {
+	t.Run("a studio user runs and neither writes a configuration nor activates", func(t *testing.T) {
 		at := atAgent(conformanceAlice, studio)
 		_, err := onward(at, "configuration-write")
 		require.ErrorContains(t, err, "holds nothing at "+docs)
@@ -928,7 +995,7 @@ func testPagesReachThroughTheAgent(t *testing.T, h reviewedClosureHarness) {
 		deliverModule(t, h.ctx, h.conn, h.signer, agentModule(2, false))
 		gaps, err := h.core.Unreached(h.ctx, installation())
 		require.NoError(t, err)
-		require.Equal(t, []string{"role viewer reaches nothing of " + profiles + ":invoke, " + profiles + ":read through agent: no module agent reaches consumes it for a person"}, gaps)
+		require.Equal(t, []string{"role user reaches nothing of " + profiles + ":invoke, " + profiles + ":read through agent: no module agent reaches consumes it for a person"}, gaps)
 		at := atAgent(conformanceMaya, notes)
 		_, err = onward(at, "model")
 		require.ErrorContains(t, err, `operation binding "model" is not one `+agent+` declares`)
@@ -947,23 +1014,23 @@ func testPagesReachThroughTheAgent(t *testing.T, h reviewedClosureHarness) {
 	})
 }
 
-// testAnEditorSavesAndIsOfferedTheRunnablesTheirRoleAllows holds the host,
-// on its own store and delivery path, to a solution editor's first save and
+// testAnAdminSavesAndIsOfferedTheRunnablesTheirRoleAllows holds the host,
+// on its own store and delivery path, to a solution admin's first save and
 // tool offer through an agent (W19-3, W19-4):
 //
 //   - the agent's configuration-write binding carries the collection create
 //     its call declares (as the CLI derives it from the store's CreateDocument
-//     carries), so an editor whose role names it through the agent is issued
+//     carries), so an admin whose role names it through the agent is issued
 //     it, and the store attaches the collection the first write creates to
-//     the solution's installation; a viewer is issued no write at all;
+//     the solution's installation; a user is issued no write at all;
 //   - each runnable operation's prepared binding, the agent's own operations
 //     among them (addressed to the agent itself), issues the operation's scopes
 //     asked for the solution's installation (the owner the agent's admitted
 //     capability is confined to) within the role cut to the binding: an
-//     editor is offered the document, record and agent tools their role
-//     names, a viewer only the document read; an owner-blind ask is a
+//     admin is offered the document, record and agent tools their role
+//     names, a user only the document read; an owner-blind ask is a
 //     widening.
-func testAnEditorSavesAndIsOfferedTheRunnablesTheirRoleAllows(t *testing.T, h reviewedClosureHarness) {
+func testAnAdminSavesAndIsOfferedTheRunnablesTheirRoleAllows(t *testing.T, h reviewedClosureHarness) {
 	const docs, records, agent, studio = "tools-docs", "tools-records", "tools-agent", "tools-studio"
 	doc, collection, row, intents, tasks := docs+".doc", docs+".collection", records+".row", agent+".intents", agent+".tasks"
 	invoke := func(scopes ...string) map[string][]string { return map[string][]string{"invoke": scopes} }
@@ -981,13 +1048,12 @@ func testAnEditorSavesAndIsOfferedTheRunnablesTheirRoleAllows(t *testing.T, h re
 	deliverSolution(t, h.ctx, h.conn, h.signer, conformanceSolution{alias: studio, generation: 1, installationRole: domain.NoInstallationRole,
 		ceilings: []*authorityv1.WorkScopeV1{note},
 		roles: map[string][]*authorityv1.WorkScopeV1{
-			"installer": {note},
-			"editor":    {note, wireScope(intents, "read", "configure", "activate", "run"), wireScope(tasks, "execute")},
-			"viewer":    {note, wireScope(intents, "read", "run"), wireScope(tasks, "execute")},
+			"admin": {note, wireScope(intents, "read", "configure", "activate", "run"), wireScope(tasks, "execute")},
+			"user":  {note, wireScope(intents, "read", "run"), wireScope(tasks, "execute")},
 		},
 		through: map[string]map[string][]*authorityv1.WorkScopeV1{
-			"editor": {"agent": {wireScope(doc, "read", "write"), wireScope(collection, "read", "create"), wireScope(row, "read")}},
-			"viewer": {"agent": {wireScope(doc, "read"), wireScope(collection, "read")}},
+			"admin": {"agent": {wireScope(doc, "read", "write"), wireScope(collection, "read", "create"), wireScope(row, "read")}},
+			"user":  {"agent": {wireScope(doc, "read"), wireScope(collection, "read")}},
 		},
 		bindings: []solutionhost.AuthorityBinding{{ID: "agent", Audience: agent, Operations: invoke(intents+":read", intents+":configure", intents+":activate", intents+":run", tasks+":execute")}}})
 	alex := authority.Person{ID: conformanceAlex, Organization: fixtureOrganization}
@@ -995,7 +1061,7 @@ func testAnEditorSavesAndIsOfferedTheRunnablesTheirRoleAllows(t *testing.T, h re
 	require.NoError(t, err)
 	inst, err := h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{})
 	require.NoError(t, err)
-	for role, person := range map[string]string{"editor": conformanceIvy, "viewer": conformanceAlice} {
+	for role, person := range map[string]string{"admin": conformanceIvy, "user": conformanceAlice} {
 		_, err := h.core.GrantRoleAsHost(h.ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: inst.ID, Role: role, PersonID: person})
 		require.NoError(t, err)
 	}
@@ -1016,7 +1082,7 @@ func testAnEditorSavesAndIsOfferedTheRunnablesTheirRoleAllows(t *testing.T, h re
 		return &basev0.WorkScopeV1{ResourceKind: kind, Actions: actions, ResourceOwnerId: owner}
 	}
 
-	t.Run("a non-admin editor's first save creates the installation's collection", func(t *testing.T) {
+	t.Run("an admin's first save, administering no organization, creates the installation's collection", func(t *testing.T) {
 		write, err := onward(atAgent(conformanceIvy), "configuration-write")
 		require.NoError(t, err)
 		attachedTo, err := h.core.AttachResource(h.ctx, authority.AttachmentRequest{Token: write.Token, Kind: collection, ResourceID: "assistant-configuration", Store: authority.Workload{Module: docs}})
@@ -1025,7 +1091,7 @@ func testAnEditorSavesAndIsOfferedTheRunnablesTheirRoleAllows(t *testing.T, h re
 		_, err = onward(atAgent(conformanceAlice), "configuration-write")
 		require.ErrorContains(t, err, "holds nothing at "+docs)
 	})
-	t.Run("an editor is offered the document, record and agent tools their role names", func(t *testing.T) {
+	t.Run("an admin is offered the document, record and agent tools their role names", func(t *testing.T) {
 		at := atAgent(conformanceIvy)
 		for binding, asked := range map[string][]*basev0.WorkScopeV1{
 			"DOCS__SEARCH":       {owned(doc, "read"), owned(collection, "read")},
@@ -1038,7 +1104,7 @@ func testAnEditorSavesAndIsOfferedTheRunnablesTheirRoleAllows(t *testing.T, h re
 		_, err := onward(at, "DOCS__SEARCH", wireCore(doc, "read"), wireCore(collection, "read"))
 		require.ErrorContains(t, err, "a child widens what its owner holds", "owner-blind, the ask is the whole kind")
 	})
-	t.Run("a viewer is offered the document read alone", func(t *testing.T) {
+	t.Run("a user is offered the document read alone", func(t *testing.T) {
 		at := atAgent(conformanceAlice)
 		_, err := onward(at, "DOCS__SEARCH", owned(doc, "read"), owned(collection, "read"))
 		require.NoError(t, err)

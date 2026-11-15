@@ -324,9 +324,9 @@ describe("a narrowed session the person is using", () => {
 	});
 
 	it("a role view on one installation is opened again with its roles", async () => {
-		reading = { roleView: [{ installationId: "inst-1", roles: ["editor"] }] };
+		reading = { roleView: [{ installationId: "inst-1", roles: ["user"] }] };
 		await boot();
-		act(() => handles.enter(castBearer(), "editor"));
+		act(() => handles.enter(castBearer(), "user"));
 		const renewed = castBearer();
 		next.push(renewed);
 		await advance(100);
@@ -336,7 +336,7 @@ describe("a narrowed session the person is using", () => {
 		expect(opens).toEqual([
 			{
 				method: "OpenRoleView",
-				body: { installationId: "inst-1", roles: ["editor"] },
+				body: { installationId: "inst-1", roles: ["user"] },
 				from: FULL2,
 			},
 		]);

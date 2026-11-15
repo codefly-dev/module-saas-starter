@@ -116,7 +116,7 @@ func TestInstallTargetByNameNamesWhatItCannotResolve(t *testing.T) {
 	adminID, orgID := mustUserAndOrg(t, ctx, "byname@example.com", "byname", "By Name Co")
 	_, alias := declarePresence(t, "by-name")
 
-	_, _, err := testService.InstallFixtureTarget(ctx, adminID, orgID, "nothing-delivered", "viewer", "")
+	_, _, err := testService.InstallFixtureTarget(ctx, adminID, orgID, "nothing-delivered", "user", "")
 	require.True(t, errors.Is(err, business.ErrInstallTargetNotPresent), "got %v", err)
 	require.ErrorContains(t, err, `"nothing-delivered"`)
 

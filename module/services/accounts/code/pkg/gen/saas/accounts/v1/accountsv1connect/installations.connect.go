@@ -84,11 +84,11 @@ type InstallationServiceClient interface {
 	// Review one solution release and its supporting module access before consent.
 	// A member's to ask: the authority core answers it to an organization
 	// administrator, and a module page's update to the holder of the page's
-	// installer role too (its approver), and refuses anyone else.
+	// admin role too (its approver), and refuses anyone else.
 	ReviewSolutionInstall(context.Context, *connect.Request[v1.ReviewSolutionInstallRequest]) (*connect.Response[v1.ReviewedSolutionInstall], error)
 	// Consent to the exact review; retries retain its original per-owner receipts.
 	// A member's to ask: the authority core admits an organization
-	// administrator, and the holder of a module page's installer role to
+	// administrator, and the holder of a module page's admin role to
 	// approve the page's update (its approver), and refuses anyone else.
 	InstallReviewedSolution(context.Context, *connect.Request[v1.InstallReviewedSolutionRequest]) (*connect.Response[v1.Installation], error)
 	// Set up who may use a module page: its roles to teams on its composition
@@ -375,11 +375,11 @@ type InstallationServiceHandler interface {
 	// Review one solution release and its supporting module access before consent.
 	// A member's to ask: the authority core answers it to an organization
 	// administrator, and a module page's update to the holder of the page's
-	// installer role too (its approver), and refuses anyone else.
+	// admin role too (its approver), and refuses anyone else.
 	ReviewSolutionInstall(context.Context, *connect.Request[v1.ReviewSolutionInstallRequest]) (*connect.Response[v1.ReviewedSolutionInstall], error)
 	// Consent to the exact review; retries retain its original per-owner receipts.
 	// A member's to ask: the authority core admits an organization
-	// administrator, and the holder of a module page's installer role to
+	// administrator, and the holder of a module page's admin role to
 	// approve the page's update (its approver), and refuses anyone else.
 	InstallReviewedSolution(context.Context, *connect.Request[v1.InstallReviewedSolutionRequest]) (*connect.Response[v1.Installation], error)
 	// Set up who may use a module page: its roles to teams on its composition

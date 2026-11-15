@@ -29,7 +29,9 @@ vi.mock("next/navigation", () => ({
 	useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
 }));
 vi.mock("@/components/admin-layout", () => ({
-	AdminLayout: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+	AdminLayout: ({ children }: { children: ReactNode }) => (
+		<main>{children}</main>
+	),
 }));
 vi.mock("@/components/command-palette", () => ({ CommandPalette: () => null }));
 vi.mock("@/components/impersonation-banner", () => ({
@@ -56,11 +58,11 @@ describe("the dashboard shell", () => {
 						installations: [
 							{
 								installation: { id: "inst-a", target: "solution-a" },
-								roles: ["editor", "installer", "viewer"],
+								roles: ["admin", "user"],
 							},
 							{
 								installation: { id: "inst-b", target: "module-b" },
-								roles: ["steward", "viewer"],
+								roles: ["admin", "user"],
 							},
 						],
 					}),
@@ -70,7 +72,7 @@ describe("the dashboard shell", () => {
 		const casting = screen.getByTestId("casting");
 		expect(casting.textContent).toBe("Dashboard page");
 		// Red before: the shell mounted the old per-installation switcher,
-		// which drew "all of mine", "editor", "steward"… as bare buttons above
+		// which drew "all of mine", "admin", "user"… as bare buttons above
 		// the page, outside any menu.
 		await expect(
 			screen.findAllByRole("button", { name: "all of mine" }, { timeout: 500 }),

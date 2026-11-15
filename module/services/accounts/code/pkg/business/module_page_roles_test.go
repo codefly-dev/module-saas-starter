@@ -18,8 +18,8 @@ import (
 )
 
 // signedModulePage is a delivered module serving example.note, with a page
-// when page is set, and its signed authority document declaring an installer
-// and a viewer role.
+// when page is set, and its signed authority document declaring an admin and
+// a user role.
 func signedModulePage(t *testing.T, page bool) (*solutionhost.ModuleManifest, *compositionv1.ApplyManifestRequest, *solutionhost.Delivered, *Service) {
 	t.Helper()
 	var frontend *solutionhost.Frontend
@@ -47,7 +47,7 @@ func signedModulePageWith(t *testing.T, frontend *solutionhost.Frontend, declare
 	document := &compositionv1.AuthorityManifestV1{Module: manifest.Alias, Generation: manifest.Generation, CoreManifestDigest: delivery.Digest(raw),
 		ScopeCeilings: note("read", "write")}
 	if declared {
-		document.Roles = []*compositionv1.RoleV1{{Name: InstallerRole, Scopes: note("read", "write")}, {Name: "viewer", Scopes: note("read")}}
+		document.Roles = []*compositionv1.RoleV1{{Name: domain.AdminRole, Scopes: note("read", "write")}, {Name: domain.UserRole, Scopes: note("read")}}
 	}
 	payload, err := proto.Marshal(document)
 	require.NoError(t, err)
@@ -71,7 +71,7 @@ func TestAModulePageDeclaresRolesLikeASolution(t *testing.T) {
 	require.NoError(t, err, "a module page's roles are accepted")
 	authority := svc.solutionAuthorityOf(doc, manifest)
 	require.NotNil(t, authority)
-	require.Equal(t, []string{InstallerRole, "viewer"}, authority.RoleNames())
+	require.Equal(t, []string{domain.AdminRole, domain.UserRole}, authority.RoleNames())
 }
 
 // A module that declares roles and no page is refused before anything is
@@ -92,7 +92,7 @@ func TestAModuleWithoutAPageDeclaresNoRoles(t *testing.T) {
 // solution's does; one naming a role the module does not declare is refused
 // with the core's reason.
 func TestAModuleInstallationRoleNamesADeclaredRole(t *testing.T) {
-	page := domain.Module{Name: "example", Kind: domain.KindModule, InstallationRole: "viewer", Roles: map[string][]*basev0.WorkScopeV1{"viewer": nil}}
+	page := domain.Module{Name: "example", Kind: domain.KindModule, InstallationRole: domain.UserRole, Roles: map[string][]*basev0.WorkScopeV1{domain.UserRole: nil}}
 	require.NoError(t, undeclaredInstallationRole(page))
 	require.NoError(t, undeclaredInstallationRole(domain.Module{Name: "example", Kind: domain.KindModule, InstallationRole: domain.NoInstallationRole}))
 	require.NoError(t, undeclaredInstallationRole(domain.Module{Name: "example", Kind: domain.KindModule}))
@@ -115,12 +115,12 @@ func TestAPageTheHostBundlesDeclaresRolesLikeARemote(t *testing.T) {
 	require.NoError(t, err)
 	authority := svc.solutionAuthorityOf(doc, manifest)
 	require.NotNil(t, authority)
-	require.Equal(t, []string{InstallerRole, "viewer"}, authority.RoleNames())
+	require.Equal(t, []string{domain.AdminRole, domain.UserRole}, authority.RoleNames())
 }
 
-// A module page delivered with no roles is read with the standard three the
-// core derives from what it serves (the viewer reads, the editor reads and
-// writes, the installer holds every action served): one rule, the core's,
+// A module page delivered with no roles is read with the two the core derives
+// from what it serves (the user reads and writes, the admin holds every action
+// served): one rule, the core's,
 // so the teams this host offers are the roles the core gates by. A module
 // without a page still has none.
 func TestAModulePageWithoutRolesIsReadWithTheStandardOnes(t *testing.T) {
@@ -130,11 +130,10 @@ func TestAModulePageWithoutRolesIsReadWithTheStandardOnes(t *testing.T) {
 	require.NoError(t, err)
 	authority := svc.solutionAuthorityOf(doc, manifest)
 	require.NotNil(t, authority)
-	require.Equal(t, []string{"editor", InstallerRole, "viewer"}, authority.RoleNames())
+	require.Equal(t, []string{domain.AdminRole, domain.UserRole}, authority.RoleNames())
 	require.Equal(t, []string{"read"}, authority.RoleActions("example.note")[:1])
-	require.ElementsMatch(t, []string{"read"}, actionsOf(authority.Roles["viewer"], "example.note"))
-	require.ElementsMatch(t, []string{"read", "write"}, actionsOf(authority.Roles["editor"], "example.note"))
-	require.ElementsMatch(t, []string{"read", "write"}, actionsOf(authority.Roles[InstallerRole], "example.note"))
+	require.ElementsMatch(t, []string{"read", "write"}, actionsOf(authority.Roles[domain.UserRole], "example.note"))
+	require.ElementsMatch(t, []string{"read", "write"}, actionsOf(authority.Roles[domain.AdminRole], "example.note"))
 
 	manifest, req, verified, svc = signedModulePageWith(t, nil, false)
 	require.NoError(t, svc.precheckCoreModule(context.Background(), req))

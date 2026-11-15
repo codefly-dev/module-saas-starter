@@ -27,10 +27,10 @@ import (
 )
 
 // approvedLine is a solution delivered through the signed delivery path at
-// generations 1 and 2, generation 2 adding an editor role, and installations
-// whose consent approved generation 1, recorded before the store kept
-// approved declarations: the state migration 68 leaves a consent that
-// approved an older generation in. Its owner holds viewer and editor on each.
+// generations 1 and 2, generation 2 widening the user role to write, and
+// installations whose consent approved generation 1, recorded before the store
+// kept approved declarations: the state migration 68 leaves a consent that
+// approved an older generation in. Its owner holds user on each.
 type approvedLine struct {
 	alias  string
 	signer *solutionhost.InMemorySigner
@@ -54,8 +54,8 @@ func newApprovedLine(t *testing.T, digests ...string) approvedLine {
 	doc := func(actions ...string) []*authorityv1.WorkScopeV1 {
 		return []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: actions}}
 	}
-	roles := []*compositionv1.RoleV1{{Name: business.InstallerRole, Scopes: doc("read", "write")}, {Name: "viewer", Scopes: doc("read")}}
-	line.deliver(t, 1, roles)
+	admin := &compositionv1.RoleV1{Name: domain.AdminRole, Scopes: doc("read", "write")}
+	line.deliver(t, 1, []*compositionv1.RoleV1{admin, {Name: domain.UserRole, Scopes: doc("read")}})
 	core, err := testService.AuthorityCore()
 	require.NoError(t, err)
 	first, err := core.Composed(testCtx, line.alias)
@@ -63,7 +63,7 @@ func newApprovedLine(t *testing.T, digests ...string) approvedLine {
 	require.Equal(t, uint64(1), first.Generation)
 	line.approved, err = authority.OfferDigest(first)
 	require.NoError(t, err)
-	line.deliver(t, 2, append(roles, &compositionv1.RoleV1{Name: "editor", Scopes: doc("read", "write")}))
+	line.deliver(t, 2, []*compositionv1.RoleV1{admin, {Name: domain.UserRole, Scopes: doc("read", "write")}})
 
 	for i, digest := range digests {
 		name := fmt.Sprintf("%s-%d", line.alias, i)
@@ -75,12 +75,7 @@ func newApprovedLine(t *testing.T, digests ...string) approvedLine {
 			if err := tx.PutInstallation(inst); err != nil {
 				return err
 			}
-			for _, role := range []string{"viewer", "editor"} {
-				if err := tx.PutRoleGrant(domain.RoleGrant{InstallationID: inst.ID, Role: role, PersonID: owner}); err != nil {
-					return err
-				}
-			}
-			return nil
+			return tx.PutRoleGrant(domain.RoleGrant{InstallationID: inst.ID, Role: domain.UserRole, PersonID: owner})
 		}))
 		line.holders = append(line.holders, lineHolder{installation: inst.ID, org: org, owner: owner})
 		t.Cleanup(func() {
@@ -186,7 +181,7 @@ func (line approvedLine) issue(core *authority.Service, h lineHolder) (authority
 // A consent that approved an older generation is held to that generation's
 // declaration, rebuilt on a delivery pass from the documents the inbox
 // received for it, verified again and the offer the consent approved: its
-// holders do not hold the role a later delivery added, every host lists what
+// holders do not hold what a later delivery widened, every host lists what
 // they hold from the core's own rule, and the core offers the upgrade. Another
 // host booting writes nothing new.
 func TestADeliveryPassKeepsTheDeclarationAnOlderConsentApproved(t *testing.T) {
@@ -194,8 +189,8 @@ func TestADeliveryPassKeepsTheDeclarationAnOlderConsentApproved(t *testing.T) {
 	require.NoError(t, legacyReconcile(testCtx))
 	approved, kept := line.kept(t)
 	require.True(t, kept, "the pass writes the declaration generation 1 composes to")
-	require.NotContains(t, approved.Roles, "editor")
-	require.Contains(t, approved.Roles, "viewer")
+	require.Len(t, approved.Roles[domain.UserRole], 1)
+	require.Equal(t, []string{"read"}, approved.Roles[domain.UserRole][0].GetActions(), "the user generation 1 declared, never generation 2's wider one")
 	digest, err := authority.OfferDigest(approved)
 	require.NoError(t, err)
 	require.Equal(t, line.approved, digest, "exactly the offer the consent approved")
@@ -208,7 +203,7 @@ func TestADeliveryPassKeepsTheDeclarationAnOlderConsentApproved(t *testing.T) {
 	require.NoError(t, err, "the holder holds what generation 1 granted")
 	require.NotEmpty(t, issued.Context.GetAuthorityScopes())
 	for _, sc := range issued.Context.GetAuthorityScopes() {
-		require.NotContains(t, sc.GetActions(), "write", "editor, added at generation 2, was never approved")
+		require.NotContains(t, sc.GetActions(), "write", "the user's write, added at generation 2, was never approved")
 	}
 	listed, err := core.ApprovedDeclaration(testCtx, inst)
 	require.NoError(t, err)

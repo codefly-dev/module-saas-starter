@@ -55,8 +55,8 @@ func preparedTool(t *testing.T, endpoint, method, tool string, effect runnablev0
 func proposalsOffer(approval domain.ConsentApproval) authority.ReviewedOffer {
 	m := domain.Module{Name: "proposals", Principal: "proposals", Kind: domain.KindSolution, Generation: 3,
 		Roles: map[string][]*basev0.WorkScopeV1{
-			"viewer": {offerScope("proposals.item", "read")},
-			"editor": {offerScope("proposals.item", "read", "write")},
+			"user":  {offerScope("proposals.item", "read")},
+			"admin": {offerScope("proposals.item", "read", "write")},
 		},
 		Bindings:         map[string]domain.Binding{"documents": {Audience: "documents", InvokeScopes: []*basev0.WorkScopeV1{offerScope("example-records", "read")}}},
 		EdgeDependencies: []domain.EdgeDependency{{Module: "records", Presence: "required"}},
@@ -112,9 +112,9 @@ func TestAReviewedOfferShowsEachRolesOperationsAndTools(t *testing.T) {
 	require.Equal(t, map[string]toolInfo{
 		"read_item":           {offerRead, "PROPOSALS__API_CONNECT_READ", false},
 		defaultTool.GetName(): {offerRead, "PROPOSALS__API_CONNECT_READ_AGAIN", defaultTool.GetEffect() != runnablev0.ToolExposure_EFFECT_READ_ONLY},
-	}, tools["viewer"], "the viewer sees explicit and default tools, never Write, private lookup, or an any-caller operation")
-	require.Equal(t, toolInfo{offerWrite, "PROPOSALS__API_CONNECT_WRITE", true}, tools["editor"]["write_item"])
-	require.NotContains(t, tools["editor"], "private_lookup")
+	}, tools["user"], "the user sees explicit and default tools, never Write, private lookup, or an any-caller operation")
+	require.Equal(t, toolInfo{offerWrite, "PROPOSALS__API_CONNECT_WRITE", true}, tools["admin"]["write_item"])
+	require.NotContains(t, tools["admin"], "private_lookup")
 
 	require.Len(t, review.GetCeiling(), 1)
 	require.Equal(t, "documents", review.GetCeiling()[0].GetModule())

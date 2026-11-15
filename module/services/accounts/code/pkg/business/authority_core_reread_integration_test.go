@@ -7,7 +7,8 @@ import (
 	"sync"
 	"testing"
 
-	"accounts/pkg/business"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
+
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
 	compositionv1 "accounts/pkg/gen/host/composition/v1"
 
@@ -25,7 +26,7 @@ func TestABootReadsAGenerationAnOlderHostComposedWithoutAFieldAgainOnce(t *testi
 	clearData(t)
 	withAuthorityCore(t)
 	line := approvedLine{alias: uniqueAlias("reread-line"), signer: wireSignedDelivery(t)}
-	roles := []*compositionv1.RoleV1{{Name: business.InstallerRole, Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read", "write"}}}}}
+	roles := []*compositionv1.RoleV1{{Name: domain.AdminRole, Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read", "write"}}}}}
 	line.deliver(t, 1, roles, func(doc *compositionv1.AuthorityManifestV1) { doc.SharedKinds = []string{"doc"} })
 
 	// As the older host composed it: the shared kinds unread, no source kept.

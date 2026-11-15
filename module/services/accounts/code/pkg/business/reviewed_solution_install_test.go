@@ -210,7 +210,7 @@ func TestAReachedModulePageIsInstalledWithTheClosure(t *testing.T) {
 					return err
 				}
 				m.InstallationRole = selector
-				m.Roles = map[string][]*basev0.WorkScopeV1{"viewer": {{ResourceKind: "records", Actions: []string{"read"}}}}
+				m.Roles = map[string][]*basev0.WorkScopeV1{"user": {{ResourceKind: "records", Actions: []string{"read"}}}}
 				return tx.PutModule(m)
 			}))
 			review, err := s.ReviewSolutionInstall(ctx, caller, caller.Organization, target)

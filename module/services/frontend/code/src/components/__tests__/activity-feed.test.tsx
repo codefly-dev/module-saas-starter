@@ -112,7 +112,7 @@ describe("ActivityFeed objects", () => {
 	// Eight rows read "alex joined a team (team)": which team, never said; the
 	// raw resource type in brackets instead.
 	it("names the team a row acted on, and never prints the resource type", () => {
-		teamNames.set("team-7", "expenses-editor");
+		teamNames.set("team-7", "expenses-user");
 		useAuditLogMock.mockReturnValue({
 			data: {
 				events: [
@@ -135,7 +135,7 @@ describe("ActivityFeed objects", () => {
 
 		render(<ActivityFeed />);
 
-		expect(screen.getByText("· expenses-editor")).toBeTruthy();
+		expect(screen.getByText("· expenses-user")).toBeTruthy();
 		expect(screen.queryByText(/\(team\)/)).toBeNull();
 		expect(screen.getByText("created a team")).toBeTruthy();
 	});

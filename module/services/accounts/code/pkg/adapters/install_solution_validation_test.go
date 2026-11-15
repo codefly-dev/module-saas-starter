@@ -18,5 +18,5 @@ func TestInstallSolutionRequestRoleIsOptionalButWellFormed(t *testing.T) {
 	}
 	require.NoError(t, Validate(request("")), "a declared installation role leaves the caller's role out")
 	require.NoError(t, Validate(request(uuid.NewString())))
-	require.Error(t, Validate(request("viewer")), "a given role is a role id")
+	require.Error(t, Validate(request("user")), "a given role is a role id")
 }

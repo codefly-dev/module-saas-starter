@@ -139,7 +139,7 @@ describe("Status", () => {
 		expect(screen.getByText(/Not installed in your organization/)).toBeTruthy();
 		expect(screen.queryByRole("button", { name: /Install/ })).toBeNull();
 		expect(
-			role("viewer").getByText("Nobody, until it is installed."),
+			role("user").getByText("Nobody, until it is installed."),
 		).toBeTruthy();
 	});
 
@@ -152,7 +152,7 @@ describe("Status", () => {
 				update: {
 					asks: [
 						{
-							role: "editor",
+							role: "admin",
 							groups: [
 								{
 									key: "b",
@@ -169,7 +169,7 @@ describe("Status", () => {
 		const update = within(
 			screen.getByText("Update available").closest("[role]") as HTMLElement,
 		);
-		expect(update.getByText("An editor would also be able to")).toBeTruthy();
+		expect(update.getByText("An admin would also be able to")).toBeTruthy();
 		expect(update.getByText("Create collections")).toBeTruthy();
 		expect(
 			update.getByRole("button", { name: "Review the update" }),
@@ -185,7 +185,7 @@ describe("Status", () => {
 				update: {
 					approved: [
 						{
-							name: "editor",
+							name: "admin",
 							scopes: [],
 							reach: [
 								{
@@ -204,9 +204,9 @@ describe("Status", () => {
 				},
 			},
 		);
-		const editor = role("editor");
-		expect(editor.getByText("Read pages")).toBeTruthy();
-		expect(editor.queryByText("Read and edit documents")).toBeNull();
+		const admin = role("admin");
+		expect(admin.getByText("Read pages")).toBeTruthy();
+		expect(admin.queryByText("Read and edit documents")).toBeNull();
 		expect(screen.getByText(/as you approved it/)).toBeTruthy();
 	});
 
@@ -223,7 +223,7 @@ describe("Status", () => {
 
 	it("says in words what the authority reports unreached, and keeps its own words in the details", async () => {
 		const condition =
-			"role viewer reaches nothing of model.profile:invoke through assistant: no module assistant reaches consumes it for a person";
+			"role user reaches nothing of model.profile:invoke through assistant: no module assistant reaches consumes it for a person";
 		await mounted(
 			setupFixture({
 				offer: reviewedOffer({ tools: false, unreached: [condition] }),
@@ -234,7 +234,7 @@ describe("Status", () => {
 		);
 		expect(
 			unreached.getByText(
-				"A viewer can't use profiles through assistant right now: assistant no longer passes it on.",
+				"A user can't use profiles through assistant right now: assistant no longer passes it on.",
 			),
 		).toBeTruthy();
 		expect(screen.queryByText(condition)).toBeNull();
@@ -246,19 +246,19 @@ describe("Status", () => {
 describe("Roles", () => {
 	it("says what each role can do, grouped by where, through every hop", async () => {
 		await mounted(setupFixture({ offer: reviewedOffer({ tools: true }) }));
-		const viewer = within(
-			role("viewer").getByRole("list", { name: "What a viewer can do" }),
+		const user = within(
+			role("user").getByRole("list", { name: "What a user can do" }),
 		);
-		expect(viewer.getByText(`In ${exampleTarget}`)).toBeTruthy();
-		expect(viewer.getByText("Read pages")).toBeTruthy();
+		expect(user.getByText(`In ${exampleTarget}`)).toBeTruthy();
+		expect(user.getByText("Read pages")).toBeTruthy();
 		expect(
-			viewer.getByText(`Through ${exampleTarget} and assistant, in model`),
+			user.getByText(`Through ${exampleTarget} and assistant, in model`),
 		).toBeTruthy();
-		expect(viewer.getByText("Use profiles")).toBeTruthy();
-		expect(viewer.getByText("With their own access in directory")).toBeTruthy();
-		const editor = role("editor");
-		expect(editor.getByText("Read and edit pages")).toBeTruthy();
-		expect(editor.getByText("Read and edit documents")).toBeTruthy();
+		expect(user.getByText("Use profiles")).toBeTruthy();
+		expect(user.getByText("With their own access in directory")).toBeTruthy();
+		const admin = role("admin");
+		expect(admin.getByText("Read and edit pages")).toBeTruthy();
+		expect(admin.getByText("Read and edit documents")).toBeTruthy();
 		// No operation count, no wire path, no ceiling: those are details.
 		expect(screen.queryByText(/operations ·/)).toBeNull();
 		expect(screen.queryByText("Permission ceiling")).toBeNull();
@@ -333,9 +333,9 @@ describe("Roles", () => {
 		expect(
 			within(screen.getByLabelText("Status")).getByText("Installed"),
 		).toBeTruthy();
-		expect(role("editor").getByText("Read and edit pages")).toBeTruthy();
+		expect(role("admin").getByText("Read and edit pages")).toBeTruthy();
 		expect(
-			role("editor").getByText(
+			role("admin").getByText(
 				/Refused: installation administration requires an administrator/,
 			),
 		).toBeTruthy();
@@ -377,55 +377,55 @@ describe("Who has each role", () => {
 				<span>People of {team.label}</span>
 			),
 		});
-		const viewers = within(
-			role("viewer").getByRole("list", { name: "Who has viewer" }),
+		const users = within(
+			role("user").getByRole("list", { name: "Who has user" }),
 		);
 		expect(
-			viewers.getByRole("link", { name: "Team Finance" }).getAttribute("href"),
+			users.getByRole("link", { name: "Team Finance" }).getAttribute("href"),
 		).toBe("/admin/teams/team-finance");
-		expect(viewers.getByText("· 3 people")).toBeTruthy();
-		expect(viewers.getByText("People of Finance")).toBeTruthy();
+		expect(users.getByText("· 3 people")).toBeTruthy();
+		expect(users.getByText("People of Finance")).toBeTruthy();
 		expect(
 			within(
-				role("editor").getByRole("list", { name: "Who has editor" }),
+				role("admin").getByRole("list", { name: "Who has admin" }),
 			).getByText("Jane Doe"),
 		).toBeTruthy();
 	});
 
 	it("gives a role to a team from the role itself, and the list follows the authority", async () => {
 		const fixture = await mounted(setupFixture({ grants: [] }), { subjects });
-		const editor = role("editor");
-		expect(editor.getByText("Nobody has it yet.")).toBeTruthy();
-		fireEvent.change(editor.getByLabelText("Person or team"), {
+		const admin = role("admin");
+		expect(admin.getByText("Nobody has it yet.")).toBeTruthy();
+		fireEvent.change(admin.getByLabelText("Person or team"), {
 			target: { value: "team:team-finance" },
 		});
-		fireEvent.click(editor.getByRole("button", { name: "Give editor access" }));
+		fireEvent.click(admin.getByRole("button", { name: "Give admin access" }));
 		await waitFor(() => expect(fixture.calls).toHaveLength(1));
 		expect(fixture.calls[0]).toMatchObject({
 			method: "GrantRole",
 			request: {
 				organizationId: "org-acme",
 				installationId: "installation-1",
-				role: "editor",
+				role: "admin",
 				teamId: "team-finance",
 				personId: "",
 			},
 		});
 		expect(
-			await role("editor").findByRole("link", { name: "Team Finance" }),
+			await role("admin").findByRole("link", { name: "Team Finance" }),
 		).toBeTruthy();
 	});
 
 	it("gives a role to an id when the host names nobody", async () => {
 		const fixture = await mounted(setupFixture({ grants: [] }));
-		const viewer = role("viewer");
-		fireEvent.change(viewer.getByLabelText("Person id"), {
+		const user = role("user");
+		fireEvent.change(user.getByLabelText("Person id"), {
 			target: { value: "person-omar" },
 		});
-		fireEvent.click(viewer.getByRole("button", { name: "Give viewer access" }));
+		fireEvent.click(user.getByRole("button", { name: "Give user access" }));
 		await waitFor(() => expect(fixture.calls).toHaveLength(1));
 		expect(fixture.calls[0].request).toMatchObject({
-			role: "viewer",
+			role: "user",
 			personId: "person-omar",
 			teamId: "",
 		});
@@ -437,22 +437,22 @@ describe("Who has each role", () => {
 			{ subjects },
 		);
 		fireEvent.click(
-			screen.getByRole("button", { name: "Remove editor from Jane Doe" }),
+			screen.getByRole("button", { name: "Remove admin from Jane Doe" }),
 		);
-		// Jane is the editor's only holder: it asks before leaving nobody.
+		// Jane is the admin's only holder: it asks before leaving nobody.
 		expect(fixture.calls).toHaveLength(0);
 		expect(
-			role("editor").getByText(
-				/Nobody will have editor access to example-pages\./,
+			role("admin").getByText(
+				/Nobody will have admin access to example-pages\./,
 			),
 		).toBeTruthy();
 		fireEvent.click(
-			role("editor").getByRole("button", { name: "Remove anyway" }),
+			role("admin").getByRole("button", { name: "Remove anyway" }),
 		);
 		await waitFor(() => expect(fixture.calls).toHaveLength(1));
 		expect(fixture.calls[0]).toMatchObject({
 			method: "RevokeRole",
-			request: { role: "editor", personId: "person-jane", teamId: "" },
+			request: { role: "admin", personId: "person-jane", teamId: "" },
 		});
 		expect(
 			await screen.findByText("The authority refused the change"),
@@ -466,25 +466,25 @@ describe("Who has each role", () => {
 		const fixture = await mounted(
 			setupFixture({
 				grants: [
-					{ role: "viewer", personId: "", teamId: "team-finance" },
-					{ role: "viewer", personId: "person-jane", teamId: "" },
-					{ role: "editor", personId: "person-jane", teamId: "" },
+					{ role: "user", personId: "", teamId: "team-finance" },
+					{ role: "user", personId: "person-jane", teamId: "" },
+					{ role: "admin", personId: "person-jane", teamId: "" },
 				],
 			}),
 			{ subjects },
 		);
 		fireEvent.click(
-			screen.getByRole("button", { name: "Remove viewer from Jane Doe" }),
+			screen.getByRole("button", { name: "Remove user from Jane Doe" }),
 		);
 		await waitFor(() => expect(fixture.calls).toHaveLength(1));
-		expect(screen.queryByText(/Nobody will have viewer access/)).toBeNull();
+		expect(screen.queryByText(/Nobody will have user access/)).toBeNull();
 		fireEvent.click(
-			screen.getByRole("button", { name: "Remove editor from Jane Doe" }),
+			screen.getByRole("button", { name: "Remove admin from Jane Doe" }),
 		);
-		fireEvent.click(role("editor").getByRole("button", { name: "Keep" }));
+		fireEvent.click(role("admin").getByRole("button", { name: "Keep" }));
 		expect(fixture.calls).toHaveLength(1);
 		expect(
-			screen.getByRole("button", { name: "Remove editor from Jane Doe" }),
+			screen.getByRole("button", { name: "Remove admin from Jane Doe" }),
 		).toBeTruthy();
 	});
 
@@ -500,7 +500,7 @@ describe("Who has each role", () => {
 			}),
 		);
 		expect(
-			role("viewer").getByText("Unavailable: the store is unreachable"),
+			role("user").getByText("Unavailable: the store is unreachable"),
 		).toBeTruthy();
 	});
 });

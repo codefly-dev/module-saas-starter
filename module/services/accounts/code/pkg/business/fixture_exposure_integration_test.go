@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
+
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
 	"github.com/codefly-dev/core/solutionhost"
@@ -82,7 +84,7 @@ var (
 // deliverSolution applies one signed solution delivery, with its authority
 // document carrying roles when roles are given. A solution delivered without
 // roles is a legacy delivery: the composition interface refuses it, and so
-// does the authority core (a solution declares an installer role), so a pass
+// does the authority core (a solution declares an admin role), so a pass
 // never applies it. It arrives through the HTTP delivery endpoint and is
 // applied as a host applied it before it decided through the core
 // (ApplyBeforeTheCoreForTest): the state such a host left behind.
@@ -114,16 +116,18 @@ func deliverSolution(t *testing.T, signer *solutionhost.InMemorySigner, alias st
 
 }
 
-// The live case: an installation made before the solution's roles were read
-// holds the built-in viewer as its standing role, which does not permit using
-// a solution. Once the solution delivers its roles, the fixture installer
-// exposes it to the team it names with the solution's own viewer, through the
-// one exposure rule, and the team's member holds that role's grant.
-func TestTheFixtureExposesAnInstallationHoldingTheBuiltInViewerWithTheSolutionsViewer(t *testing.T) {
+// The legacy case: an installation made before the solution's roles were
+// read holds a catalogue role as its standing role. Once the solution declares
+// its roles (exactly admin and user, Codefly's module contract), exposing it
+// to a team without a role is refused by name, for the catalogue's viewer and
+// for its admin alike, and points to reinstalling it through the review:
+// nothing guesses a solution role from a catalogue role's name, so the
+// organization's admin is never the page's admin.
+func TestALegacyInstallationIsNeverExposedByItsCatalogueRolesName(t *testing.T) {
 	clearData(t)
 	ctx := testCtx
 	signer := wireSignedDelivery(t)
-	alias := uniqueAlias("legacy-viewer")
+	alias, adminAlias := uniqueAlias("legacy-viewer"), uniqueAlias("legacy-admin")
 	fixturePath := filepath.Join(t.TempDir(), "legacy.yaml")
 	t.Setenv("DEV_FIXTURE_PATH", fixturePath)
 	require.NoError(t, os.WriteFile(fixturePath, []byte(fmt.Sprintf(`users:
@@ -149,20 +153,44 @@ installations:
     role: viewer
     owner: owner@legacy.test
     teams: [Finance]
-`, alias)), 0o600))
+  - org: Legacy Org
+    target: %s
+    role: admin
+    owner: owner@legacy.test
+`, alias, adminAlias)), 0o600))
 
-	// Delivered without roles: installed holding the built-in viewer.
+	// Delivered without roles: installed holding the built-in viewer, and the
+	// second holding the built-in admin (no team, so the pass exposes nothing).
 	deliverSolution(t, signer, alias, 1, nil)
+	deliverSolution(t, signer, adminAlias, 1, nil)
 	installations, err := fixtures.SeedWithInstallations(ctx, testService, "legacy")
 	require.NoError(t, err)
 	err = installations.Converge(ctx)
 	require.Error(t, err, "a pending installation is not exposed yet")
 	owner := seededUUIDFor(t, ctx, "fixture-legacy-owner")
-	member := seededUUIDFor(t, ctx, "fixture-legacy-member")
 	orgID := seededOrgIDFor(t, ctx, owner, "Legacy Org")
-	held := organizationInstallations(t, orgID)
+	require.Len(t, organizationInstallations(t, orgID), 2)
+	// Acknowledging one can complete the other's queued step, so each is read
+	// afresh before it is acknowledged.
+	for _, i := range organizationInstallations(t, orgID) {
+		for _, fresh := range organizationInstallations(t, orgID) {
+			if fresh.GetId() == i.GetId() {
+				acknowledgeInstallation(t, fresh)
+			}
+		}
+	}
+	var held, adminHeld []*gen.Installation
+	for _, i := range organizationInstallations(t, orgID) {
+		details, err := testService.ReadHostInstallation(ctx, orgID, i.GetId())
+		require.NoError(t, err)
+		if details.Role == "admin" {
+			adminHeld = append(adminHeld, i)
+		} else {
+			held = append(held, i)
+		}
+	}
 	require.Len(t, held, 1)
-	acknowledgeInstallation(t, held[0])
+	require.Len(t, adminHeld, 1)
 	before, err := testService.ReadHostInstallation(ctx, orgID, held[0].GetId())
 	require.NoError(t, err)
 	require.Equal(t, "viewer", before.Role)
@@ -173,12 +201,12 @@ installations:
 
 	// The host decides through its authority core from here on, as every
 	// host does now. Its boot reconciliation meets the legacy generation and
-	// the core refuses it (a solution declares an installer role); the host
+	// the core refuses it (a solution declares an admin role); the host
 	// keeps serving, and the core holds no installation of it: the legacy one
 	// is accounts' record alone.
 	_, key, err := ed25519.GenerateKey(nil)
 	require.NoError(t, err)
-	require.ErrorContains(t, testService.ConfigureAuthorityCore(testCtx, "https://accounts.example.test", "legacy-viewer", key), `none is "installer"`)
+	require.ErrorContains(t, testService.ConfigureAuthorityCore(testCtx, "https://accounts.example.test", "legacy-viewer", key), `none is "admin"`)
 	t.Cleanup(testService.UnconfigureAuthorityCoreForTest)
 	core, err := testService.AuthorityCore()
 	require.NoError(t, err)
@@ -186,32 +214,34 @@ installations:
 	require.NoError(t, err)
 	require.Empty(t, inCore)
 
-	// The solution delivers its roles, which only a host deciding through its
-	// core composes; the legacy installation is then exposed to the team the
-	// fixture names with the solution's own viewer, through the one exposure
-	// rule the fixture's pass applies on a host without a core
-	// (ExposeHostInstallation). On a host with one, the fixture installs a
+	// The solutions deliver their roles, which only a host deciding through
+	// its core composes. Exposing a legacy installation to a team without a
+	// role, the one exposure rule the fixture's pass applies on a host without
+	// a core (ExposeHostInstallation), no longer guesses the solution's role
+	// from the catalogue role's name: it is refused by name. On a host with one, the fixture installs a
 	// role-gated target through the core instead (coreInstall), which
 	// TestAFreshRunsFixtureInstallsEverySolutionActiveAndSeatsEachPersonOnTheirRole
 	// covers.
-	viewer := []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read"}}}
-	deliverSolution(t, signer, alias, 2, []*compositionv1.RoleV1{
-		{Name: business.InstallerRole, Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read", "write"}}}},
-		{Name: "viewer", Scopes: viewer},
-	})
+	roles := []*compositionv1.RoleV1{
+		{Name: domain.AdminRole, Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read", "write"}}}},
+		{Name: domain.UserRole, Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read"}}}},
+	}
+	deliverSolution(t, signer, alias, 2, roles)
+	deliverSolution(t, signer, adminAlias, 2, roles)
 	teams, err := testService.ListTeams(ctx, &gen.ListTeamsRequest{OrgId: orgID})
 	require.NoError(t, err)
 	require.Len(t, teams.GetTeams(), 1)
-	_, err = testService.ExposeHostInstallation(ctx, owner, orgID, held[0].GetId(), teams.GetTeams()[0].GetId())
-	require.NoError(t, err)
+	finance := teams.GetTeams()[0].GetId()
+	_, err = testService.ExposeHostInstallation(ctx, owner, orgID, held[0].GetId(), finance)
+	require.ErrorContains(t, err, `standing role "viewer" is not one of them`, "the catalogue's viewer is no role of the solution")
+	require.ErrorContains(t, err, "reinstall it through the review", "and the refusal points to the review, never to naming a role")
 	exposed, err := testService.ReadHostInstallation(ctx, orgID, held[0].GetId())
 	require.NoError(t, err)
-	require.Len(t, exposed.TeamIDs, 1)
+	require.Empty(t, exposed.TeamIDs, "the team holds nothing of it")
 	require.Equal(t, before.RoleID, exposed.RoleID, "the standing grant is not rewritten")
-
-	delivered, err := testService.DeliveredSolutionAuthority(ctx, alias)
+	_, err = testService.ExposeHostInstallation(ctx, owner, orgID, adminHeld[0].GetId(), finance)
+	require.ErrorContains(t, err, `standing role "admin" is not one of them`, "nor is the catalogue's admin the page's admin")
+	adminExposed, err := testService.ReadHostInstallation(ctx, orgID, adminHeld[0].GetId())
 	require.NoError(t, err)
-	require.NotNil(t, delivered)
-	grants := delivered.HeldBy(member, exposed.TeamIDs, business.SolutionRoleHolders{Owner: owner, Role: exposed.Role, Teams: exposed.TeamIDs})
-	require.Equal(t, delivered.Grants("viewer"), grants)
+	require.Empty(t, adminExposed.TeamIDs, "the team holds nothing of it")
 }

@@ -73,7 +73,7 @@ describe("WhenRolesDeclared", () => {
 
 	it("shows a module's children when the catalogue lists it with roles", () => {
 		catalogue.result = {
-			data: [row("other", []), row("example-target", ["installer", "viewer"])],
+			data: [row("other", []), row("example-target", ["admin", "user"])],
 		};
 		renderGate("module");
 		expect(screen.getByText("Setup")).toBeTruthy();
@@ -93,19 +93,22 @@ describe("WhenRolesDeclared", () => {
 	it.each([
 		["a member", "member"],
 		["a cast session", undefined],
-	])("offers %s no Setup on a module page and does not read the catalogue", (_, role) => {
-		session.orgRole = role;
-		catalogue.result = { data: [row("example-target", ["installer"])] };
-		renderGate("module");
-		expect(screen.queryByText("Setup")).toBeNull();
-		expect(screen.queryByRole("alert")).toBeNull();
-		expect(catalogue.asked.every((org) => org === "")).toBe(true);
-	});
+	])(
+		"offers %s no Setup on a module page and does not read the catalogue",
+		(_, role) => {
+			session.orgRole = role;
+			catalogue.result = { data: [row("example-target", ["admin"])] };
+			renderGate("module");
+			expect(screen.queryByText("Setup")).toBeNull();
+			expect(screen.queryByRole("alert")).toBeNull();
+			expect(catalogue.asked.every((org) => org === "")).toBe(true);
+		},
+	);
 
 	it("shows a module's Setup to a platform administrator", () => {
 		session.orgRole = undefined;
 		session.platformRole = "super_admin";
-		catalogue.result = { data: [row("example-target", ["installer"])] };
+		catalogue.result = { data: [row("example-target", ["admin"])] };
 		renderGate("module");
 		expect(screen.getByText("Setup")).toBeTruthy();
 	});

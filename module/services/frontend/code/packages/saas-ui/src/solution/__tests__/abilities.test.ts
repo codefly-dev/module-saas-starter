@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
 	type AbilityReach,
 	type AbilityRole,
+	article,
 	kindText,
 	operationText,
 	roleAbilities,
+	roleLabel,
 	scopesText,
 	unreachedHeadline,
 	unreachedText,
@@ -30,11 +32,11 @@ const row = (
 	...extra,
 });
 
-// A solution whose viewer reads pages, reaches documents through the
+// A solution whose user reads pages, reaches documents through the
 // solution and the model's profiles through the solution and an agent, and
 // whose page reaches the directory on the person's own session.
-const viewer: AbilityRole = {
-	name: "viewer",
+const user: AbilityRole = {
+	name: "user",
 	scopes: [scope("pages.page", "read")],
 	reach: [
 		row(["pages"], "role", [scope("pages.page", "read")], {
@@ -52,8 +54,8 @@ const viewer: AbilityRole = {
 
 describe("what a role can do", () => {
 	it("groups a role's reach by where, in plain words, through every hop", () => {
-		const [abilities] = roleAbilities("pages", [viewer]);
-		expect(abilities.role).toBe("viewer");
+		const [abilities] = roleAbilities("pages", [user]);
+		expect(abilities.role).toBe("user");
 		expect(abilities.groups.map((g) => [g.where, g.lines])).toEqual([
 			["In pages", ["read pages"]],
 			["Through pages, in documents", ["read documents"]],
@@ -78,7 +80,7 @@ describe("what a role can do", () => {
 	it("names a row's operations when it carries no scope, and what is attached", () => {
 		const [abilities] = roleAbilities("pages", [
 			{
-				name: "editor",
+				name: "admin",
 				scopes: [],
 				reach: [
 					row(["pages"], "role", [scope("pages.page", "read")], {
@@ -98,7 +100,7 @@ describe("what a role can do", () => {
 
 	it("reads a role's own scopes when the offer carries no reach", () => {
 		const [abilities] = roleAbilities("pages", [
-			{ name: "viewer", scopes: [scope("pages.page", "read")], reach: [] },
+			{ name: "user", scopes: [scope("pages.page", "read")], reach: [] },
 		]);
 		expect(abilities.groups).toEqual([
 			{ key: "role", where: "In pages", lines: ["read pages"] },
@@ -108,8 +110,8 @@ describe("what a role can do", () => {
 
 describe("what an update asks", () => {
 	it("names what each role reaches beyond the approved reach, and nothing else", () => {
-		const editor: AbilityRole = {
-			name: "editor",
+		const admin: AbilityRole = {
+			name: "admin",
 			scopes: [],
 			reach: [
 				row(["pages", "agent", "documents"], "binding", [
@@ -119,11 +121,11 @@ describe("what an update asks", () => {
 		};
 		const asks = updateAsks(
 			"pages",
-			[viewer, editor],
+			[user, admin],
 			[
-				viewer,
+				user,
 				{
-					name: "editor",
+					name: "admin",
 					scopes: [],
 					reach: [
 						row(["pages", "agent", "documents"], "binding", [
@@ -135,7 +137,7 @@ describe("what an update asks", () => {
 		);
 		expect(asks).toEqual([
 			{
-				role: "editor",
+				role: "admin",
 				groups: [
 					{
 						key: "binding:pages>agent>documents",
@@ -149,7 +151,7 @@ describe("what an update asks", () => {
 
 	it("names a new role, a new place, and an operation newly open to what was held", () => {
 		const approved: AbilityRole = {
-			...viewer,
+			...user,
 			reach: [
 				row(
 					["pages", "documents"],
@@ -162,7 +164,7 @@ describe("what an update asks", () => {
 			],
 		};
 		const now: AbilityRole = {
-			...viewer,
+			...user,
 			reach: [
 				row(
 					["pages", "documents"],
@@ -187,7 +189,7 @@ describe("what an update asks", () => {
 			asks.map((a) => [a.role, a.groups.map((g) => [g.where, g.lines])]),
 		).toEqual([
 			[
-				"viewer",
+				"user",
 				[
 					["Through pages, in documents", ["purge"]],
 					["Through pages, in model", ["use profiles"]],
@@ -198,9 +200,7 @@ describe("what an update asks", () => {
 	});
 
 	it("asks nothing when the update only narrows", () => {
-		expect(updateAsks("pages", [{ ...viewer, reach: [] }], [viewer])).toEqual(
-			[],
-		);
+		expect(updateAsks("pages", [{ ...user, reach: [] }], [user])).toEqual([]);
 	});
 });
 
@@ -208,17 +208,17 @@ describe("an unreached reach", () => {
 	it("reads the core's condition in words, and keeps any other form as written", () => {
 		expect(
 			unreachedText(
-				"role viewer reaches nothing of model.profile:invoke, model.profile:read through agent: no module agent reaches consumes it for a person",
+				"role user reaches nothing of model.profile:invoke, model.profile:read through agent: no module agent reaches consumes it for a person",
 			),
 		).toBe(
-			"A viewer can't use and read profiles through agent right now: agent no longer passes it on.",
+			"A user can't use and read profiles through agent right now: agent no longer passes it on.",
 		);
 		expect(
 			unreachedText(
-				"role editor reaches nothing of documents.document:write through agent: documents not composed",
+				"role admin reaches nothing of documents.document:write through agent: documents not composed",
 			),
 		).toBe(
-			"An editor can't edit documents through agent right now: documents is not available here.",
+			"An admin can't edit documents through agent right now: documents is not available here.",
 		);
 		expect(unreachedText("something else")).toBe("something else");
 	});
@@ -226,12 +226,34 @@ describe("an unreached reach", () => {
 	it("names on one line what cannot be reached, by module and the binding it goes through", () => {
 		expect(
 			unreachedHeadline([
-				"role viewer reaches nothing of model.profile:invoke through agent: agent not composed",
-				"role editor reaches nothing of model.profile:invoke, documents.document:write through agent: no module agent reaches consumes it for a person",
+				"role user reaches nothing of model.profile:invoke through agent: agent not composed",
+				"role admin reaches nothing of model.profile:invoke, documents.document:write through agent: no module agent reaches consumes it for a person",
 			]),
-		).toBe("Editors and viewers can't reach model and documents through agent");
+		).toBe("Admins and users can't reach model and documents through agent");
 		expect(unreachedHeadline(["other"])).toBe(
 			"Some access can't be reached right now",
 		);
+	});
+});
+
+describe("roleLabel", () => {
+	it("names a role as its target's, never as the organization's", () => {
+		expect(roleLabel("Example Pages", "admin")).toBe("Example Pages admin");
+		expect(roleLabel("example pages", "user")).toBe("Example pages user");
+	});
+	it("is the role's own name when the host gives no title", () => {
+		expect(roleLabel(undefined, "admin")).toBe("admin");
+		expect(roleLabel("  ", "user")).toBe("user");
+	});
+});
+
+describe("article", () => {
+	it("goes by sound", () => {
+		expect(article("admin")).toBe("An");
+		expect(article("user")).toBe("A");
+		expect(article("Example Pages admin")).toBe("An");
+		expect(article("update")).toBe("An");
+		expect(article("unit")).toBe("A");
+		expect(article("Payroll user")).toBe("A");
 	});
 });

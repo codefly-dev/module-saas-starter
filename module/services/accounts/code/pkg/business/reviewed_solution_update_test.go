@@ -15,7 +15,7 @@ import (
 // carry none, and the roles held together are no role's.
 func TestAnUpdateReviewCarriesTheApprovedReachOfEachRole(t *testing.T) {
 	approved := map[string][]domain.ReachRow{
-		"viewer": {
+		"user": {
 			{Path: []string{"example"}, Module: "example", Via: decide.ReachRole, Confinement: decide.ConfinedToInstallation,
 				Scopes: []*basev0.WorkScopeV1{{ResourceKind: "example.page", Actions: []string{"read"}}}, Operations: []string{"/example.v1.Pages/Get"}},
 			{Path: []string{"example", "assistant", "documents"}, Module: "documents", Via: decide.ReachBinding,
@@ -30,7 +30,7 @@ func TestAnUpdateReviewCarriesTheApprovedReachOfEachRole(t *testing.T) {
 	roles, err := approvedRoles(inst)
 	require.NoError(t, err)
 	require.Len(t, roles, 1, "the roles held together are no role's")
-	require.Equal(t, "viewer", roles[0].GetName())
+	require.Equal(t, "user", roles[0].GetName())
 	require.Len(t, roles[0].GetReach(), 2)
 	through := roles[0].GetReach()[1]
 	require.Equal(t, []string{"example", "assistant", "documents"}, through.GetPath())

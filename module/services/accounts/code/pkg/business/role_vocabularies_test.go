@@ -45,7 +45,7 @@ func TestRoleVocabulariesAreReadFromTheirSources(t *testing.T) {
 		require.NotContains(t, v.Words, "super_admin", "a platform role is none of the three vocabularies")
 	}
 
-	require.Equal(t, []string{domain.InstallerRole}, byName["Installation role"].Words)
+	require.Equal(t, []string{domain.AdminRole, domain.UserRole}, byName["Installation role"].Words)
 
 	rendered := renderRoleVocabularies()
 	for _, v := range RoleVocabularies() {

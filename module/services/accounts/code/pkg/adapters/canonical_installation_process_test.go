@@ -155,7 +155,7 @@ func TestCanonicalCombinedInstallQueueThroughRuntime(t *testing.T) {
 				}
 			}
 			alias := "example-setup-" + outcome
-			deliverSolution(t, ctx, conn, signer, conformanceSolution{alias: alias, generation: 1, installationRole: "none", ceilings: []*authorityv1.WorkScopeV1{wireScope("example.item", "read")}, roles: map[string][]*authorityv1.WorkScopeV1{"installer": {wireScope("example.item", "read")}}, edges: edges})
+			deliverSolution(t, ctx, conn, signer, conformanceSolution{alias: alias, generation: 1, installationRole: "none", ceilings: []*authorityv1.WorkScopeV1{wireScope("example.item", "read")}, roles: map[string][]*authorityv1.WorkScopeV1{"admin": {wireScope("example.item", "read")}}, edges: edges})
 			target, err := svc.ResolveInstallationPrincipal(ctx, fixtureOrganization, alias)
 			require.NoError(t, err)
 			review, err := api.ReviewSolutionInstall(personContext, &gen.ReviewSolutionInstallRequest{OrgId: fixtureOrganization, TargetId: target.TargetID})

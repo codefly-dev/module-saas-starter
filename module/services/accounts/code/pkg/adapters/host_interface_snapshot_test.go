@@ -125,7 +125,7 @@ func TestEveryHostAuthorityQuestionIsOneSnapshot(t *testing.T) {
 		{Name: records, Principal: records, Kind: domain.KindModule, Generation: 1, OwnerAware: true, ResourceKinds: items},
 		{Name: solution, Principal: solution, Kind: domain.KindSolution, Generation: 1, OwnerAware: true, ResourceKinds: held[:1],
 			Bindings: map[string]domain.Binding{"records": {ID: "records", Audience: records, InvokeScopes: items}},
-			Roles:    map[string][]*basev0.WorkScopeV1{domain.InstallerRole: held, "viewer": held}},
+			Roles:    map[string][]*basev0.WorkScopeV1{domain.AdminRole: held, domain.UserRole: held}},
 	} {
 		_, err := setup.ApplyModule(ctx, m)
 		require.NoError(t, err)
@@ -134,9 +134,9 @@ func TestEveryHostAuthorityQuestionIsOneSnapshot(t *testing.T) {
 	approval, err := setup.Review(ctx, installer, org, solution)
 	require.NoError(t, err)
 	approval.OperationID = uuid.NewString()
-	installation, err := setup.Install(ctx, installer, org, solution, domain.InstallerRole, admin, &approval, nil)
+	installation, err := setup.Install(ctx, installer, org, solution, domain.AdminRole, admin, &approval, nil)
 	require.NoError(t, err)
-	_, err = setup.GrantRole(ctx, installer, authority.RoleRequest{Organization: org, InstallationID: installation.ID, Role: "viewer", PersonID: member})
+	_, err = setup.GrantRole(ctx, installer, authority.RoleRequest{Organization: org, InstallationID: installation.ID, Role: domain.UserRole, PersonID: member})
 	require.NoError(t, err)
 	session := uuid.New()
 	root, err := setup.IssueForPerson(ctx, authority.Person{ID: member, Organization: org, SessionID: session.String()}, authority.IssueRequest{Audience: solution})

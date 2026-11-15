@@ -110,11 +110,11 @@ func TestReviewedSolutionPlanRequiresExactCanonicalReceiptAndPrerequisites(t *te
 // Whether a target is set up through an install step is read from its
 // declaration in one place: a solution is, a module page is not.
 func TestDeclaresInstallStepFollowsTheDeclaration(t *testing.T) {
-	viewer := map[string][]*basev0.WorkScopeV1{"viewer": {{ResourceKind: "example.note", Actions: []string{"read"}}}}
-	if !business.DeclaresInstallStep(domain.Module{Name: "example", Kind: domain.KindSolution, Roles: viewer}) {
+	user := map[string][]*basev0.WorkScopeV1{"user": {{ResourceKind: "example.note", Actions: []string{"read"}}}}
+	if !business.DeclaresInstallStep(domain.Module{Name: "example", Kind: domain.KindSolution, Roles: user}) {
 		t.Fatal("a solution is set up by its install step")
 	}
-	if business.DeclaresInstallStep(domain.Module{Name: "example", Kind: domain.KindModule, Roles: viewer}) {
+	if business.DeclaresInstallStep(domain.Module{Name: "example", Kind: domain.KindModule, Roles: user}) {
 		t.Fatal("a module page declares no install endpoint")
 	}
 }

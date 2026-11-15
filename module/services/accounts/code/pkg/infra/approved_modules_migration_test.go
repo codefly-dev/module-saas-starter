@@ -48,7 +48,7 @@ func TestMigration68FillsOnlyTheDeclarationACurrentConsentApproved(t *testing.T)
 	current, behind := uniqueAlias("approved-current"), uniqueAlias("approved-behind")
 	module := func(name string, generation uint64) domain.Module {
 		return domain.Module{Name: name, Principal: "solution:" + name, Kind: domain.KindSolution, Generation: generation,
-			Roles: map[string][]*basev0.WorkScopeV1{domain.InstallerRole: {{ResourceKind: name + ".page", Actions: []string{"read", "write"}}}}}
+			Roles: map[string][]*basev0.WorkScopeV1{domain.AdminRole: {{ResourceKind: name + ".page", Actions: []string{"read", "write"}}}}}
 	}
 	consent := func(name string, generation uint64) domain.Installation {
 		return domain.Installation{ID: business.NewIDString(), Organization: org, Target: name, Status: domain.Active, Revision: 1,

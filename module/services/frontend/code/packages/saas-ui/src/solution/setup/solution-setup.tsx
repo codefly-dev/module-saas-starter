@@ -36,6 +36,7 @@ import {
 	article,
 	type RoleAbilities,
 	roleAbilities,
+	roleLabel,
 	unreachedText,
 } from "./abilities.js";
 import {
@@ -74,6 +75,11 @@ export type SolutionSetupProps = SolutionSetupTransport & {
 	organizationId: string;
 	/** The solution, by its name in the composition (the core's target). */
 	target: string;
+	/**
+	 * How the host titles the solution ("Example Pages"). Each role reads as the
+	 * solution's ("Example Pages admin"); without it, by the role's own name.
+	 */
+	title?: string;
 	/** Conditions the host knows and the authority does not; see {@link SetupCondition}. */
 	conditions?: readonly SetupCondition[];
 	/** People and teams the host can name, for granting and naming holders. */
@@ -145,6 +151,7 @@ export function SolutionSetup(props: SolutionSetupProps) {
 					/>
 					<RolesSection
 						organizationId={props.organizationId}
+						title={props.title}
 						offer={state.offer}
 						offerError={state.offerError}
 						grants={state.grants}
@@ -329,8 +336,8 @@ function StatusSection({
 							</ul>
 							<p>
 								Until a later release of the module it goes through restores it,
-								the people holding that role cannot do this; everything else they
-								hold keeps working, and nothing is ever widened meanwhile.
+								the people holding that role cannot do this; everything else
+								they hold keeps working, and nothing is ever widened meanwhile.
 							</p>
 						</div>
 					</Banner>
@@ -429,6 +436,7 @@ function Scopes({
  */
 function RolesSection({
 	organizationId,
+	title,
 	offer,
 	offerError,
 	grants,
@@ -440,6 +448,8 @@ function RolesSection({
 	onChanged,
 }: {
 	organizationId: string;
+	/** How the host titles the solution, for each role's words. */
+	title?: string;
 	offer?: ReviewedOffer;
 	offerError?: unknown;
 	grants?: RoleGrant[];
@@ -513,9 +523,13 @@ function RolesSection({
 							className="flex flex-col gap-3 rounded-lg border p-4"
 						>
 							<h4 className="type-section-title">
-								What {article(role.role).toLowerCase()} {role.role} can do
+								What {article(roleLabel(title, role.role)).toLowerCase()}{" "}
+								{roleLabel(title, role.role)} can do
 							</h4>
-							<RoleAbilitiesList abilities={role} />
+							<RoleAbilitiesList
+								abilities={role}
+								label={`What ${article(roleLabel(title, role.role)).toLowerCase()} ${roleLabel(title, role.role)} can do`}
+							/>
 							<div className="flex flex-col gap-2">
 								<p className="type-emphasis">Who has it</p>
 								{!installed(offer) || !installation ? (
@@ -527,6 +541,7 @@ function RolesSection({
 								) : (
 									<Holders
 										role={role.role}
+										title={title}
 										target={offer.target}
 										grants={(grants ?? []).filter((g) => g.role === role.role)}
 										subjects={subjects}
@@ -546,7 +561,7 @@ function RolesSection({
 											fixedRole={role.role}
 											subjects={subjects}
 											busy={busy}
-											submitLabel={`Give ${role.role} access`}
+											submitLabel={`Give ${roleLabel(title, role.role)} access`}
 											onGrant={(grant) =>
 												change(clients.installations.grantRole(request(grant)))
 											}
@@ -571,6 +586,7 @@ function RolesSection({
  */
 export function RemoveHolder({
 	role,
+	title,
 	target,
 	name,
 	last,
@@ -578,6 +594,8 @@ export function RemoveHolder({
 	onRemove,
 }: {
 	role: string;
+	/** How the host titles the target, for the role's words ({@link roleLabel}). */
+	title?: string;
 	target: string;
 	name: string;
 	/** Whether this is the role's only holder. */
@@ -592,7 +610,7 @@ export function RemoveHolder({
 				role="alert"
 				className="flex flex-wrap items-center gap-2 text-warning"
 			>
-				Nobody will have {role} access to {target}.
+				Nobody will have {roleLabel(title, role)} access to {target}.
 				<Button
 					size="sm"
 					variant="destructive"
@@ -618,7 +636,7 @@ export function RemoveHolder({
 			size="sm"
 			variant="outline"
 			disabled={busy}
-			aria-label={`Remove ${role} from ${name}`}
+			aria-label={`Remove ${roleLabel(title, role)} from ${name}`}
 			onClick={() => (last ? setConfirming(true) : onRemove())}
 		>
 			Remove
@@ -629,6 +647,7 @@ export function RemoveHolder({
 /** The teams and people holding one role, each removable. */
 function Holders({
 	role,
+	title,
 	target,
 	grants,
 	subjects,
@@ -637,6 +656,8 @@ function Holders({
 	onRevoke,
 }: {
 	role: string;
+	/** How the host titles the target, for the role's words. */
+	title?: string;
 	target: string;
 	grants: readonly RoleGrant[];
 	subjects?: readonly SetupSubject[];
@@ -647,7 +668,10 @@ function Holders({
 	if (!grants.length)
 		return <p className="text-muted-foreground">Nobody has it yet.</p>;
 	return (
-		<ul className="flex flex-col gap-2" aria-label={`Who has ${role}`}>
+		<ul
+			className="flex flex-col gap-2"
+			aria-label={`Who has ${roleLabel(title, role)}`}
+		>
 			{grants.map((g) => {
 				const kind = g.teamId ? "team" : "person";
 				const subject = subjects?.find(
@@ -681,6 +705,7 @@ function Holders({
 							</span>
 							<RemoveHolder
 								role={role}
+								title={title}
 								target={target}
 								name={name}
 								last={grants.length === 1}

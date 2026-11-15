@@ -29,7 +29,7 @@ func testInstallAssignsAccess(t *testing.T, h reviewedClosureHarness) {
 	solution := func(alias string, edges ...string) {
 		note := wireScope(alias+".note", "read")
 		s := conformanceSolution{alias: alias, generation: 1, installationRole: domain.NoInstallationRole, ceilings: []*authorityv1.WorkScopeV1{note},
-			roles: map[string][]*authorityv1.WorkScopeV1{"installer": {note}, "viewer": {note}}}
+			roles: map[string][]*authorityv1.WorkScopeV1{"admin": {note}, "user": {note}}}
 		for _, edge := range edges {
 			s.edges = append(s.edges, modulecontract.EdgeDependency{Module: edge, Presence: "required"})
 		}
@@ -55,7 +55,7 @@ func testInstallAssignsAccess(t *testing.T, h reviewedClosureHarness) {
 		return out
 	}
 
-	everyRole := []string{"installer", "viewer"}
+	everyRole := []string{"admin", "user"}
 	installed := func(target string, access business.InstallAccess) business.InstalledSolution {
 		t.Helper()
 		review, err := h.review(t, alex, target)
@@ -96,12 +96,12 @@ func testInstallAssignsAccess(t *testing.T, h reviewedClosureHarness) {
 		solution(target)
 		// What the dialog sends untouched: no team named, every role ticked.
 		inst := install(target, business.InstallAccess{InstallerRoles: everyRole})
-		installer, viewer := teamsNamed(t, h, target+"-installer"), teamsNamed(t, h, target+"-viewer")
-		require.Len(t, installer, 1, "the installer role's conventional team is created")
-		require.Len(t, viewer, 1, "the viewer role's conventional team is created")
-		require.Equal(t, map[string][]string{"installer": installer, "viewer": viewer}, grantsOf(inst), "each team holds its role once setup is active")
-		require.Equal(t, []string{conformanceAlex}, teamMembers(t, h, installer[0]), "the installer joins the team of each role they took, and nobody else does")
-		require.Equal(t, []string{conformanceAlex}, teamMembers(t, h, viewer[0]))
+		admins, users := teamsNamed(t, h, target+"-admin"), teamsNamed(t, h, target+"-user")
+		require.Len(t, admins, 1, "the admin role's conventional team is created")
+		require.Len(t, users, 1, "the user role's conventional team is created")
+		require.Equal(t, map[string][]string{"admin": admins, "user": users}, grantsOf(inst), "each team holds its role once setup is active")
+		require.Equal(t, []string{conformanceAlex}, teamMembers(t, h, admins[0]), "the installer joins the team of each role they took, and nobody else does")
+		require.Equal(t, []string{conformanceAlex}, teamMembers(t, h, users[0]))
 	})
 
 	problemOf := func(inst business.InstalledSolution, role string) string {
@@ -118,12 +118,12 @@ func testInstallAssignsAccess(t *testing.T, h reviewedClosureHarness) {
 		solution(target)
 		// Spelled in another case, with its own member: nobody chose it for this
 		// role, so the role is not granted to it and the installer does not join it.
-		existing := createTeam("Conformance-Access-Reused-Viewer", conformanceMaya)
+		existing := createTeam("Conformance-Access-Reused-User", conformanceMaya)
 		inst := installed(target, business.InstallAccess{InstallerRoles: everyRole})
-		require.Contains(t, problemOf(inst, "viewer"), "already exists and was not made for this role")
-		require.Empty(t, problemOf(inst, "installer"), "the other role's team does not exist, and is created")
-		require.Equal(t, []string{existing}, teamsNamed(t, h, target+"-viewer"), "no second team of the name")
-		require.Empty(t, grantsOf(inst.Installation)["viewer"], "the existing team holds no role it was not given")
+		require.Contains(t, problemOf(inst, "user"), "already exists and was not made for this role")
+		require.Empty(t, problemOf(inst, "admin"), "the other role's team does not exist, and is created")
+		require.Equal(t, []string{existing}, teamsNamed(t, h, target+"-user"), "no second team of the name")
+		require.Empty(t, grantsOf(inst.Installation)["user"], "the existing team holds no role it was not given")
 		require.Equal(t, []string{conformanceMaya}, teamMembers(t, h, existing), "its members stay, and the installer is not added")
 	})
 
@@ -131,13 +131,13 @@ func testInstallAssignsAccess(t *testing.T, h reviewedClosureHarness) {
 		const target = "conformance-access-slug"
 		solution(target)
 		// Teams are unique by path, and a root team's path is the slug of its
-		// name: "Conformance Access Slug Viewer" holds the path a team named
-		// conformance-access-slug-viewer would take.
-		existing := createTeam("Conformance Access Slug Viewer", conformanceMaya)
+		// name: "Conformance Access Slug User" holds the path a team named
+		// conformance-access-slug-user would take.
+		existing := createTeam("Conformance Access Slug User", conformanceMaya)
 		inst := installed(target, business.InstallAccess{InstallerRoles: everyRole})
-		require.Contains(t, problemOf(inst, "viewer"), "already exists and was not made for this role")
-		require.Empty(t, grantsOf(inst.Installation)["viewer"])
-		require.Empty(t, teamsNamed(t, h, target+"-viewer"), "no second team is created beside it")
+		require.Contains(t, problemOf(inst, "user"), "already exists and was not made for this role")
+		require.Empty(t, grantsOf(inst.Installation)["user"])
+		require.Empty(t, teamsNamed(t, h, target+"-user"), "no second team is created beside it")
 		require.Equal(t, []string{conformanceMaya}, teamMembers(t, h, existing))
 	})
 
@@ -145,11 +145,11 @@ func testInstallAssignsAccess(t *testing.T, h reviewedClosureHarness) {
 		const target = "conformance-access-empty"
 		solution(target)
 		// Whoever can make a team can make it first, and join it after.
-		existing := createTeam("Conformance-Access-Empty-Viewer")
+		existing := createTeam("Conformance-Access-Empty-User")
 		inst := installed(target, business.InstallAccess{InstallerRoles: everyRole})
-		require.Contains(t, problemOf(inst, "viewer"), "already exists and was not made for this role")
-		require.Equal(t, []string{existing}, teamsNamed(t, h, target+"-viewer"), "no second team of the name")
-		require.Empty(t, grantsOf(inst.Installation)["viewer"])
+		require.Contains(t, problemOf(inst, "user"), "already exists and was not made for this role")
+		require.Equal(t, []string{existing}, teamsNamed(t, h, target+"-user"), "no second team of the name")
+		require.Empty(t, grantsOf(inst.Installation)["user"])
 		require.Empty(t, teamMembers(t, h, existing), "and the installer does not join it")
 	})
 
@@ -157,30 +157,30 @@ func testInstallAssignsAccess(t *testing.T, h reviewedClosureHarness) {
 		const target = "conformance-access-chosen"
 		solution(target)
 		chosen := createTeam("conformance access chosen readers", conformanceMaya)
-		inst := install(target, business.InstallAccess{RoleTeams: map[string]string{"viewer": chosen}})
-		installer := teamsNamed(t, h, target+"-installer")
-		require.Len(t, installer, 1, "a role the map does not name gets its conventional team")
-		require.Equal(t, map[string][]string{"installer": installer, "viewer": {chosen}}, grantsOf(inst))
-		require.Empty(t, teamsNamed(t, h, target+"-viewer"), "no conventional team is created for a role given another")
+		inst := install(target, business.InstallAccess{RoleTeams: map[string]string{"user": chosen}})
+		admins := teamsNamed(t, h, target+"-admin")
+		require.Len(t, admins, 1, "a role the map does not name gets its conventional team")
+		require.Equal(t, map[string][]string{"admin": admins, "user": {chosen}}, grantsOf(inst))
+		require.Empty(t, teamsNamed(t, h, target+"-user"), "no conventional team is created for a role given another")
 		require.Equal(t, []string{conformanceMaya}, teamMembers(t, h, chosen), "a named team keeps its members")
 	})
 
 	t.Run("unticking a role leaves the installer out of that team", func(t *testing.T) {
 		const target = "conformance-access-unticked"
 		solution(target)
-		inst := install(target, business.InstallAccess{InstallerRoles: []string{"installer"}})
-		installer, viewer := teamsNamed(t, h, target+"-installer"), teamsNamed(t, h, target+"-viewer")
-		require.Equal(t, map[string][]string{"installer": installer, "viewer": viewer}, grantsOf(inst), "every role still goes to its team")
-		require.Equal(t, []string{conformanceAlex}, teamMembers(t, h, installer[0]))
-		require.Empty(t, teamMembers(t, h, viewer[0]), "the installer did not take the viewer role")
+		inst := install(target, business.InstallAccess{InstallerRoles: []string{"admin"}})
+		admins, users := teamsNamed(t, h, target+"-admin"), teamsNamed(t, h, target+"-user")
+		require.Equal(t, map[string][]string{"admin": admins, "user": users}, grantsOf(inst), "every role still goes to its team")
+		require.Equal(t, []string{conformanceAlex}, teamMembers(t, h, admins[0]))
+		require.Empty(t, teamMembers(t, h, users[0]), "the installer did not take the user role")
 	})
 
 	t.Run("a refused install creates no team", func(t *testing.T) {
 		const target = "conformance-access-refused"
 		_, pending := pendingAttempt(target, business.InstallAccess{InstallerRoles: everyRole})
 		require.Equal(t, domain.Pending, pending.Status)
-		require.Empty(t, teamsNamed(t, h, target+"-installer"), "nothing is created before the installation is active")
-		require.Empty(t, teamsNamed(t, h, target+"-viewer"))
+		require.Empty(t, teamsNamed(t, h, target+"-admin"), "nothing is created before the installation is active")
+		require.Empty(t, teamsNamed(t, h, target+"-user"))
 	})
 
 	t.Run("a resumed install applies the same assignment once", func(t *testing.T) {
@@ -200,64 +200,64 @@ func testInstallAssignsAccess(t *testing.T, h reviewedClosureHarness) {
 		// The first attempt stops part-way: its access is checked and
 		// recorded, and nothing is created, granted or joined before it is
 		// active.
-		review, pending := pendingAttempt(target, business.InstallAccess{InstallerRoles: []string{"viewer"}})
+		review, pending := pendingAttempt(target, business.InstallAccess{InstallerRoles: []string{"user"}})
 		require.Equal(t, granted, journal("saas.authority.role_granted"), "nothing is granted while setup is pending")
-		require.Empty(t, teamsNamed(t, h, target+"-viewer"), "no team is created while setup is pending")
+		require.Empty(t, teamsNamed(t, h, target+"-user"), "no team is created while setup is pending")
 		plan, err := h.store.SolutionInstallationPlan(h.ctx, fixtureOrganization, pending.ID)
 		require.NoError(t, err)
-		require.Equal(t, &business.InstallationAccess{Conventional: map[string]string{"installer": target + "-installer", "viewer": target + "-viewer"},
-			Installer: conformanceAlex, InstallerRoles: []string{"viewer"}}, plan.Access, "the access is recorded with the installation")
+		require.Equal(t, &business.InstallationAccess{Conventional: map[string]string{"admin": target + "-admin", "user": target + "-user"},
+			Installer: conformanceAlex, InstallerRoles: []string{"user"}}, plan.Access, "the access is recorded with the installation")
 
 		// The replay resumes the attempt and applies what it recorded, not
 		// what the replay names; asked again, it applies nothing.
-		active, err := h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{RoleTeams: map[string]string{"viewer": other}, InstallerRoles: everyRole})
+		active, err := h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{RoleTeams: map[string]string{"user": other}, InstallerRoles: everyRole})
 		require.NoError(t, err)
 		require.Equal(t, domain.Active, active.Status)
 		require.Equal(t, pending.ID, active.ID)
 		require.Empty(t, active.AccessProblems)
-		installer, viewer := teamsNamed(t, h, target+"-installer"), teamsNamed(t, h, target+"-viewer")
-		require.Len(t, installer, 1)
-		require.Len(t, viewer, 1)
-		require.Equal(t, map[string][]string{"installer": installer, "viewer": viewer}, grantsOf(active.Installation))
-		require.Equal(t, []string{conformanceAlex}, teamMembers(t, h, viewer[0]))
-		require.Empty(t, teamMembers(t, h, installer[0]), "the replay's ticks play no part")
+		admins, users := teamsNamed(t, h, target+"-admin"), teamsNamed(t, h, target+"-user")
+		require.Len(t, admins, 1)
+		require.Len(t, users, 1)
+		require.Equal(t, map[string][]string{"admin": admins, "user": users}, grantsOf(active.Installation))
+		require.Equal(t, []string{conformanceAlex}, teamMembers(t, h, users[0]))
+		require.Empty(t, teamMembers(t, h, admins[0]), "the replay's ticks play no part")
 		_, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{})
 		require.NoError(t, err)
 		_, err = h.svc.RetryInstallation(h.ctx, conformanceAlex, fixtureOrganization, active.ID)
 		require.NoError(t, err)
 		require.Equal(t, granted+2, journal("saas.authority.role_granted"), "each role is granted once across the attempt and its retries")
 		require.Equal(t, joined+1, joins(), "the installer joins once")
-		require.Len(t, teamsNamed(t, h, target+"-installer"), 1, "a resumed install creates no team twice")
+		require.Len(t, teamsNamed(t, h, target+"-admin"), 1, "a resumed install creates no team twice")
 	})
 
 	t.Run("a recorded team deleted before activation falls back to the conventional team", func(t *testing.T) {
 		const target = "conformance-access-deleted"
 		chosen := createTeam("conformance access deleted readers")
-		review, _ := pendingAttempt(target, business.InstallAccess{RoleTeams: map[string]string{"viewer": chosen}, InstallerRoles: everyRole})
+		review, _ := pendingAttempt(target, business.InstallAccess{RoleTeams: map[string]string{"user": chosen}, InstallerRoles: everyRole})
 		require.NoError(t, h.svc.DeleteTeam(h.ctx, conformanceAlex, &gen.DeleteTeamRequest{TeamId: chosen}))
 		active, err := h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{})
 		require.NoError(t, err, "the installation is active; its access problems are an answer")
 		require.Equal(t, domain.Active, active.Status)
-		viewer := teamsNamed(t, h, target+"-viewer")
-		require.Len(t, viewer, 1, "the viewer role's conventional team takes it")
-		require.Equal(t, viewer, grantsOf(active.Installation)["viewer"])
-		require.Equal(t, []string{conformanceAlex}, teamMembers(t, h, viewer[0]))
+		users := teamsNamed(t, h, target+"-user")
+		require.Len(t, users, 1, "the user role's conventional team takes it")
+		require.Equal(t, users, grantsOf(active.Installation)["user"])
+		require.Equal(t, []string{conformanceAlex}, teamMembers(t, h, users[0]))
 		require.Len(t, active.AccessProblems, 1)
-		require.Equal(t, "viewer", active.AccessProblems[0].Role)
-		require.Contains(t, active.AccessProblems[0].Problem, "no longer exists; granted to "+target+"-viewer, created for it")
+		require.Equal(t, "user", active.AccessProblems[0].Role)
+		require.Contains(t, active.AccessProblems[0].Problem, "no longer exists; granted to "+target+"-user, created for it")
 	})
 
 	t.Run("a deleted chosen team is never replaced by an existing team of the conventional name", func(t *testing.T) {
 		const target = "conformance-access-deleted-existing"
 		chosen := createTeam("conformance access deleted existing readers")
-		review, _ := pendingAttempt(target, business.InstallAccess{RoleTeams: map[string]string{"viewer": chosen}, InstallerRoles: []string{"installer"}})
+		review, _ := pendingAttempt(target, business.InstallAccess{RoleTeams: map[string]string{"user": chosen}, InstallerRoles: []string{"admin"}})
 		require.NoError(t, h.svc.DeleteTeam(h.ctx, conformanceAlex, &gen.DeleteTeamRequest{TeamId: chosen}))
 		// Someone else's team holds the conventional name, with its own member.
-		existing := createTeam(target+"-viewer", conformanceMaya)
+		existing := createTeam(target+"-user", conformanceMaya)
 		active, err := h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{})
 		require.NoError(t, err)
 		require.Equal(t, domain.Active, active.Status)
-		require.Empty(t, grantsOf(active.Installation)["viewer"], "the viewer role is granted to nobody nobody chose")
+		require.Empty(t, grantsOf(active.Installation)["user"], "the user role is granted to nobody nobody chose")
 		require.Equal(t, []string{conformanceMaya}, teamMembers(t, h, existing), "the existing team is untouched")
 		require.Len(t, active.AccessProblems, 1)
 		require.Contains(t, active.AccessProblems[0].Problem, "already exists with members nobody chose for this role")
@@ -270,13 +270,13 @@ func testInstallAssignsAccess(t *testing.T, h reviewedClosureHarness) {
 		review, err := h.review(t, alex, target)
 		require.NoError(t, err)
 		_, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{
-			RoleTeams: map[string]string{"installer": shared, "viewer": shared}, InstallerRoles: []string{"installer"}})
-		require.ErrorContains(t, err, "conformance access shared carries both installer and viewer; give them separate teams or tick both")
+			RoleTeams: map[string]string{"admin": shared, "user": shared}, InstallerRoles: []string{"admin"}})
+		require.ErrorContains(t, err, "conformance access shared carries both admin and user; give them separate teams or tick both")
 		_, held := h.coreInstallation(t, alex, target)
 		require.False(t, held, "nothing is installed")
 		// Ticking both is the installer's own choice.
-		installed := install(target, business.InstallAccess{RoleTeams: map[string]string{"installer": shared, "viewer": shared}, InstallerRoles: everyRole})
-		require.Equal(t, map[string][]string{"installer": {shared}, "viewer": {shared}}, grantsOf(installed))
+		installed := install(target, business.InstallAccess{RoleTeams: map[string]string{"admin": shared, "user": shared}, InstallerRoles: everyRole})
+		require.Equal(t, map[string][]string{"admin": {shared}, "user": {shared}}, grantsOf(installed))
 	})
 
 	t.Run("an access step failing after activation reports each role and applies the rest", func(t *testing.T) {
@@ -284,13 +284,13 @@ func testInstallAssignsAccess(t *testing.T, h reviewedClosureHarness) {
 		solution(target)
 		h.faults.failNextMember(errors.New("the membership store refused"))
 		inst := installed(target, business.InstallAccess{InstallerRoles: everyRole})
-		installer, viewer := teamsNamed(t, h, target+"-installer"), teamsNamed(t, h, target+"-viewer")
-		require.Equal(t, map[string][]string{"installer": installer, "viewer": viewer}, grantsOf(inst.Installation), "every role is granted before anyone joins")
+		admins, users := teamsNamed(t, h, target+"-admin"), teamsNamed(t, h, target+"-user")
+		require.Equal(t, map[string][]string{"admin": admins, "user": users}, grantsOf(inst.Installation), "every role is granted before anyone joins")
 		require.Len(t, inst.AccessProblems, 1, "the one membership refused is reported")
-		require.Equal(t, "installer", inst.AccessProblems[0].Role)
+		require.Equal(t, "admin", inst.AccessProblems[0].Role)
 		require.Contains(t, inst.AccessProblems[0].Problem, "the membership store refused")
-		require.Empty(t, teamMembers(t, h, installer[0]))
-		require.Equal(t, []string{conformanceAlex}, teamMembers(t, h, viewer[0]), "the next role's membership is applied all the same")
+		require.Empty(t, teamMembers(t, h, admins[0]))
+		require.Equal(t, []string{conformanceAlex}, teamMembers(t, h, users[0]), "the next role's membership is applied all the same")
 	})
 
 	t.Run("an undeclared role is refused, ticked or mapped", func(t *testing.T) {
@@ -298,10 +298,10 @@ func testInstallAssignsAccess(t *testing.T, h reviewedClosureHarness) {
 		solution(target)
 		review, err := h.review(t, alex, target)
 		require.NoError(t, err)
-		_, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{InstallerRoles: []string{"editor"}})
-		require.ErrorContains(t, err, `declares no role "editor"`)
-		_, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{RoleTeams: map[string]string{"editor": createTeam("conformance access undeclared")}})
-		require.ErrorContains(t, err, `declares no role "editor"`)
+		_, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{InstallerRoles: []string{"author"}})
+		require.ErrorContains(t, err, `declares no role "author"`)
+		_, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{RoleTeams: map[string]string{"author": createTeam("conformance access undeclared")}})
+		require.ErrorContains(t, err, `declares no role "author"`)
 		_, held := h.coreInstallation(t, alex, target)
 		require.False(t, held, "a refused assignment records no installation")
 	})
@@ -331,11 +331,11 @@ func testInstallAssignsAccess(t *testing.T, h reviewedClosureHarness) {
 		solution(target)
 		review, err := h.review(t, alex, target)
 		require.NoError(t, err)
-		_, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{RoleTeams: map[string]string{"viewer": business.NewIDString()}})
+		_, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{RoleTeams: map[string]string{"user": business.NewIDString()}})
 		require.ErrorContains(t, err, "is not a team of this organization")
 		_, held := h.coreInstallation(t, alex, target)
 		require.False(t, held, "a refused assignment records no installation")
-		require.Empty(t, teamsNamed(t, h, target+"-installer"), "a refused assignment creates no team")
+		require.Empty(t, teamsNamed(t, h, target+"-admin"), "a refused assignment creates no team")
 	})
 }
 

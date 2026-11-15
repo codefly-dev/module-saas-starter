@@ -15,20 +15,20 @@ describe("teamInstallationRoles", () => {
 		[
 			"inst-expenses",
 			[
-				{ role: "viewer", teamId: "team-b" },
-				{ role: "editor", teamId: "team-a" },
+				{ role: "user", teamId: "team-b" },
+				{ role: "admin", teamId: "team-a" },
 			],
 		],
-		["inst-people", [{ role: "editor", teamId: "team-a" }]],
-		["inst-old", [{ role: "editor", teamId: "team-a" }]],
+		["inst-people", [{ role: "admin", teamId: "team-a" }]],
+		["inst-old", [{ role: "admin", teamId: "team-a" }]],
 	]);
 
 	// The team page said "This team carries no roles" for a team the
-	// solution page listed as its editors: those roles live on installations.
+	// solution page listed as its admins: those roles live on installations.
 	it("names every role the team holds on a live installation", () => {
 		expect(teamInstallationRoles("team-a", installations, grants)).toEqual([
-			{ installationId: "inst-expenses", target: "expenses", role: "editor" },
-			{ installationId: "inst-people", target: "people", role: "editor" },
+			{ installationId: "inst-expenses", target: "expenses", role: "admin" },
+			{ installationId: "inst-people", target: "people", role: "admin" },
 		]);
 	});
 
@@ -36,6 +36,6 @@ describe("teamInstallationRoles", () => {
 		expect(teamInstallationRoles("team-c", installations, grants)).toEqual([]);
 		expect(
 			teamInstallationRoles("team-b", installations, grants).map((r) => r.role),
-		).toEqual(["viewer"]);
+		).toEqual(["user"]);
 	});
 });

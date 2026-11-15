@@ -284,9 +284,10 @@ func (s *Service) GrantInstallationToTeam(
 		alias = row.Target.RouteAlias
 	}
 
-	// Naming no role is the installation's role: the solution's own of that
-	// name when it declares roles, the standing role otherwise. Resolved here,
-	// before the transaction, because the declaration is control-plane state.
+	// Naming no role is the installation's standing role, which for a target
+	// declaring roles must be one of that target's own (solutionExposureRole).
+	// Resolved here, before the transaction, because the declaration is
+	// control-plane state.
 	why := ""
 	if roleID == "" {
 		if roleID, why, err = s.solutionExposureRole(ctx, orgID, installationID, row.Target); err != nil {

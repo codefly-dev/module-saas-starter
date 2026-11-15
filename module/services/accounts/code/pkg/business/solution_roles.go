@@ -10,18 +10,18 @@ import (
 
 	coredecide "github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	coredelivered "github.com/codefly-dev/authority/libraries/authority-core/go/delivered"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/solutionhost"
 
 	compositionv1 "accounts/pkg/gen/host/composition/v1"
-	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // A solution's roles decide what a person holds through it (the owner's rule:
 // access to a solution is its own role). The roles are the solution's own
 // declaration, signed and delivered with its manifest; a person holds one at
-// the organisation's installation of the solution: the installer role when
-// they own the installation, and the installation's standing role through
+// the organisation's installation of the solution: the admin role when they
+// own the installation, and the installation's standing role through
 // every team it is exposed to that they belong to. What they hold at the
 // solution's audience, and through its bindings, is those roles' grants,
 // bounded by what the solution may grant: its delivered scope ceilings on its
@@ -29,9 +29,6 @@ import (
 // consumes. Organisation roles do not enter it: they administer the
 // organisation. A module that declares a page may declare roles too, and then
 // everything here holds of it as of a solution.
-
-// InstallerRole is the role every solution declares; an installation's owner holds it.
-const InstallerRole = "installer"
 
 // SolutionAuthority is one delivered solution's role declaration.
 type SolutionAuthority struct {
@@ -78,8 +75,8 @@ func (s *Service) deliveredTargetAuthority(ctx context.Context, target *Availabl
 // that declares a page (the core's rule: a module page may declare roles, and
 // then they decide what a person holds there, as a solution's do). The roles
 // are the core's composition of the delivery (coredelivered.Module): a module
-// page delivered with none has the standard three the core derives from what
-// it serves, so this host offers the teams the core gates by.
+// page delivered with none has the two the core derives from what it serves,
+// so this host offers the teams the core gates by.
 func (s *Service) solutionAuthorityOf(doc *compositionv1.AuthorityManifestV1, manifest *solutionhost.ModuleManifest) *SolutionAuthority {
 	if doc == nil || manifest.Authority == nil {
 		return nil
@@ -175,8 +172,11 @@ type SolutionRoleHolders struct {
 // roles at one installation.
 func (a *SolutionAuthority) HeldBy(person string, teams []string, at SolutionRoleHolders) []*basev0.WorkScopeV1 {
 	var held []*basev0.WorkScopeV1
-	if at.Owner == person {
-		held = append(held, a.Grants(InstallerRole)...)
+	// The owner holds the admin role (domain.AdminRole); the core's
+	// DeclaredAdminRole also names, for one release, a delivery stored under
+	// the role's old name.
+	if admin, declared := domain.DeclaredAdminRole(a.Roles); at.Owner == person && declared {
+		held = append(held, a.Grants(admin)...)
 	}
 	for _, team := range at.Teams {
 		if slices.Contains(teams, team) {
@@ -187,19 +187,12 @@ func (a *SolutionAuthority) HeldBy(person string, teams []string, at SolutionRol
 	return held
 }
 
-// An installation of a solution holds one of the solution's roles as its
-// standing role: a role this host derives and owns per organisation, solution
-// and role name, whose permissions are the role's whole-kind grants (a role
-// row has no resource column, so a grant limited to named resources is not
-// carried). Like every derived role it is outside the catalogue and is never
-// assigned organisation-wide or shared; it is granted only at a solution's
-// authority-root node in its own organisation (GrantScope). Its name is its provenance, so it never needs rewriting, and the
-// solution's role name is read back from it.
+// solutionRoleNamePrefix begins the name of a role this host derived, before
+// every host decided through its authority core, for one solution's role in
+// one organisation; its name is its provenance (org, solution, role). Nothing
+// writes one now; a stored one is still read back: its solution's role name
+// (SolutionRoleOf) and its origin (SolutionRoleOrigin).
 const solutionRoleNamePrefix = "solution role · "
-
-func solutionRoleProvenance(orgID, targetID, role string) string {
-	return fmt.Sprintf("org=%s;solution=%s;role=%s", orgID, targetID, role)
-}
 
 // SolutionRoleOrigin is the organisation and the solution target a solution
 // role's provenance names, and whether the provenance is a solution role's at
@@ -229,11 +222,14 @@ func SolutionRoleOf(name string) string {
 }
 
 // solutionExposureRole is the role a team is granted when an installation of
-// target is exposed to it without a role named: the solution's own role of the
-// installation's standing role's name, which permits using the solution. An
-// installation made before solution roles were read, whose standing role is a
-// catalogue role of that name, is exposed this way too, its standing grant
-// untouched. An empty id says the standing role itself is granted, and why.
+// target is exposed to it without a role named. A target that declares no
+// roles is exposed with the installation's standing role (an empty id says so,
+// and why). One that declares roles is never exposed this way: its people
+// hold its roles through the authority core, and an installation recorded by
+// this host before its solution's roles were read holds a catalogue role,
+// which is no role of the solution. Nothing guesses one from the other's name,
+// so the catalogue's admin is never the page's admin; the installation is
+// reinstalled through the review instead.
 func (s *Service) solutionExposureRole(ctx context.Context, orgID, installationID string, target *AvailableSolutionTarget) (string, string, error) {
 	if target == nil {
 		return "", "the installation's target is no longer offered to this organization", nil
@@ -254,43 +250,8 @@ func (s *Service) solutionExposureRole(ctx context.Context, orgID, installationI
 	}); err != nil {
 		return "", "", err
 	}
-	role := SolutionRoleOf(standing)
-	if _, declared := authority.Roles[role]; !declared {
-		return "", fmt.Sprintf("%s declares no role named after the standing role %q; its roles are %s", target.RouteAlias, role, strings.Join(authority.RoleNames(), ", ")), nil
-	}
-	id, err := s.solutionRoleID(ctx, orgID, target.TargetID, target.RouteAlias, authority, role)
-	return id, "", err
-}
-
-// solutionRoleID is the id of the role an installation of targetID holds, and
-// its exposed teams hold, for the solution's role named role: written if
-// absent, its permissions reconciled to the declaration if present.
-func (s *Service) solutionRoleID(ctx context.Context, orgID, targetID, alias string, authority *SolutionAuthority, role string) (string, error) {
-	if _, declared := authority.Roles[role]; !declared {
-		return "", NewStoreError(fmt.Errorf("%s declares no role %q; its roles are %s", alias, role, strings.Join(authority.RoleNames(), ", ")), ErrTypeNotFound)
-	}
-	// Holding any of a solution's roles is using the solution: the permission
-	// exposure and the solution's entitlement listing read.
-	permissions := []*gen.Permission{{Resource: ResourceTypeSolution, Action: ActionUseSolution}}
-	for _, scope := range authority.Grants(role) {
-		if len(scope.GetResourceIds()) > 0 {
-			continue
-		}
-		for _, action := range scope.GetActions() {
-			permissions = append(permissions, &gen.Permission{Resource: scope.GetResourceKind(), Action: action})
-		}
-	}
-	provenance := solutionRoleProvenance(orgID, targetID, role)
-	var id string
-	err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		var e error
-		id, e = s.installationStore().EnsureDerivedRole(ctx, DerivedRole{
-			OrgID: orgID, DerivedFrom: provenance, Name: solutionRoleNamePrefix + provenance,
-			Description: fmt.Sprintf("the %s role of %s", role, alias), Permissions: permissions,
-		})
-		return e
-	})
-	return id, err
+	return "", "", NewStoreError(fmt.Errorf("%s declares its own roles (%s) and this installation's standing role %q is not one of them: the installation predates its solution's roles, so reinstall it through the review to give them",
+		target.RouteAlias, strings.Join(authority.RoleNames(), ", "), standing), ErrTypeValidation)
 }
 
 // IntersectWorkScopes is what both scope sets allow, kind by kind: the actions

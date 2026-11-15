@@ -79,7 +79,9 @@ describe("viewing as a team from the list", () => {
 						{
 							teamId: "team-1",
 							displayName: "Readers",
-							holds: [{ installationId: "inst-a", target: "records", role: "viewer" }],
+							holds: [
+								{ installationId: "inst-a", target: "records", role: "user" },
+							],
 						},
 					],
 				}),
@@ -94,7 +96,7 @@ describe("viewing as a team from the list", () => {
 				<TeamsPage />
 			</HostCasting>,
 		);
-		expect(await screen.findByText("records · viewer")).toBeTruthy();
+		expect(await screen.findByText("records · user")).toBeTruthy();
 		expect(screen.getByText("Holds nothing installed")).toBeTruthy();
 		// A team granted nothing has nothing to view as.
 		expect(

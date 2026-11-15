@@ -55,7 +55,7 @@ describe("an installation's status line", () => {
 						upgradeAvailable: true,
 					}),
 					[
-						"role viewer reaches nothing of model.profile:invoke through agent: agent not composed",
+						"role user reaches nothing of model.profile:invoke through agent: agent not composed",
 					],
 				),
 			),
@@ -64,7 +64,7 @@ describe("an installation's status line", () => {
 			"2 things to fix",
 			"Healthy",
 			"Update available",
-			"Viewers can't reach model through agent",
+			"Users can't reach model through agent",
 		]);
 	});
 
@@ -97,24 +97,18 @@ describe("who holds each role", () => {
 		const grant = (role: string, teamId: string, personId = "") =>
 			create(RoleGrantSchema, { role, teamId, personId });
 		const names: Record<string, string> = {
-			"team-v": "pages-viewer",
-			"team-e": "pages-editor",
+			"team-u": "pages-user",
 			"person-j": "jane@example.com",
 		};
 		expect(
 			holdersByRole(
-				["editor", "installer", "viewer"],
-				[
-					grant("viewer", "team-v"),
-					grant("editor", "team-e"),
-					grant("editor", "", "person-j"),
-				],
+				["admin", "user"],
+				[grant("user", "team-u"), grant("user", "", "person-j")],
 				(g) => names[g.teamId || g.personId],
 			),
 		).toEqual([
-			{ role: "editor", holders: ["jane@example.com", "pages-editor"] },
-			{ role: "installer", holders: [] },
-			{ role: "viewer", holders: ["pages-viewer"] },
+			{ role: "admin", holders: [] },
+			{ role: "user", holders: ["jane@example.com", "pages-user"] },
 		]);
 	});
 });

@@ -13,14 +13,12 @@ func governingScope(kind string, actions ...string) *basev0.WorkScopeV1 {
 }
 
 // The request never picks the governing scope: the host admits only one the
-// target's approved declaration names. A viewer naming the read every viewer
-// holds, or an editor naming a scope the author did not declare, is refused.
+// target's approved declaration names. A user naming the read every user
+// holds, or an admin naming a scope the author did not declare, is refused.
 func TestAGoverningScopeIsOneTheApprovedDeclarationNames(t *testing.T) {
 	target := domain.Module{Name: "example-solution", Kind: domain.KindSolution, Roles: map[string][]*basev0.WorkScopeV1{
-		"installer": {governingScope("example.page", "read", "publish")},
-		"editor":    {governingScope("example.page", "read", "write")},
-		"user":      {governingScope("example.page", "read")},
-		"viewer":    {governingScope("example.page", "read")},
+		domain.AdminRole: {governingScope("example.page", "read", "write", "publish")},
+		domain.UserRole:  {governingScope("example.page", "read")},
 	}, SourceGovernance: []*basev0.WorkScopeV1{governingScope("example.page", "write")}}
 	asked := func(kind, action, binding string) SourceGovernance {
 		return SourceGovernance{InstallationID: "inst-1", Kind: kind, Action: action, Binding: binding}
@@ -28,11 +26,11 @@ func TestAGoverningScopeIsOneTheApprovedDeclarationNames(t *testing.T) {
 	require.NoError(t, governingScopeDeclared(target, asked("example.page", "write", "")), "the declared write governs")
 
 	err := governingScopeDeclared(target, asked("example.page", "read", ""))
-	require.ErrorContains(t, err, "does not declare example.page:read as governing its sources; it declares example.page:write", "a viewer may not name the read every viewer holds")
+	require.ErrorContains(t, err, "does not declare example.page:read as governing its sources; it declares example.page:write", "a user may not name the read every user holds")
 	code, ok := domain.CodeOf(err)
 	require.True(t, ok)
 	require.Equal(t, domain.Denied, code)
-	require.ErrorContains(t, governingScopeDeclared(target, asked("example.page", "publish", "")), "does not declare example.page:publish", "nor the installer a scope no declaration names")
+	require.ErrorContains(t, governingScopeDeclared(target, asked("example.page", "publish", "")), "does not declare example.page:publish", "nor the admin a scope no declaration names")
 	require.ErrorContains(t, governingScopeDeclared(target, asked("documents", "write", "")), "does not declare documents:write")
 	require.ErrorContains(t, governingScopeDeclared(target, asked("example.page", "write", "documents")), "never through binding documents",
 		"a declared scope is one of the target's own kinds, so a request naming a binding governs by nothing declared")
@@ -42,12 +40,12 @@ func TestAGoverningScopeIsOneTheApprovedDeclarationNames(t *testing.T) {
 // roles look like: its sources stay the organization administrators'.
 func TestATargetDeclaringNoGoverningScopeGovernsNoSource(t *testing.T) {
 	for name, target := range map[string]domain.Module{
-		"a solution with a fuller editor": {Name: "example-undeclared", Kind: domain.KindSolution, Roles: map[string][]*basev0.WorkScopeV1{
-			"installer": {governingScope("example.page", "read", "write")},
-			"viewer":    {governingScope("example.page", "read")},
+		"a solution with a fuller admin": {Name: "example-undeclared", Kind: domain.KindSolution, Roles: map[string][]*basev0.WorkScopeV1{
+			domain.AdminRole: {governingScope("example.page", "read", "write")},
+			domain.UserRole:  {governingScope("example.page", "read")},
 		}},
 		"a single role": {Name: "example-single", Kind: domain.KindSolution, Roles: map[string][]*basev0.WorkScopeV1{
-			"installer": {governingScope("example.page", "read", "write")},
+			domain.AdminRole: {governingScope("example.page", "read", "write")},
 		}},
 	} {
 		for _, action := range []string{"read", "write"} {

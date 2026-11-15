@@ -33,8 +33,9 @@ import (
 // install is still waiting on its setup. The fixture runs after every delivery
 // pass, as work.go wires it, through production's install step: the setup job
 // is answered between passes, as the solution's own setup answers it. Every
-// solution ends active, installed by Alice, and Bob, Carol and Dana each sit on
-// the team of their role, which holds that role on the installation.
+// solution ends active, installed by Alice; Carol and Dana each sit on the team
+// of their role (user, admin), which holds that role on the installation, and
+// Bob sits on neither.
 func TestAFreshRunsFixtureInstallsEverySolutionActiveAndSeatsEachPersonOnTheirRole(t *testing.T) {
 	clearData(t)
 	ctx := testCtx
@@ -72,7 +73,9 @@ func TestAFreshRunsFixtureInstallsEverySolutionActiveAndSeatsEachPersonOnTheirRo
 	require.NoError(t, err)
 	held, err := core.Installations(ctx, caller, acme)
 	require.NoError(t, err)
-	people := map[string]string{"viewer": "dev-bob", "editor": "dev-carol", "installer": "dev-dana"}
+	people := map[string]string{domain.UserRole: "dev-carol", domain.AdminRole: "dev-dana"}
+	bob, err := testService.ListTeams(ctx, &gen.ListTeamsRequest{OrgId: acme, MemberId: seededUUIDFor(t, ctx, "dev-bob")})
+	require.NoError(t, err)
 	for _, alias := range solutions {
 		i := slices.IndexFunc(held, func(inst domain.Installation) bool { return inst.Target == alias })
 		require.GreaterOrEqual(t, i, 0, "%s is installed at Acme Corp", alias)
@@ -88,6 +91,8 @@ func TestAFreshRunsFixtureInstallsEverySolutionActiveAndSeatsEachPersonOnTheirRo
 			require.NoError(t, err)
 			require.True(t, slices.ContainsFunc(joined.GetTeams(), func(team *gen.Team) bool { return slices.Contains(holding, team.GetId()) }),
 				"%s sits on the team holding %s on %s", person, role, alias)
+			require.False(t, slices.ContainsFunc(bob.GetTeams(), func(team *gen.Team) bool { return slices.Contains(holding, team.GetId()) }),
+				"Bob holds no role on %s, %s included", alias, role)
 		}
 	}
 	require.NoError(t, legacyReconcile(ctx), "a converged fixture changes nothing on a later pass")
@@ -95,8 +100,8 @@ func TestAFreshRunsFixtureInstallsEverySolutionActiveAndSeatsEachPersonOnTheirRo
 
 // deliverRoleGatedSolution delivers alias at generation through the
 // composition interface with the authority document a solution declares: an
-// installer, an editor and a viewer role over what it serves, and no standing
-// authority of its own.
+// admin and a user role over what it serves, and no standing authority of its
+// own.
 func deliverRoleGatedSolution(t *testing.T, signer *solutionhost.InMemorySigner, alias string, generation uint64) {
 	t.Helper()
 	m := &solutionhost.ModuleManifest{Schema: solutionhost.SchemaModuleManifestV1, Binding: alias, Alias: alias, Kind: solutionhost.KindSolution, Generation: generation,
@@ -109,7 +114,7 @@ func deliverRoleGatedSolution(t *testing.T, signer *solutionhost.InMemorySigner,
 	write := []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read", "write"}}}
 	doc, err := proto.Marshal(&compositionv1.AuthorityManifestV1{Module: alias, Generation: generation, CoreManifestDigest: delivery.Digest(raw),
 		InstallationRole: domain.NoInstallationRole, OwnerAware: true, ScopeCeilings: write,
-		Roles: []*compositionv1.RoleV1{{Name: business.InstallerRole, Scopes: write}, {Name: "editor", Scopes: write}, {Name: "viewer", Scopes: read}}})
+		Roles: []*compositionv1.RoleV1{{Name: domain.AdminRole, Scopes: write}, {Name: domain.UserRole, Scopes: read}}})
 	require.NoError(t, err)
 	envelope, err := delivery.Sign(doc, signer.KeyID(), signer.Sign)
 	require.NoError(t, err)

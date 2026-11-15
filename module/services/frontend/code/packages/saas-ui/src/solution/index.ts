@@ -38,6 +38,7 @@ export {
 	listText,
 	type RoleAbilities,
 	roleAbilities,
+	roleLabel,
 	scopesText,
 	unreachedHeadline,
 	unreachedText,

@@ -2,6 +2,7 @@
 
 import {
 	RemoveHolder,
+	roleLabel,
 	type SetupSubject,
 	SolutionRoleGrantForm,
 } from "@codefly-dev/saas-ui/solution";
@@ -33,12 +34,15 @@ export function ModulePageAccess({
 	organizationId,
 	installationId,
 	target,
+	title,
 	subjects,
 	teamControls,
 }: {
 	organizationId: string;
 	installationId: string;
 	target: string;
+	/** How the host titles the page ("Example Pages"); each role reads as its ("Example Pages admin"). */
+	title?: string;
 	subjects: readonly SetupSubject[];
 	/** The host's control for a team holding a role: its people, in place. */
 	teamControls?: (team: SetupSubject) => ReactNode;
@@ -104,10 +108,14 @@ export function ModulePageAccess({
 							className="space-y-2 rounded-lg border p-3"
 						>
 							<h4 className="font-medium">
-								{role[0]?.toUpperCase()}
-								{role.slice(1)}
+								{title
+									? roleLabel(title, role)
+									: `${role[0]?.toUpperCase()}${role.slice(1)}`}
 							</h4>
-							<ul aria-label={`Who has ${role}`} className="space-y-2">
+							<ul
+								aria-label={`Who has ${roleLabel(title, role)}`}
+								className="space-y-2"
+							>
 								{holders.length === 0 && (
 									<li className="text-muted-foreground">Nobody has it yet.</li>
 								)}
@@ -132,6 +140,7 @@ export function ModulePageAccess({
 												)}
 												<RemoveHolder
 													role={role}
+													title={title}
 													target={target}
 													name={name}
 													last={holders.length === 1}
@@ -160,7 +169,7 @@ export function ModulePageAccess({
 								subjects={subjects}
 								allowUnlistedSubjects={false}
 								busy={change.isPending}
-								submitLabel={`Give ${role} access`}
+								submitLabel={`Give ${roleLabel(title, role)} access`}
 								onGrant={({ personId, teamId }) =>
 									change.mutate(
 										installations.grantRole({

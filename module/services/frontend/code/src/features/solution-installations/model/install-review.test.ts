@@ -108,7 +108,11 @@ describe("installation access review", () => {
 		).toThrow();
 	});
 	it("names each fresh supporting module that holds a standing machine role", () => {
-		const supporting = (target: string, installationRole: string, reused = "") => ({
+		const supporting = (
+			target: string,
+			installationRole: string,
+			reused = "",
+		) => ({
 			principal: `module:${target}`,
 			target,
 			required: true,
@@ -165,7 +169,7 @@ describe("installation access review", () => {
 			target: "Example",
 			roles: [
 				{
-					name: "viewer",
+					name: "user",
 					reach: [
 						{
 							path: ["Example", "documents"],
@@ -182,7 +186,7 @@ describe("installation access review", () => {
 		});
 		expect(roleAbilities(offer.target, offer.roles)).toEqual([
 			{
-				role: "viewer",
+				role: "user",
 				groups: [
 					{
 						key: "binding:Example>documents",
@@ -202,15 +206,15 @@ describe("installation access review", () => {
 		});
 		const offer = create(ReviewedOfferSchema, {
 			target: "Example",
-			roles: [{ name: "editor", reach: [row(["read", "create"])] }],
+			roles: [{ name: "user", reach: [row(["read", "create"])] }],
 		});
 		const review = create(ReviewedSolutionInstallSchema, {
-			approvedRoles: [{ name: "editor", reach: [row(["read"])] }],
+			approvedRoles: [{ name: "user", reach: [row(["read"])] }],
 		});
 		expect(updateAsks(offer.target, offer.roles, review.approvedRoles)).toEqual(
 			[
 				{
-					role: "editor",
+					role: "user",
 					groups: [
 						{
 							key: "binding:Example>agent>documents",
