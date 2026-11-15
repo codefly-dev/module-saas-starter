@@ -461,12 +461,20 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		require.NoError(t, err, "the page's admin reviews its update")
 		_, err = h.svc.InstallReviewedSolution(h.ctx, ivy, fixtureOrganization, review, business.InstallAccess{})
 		require.Error(t, err, "nor approves another's review")
+		allTeams := func() []string {
+			var ids []string
+			for _, team := range listTeams(t, h, "") {
+				ids = append(ids, team.GetId())
+			}
+			return ids
+		}
+		teamsBefore := allTeams()
 		approved, err := h.svc.InstallReviewedSolution(h.ctx, maya, fixtureOrganization, review, business.InstallAccess{})
 		require.NoError(t, err, "the page's admin approves its update")
 		require.Equal(t, set.ID, approved.ID)
 		require.Equal(t, review.GetApproval().GetOperationId(), approved.Consent.OperationID)
 		require.Empty(t, approved.AccessProblems, "no role was added, so none waits for a team")
-		require.Len(t, teamsNamed(t, h, page+"-user"), 1, "the page's admin creates no team of the organization")
+		require.ElementsMatch(t, teamsBefore, allTeams(), "the page's admin creates no team of the organization")
 		require.Equal(t, []string{"admin", "user"}, grantedRoles())
 	})
 
