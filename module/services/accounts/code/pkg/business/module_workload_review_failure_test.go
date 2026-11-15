@@ -66,6 +66,8 @@ func TestAWorkloadReviewTheCallerEndedIsLoggedBelowWarn(t *testing.T) {
 		"dependency cancelled": {context.Background(), fmt.Errorf("post tokenreviews: %w", context.Canceled), true},
 		"api unreachable":      {context.Background(), errors.New("dial tcp: connection refused"), true},
 		"review refused":       {context.Background(), fmt.Errorf("%w: the token has expired", ErrExecutionTokenRejected), true},
+		// A verdict is a WARN whatever became of the caller.
+		"rejection, request ended": {ended, fmt.Errorf("%w: forged", ErrExecutionTokenRejected), true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var levels []wool.Loglevel

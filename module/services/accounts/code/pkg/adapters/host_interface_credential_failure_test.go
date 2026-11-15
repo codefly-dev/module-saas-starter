@@ -33,13 +33,16 @@ func TestCredentialRefusalTellsAFailureFromARefusal(t *testing.T) {
 		"request ended":            {ended, fmt.Errorf("%w: post tokenreviews: %w", business.ErrExecutionUnbound, context.Canceled), codes.Canceled},
 		"request ended, any error": {ended, errors.New("the reviewer saw nothing"), codes.Canceled},
 		"dependency cancelled":     {nil, fmt.Errorf("%w: post tokenreviews: %w", business.ErrExecutionUnbound, context.Canceled), codes.Unavailable},
-		"bare cancellation":        {nil, context.Canceled, codes.Unavailable},
-		"deadline passed":          {nil, fmt.Errorf("%w: post tokenreviews: %w", business.ErrExecutionUnbound, context.DeadlineExceeded), codes.DeadlineExceeded},
-		"review unbound":           {nil, fmt.Errorf("%w: the api server did not answer", business.ErrExecutionUnbound), codes.Unavailable},
-		"unknown failure":          {nil, errors.New("the reviewer panicked"), codes.Internal},
-		"review refused":           {nil, fmt.Errorf("%w: the token has expired", business.ErrExecutionTokenRejected), codes.PermissionDenied},
-		"no credential":            {nil, fmt.Errorf("%w: no credential presented", business.ErrExecutionNotBoundToken), codes.Unauthenticated},
-		"ambiguous":                {nil, fmt.Errorf("%w: example/api", business.ErrExecutionWorkloadAmbiguous), codes.PermissionDenied},
+		// A verdict is a refusal whatever became of the caller.
+		"rejection, request ended":     {ended, fmt.Errorf("%w: the token has expired", business.ErrExecutionTokenRejected), codes.PermissionDenied},
+		"no credential, request ended": {ended, fmt.Errorf("%w: no credential presented", business.ErrExecutionNotBoundToken), codes.Unauthenticated},
+		"bare cancellation":            {nil, context.Canceled, codes.Unavailable},
+		"deadline passed":              {nil, fmt.Errorf("%w: post tokenreviews: %w", business.ErrExecutionUnbound, context.DeadlineExceeded), codes.DeadlineExceeded},
+		"review unbound":               {nil, fmt.Errorf("%w: the api server did not answer", business.ErrExecutionUnbound), codes.Unavailable},
+		"unknown failure":              {nil, errors.New("the reviewer panicked"), codes.Internal},
+		"review refused":               {nil, fmt.Errorf("%w: the token has expired", business.ErrExecutionTokenRejected), codes.PermissionDenied},
+		"no credential":                {nil, fmt.Errorf("%w: no credential presented", business.ErrExecutionNotBoundToken), codes.Unauthenticated},
+		"ambiguous":                    {nil, fmt.Errorf("%w: example/api", business.ErrExecutionWorkloadAmbiguous), codes.PermissionDenied},
 	} {
 		t.Run(name, func(t *testing.T) {
 			ctx := tc.ctx

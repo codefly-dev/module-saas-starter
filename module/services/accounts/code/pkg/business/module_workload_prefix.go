@@ -9,6 +9,14 @@ import (
 	"github.com/codefly-dev/core/wool"
 )
 
+// isWorkloadCredentialVerdict reports whether err is the review's verdict on
+// the credential (refused, absent, or a workload declared ambiguously) rather
+// than a review that could not run.
+func isWorkloadCredentialVerdict(err error) bool {
+	return errors.Is(err, ErrExecutionTokenRejected) || errors.Is(err, ErrExecutionNotBoundToken) ||
+		errors.Is(err, ErrExecutionWorkloadAmbiguous)
+}
+
 // minRedactedCredential is the shortest presented credential redacted from a
 // log line. Replacing a shorter one would let a caller garble its own log line
 // (a credential "e" would rewrite every "e"), and a credential that short
@@ -33,10 +41,13 @@ func (s *Service) ModulePrefixOfWorkload(ctx context.Context, credential string)
 	defer func() {
 		if err != nil {
 			reason := RedactWorkloadCredential(err.Error(), credential)
-			// A caller ending its own request carries no operational signal.
-			// It is the caller's context that says so: a dependency answering
-			// Canceled while the caller is live is a failure, logged as one.
-			if errors.Is(ctx.Err(), context.Canceled) {
+			// A caller ending its own request carries no operational signal,
+			// and it is the caller's context that says so: a dependency
+			// answering Canceled while the caller is live is a failure,
+			// logged as one. A verdict is always a WARN, whatever became of
+			// the caller, so a prober cancelling every call cannot keep its
+			// refused credentials out of WARN.
+			if !isWorkloadCredentialVerdict(err) && errors.Is(ctx.Err(), context.Canceled) {
 				wool.Get(ctx).In("ModulePrefixOfWorkload").Info("workload credential refused", wool.Field("reason", reason))
 				return
 			}

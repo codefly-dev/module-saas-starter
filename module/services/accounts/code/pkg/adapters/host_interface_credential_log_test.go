@@ -110,3 +110,30 @@ func TestAShortCredentialDoesNotGarbleTheLogLine(t *testing.T) {
 	require.Contains(t, logs.all(), "the api server did not answer", "the reason is logged as it was")
 	require.NotContains(t, logs.all(), "[redacted workload credential]")
 }
+
+// A rejection whose caller has already ended its request is still a refusal,
+// logged at WARN: a prober that cancels every call does not keep its forged
+// credentials out of WARN. A rejection is answered, not logged by
+// credentialRefusal; the business layer logs it (ModulePrefixOfWorkload), so
+// here it must not be downgraded to a Canceled read failure.
+func TestARejectionWithAnEndedContextIsRefused(t *testing.T) {
+	ended, end := context.WithCancel(context.Background())
+	end()
+	logs := captureLeveledLogs(t)
+	err := credentialRefusal(ended, fmt.Errorf("%w: forged", business.ErrExecutionTokenRejected), "the actor", "")
+	require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
+	require.Empty(t, logs.at(wool.INFO, "a workload credential could not be read"), "a verdict is never logged as a read the caller cut short")
+}
+
+// End to end on the workload() path: a forged credential presented by a
+// caller that has already ended its request is refused, and logged at WARN.
+func TestARejectionWithAnEndedContextIsLoggedAtWarn(t *testing.T) {
+	newAdmissionFixture(t) // the host whose cluster never issued this credential
+	ended, end := context.WithCancel(context.Background())
+	end()
+	logs := captureLeveledLogs(t)
+	_, err := workload(ended, "a-forged-workload-credential", "the actor")
+	require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
+	require.Len(t, logs.at(wool.WARN, "workload credential refused"), 1, "%s", logs.all())
+	require.Empty(t, logs.at(wool.INFO, "workload credential refused"))
+}

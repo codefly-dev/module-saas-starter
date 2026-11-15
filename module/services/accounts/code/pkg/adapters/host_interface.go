@@ -760,6 +760,18 @@ func credentialRefusal(ctx context.Context, err error, which, credential string)
 // the gateway decides it: a dependency answering Canceled while the caller is
 // live is a review that could not run, Unavailable.
 func classifyCredentialError(ctx context.Context, err error, which string) (error, bool) {
+	// A verdict first, whatever became of the caller: a refused credential
+	// is a refusal, logged at WARN, even when the caller has since ended its
+	// request; otherwise a prober that cancels every call keeps its forged
+	// credentials out of WARN.
+	switch {
+	case errors.Is(err, business.ErrExecutionNotBoundToken), errors.Is(err, business.ErrModuleIdentityDenied):
+		return status.Errorf(codes.Unauthenticated, "%s credential refused: %v", which, err), false
+	case errors.Is(err, business.ErrExecutionTokenRejected):
+		return status.Errorf(codes.PermissionDenied, "%s credential refused: %v", which, business.ErrExecutionTokenRejected), false
+	case errors.Is(err, business.ErrExecutionWorkloadAmbiguous):
+		return status.Errorf(codes.PermissionDenied, "%s credential refused: %v", which, err), false
+	}
 	switch ended := ctx.Err(); {
 	case errors.Is(ended, context.Canceled):
 		return status.Errorf(codes.Canceled, "%s credential could not be read: the request ended", which), true
@@ -773,12 +785,6 @@ func classifyCredentialError(ctx context.Context, err error, which string) (erro
 		return status.Errorf(codes.DeadlineExceeded, "%s credential could not be read in time", which), true
 	case errors.Is(err, business.ErrExecutionUnbound):
 		return status.Errorf(codes.Unavailable, "%s credential could not be reviewed: the review could not run", which), true
-	case errors.Is(err, business.ErrExecutionNotBoundToken), errors.Is(err, business.ErrModuleIdentityDenied):
-		return status.Errorf(codes.Unauthenticated, "%s credential refused: %v", which, err), false
-	case errors.Is(err, business.ErrExecutionTokenRejected):
-		return status.Errorf(codes.PermissionDenied, "%s credential refused: %v", which, business.ErrExecutionTokenRejected), false
-	case errors.Is(err, business.ErrExecutionWorkloadAmbiguous):
-		return status.Errorf(codes.PermissionDenied, "%s credential refused: %v", which, err), false
 	}
 	return status.Errorf(codes.Internal, "%s credential could not be read", which), true
 }
