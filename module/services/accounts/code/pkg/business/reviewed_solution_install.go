@@ -196,7 +196,7 @@ func (s *Service) reviewSolutionInstall(ctx context.Context, caller authority.Pe
 // installation gets, whether the target exists, is held by them or not: it
 // names the target as they asked for it, and who approves.
 func reviewRefused(targetID string) error {
-	return domain.Refuse("installing or updating %s is approved by an administrator or owner of the organization, and a module page's update also by the holder of its installer role", targetID)
+	return domain.Refuse("installing or updating %s is approved by an administrator or owner of the organization, and a module page's update also by the holder of its admin role", targetID)
 }
 
 // isDenied is whether err is the core's refusal of the caller.
@@ -296,7 +296,7 @@ func (s *Service) ReviewStale(ctx context.Context, review *gen.ReviewedSolutionI
 // conventional team (upgradeAccess): every role a target declares has a team.
 //
 // Its caller is an administrator of org, or, for a module page's upgrade, a
-// holder of the page's installer role, as the core decides (installationsAt).
+// holder of the page's admin role, as the core decides (installationsAt).
 //
 // What of that access could not be applied once the installation is active
 // (a team that cannot be created, a grant or membership refused) is answered
@@ -391,7 +391,7 @@ func (s *Service) installReviewedSolution(ctx context.Context, caller authority.
 		return InstalledSolution{}, err
 	}
 	if !administrator {
-		// The holder of a page's installer role approves its update and
+		// The holder of a page's admin role approves its update and
 		// nothing beyond it: a supporting module the organization does not
 		// have yet is installed by an administrator's review.
 		for _, reviewed := range review.GetModules() {
@@ -439,7 +439,7 @@ func (s *Service) installReviewedSolution(ctx context.Context, caller authority.
 
 // installationsAt are org's installations as caller may approve target's:
 // every one, to an administrator or owner of org (administrator); to the
-// holder of a module page's installer role, whom the core admits to approve
+// holder of a module page's admin role, whom the core admits to approve
 // the page's upgrade (its approver), the page's active installation alone.
 // Anyone else is refused as the core refuses a person who administers
 // nothing.
@@ -465,7 +465,7 @@ func (s *Service) installationsAt(ctx context.Context, core *authority.Service, 
 // core's RoleTeamsOf) did not to its conventional team, as an install assigns
 // a role nobody named a team for; every other role keeps its grants. Teams are
 // the organization's, so an approver who is no administrator (a page's
-// installer) is told each added role waits for one instead.
+// admin) is told each added role waits for one instead.
 func (s *Service) upgradeAccess(ctx context.Context, core *authority.Service, caller authority.Person, inst domain.Installation, approvedBefore map[string]string, administrator bool) []AccessProblem {
 	approved, err := core.RoleTeamsOf(ctx, inst.ID)
 	if err != nil {

@@ -251,6 +251,7 @@ import { SolutionSetup } from "@codefly-dev/saas-ui/solution";
 	transport={transport}            // or binding={solutionBinding}
 	organizationId={organizationId}  // the organization the session is at
 	target="example-pages"           // the solution's name in the composition
+	title="Example Pages"            // optional: how the host titles it, for role words
 	subjects={[{ kind: "team", id: "team-1", label: "Finance" }]} // optional
 	conditions={[]}                  // optional: the host's own unmet conditions
 />
@@ -289,7 +290,10 @@ authority's answer that no delivered module declares an operation requiring
 what it grants.
 
 **What a host adds.** Only what it knows and the authority does not: the
-organization its session is at (`organizationId`), the people and teams it can
+organization its session is at (`organizationId`), how it titles the solution
+(`title`: each role then reads as the solution's, "Example Pages admin", through
+the exported `roleLabel`, so a page's `admin` is never read as the
+organization's; without it a role reads by its own name), the people and teams it can
 name (`subjects`, each optionally with a `detail` such as "3 people" and an
 `href`; without them the page grants to an id and names holders by id), its own
 unmet conditions (`conditions`: heading, detail, who clears it, and a link, an

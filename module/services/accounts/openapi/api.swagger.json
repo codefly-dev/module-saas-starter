@@ -405,7 +405,7 @@
       "description": "Installation is one solution's bound identity in an org. Server-assigned ids;\nthe browser cannot attest to tenancy, the agent principal, or the scope node.",
       "properties": {
         "accessProblems": {
-          "description": "What of the access an administrator's install assigned could not be\napplied once the installation became active, one entry per role in words\n(\"viewer: the role could not be granted to its team: ...\"). Set only on\nthe answer of the call that applied it (InstallReviewedSolution,\nRetryInstallation); the installation stands, and Set up grants the rest.",
+          "description": "What of the access an administrator's install assigned could not be\napplied once the installation became active, one entry per role in words\n(\"user: the role could not be granted to its team: ...\"). Set only on\nthe answer of the call that applied it (InstallReviewedSolution,\nRetryInstallation); the installation stands, and Set up grants the rest.",
           "items": {
             "type": "string"
           },
@@ -11709,7 +11709,7 @@
             }
           }
         },
-        "summary": "Consent to the exact review; retries retain its original per-owner receipts.\nA member's to ask: the authority core admits an organization\nadministrator, and the holder of a module page's installer role to\napprove the page's update (its approver), and refuses anyone else.",
+        "summary": "Consent to the exact review; retries retain its original per-owner receipts.\nA member's to ask: the authority core admits an organization\nadministrator, and the holder of a module page's admin role to\napprove the page's update (its approver), and refuses anyone else.",
         "tags": [
           "InstallationService"
         ]
@@ -11776,7 +11776,7 @@
             }
           }
         },
-        "summary": "Review one solution release and its supporting module access before consent.\nA member's to ask: the authority core answers it to an organization\nadministrator, and a module page's update to the holder of the page's\ninstaller role too (its approver), and refuses anyone else.",
+        "summary": "Review one solution release and its supporting module access before consent.\nA member's to ask: the authority core answers it to an organization\nadministrator, and a module page's update to the holder of the page's\nadmin role too (its approver), and refuses anyone else.",
         "tags": [
           "InstallationService"
         ]

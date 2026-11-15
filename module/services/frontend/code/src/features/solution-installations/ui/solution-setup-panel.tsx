@@ -16,6 +16,7 @@ import { apiTransport } from "@/lib/connect/transport";
 import { useOrgMembers } from "@/lib/hooks/use-organizations";
 import { Banner } from "@/shared/ui";
 import { ModulePageAccess } from "./module-page-access";
+import { useTargetTitles } from "./target-name";
 import { TeamPeople } from "./team-people";
 
 /**
@@ -44,6 +45,9 @@ export function SolutionSetupPanel({
 	update?: SolutionSetupProps["update"];
 }) {
 	const { organizationId = "" } = useAuth();
+	// Each role reads as the target's ("Example Pages admin"), by the title this host
+	// lists it under, or its alias when it lists none.
+	const title = useTargetTitles().get(target) ?? target;
 	// Names only: a person who may not list them sees ids, and the authority
 	// still decides every grant.
 	const members = useOrgMembers(organizationId || null);
@@ -78,6 +82,7 @@ export function SolutionSetupPanel({
 				organizationId={organizationId}
 				installationId={installation.id}
 				target={target}
+				title={title}
 				subjects={subjects}
 				teamControls={(team) => (
 					<TeamPeople orgId={organizationId} team={team} />
@@ -90,6 +95,7 @@ export function SolutionSetupPanel({
 			transport={apiTransport}
 			organizationId={organizationId}
 			target={target}
+			title={title}
 			conditions={conditions}
 			subjects={subjects}
 			facts={facts}

@@ -10,6 +10,7 @@ import (
 
 	coredecide "github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	coredelivered "github.com/codefly-dev/authority/libraries/authority-core/go/delivered"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/solutionhost"
 
@@ -20,8 +21,8 @@ import (
 // A solution's roles decide what a person holds through it (the owner's rule:
 // access to a solution is its own role). The roles are the solution's own
 // declaration, signed and delivered with its manifest; a person holds one at
-// the organisation's installation of the solution: the installer role when
-// they own the installation, and the installation's standing role through
+// the organisation's installation of the solution: the admin role when they
+// own the installation, and the installation's standing role through
 // every team it is exposed to that they belong to. What they hold at the
 // solution's audience, and through its bindings, is those roles' grants,
 // bounded by what the solution may grant: its delivered scope ceilings on its
@@ -29,9 +30,6 @@ import (
 // consumes. Organisation roles do not enter it: they administer the
 // organisation. A module that declares a page may declare roles too, and then
 // everything here holds of it as of a solution.
-
-// InstallerRole is the role every solution declares; an installation's owner holds it.
-const InstallerRole = "installer"
 
 // SolutionAuthority is one delivered solution's role declaration.
 type SolutionAuthority struct {
@@ -78,8 +76,8 @@ func (s *Service) deliveredTargetAuthority(ctx context.Context, target *Availabl
 // that declares a page (the core's rule: a module page may declare roles, and
 // then they decide what a person holds there, as a solution's do). The roles
 // are the core's composition of the delivery (coredelivered.Module): a module
-// page delivered with none has the standard three the core derives from what
-// it serves, so this host offers the teams the core gates by.
+// page delivered with none has the two the core derives from what it serves,
+// so this host offers the teams the core gates by.
 func (s *Service) solutionAuthorityOf(doc *compositionv1.AuthorityManifestV1, manifest *solutionhost.ModuleManifest) *SolutionAuthority {
 	if doc == nil || manifest.Authority == nil {
 		return nil
@@ -175,8 +173,11 @@ type SolutionRoleHolders struct {
 // roles at one installation.
 func (a *SolutionAuthority) HeldBy(person string, teams []string, at SolutionRoleHolders) []*basev0.WorkScopeV1 {
 	var held []*basev0.WorkScopeV1
-	if at.Owner == person {
-		held = append(held, a.Grants(InstallerRole)...)
+	// The owner holds the admin role (domain.AdminRole); the core's
+	// DeclaredAdminRole also names, for one release, a delivery stored under
+	// the role's old name.
+	if admin, declared := domain.DeclaredAdminRole(a.Roles); at.Owner == person && declared {
+		held = append(held, a.Grants(admin)...)
 	}
 	for _, team := range at.Teams {
 		if slices.Contains(teams, team) {

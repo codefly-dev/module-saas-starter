@@ -104,7 +104,7 @@ behavior-preserving rollback.
   `AttachResource`, `DetachResource`, `AuthorizeTransfer`; `Keys`;
   `RegisterAdmissionKey`.
 - **composition**: `ApplyManifest`. A delivery the core would refuse to compose
-  (for example a solution that declares no installer role) is refused before it
+  (for example a solution that declares no `admin` role) is refused before it
   is recorded.
 - **installation**: `Current` (a module reads its own active installation in
   the tenant of a current parent addressed to it, proving itself by its
@@ -294,7 +294,7 @@ and roles) holds no standing authority (`installation_role: none`; the module
 install path refuses any other, `modulePageHoldsNothing`), and its roles
 decide who may use it through grants on that composition installation. A
 module page that declares none is gated the same way, by the standard
-installer, editor and viewer the core derives from what it serves
+`admin` and `user` the core derives from what it serves
 (`decide.StandardRoles`, at delivery): a page that drops its declared roles
 keeps every grant whose role is derived again, and a page whose members
 reached it through their organization roles becomes role-gated on its next
@@ -322,7 +322,7 @@ upgrade is approved as a solution's is, `ReviewSolutionInstall` then
 `InstallReviewedSolution` on the same installation (the admin "Review
 update" action on `/admin/solutions` and `/admin/modules`, and the
 installation's own page), by an organization administrator; the core also
-admits a holder of the page's installer role on that installation through
+admits a holder of the page's `admin` role on that installation through
 the host interface's `Review` and `Install`, which this host still gates on
 an organization administrator. The approved upgrade records that
 administrator's operation as the receipt and leaves the installer none, so
@@ -545,9 +545,9 @@ and actual queue-to-receiver journey must be qualified together before delivery.
   installs it: the row's owner reviews it and installs that review
   (`ReviewSolutionInstallAs`, `InstallReviewedSolutionAs`; the row's role is
   the installation role only where the declaration selects none), which
-  converges its closure; then the owner holds the installer role and each
+  converges its closure; then the owner holds the `admin` role and each
   declared team the row's role. A row for a module page is installed by
-  composition, once, and set up the same way: the owner holds the installer
+  composition, once, and set up the same way: the owner holds the `admin`
   role and each declared team the row's role on its composition installation. A pending attempt of the owner's resumes from its review while that
   review is current (the target's generation and delivery digest, and every
   supporting module's, unchanged); once a delivery moved past it, the owner's

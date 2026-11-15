@@ -126,15 +126,15 @@ func testModulesInstalledByComposition(t *testing.T, h reviewedClosureHarness) {
 	t.Run("a module page selecting a standing role is reported, never installed", func(t *testing.T) {
 		const page = "conformance-composed-selecting"
 		entry := wireScope(page+".entry", "read")
-		deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: page, ceilings: []*authorityv1.WorkScopeV1{entry}, installationRole: "viewer",
+		deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: page, ceilings: []*authorityv1.WorkScopeV1{entry}, installationRole: "user",
 			page:  &solutionhost.Frontend{Title: "Selecting page", ExposedModule: "./Page", HostContract: 1, Payload: h.pagePayload},
-			roles: map[string][]*authorityv1.WorkScopeV1{"installer": {entry}, "viewer": {entry}}})
+			roles: map[string][]*authorityv1.WorkScopeV1{"admin": {entry}, "user": {entry}}})
 		for _, org := range orgs {
 			require.Nil(t, installed(org, page), "not installed at %s", org)
 		}
 		err := h.svc.KeepAuthorityCoreCurrent(h.ctx)
 		require.ErrorContains(t, err, page)
-		require.ErrorContains(t, err, `selects the standing role "viewer"`)
+		require.ErrorContains(t, err, `selects the standing role "user"`)
 	})
 
 	t.Run("a role-declaring module is installed this way and has no access until set up", func(t *testing.T) {
@@ -142,7 +142,7 @@ func testModulesInstalledByComposition(t *testing.T, h reviewedClosureHarness) {
 		entry := wireScope(page+".entry", "read")
 		deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: page, ceilings: []*authorityv1.WorkScopeV1{entry}, installationRole: domain.NoInstallationRole,
 			page:  &solutionhost.Frontend{Title: "Composed page", ExposedModule: "./Page", HostContract: 1, Payload: h.pagePayload},
-			roles: map[string][]*authorityv1.WorkScopeV1{"installer": {entry}, "viewer": {entry}}})
+			roles: map[string][]*authorityv1.WorkScopeV1{"admin": {entry}, "user": {entry}}})
 		for _, org := range orgs {
 			inst := installed(org, page)
 			require.NotNil(t, inst, "the module page is installed at %s by composition", org)
@@ -171,15 +171,15 @@ func testModulesInstalledByComposition(t *testing.T, h reviewedClosureHarness) {
 				roles = i.GetRoles()
 			}
 		}
-		require.Equal(t, []string{"installer", "viewer"}, roles)
-		grant := &installationv1.GrantRoleRequest{OrganizationId: fixtureOrganization, InstallationId: inst.GetId(), Role: "viewer", PersonId: conformanceMaya}
+		require.Equal(t, []string{"admin", "user"}, roles)
+		grant := &installationv1.GrantRoleRequest{OrganizationId: fixtureOrganization, InstallationId: inst.GetId(), Role: "user", PersonId: conformanceMaya}
 		_, err = client.GrantRole(alex, grant)
 		require.NoError(t, err)
 		grants, err := client.ListRoleGrants(alex, &installationv1.ListRoleGrantsRequest{OrganizationId: fixtureOrganization, InstallationId: inst.GetId()})
 		require.NoError(t, err)
 		require.Len(t, grants.GetGrants(), 1)
 		require.Equal(t, conformanceMaya, grants.GetGrants()[0].GetPersonId())
-		_, err = client.RevokeRole(alex, &installationv1.RevokeRoleRequest{OrganizationId: fixtureOrganization, InstallationId: inst.GetId(), Role: "viewer", PersonId: conformanceMaya})
+		_, err = client.RevokeRole(alex, &installationv1.RevokeRoleRequest{OrganizationId: fixtureOrganization, InstallationId: inst.GetId(), Role: "user", PersonId: conformanceMaya})
 		require.NoError(t, err)
 		grants, err = client.ListRoleGrants(alex, &installationv1.ListRoleGrantsRequest{OrganizationId: fixtureOrganization, InstallationId: inst.GetId()})
 		require.NoError(t, err)

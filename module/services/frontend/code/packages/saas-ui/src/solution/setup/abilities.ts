@@ -49,6 +49,17 @@ export interface RoleAbilities {
 	groups: AbilityGroup[];
 }
 
+/**
+ * A role as a person reads it beside what it belongs to: "Example Pages admin" for the
+ * role `admin` of the target the host titles "Example Pages". Without a title it is the
+ * role's own name. The role's identifier stays the role; only its words change.
+ */
+export function roleLabel(title: string | undefined, role: string): string {
+	const named = title?.trim();
+	if (!named) return role;
+	return `${named[0]?.toUpperCase()}${named.slice(1)} ${role}`;
+}
+
 /** "A" or "An", for a role named in a sentence. */
 export function article(word: string): string {
 	return /^[aeiou]/i.test(word) ? "An" : "A";

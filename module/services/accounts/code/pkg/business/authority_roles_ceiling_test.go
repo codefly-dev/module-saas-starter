@@ -30,7 +30,7 @@ func TestDeliveredRolesCannotExceedManifestAuthority(t *testing.T) {
 			manifest := &solutionhost.ModuleManifest{Alias: "example", Kind: solutionhost.KindSolution, Authority: &solutionhost.Authority{
 				ResourceKinds: []string{"pages"}, Bindings: []solutionhost.AuthorityBinding{{ID: "documents", Audience: "documents", Operations: tc.operations}},
 			}}
-			doc := &compositionv1.AuthorityManifestV1{Roles: []*compositionv1.RoleV1{{Name: "viewer", Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: tc.kind, Actions: []string{tc.action}, ResourceIds: []string{"one"}}}}}}
+			doc := &compositionv1.AuthorityManifestV1{Roles: []*compositionv1.RoleV1{{Name: "user", Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: tc.kind, Actions: []string{tc.action}, ResourceIds: []string{"one"}}}}}}
 			if tc.ceiled {
 				doc.ScopeCeilings = []*authorityv1.WorkScopeV1{{ResourceKind: "pages", Actions: []string{"read"}}}
 			}
@@ -39,7 +39,7 @@ func TestDeliveredRolesCannotExceedManifestAuthority(t *testing.T) {
 				require.NoError(t, err)
 			} else {
 				require.ErrorIs(t, err, ErrSolutionDeliveryRefused)
-				require.ErrorContains(t, err, `role "viewer"`)
+				require.ErrorContains(t, err, `role "user"`)
 			}
 		})
 	}

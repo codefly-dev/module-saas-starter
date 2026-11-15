@@ -513,7 +513,7 @@ it("a set-up module page's grants are edited from its Setup page", async () => {
 	const page = {
 		...suiteTarget,
 		kind: "module",
-		roles: ["installer", "viewer"],
+		roles: ["admin", "user"],
 	};
 	serve(
 		{
@@ -536,7 +536,7 @@ it("a set-up module page's grants are edited from its Setup page", async () => {
 						organizationId: "org-1",
 						target: "suite",
 						status: "STATUS_ACTIVE",
-						roles: ["installer", "viewer"],
+						roles: ["admin", "user"],
 					},
 				],
 			}),
@@ -546,7 +546,7 @@ it("a set-up module page's grants are edited from its Setup page", async () => {
 				grants: [
 					{
 						installationId: SUITE_INSTALLATION,
-						role: "viewer",
+						role: "user",
 						teamId: SUPPORT_TEAM,
 					},
 				],
@@ -561,43 +561,39 @@ it("a set-up module page's grants are edited from its Setup page", async () => {
 	);
 	render();
 
-	const viewer = within(
-		await screen.findByRole("region", { name: "Role viewer" }),
-	);
+	const user = within(await screen.findByRole("region", { name: "Role user" }));
 	const holders = within(
-		await viewer.findByRole("list", { name: "Who has viewer" }),
+		await user.findByRole("list", { name: "Who has user" }),
 	);
 	await holders.findByRole("link", { name: "Team Support" });
 	fireEvent.click(
 		holders.getByRole("button", {
-			name: "Remove viewer from Team Support",
+			name: "Remove user from Team Support",
 		}),
 	);
-	// Support is the viewer's only holder: it asks before leaving nobody.
-	expect(
-		viewer.getByText("Nobody will have viewer access to suite."),
-	).toBeTruthy();
+	// Support is the user role's only holder: it asks before leaving nobody.
+	expect(user.getByText("Nobody will have user access to suite.")).toBeTruthy();
 	expect(changes).toHaveLength(0);
-	fireEvent.click(viewer.getByRole("button", { name: "Remove anyway" }));
+	fireEvent.click(user.getByRole("button", { name: "Remove anyway" }));
 	await waitFor(() => expect(changes).toHaveLength(1));
 	expect(changes[0]).toEqual({
 		procedure: "RevokeRole",
 		body: {
 			organizationId: "org-1",
 			installationId: SUITE_INSTALLATION,
-			role: "viewer",
+			role: "user",
 			teamId: SUPPORT_TEAM,
 		},
 	});
-	const installer = within(
-		screen.getByRole("region", { name: "Role installer" }),
-	);
-	expect(installer.getByText("Nobody has it yet.")).toBeTruthy();
-	fireEvent.change(installer.getByLabelText("Person or team"), {
+	const admin = within(screen.getByRole("region", { name: "Role admin" }));
+	expect(admin.getByText("Nobody has it yet.")).toBeTruthy();
+	// The role reads as the page's, never as the organization's admin.
+	expect(admin.getByRole("heading", { name: "Suite admin" })).toBeTruthy();
+	fireEvent.change(admin.getByLabelText("Person or team"), {
 		target: { value: `team:${SUPPORT_TEAM}` },
 	});
 	fireEvent.click(
-		installer.getByRole("button", { name: "Give installer access" }),
+		admin.getByRole("button", { name: "Give Suite admin access" }),
 	);
 	await waitFor(() => expect(changes).toHaveLength(2));
 	expect(changes[1]).toEqual({
@@ -605,7 +601,7 @@ it("a set-up module page's grants are edited from its Setup page", async () => {
 		body: {
 			organizationId: "org-1",
 			installationId: SUITE_INSTALLATION,
-			role: "installer",
+			role: "admin",
 			teamId: SUPPORT_TEAM,
 		},
 	});

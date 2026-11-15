@@ -191,6 +191,7 @@ export {
 	requestBinding,
 	resolveTraceExportEndpoint,
 	roleAbilities,
+	roleLabel,
 	type SetupClients,
 	type SetupCondition,
 	type SetupFact,

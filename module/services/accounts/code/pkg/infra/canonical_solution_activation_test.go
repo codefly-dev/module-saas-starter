@@ -55,7 +55,7 @@ func TestCanonicalSolutionActivationFencesAcknowledgedPrerequisites(t *testing.T
 			}))
 			m := domain.Module{Name: alias, Principal: "solution:" + alias, Kind: domain.KindSolution, Generation: 1,
 				EdgeDependencies: []domain.EdgeDependency{{Module: dependencyName, Presence: "required"}},
-				InstallationRole: "none", Roles: map[string][]*basev0.WorkScopeV1{"installer": {{ResourceKind: "roles", Actions: []string{"write"}}}}}
+				InstallationRole: "none", Roles: map[string][]*basev0.WorkScopeV1{domain.AdminRole: {{ResourceKind: "roles", Actions: []string{"write"}}}}}
 			require.NoError(t, store.Write(testCtx, func(tx authority.Tx) error {
 				if err := tx.PutModule(domain.Module{Name: dependencyName, Principal: dependencyName, Kind: domain.KindModule, Generation: 1}); err != nil {
 					return err

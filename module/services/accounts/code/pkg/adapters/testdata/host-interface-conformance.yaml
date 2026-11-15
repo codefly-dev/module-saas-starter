@@ -18,17 +18,18 @@ users:
   # no role and is on no team.
   - {id: 00000000-0000-7000-8000-0000000000b7, email: owner@acme.test, name: Olivia Owner, role: member, provider: email, provider_id: fixture-owner}
   - {id: 00000000-0000-7000-8000-0000000000b8, email: no-roles@acme.test, name: Nora Noroles, role: member, provider: email, provider_id: fixture-no-roles}
-  # The installer of two solutions who administers one existing collection
-  # through her own organization grant, and nothing else: no administrator.
+  # The installer of two solutions, holding their admin role, who administers
+  # one existing collection through her own organization grant, and nothing
+  # else: no administrator of the organization.
   - {id: 00000000-0000-7000-8000-0000000000b9, email: ivy@acme.test, name: Ivy Installer, role: member, provider: email, provider_id: fixture-ivy}
   # The solution-principal target's people: two whose own organization grants
   # reach one existing resource of the store's kind (one administers it, one
-  # reads it), an installer holding nothing yet, two members of a team no
+  # reads it), an admin of an installation holding nothing yet, two members of a team no
   # installation is granted to (one leaves it), one who leaves the
   # organization, and a reader of one solution's notes.
   - {id: 00000000-0000-7000-8000-0000000000d1, email: store-admin@acme.test, name: Sam Storeadmin, role: member, provider: email, provider_id: fixture-store-administrator}
   - {id: 00000000-0000-7000-8000-0000000000d2, email: store-reader@acme.test, name: Rita Storereader, role: member, provider: email, provider_id: fixture-store-reader}
-  - {id: 00000000-0000-7000-8000-0000000000d3, email: installer@acme.test, name: Ian Installer, role: member, provider: email, provider_id: fixture-principal-installer}
+  - {id: 00000000-0000-7000-8000-0000000000d3, email: admin-holder@acme.test, name: Ada Admin, role: member, provider: email, provider_id: fixture-principal-admin}
   - {id: 00000000-0000-7000-8000-0000000000d4, email: team-member@acme.test, name: Tom Teammember, role: member, provider: email, provider_id: fixture-principal-team-member}
   - {id: 00000000-0000-7000-8000-0000000000d5, email: team-leaver@acme.test, name: Tess Teamleaver, role: member, provider: email, provider_id: fixture-principal-team-leaver}
   - {id: 00000000-0000-7000-8000-0000000000d6, email: org-leaver@acme.test, name: Otto Orgleaver, role: member, provider: email, provider_id: fixture-principal-org-leaver}
@@ -58,7 +59,7 @@ organizations:
       - {email: ivy@acme.test, role: member}
       - {email: store-admin@acme.test, role: member}
       - {email: store-reader@acme.test, role: member}
-      - {email: installer@acme.test, role: member}
+      - {email: admin-holder@acme.test, role: member}
       - {email: team-member@acme.test, role: member}
       - {email: team-leaver@acme.test, role: member}
       - {email: org-leaver@acme.test, role: member}
@@ -209,13 +210,13 @@ collections:
 # Installed once the harness delivers each solution, then acknowledged by its
 # install step and exposed to its teams, as a fixture's installations converge.
 installations:
-  # The pages solution reaches finance and engineering as viewers.
-  - {org: Acme Corp, target: conformance-pages, role: viewer, owner: alex@acme.test, teams: [Finance, Engineering]}
+  # The pages solution reaches finance and engineering as its users.
+  - {org: Acme Corp, target: conformance-pages, role: user, owner: alex@acme.test, teams: [Finance, Engineering]}
   # The proposals solution reaches finance alone, so a module binding to it
   # distinguishes Maya (finance) from Remi (engineering).
-  - {org: Acme Corp, target: conformance-proposals, role: viewer, owner: alex@acme.test, teams: [Finance]}
+  - {org: Acme Corp, target: conformance-proposals, role: user, owner: alex@acme.test, teams: [Finance]}
   # The assistant solution acts for itself down a chain of modules.
-  - {org: Acme Corp, target: conformance-assistant, role: viewer, owner: alex@acme.test}
+  - {org: Acme Corp, target: conformance-assistant, role: user, owner: alex@acme.test}
   # Delivered only once the host is running, as a composition delivers a
   # solution after boot: installed at Acme alone, and reached by its finance team.
-  - {org: Acme Corp, target: conformance-late, role: viewer, owner: alex@acme.test, teams: [Finance]}
+  - {org: Acme Corp, target: conformance-late, role: user, owner: alex@acme.test, teams: [Finance]}

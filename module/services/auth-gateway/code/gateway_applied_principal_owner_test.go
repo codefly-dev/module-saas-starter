@@ -40,15 +40,15 @@ func TestAppliedPrincipalAddressesTheRealAuthority(t *testing.T) {
 	svc, err := authority.New(store, authority.Config{Issuer: "https://authority.example.test", KeyID: "test", Signer: private, Keys: principalWitnessKeys{"test": public}, Replay: workcontext.NewMemoryReplayStore()})
 	require.NoError(t, err)
 	scopes := []*basev0.WorkScopeV1{{ResourceKind: "example.note", Actions: []string{"read"}}}
-	_, err = svc.ApplyModule(t.Context(), domain.Module{Name: route.Alias, Principal: route.Principal, Kind: domain.KindSolution, Generation: 1, OwnerAware: true, ResourceKinds: scopes, Roles: map[string][]*basev0.WorkScopeV1{domain.InstallerRole: scopes, "viewer": scopes}})
+	_, err = svc.ApplyModule(t.Context(), domain.Module{Name: route.Alias, Principal: route.Principal, Kind: domain.KindSolution, Generation: 1, OwnerAware: true, ResourceKinds: scopes, Roles: map[string][]*basev0.WorkScopeV1{domain.AdminRole: scopes, domain.UserRole: scopes}})
 	require.NoError(t, err)
 	person := authority.Person{ID: "admin", Organization: "acme", SessionID: "example-session"}
 	approval, err := svc.Review(t.Context(), person, "acme", route.Alias)
 	require.NoError(t, err)
 	approval.OperationID = uuid.NewString()
-	inst, err := svc.Install(t.Context(), person, "acme", route.Alias, "viewer", person.ID, &approval, nil)
+	inst, err := svc.Install(t.Context(), person, "acme", route.Alias, domain.UserRole, person.ID, &approval, nil)
 	require.NoError(t, err)
-	_, err = svc.GrantRole(t.Context(), person, authority.RoleRequest{Organization: "acme", InstallationID: inst.ID, Role: "viewer", PersonID: person.ID})
+	_, err = svc.GrantRole(t.Context(), person, authority.RoleRequest{Organization: "acme", InstallationID: inst.ID, Role: domain.UserRole, PersonID: person.ID})
 	require.NoError(t, err)
 	issued, err := svc.IssueForPerson(t.Context(), person, authority.IssueRequest{Audience: route.Principal})
 	require.NoError(t, err)

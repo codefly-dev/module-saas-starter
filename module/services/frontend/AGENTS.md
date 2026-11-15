@@ -124,7 +124,7 @@ A `/s/<id>` page opens the solution directly. A labelled settings gear opens the
 existing setup UI in a dismissible dialog while keeping the remote mounted: the solution's roles, what each grants (scopes → module
 operations → agent tools, and the permission ceiling) and who holds them. That
 is every solution record (the shared authority core requires a solution's
-`installer` role) and a module record whose page declares roles, which
+`admin` role) and a module record whose page declares roles, which
 `WhenRolesDeclared` learns from the authority's offer review; a module page that
 declares none shows no settings gear. An optional declared Dashboard remains
 accessible beside Workspace; solutions without one have no tab bar. It renders the kit's `<SolutionSetup>`
@@ -158,7 +158,7 @@ OfferService ListOffers, ReviewOffer. `src/proxy.ts` forwards them from a host
 page and the solution proxy from a remote's `apiBase`, both to the gateway
 root; Install and Current are not forwarded. ListHeld reads the signed-in
 member’s own held roles; ListRoleGrants still requires the authority’s
-admin/installer standing to list everyone’s grants. The admin installation page keeps
+organization-admin or installation-`admin` standing to list everyone’s grants. The admin installation page keeps
 this host's own team access card only for a record carrying a host scope root
 and no declared roles; a module page that declares roles is set up through them
 alone (`useRolesDeclared`).
@@ -542,7 +542,7 @@ shows a "Solutions" card (install) and a "Module pages" card (set up access),
 and an installed solution offers no Install.
 
 **The review leads with what people can do.** The dialog shows, in order: each
-declared role in plain words, its scopes merged per resource kind ("editor:
+declared role in plain words, its scopes merged per resource kind ("user:
 read and write pages"), grouped by where they apply from the core's reach
 (`OfferRole.reach`, `roleReach`): "In <solution>" (the role on the solution),
 "Through <solution>, in <module>" (the solution acting for the holder, directly

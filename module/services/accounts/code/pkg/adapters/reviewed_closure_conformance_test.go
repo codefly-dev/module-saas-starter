@@ -176,14 +176,14 @@ func testReviewedClosures(t *testing.T, h reviewedClosureHarness) {
 	entry := wireScope(page+".entry", "read")
 	deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: page, ceilings: []*authorityv1.WorkScopeV1{entry}, installationRole: domain.NoInstallationRole,
 		page:  &solutionhost.Frontend{Title: "Closure page", ExposedModule: "./Page", HostContract: 1, Payload: h.pagePayload},
-		roles: map[string][]*authorityv1.WorkScopeV1{"installer": {entry}, "viewer": {entry}}})
+		roles: map[string][]*authorityv1.WorkScopeV1{"admin": {entry}, "user": {entry}}})
 	deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: support, installationRole: domain.NoInstallationRole,
 		ceilings: []*authorityv1.WorkScopeV1{wireScope(support+".item", "read")},
 		bindings: []solutionhost.AuthorityBinding{{ID: "page", Audience: page, Operations: map[string][]string{"invoke": {page + ".entry:read"}}}}})
 	reaching := func(alias string, edges ...string) conformanceSolution {
 		note := wireScope(alias+".note", "read")
 		s := conformanceSolution{alias: alias, generation: 1, installationRole: domain.NoInstallationRole, ceilings: []*authorityv1.WorkScopeV1{note},
-			roles: map[string][]*authorityv1.WorkScopeV1{"installer": {note}, "viewer": {note}}}
+			roles: map[string][]*authorityv1.WorkScopeV1{"admin": {note}, "user": {note}}}
 		for _, edge := range edges {
 			s.edges = append(s.edges, modulecontract.EdgeDependency{Module: edge, Presence: "required"})
 		}
@@ -311,10 +311,10 @@ teams:
   - {name: Readers, org: Example North, members: [member@north.example.test]}
   - {name: Readers, org: Example South, members: [member@south.example.test]}
 installations:
-  - {org: Example North, target: `+solution+`, role: viewer, owner: owner@north.example.test, teams: [Readers]}
-  - {org: Example North, target: `+page+`, role: viewer, owner: owner@north.example.test, teams: [Readers]}
-  - {org: Example South, target: `+page+`, role: viewer, owner: owner@south.example.test, teams: [Readers]}
-  - {org: Example South, target: `+solution+`, role: viewer, owner: owner@south.example.test, teams: [Readers]}
+  - {org: Example North, target: `+solution+`, role: user, owner: owner@north.example.test, teams: [Readers]}
+  - {org: Example North, target: `+page+`, role: user, owner: owner@north.example.test, teams: [Readers]}
+  - {org: Example South, target: `+page+`, role: user, owner: owner@south.example.test, teams: [Readers]}
+  - {org: Example South, target: `+solution+`, role: user, owner: owner@south.example.test, teams: [Readers]}
 `), 0o600))
 		t.Setenv("DEV_FIXTURE_PATH", path)
 		// The organizations seeded here get no composition install of the
@@ -358,7 +358,7 @@ installations:
 				}
 				grants, err := h.core.ListRoleGrants(h.ctx, caller, org, inst.ID)
 				require.NoError(t, err)
-				require.Contains(t, grants, domain.RoleGrant{InstallationID: inst.ID, Role: "viewer", TeamID: team}, "the team holds the row's role on %s", target)
+				require.Contains(t, grants, domain.RoleGrant{InstallationID: inst.ID, Role: "user", TeamID: team}, "the team holds the row's role on %s", target)
 				revisions[org+target] = inst.Revision
 			}
 			require.NotNil(t, h.moduleInstallation(t, org, support), "the solution's review installed its roleless module at %s", org)
@@ -403,7 +403,7 @@ organizations:
 teams:
   - {name: Readers, org: Example East, members: [member@east.example.test]}
 installations:
-  - {org: Example East, target: `+solution+`, role: viewer, owner: owner@east.example.test, teams: [Readers]}
+  - {org: Example East, target: `+solution+`, role: user, owner: owner@east.example.test, teams: [Readers]}
 `), 0o600))
 		t.Setenv("DEV_FIXTURE_PATH", path)
 		installations, err := fixtures.SeedWithInstallations(h.ctx, h.svc, "redelivery-fixture")
@@ -444,7 +444,7 @@ installations:
 		require.Equal(t, owner, active.InstalledBy)
 		grants, err := h.core.ListRoleGrants(h.ctx, east, org, active.ID)
 		require.NoError(t, err)
-		require.Contains(t, grants, domain.RoleGrant{InstallationID: active.ID, Role: "viewer", TeamID: teamNamed(t, h.ctx, h.svc, org, "Readers")})
+		require.Contains(t, grants, domain.RoleGrant{InstallationID: active.ID, Role: "user", TeamID: teamNamed(t, h.ctx, h.svc, org, "Readers")})
 		require.NotNil(t, h.moduleInstallation(t, org, support), "the supporting module is installed")
 		require.True(t, installedInCatalogue(), "the catalogue reads the active installation as installed")
 	})

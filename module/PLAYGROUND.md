@@ -26,20 +26,20 @@ module playground, a module page or a solution run locally with the authority
 |---|---|---|
 | Sarah Chen (`admin@acme.com`) | the platform admin (`super_admin`), owner of Acme Corp | nothing of her own; she may act as any team |
 | Alice Johnson (`alice@acme.com`) | the organisation admin of Acme Corp | the installer of record; she may act as any team |
-| Bob Williams (`bob@acme.com`) | a member | the `<target>-viewer` team |
-| Carol Davis (`carol@acme.com`) | a member | the `<target>-editor` team, and `<target>-user` where the target declares `user` |
-| Dana Lee (`dana@example.com`) | a member | the `<target>-installer` team |
+| Bob Williams (`bob@acme.com`) | a member | nothing: a member with no role, who sees no role-gated page |
+| Carol Davis (`carol@acme.com`) | a member | the `<target>-user` team |
+| Dana Lee (`dana@example.com`) | a member | the `<target>-admin` team |
 
 Every role-gated target the composition delivers (a solution, a module page
 declaring roles) is installed at Acme Corp by Alice, each declared role to its
-`<target>-<role>` team, and Bob, Carol and Dana join the team of their role —
+`<target>-<role>` team, and Carol and Dana join the team of their role —
 the fixture's `installations` row whose target is `"*"` says so once, and the
 host expands it per target once every module the target reaches is composed
 (a solution installed before a module it reaches arrives is held at the
 narrower reach until an upgrade is approved), so a composition opts in by
 seeding `dev-admin` and nothing else. Every role a target declares gets its
-team, a fourth such as `user` included (Carol joins it: the editor uses the
-product too, and Bob stays the viewer who writes nothing); a role the update
+team, one beyond `admin` and `user` included (nobody joins it unless a row
+says so); a role the update
 of an installed target adds gets its team when that update is approved. A
 composing workspace's
 `configurations/local/fixture-grants.yaml` may still name a target explicitly,
@@ -51,7 +51,7 @@ now that team and nothing else — not Alice's roles, not her other teams, not
 her administrator access — and the bar at the top says so; **See what this
 team sees** shows the product as a member of that team sees it, and **Stop
 acting as this team** restores her own session from her refresh cookie. Signed
-in as Bob, Carol or Dana, the product shows that one team's reach directly.
+in as Carol or Dana, the product shows that one team's reach directly.
 The host alone composes no target, so on this host-only playground the row
 expands to nothing and the casting walk needs a composed target (below).
 

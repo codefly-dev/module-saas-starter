@@ -18,7 +18,7 @@ import (
 func TestInstallAccessRequestsAreBounded(t *testing.T) {
 	request := func(edit func(*gen.InstallReviewedSolutionRequest)) *gen.InstallReviewedSolutionRequest {
 		req := &gen.InstallReviewedSolutionRequest{OrgId: fixtureOrganization, Review: &gen.ReviewedSolutionInstall{},
-			RoleTeams: map[string]string{"viewer": fixtureOrganization}, InstallerRoles: []string{"installer", "viewer"}}
+			RoleTeams: map[string]string{"user": fixtureOrganization}, InstallerRoles: []string{"admin", "user"}}
 		edit(req)
 		return req
 	}
@@ -33,10 +33,10 @@ func TestInstallAccessRequestsAreBounded(t *testing.T) {
 	require.NoError(t, Validate(request(func(r *gen.InstallReviewedSolutionRequest) { r.InstallerRoles = many(64) })))
 	for name, edit := range map[string]func(*gen.InstallReviewedSolutionRequest){
 		"65 installer roles":       func(r *gen.InstallReviewedSolutionRequest) { r.InstallerRoles = many(65) },
-		"a role ticked twice":      func(r *gen.InstallReviewedSolutionRequest) { r.InstallerRoles = []string{"viewer", "viewer"} },
+		"a role ticked twice":      func(r *gen.InstallReviewedSolutionRequest) { r.InstallerRoles = []string{"user", "user"} },
 		"an empty installer role":  func(r *gen.InstallReviewedSolutionRequest) { r.InstallerRoles = []string{""} },
 		"a 129-character role":     func(r *gen.InstallReviewedSolutionRequest) { r.InstallerRoles = []string{strings.Repeat("r", 129)} },
-		"a team that is not an id": func(r *gen.InstallReviewedSolutionRequest) { r.RoleTeams = map[string]string{"viewer": "Readers"} },
+		"a team that is not an id": func(r *gen.InstallReviewedSolutionRequest) { r.RoleTeams = map[string]string{"user": "Readers"} },
 		"a team for an empty role": func(r *gen.InstallReviewedSolutionRequest) { r.RoleTeams = map[string]string{"": fixtureOrganization} },
 		"65 teams":                 func(r *gen.InstallReviewedSolutionRequest) { r.RoleTeams = teamsFor(many(65)) },
 		"a team for a 129-char role": func(r *gen.InstallReviewedSolutionRequest) {

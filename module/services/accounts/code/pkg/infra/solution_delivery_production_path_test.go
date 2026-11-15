@@ -305,7 +305,7 @@ func productionPathBindingRecord(t *testing.T, service *business.Service, bindin
 
 // productionPathManifest is a live manifest for one module on this test host:
 // one workload, one routed endpoint. A module, which the delivery endpoint
-// carries alone: a solution declares an installer role in the authority
+// carries alone: a solution declares an admin role in the authority
 // document the composition interface pairs with its manifest, and the
 // authority core composes no solution delivered without one.
 func productionPathManifest(t *testing.T, alias string, generation uint64) *solutionhost.ModuleManifest {

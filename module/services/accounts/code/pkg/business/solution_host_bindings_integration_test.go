@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
+
 	"accounts/internal/deliverytest"
 	"accounts/pkg/business"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
@@ -73,9 +75,9 @@ func receive(ctx context.Context, data []byte) error {
 		OwnershipDomain: manifest.Host.Domain, ReceivedAt: time.Now().UTC(),
 	}
 	if manifest.Kind == solutionhost.KindSolution && !manifest.Removed {
-		// A solution declares an installer role (the authority core's
+		// A solution declares an admin role (the authority core's
 		// contract), in the authority document paired with its manifest.
-		if record.AuthorityDocument, record.AuthorityEnvelope, err = installerDocument(&manifest, signed.Document); err != nil {
+		if record.AuthorityDocument, record.AuthorityEnvelope, err = adminDocument(&manifest, signed.Document); err != nil {
 			return err
 		}
 	}
@@ -137,7 +139,7 @@ func declaredBinding(t *testing.T, solutionID string, generation uint64) *soluti
 		Release:    solutionhost.Release{Publisher: "acme", Name: solutionID, Version: "1.4.0"},
 		Workloads:  []solutionhost.Workload{{Service: "api", Container: "api"}},
 		Endpoints:  []solutionhost.Endpoint{{Name: "rest", Service: "api", API: "rest", Address: "http://api." + solutionID + ".svc.cluster.local:8080"}},
-		// What it serves, which its installer role grants (installerDocument).
+		// What it serves, which its admin role grants (adminDocument).
 		Authority: &solutionhost.Authority{Principal: solutionID, ResourceKinds: []string{"doc"}},
 	}
 	if err := document.Validate(); err != nil {
@@ -212,13 +214,13 @@ func isolateBindingFixture(t *testing.T) {
 	})
 }
 
-// installerDocument is the signed authority document of a solution that
-// declares its installer role, reading what it serves, and nothing more,
+// adminDocument is the signed authority document of a solution that
+// declares its admin role, reading what it serves, and nothing more,
 // paired with manifest.
-func installerDocument(manifest *solutionhost.ModuleManifest, payload []byte) (document, envelope []byte, err error) {
+func adminDocument(manifest *solutionhost.ModuleManifest, payload []byte) (document, envelope []byte, err error) {
 	reads := []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read"}}}
 	document, err = proto.Marshal(&compositionv1.AuthorityManifestV1{Module: manifest.Alias, Generation: manifest.Generation,
-		CoreManifestDigest: delivery.Digest(payload), Roles: []*compositionv1.RoleV1{{Name: business.InstallerRole, Scopes: reads}}})
+		CoreManifestDigest: delivery.Digest(payload), Roles: []*compositionv1.RoleV1{{Name: domain.AdminRole, Scopes: reads}}})
 	if err != nil {
 		return nil, nil, err
 	}

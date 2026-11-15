@@ -5,6 +5,7 @@ import {
 	kindText,
 	operationText,
 	roleAbilities,
+	roleLabel,
 	scopesText,
 	unreachedHeadline,
 	unreachedText,
@@ -233,5 +234,16 @@ describe("an unreached reach", () => {
 		expect(unreachedHeadline(["other"])).toBe(
 			"Some access can't be reached right now",
 		);
+	});
+});
+
+describe("roleLabel", () => {
+	it("names a role as its target's, never as the organization's", () => {
+		expect(roleLabel("Example Pages", "admin")).toBe("Example Pages admin");
+		expect(roleLabel("example pages", "user")).toBe("Example pages user");
+	});
+	it("is the role's own name when the host gives no title", () => {
+		expect(roleLabel(undefined, "admin")).toBe("admin");
+		expect(roleLabel("  ", "user")).toBe("user");
 	});
 });

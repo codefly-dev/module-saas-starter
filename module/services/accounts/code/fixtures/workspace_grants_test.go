@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -91,7 +93,7 @@ func TestWorkspaceInstallationsJoinTheFixture(t *testing.T) {
 	// none (a module declaring `installation_role: none`, or no role at all)
 	// is declared without one and installed holding none.
 	grants, err := readWorkspaceGrants(grantsReader(`installations:
-  - {org: Acme Corp, target: notes, role: viewer, owner: remi@acme.test}
+  - {org: Acme Corp, target: notes, role: user, owner: remi@acme.test}
   - {org: Acme Corp, target: records, owner: remi@acme.test}
 `, nil))
 	if err != nil {
@@ -106,12 +108,12 @@ func TestWorkspaceInstallationsJoinTheFixture(t *testing.T) {
 	}
 
 	for document, want := range map[string]string{
-		`installations: [{org: Acme Corp, target: notes, role: viewer, owner: omar@acme.test}]`:                            "only an administrator installs",
-		`installations: [{org: Globex, target: notes, role: viewer, owner: remi@acme.test}]`:                               "only an administrator installs",
-		`installations: [{org: Acme Corp, target: notes, role: viewer}]`:                                                   "org, target and owner are required",
-		`installations: [{org: Acme Corp, target: notes, owner: remi@acme.test, teams: [Ops]}]`:                            "a row naming teams names a role",
-		`installations: [{org: Acme Corp, target: notes, owner: remi@acme.test, members: {viewer: [stranger@acme.test]}}]`: "only a member joins its team",
-		`installations: [{org: Acme Corp, target: notes, owner: remi@acme.test, members: {viewer: []}}]`:                   "members name a role and the people who take it",
+		`installations: [{org: Acme Corp, target: notes, role: user, owner: omar@acme.test}]`:                            "only an administrator installs",
+		`installations: [{org: Globex, target: notes, role: user, owner: remi@acme.test}]`:                               "only an administrator installs",
+		`installations: [{org: Acme Corp, target: notes, role: user}]`:                                                   "org, target and owner are required",
+		`installations: [{org: Acme Corp, target: notes, owner: remi@acme.test, teams: [Ops]}]`:                          "a row naming teams names a role",
+		`installations: [{org: Acme Corp, target: notes, owner: remi@acme.test, members: {user: [stranger@acme.test]}}]`: "only a member joins its team",
+		`installations: [{org: Acme Corp, target: notes, owner: remi@acme.test, members: {user: []}}]`:                   "members name a role and the people who take it",
 	} {
 		grants, err := readWorkspaceGrants(grantsReader(document, nil))
 		if err != nil {
@@ -137,8 +139,8 @@ func TestWorkspaceInstallationsDeclareInstallerRolesAndMembers(t *testing.T) {
   - org: Acme Corp
     target: notes
     owner: remi@acme.test
-    installer_roles: [installer]
-    members: {editor: [omar@acme.test], viewer: [remi@acme.test]}
+    installer_roles: [admin]
+    members: {admin: [omar@acme.test], user: [remi@acme.test]}
 `, nil))
 	if err != nil {
 		t.Fatal(err)
@@ -147,10 +149,10 @@ func TestWorkspaceInstallationsDeclareInstallerRolesAndMembers(t *testing.T) {
 		t.Fatal(err)
 	}
 	row := f.Installations[0]
-	if len(row.InstallerRoles) != 1 || row.InstallerRoles[0] != "installer" || len(row.Members["editor"]) != 1 || row.Members["viewer"][0] != "remi@acme.test" {
+	if len(row.InstallerRoles) != 1 || row.InstallerRoles[0] != "admin" || len(row.Members["admin"]) != 1 || row.Members["user"][0] != "remi@acme.test" {
 		t.Fatalf("the row did not read: %+v", row)
 	}
-	if _, err := readWorkspaceGrants(grantsReader(`installations: [{org: Acme Corp, target: notes, owner: remi@acme.test, member: {viewer: [omar@acme.test]}}]`, nil)); err == nil {
+	if _, err := readWorkspaceGrants(grantsReader(`installations: [{org: Acme Corp, target: notes, owner: remi@acme.test, member: {user: [omar@acme.test]}}]`, nil)); err == nil {
 		t.Fatal("a misspelled field was accepted")
 	}
 }
@@ -159,13 +161,13 @@ func TestWorkspaceInstallationsDeclareInstallerRolesAndMembers(t *testing.T) {
 // named for the row's role (an install names one team per role; a further
 // team is granted the role in Set up), and the roles the installer takes.
 func TestARowAsksTheInstallForTheAdministratorsAccess(t *testing.T) {
-	row := pendingInstallation{declared: fixtureInstallation{Role: "viewer", InstallerRoles: []string{"installer"}}}
+	row := pendingInstallation{declared: fixtureInstallation{Role: "user", InstallerRoles: []string{"admin"}}}
 	if access := installAccess(row); access.RoleTeams != nil || len(access.InstallerRoles) != 1 {
 		t.Fatalf("no team named: every role goes to its conventional team, got %+v", access)
 	}
 	row.allTeamIDs = []string{"finance", "engineering"}
 	access := installAccess(row)
-	if len(access.RoleTeams) != 1 || access.RoleTeams["viewer"] != "finance" {
+	if len(access.RoleTeams) != 1 || access.RoleTeams["user"] != "finance" {
 		t.Fatalf("the first named team holds the row's role at install, got %+v", access)
 	}
 }
@@ -178,9 +180,9 @@ func TestSeedRejectsDuplicateGrantIdentitiesBeforeStoreAccess(t *testing.T) {
 	changedRole.Permissions = []fixturePermission{{Resource: "notes", Action: "write"}}
 	assignment := fixtureRoleAssignment{Org: "Acme Corp", Role: "Reader", Email: "remi@acme.test"}
 	agentAssignment := fixtureRoleAssignment{Org: "Acme Corp", Role: "Reader", AgentIdentifier: "example-agent"}
-	installation := fixtureInstallation{Org: "Acme Corp", Target: "notes", Role: "viewer", Owner: "remi@acme.test"}
+	installation := fixtureInstallation{Org: "Acme Corp", Target: "notes", Role: "user", Owner: "remi@acme.test"}
 	changedInstallation := installation
-	changedInstallation.Role = "editor"
+	changedInstallation.Role = "admin"
 	teamInstallation := installation
 	teamInstallation.Teams = []string{"Engineering"}
 	ownerInstallation := installation
@@ -257,7 +259,7 @@ func TestWorkspaceGrantsKeepDistinctLookupIdentities(t *testing.T) {
 	f.Agents = []fixtureAgent{{Org: "Acme Corp", AgentIdentifier: "remi@acme.test", CreatedBy: "remi@acme.test"}}
 	f.Roles = []fixtureRole{{Org: "Acme Corp", Name: "Reader", Permissions: []fixturePermission{{Resource: "notes", Action: "read"}}}}
 	f.Assignments = []fixtureRoleAssignment{{Org: "Acme Corp", Role: "Reader", Email: "remi@acme.test"}}
-	f.Installations = []fixtureInstallation{{Org: "Acme Corp", Target: "notes", Role: "viewer", Owner: "remi@acme.test"}}
+	f.Installations = []fixtureInstallation{{Org: "Acme Corp", Target: "notes", Role: "user", Owner: "remi@acme.test"}}
 	grants := &workspaceGrants{
 		Roles: []fixtureRole{
 			{Org: "Globex", Name: "Reader", Permissions: []fixturePermission{{Resource: "notes", Action: "read"}}},
@@ -271,8 +273,8 @@ func TestWorkspaceGrantsKeepDistinctLookupIdentities(t *testing.T) {
 			{Org: "Acme Corp", Role: "reader", Email: "remi@acme.test"},
 		},
 		Installations: []fixtureInstallation{
-			{Org: "Globex", Target: "notes", Role: "viewer", Owner: "remi@acme.test"},
-			{Org: "Acme Corp", Target: "other-notes", Role: "viewer", Owner: "remi@acme.test"},
+			{Org: "Globex", Target: "notes", Role: "user", Owner: "remi@acme.test"},
+			{Org: "Acme Corp", Target: "other-notes", Role: "user", Owner: "remi@acme.test"},
 		},
 	}
 	if err := withWorkspaceGrants(f, grants); err != nil {
@@ -294,7 +296,7 @@ func TestARowMayStandForEveryTarget(t *testing.T) {
   - org: Acme Corp
     target: "*"
     owner: remi@acme.test
-    members: {viewer: [omar@acme.test], editor: [remi@acme.test]}
+    members: {user: [omar@acme.test], admin: [remi@acme.test]}
 `, nil))
 	if err != nil {
 		t.Fatal(err)
@@ -306,8 +308,8 @@ func TestARowMayStandForEveryTarget(t *testing.T) {
 		t.Fatalf("the row did not read: %+v", f.Installations[0])
 	}
 	for document, want := range map[string]string{
-		`installations: [{org: Acme Corp, target: "*", role: viewer, owner: remi@acme.test}]`:              "names only its members",
-		`installations: [{org: Acme Corp, target: "*", owner: remi@acme.test, installer_roles: [viewer]}]`: "names only its members",
+		`installations: [{org: Acme Corp, target: "*", role: user, owner: remi@acme.test}]`:               "names only its members",
+		`installations: [{org: Acme Corp, target: "*", owner: remi@acme.test, installer_roles: [admin]}]`: "names only its members",
 	} {
 		grants, err := readWorkspaceGrants(grantsReader(document, nil))
 		if err != nil {
@@ -321,25 +323,23 @@ func TestARowMayStandForEveryTarget(t *testing.T) {
 	template := pendingInstallation{
 		declared: fixtureInstallation{Org: "Acme Corp", Target: EveryTarget, Owner: "remi@acme.test"},
 		orgID:    "org", ownerID: "remi",
-		memberIDs: map[string][]string{"viewer": {"omar"}, "editor": {"remi"}, "installer": {"remi"}},
+		memberIDs: map[string][]string{"user": {"omar"}, "admin": {"remi"}},
 	}
-	row := everyRow(template, domain.Module{Name: "notes", Kind: domain.KindSolution, Roles: map[string][]*basev0.WorkScopeV1{"viewer": nil, "editor": nil}})
+	row := everyRow(template, domain.Module{Name: "notes", Kind: domain.KindSolution, Roles: map[string][]*basev0.WorkScopeV1{"admin": nil}})
 	if row.declared.Target != "notes" || row.declared.Org != "Acme Corp" || row.ownerID != "remi" {
 		t.Fatalf("the row is not the template's for the target: %+v", row)
 	}
-	if len(row.memberIDs) != 2 || row.memberIDs["viewer"][0] != "omar" || row.memberIDs["editor"][0] != "remi" {
+	if len(row.memberIDs) != 1 || row.memberIDs["admin"][0] != "remi" {
 		t.Fatalf("members are cut to the roles the target declares: %+v", row.memberIDs)
 	}
-	if len(template.memberIDs) != 3 {
+	if len(template.memberIDs) != 2 {
 		t.Fatal("the template is left whole for the next target")
 	}
 }
 
-// THE FIXTURE seats someone on every role a target declares: Bob on viewer,
-// Carol on editor and on user (the role that uses a product without authoring
-// it, all of which the editor holds), Dana on installer. A target declaring
-// `user` reads "user: nobody" otherwise. Red before the fixture named a user
-// member.
+// THE FIXTURE seats someone on both roles every target declares: Carol on
+// user, Dana on admin. Bob holds no role on any target: he is the person every
+// page refuses.
 func TestTheOneFixtureSeatsSomeoneOnEveryStandardRole(t *testing.T) {
 	data, err := embeddedFixtures.ReadFile("embedded/dev-admin.yaml")
 	if err != nil {
@@ -352,10 +352,18 @@ func TestTheOneFixtureSeatsSomeoneOnEveryStandardRole(t *testing.T) {
 	if err := validateInstallations(&f); err != nil {
 		t.Fatal(err)
 	}
-	want := map[string][]string{"viewer": {"bob@acme.com"}, "editor": {"carol@acme.com"}, "user": {"carol@acme.com"}, "installer": {"dana@example.com"}}
+	want := map[string][]string{"user": {"carol@acme.com"}, "admin": {"dana@example.com"}}
 	for _, row := range f.Installations {
 		if row.Target != EveryTarget {
 			continue
+		}
+		if len(row.Members) != len(want) {
+			t.Errorf("members name roles %v, want exactly admin and user", slices.Sorted(maps.Keys(row.Members)))
+		}
+		for role, people := range row.Members {
+			if slices.Contains(people, "bob@acme.com") {
+				t.Errorf("Bob holds %s; he holds no role on any target", role)
+			}
 		}
 		for role, people := range want {
 			if strings.Join(row.Members[role], ",") != strings.Join(people, ",") {

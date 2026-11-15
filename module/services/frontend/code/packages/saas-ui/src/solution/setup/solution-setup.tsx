@@ -36,6 +36,7 @@ import {
 	article,
 	type RoleAbilities,
 	roleAbilities,
+	roleLabel,
 	unreachedText,
 } from "./abilities.js";
 import {
@@ -74,6 +75,11 @@ export type SolutionSetupProps = SolutionSetupTransport & {
 	organizationId: string;
 	/** The solution, by its name in the composition (the core's target). */
 	target: string;
+	/**
+	 * How the host titles the solution ("Example Pages"). Each role reads as the
+	 * solution's ("Example Pages admin"); without it, by the role's own name.
+	 */
+	title?: string;
 	/** Conditions the host knows and the authority does not; see {@link SetupCondition}. */
 	conditions?: readonly SetupCondition[];
 	/** People and teams the host can name, for granting and naming holders. */
@@ -145,6 +151,7 @@ export function SolutionSetup(props: SolutionSetupProps) {
 					/>
 					<RolesSection
 						organizationId={props.organizationId}
+						title={props.title}
 						offer={state.offer}
 						offerError={state.offerError}
 						grants={state.grants}
@@ -329,8 +336,8 @@ function StatusSection({
 							</ul>
 							<p>
 								Until a later release of the module it goes through restores it,
-								the people holding that role cannot do this; everything else they
-								hold keeps working, and nothing is ever widened meanwhile.
+								the people holding that role cannot do this; everything else
+								they hold keeps working, and nothing is ever widened meanwhile.
 							</p>
 						</div>
 					</Banner>
@@ -429,6 +436,7 @@ function Scopes({
  */
 function RolesSection({
 	organizationId,
+	title,
 	offer,
 	offerError,
 	grants,
@@ -440,6 +448,8 @@ function RolesSection({
 	onChanged,
 }: {
 	organizationId: string;
+	/** How the host titles the solution, for each role's words. */
+	title?: string;
 	offer?: ReviewedOffer;
 	offerError?: unknown;
 	grants?: RoleGrant[];
@@ -513,9 +523,13 @@ function RolesSection({
 							className="flex flex-col gap-3 rounded-lg border p-4"
 						>
 							<h4 className="type-section-title">
-								What {article(role.role).toLowerCase()} {role.role} can do
+								What {article(roleLabel(title, role.role)).toLowerCase()}{" "}
+								{roleLabel(title, role.role)} can do
 							</h4>
-							<RoleAbilitiesList abilities={role} />
+							<RoleAbilitiesList
+								abilities={role}
+								label={`What ${article(roleLabel(title, role.role)).toLowerCase()} ${roleLabel(title, role.role)} can do`}
+							/>
 							<div className="flex flex-col gap-2">
 								<p className="type-emphasis">Who has it</p>
 								{!installed(offer) || !installation ? (
@@ -546,7 +560,7 @@ function RolesSection({
 											fixedRole={role.role}
 											subjects={subjects}
 											busy={busy}
-											submitLabel={`Give ${role.role} access`}
+											submitLabel={`Give ${roleLabel(title, role.role)} access`}
 											onGrant={(grant) =>
 												change(clients.installations.grantRole(request(grant)))
 											}

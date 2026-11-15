@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
+
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
 	"github.com/codefly-dev/core/solutionhost"
@@ -82,7 +84,7 @@ var (
 // deliverSolution applies one signed solution delivery, with its authority
 // document carrying roles when roles are given. A solution delivered without
 // roles is a legacy delivery: the composition interface refuses it, and so
-// does the authority core (a solution declares an installer role), so a pass
+// does the authority core (a solution declares an admin role), so a pass
 // never applies it. It arrives through the HTTP delivery endpoint and is
 // applied as a host applied it before it decided through the core
 // (ApplyBeforeTheCoreForTest): the state such a host left behind.
@@ -173,12 +175,12 @@ installations:
 
 	// The host decides through its authority core from here on, as every
 	// host does now. Its boot reconciliation meets the legacy generation and
-	// the core refuses it (a solution declares an installer role); the host
+	// the core refuses it (a solution declares an admin role); the host
 	// keeps serving, and the core holds no installation of it: the legacy one
 	// is accounts' record alone.
 	_, key, err := ed25519.GenerateKey(nil)
 	require.NoError(t, err)
-	require.ErrorContains(t, testService.ConfigureAuthorityCore(testCtx, "https://accounts.example.test", "legacy-viewer", key), `none is "installer"`)
+	require.ErrorContains(t, testService.ConfigureAuthorityCore(testCtx, "https://accounts.example.test", "legacy-viewer", key), `none is "admin"`)
 	t.Cleanup(testService.UnconfigureAuthorityCoreForTest)
 	core, err := testService.AuthorityCore()
 	require.NoError(t, err)
@@ -196,7 +198,7 @@ installations:
 	// covers.
 	viewer := []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read"}}}
 	deliverSolution(t, signer, alias, 2, []*compositionv1.RoleV1{
-		{Name: business.InstallerRole, Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read", "write"}}}},
+		{Name: domain.AdminRole, Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read", "write"}}}},
 		{Name: "viewer", Scopes: viewer},
 	})
 	teams, err := testService.ListTeams(ctx, &gen.ListTeamsRequest{OrgId: orgID})

@@ -158,7 +158,7 @@ export type Installation = Message<"saas.accounts.v1.Installation"> & {
   /**
    * What of the access an administrator's install assigned could not be
    * applied once the installation became active, one entry per role in words
-   * ("viewer: the role could not be granted to its team: ..."). Set only on
+   * ("user: the role could not be granted to its team: ..."). Set only on
    * the answer of the call that applied it (InstallReviewedSolution,
    * RetryInstallation); the installation stands, and Set up grants the rest.
    *
@@ -1692,7 +1692,7 @@ export const InstallationService: GenService<{
    * Review one solution release and its supporting module access before consent.
    * A member's to ask: the authority core answers it to an organization
    * administrator, and a module page's update to the holder of the page's
-   * installer role too (its approver), and refuses anyone else.
+   * admin role too (its approver), and refuses anyone else.
    *
    * @generated from rpc saas.accounts.v1.InstallationService.ReviewSolutionInstall
    */
@@ -1704,7 +1704,7 @@ export const InstallationService: GenService<{
   /**
    * Consent to the exact review; retries retain its original per-owner receipts.
    * A member's to ask: the authority core admits an organization
-   * administrator, and the holder of a module page's installer role to
+   * administrator, and the holder of a module page's admin role to
    * approve the page's update (its approver), and refuses anyone else.
    *
    * @generated from rpc saas.accounts.v1.InstallationService.InstallReviewedSolution

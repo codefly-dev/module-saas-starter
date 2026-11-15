@@ -194,7 +194,7 @@ func TestAnApprovedReachReadsBackAsTheCoresEncoderWroteIt(t *testing.T) {
 		Methods: map[string]domain.MethodPolicy{"/reach.Store/Get": {Requires: item("read")}, "POST /reach.Store/Get": {Requires: item("read")},
 			"/reach.Store/Purge": {Requires: item("admin")}}}
 	solution := domain.Module{Name: "reach-solution", Principal: "reach-solution", Kind: domain.KindSolution, ResourceKinds: page,
-		Roles:    map[string][]*basev0.WorkScopeV1{"editor": append(slices.Clone(page), item("read", "write")...)},
+		Roles:    map[string][]*basev0.WorkScopeV1{domain.AdminRole: append(slices.Clone(page), item("read", "write")...)},
 		Bindings: map[string]domain.Binding{"store": {ID: "store", Audience: "reach-store", InvokeScopes: item("read", "write")}}}
 	reach, err := decide.ReachOf(solution, []domain.Module{solution, store})
 	require.NoError(t, err)
@@ -203,7 +203,7 @@ func TestAnApprovedReachReadsBackAsTheCoresEncoderWroteIt(t *testing.T) {
 	require.Contains(t, text, "/reach.Store/Get", "the reach lists the operation it admits")
 
 	inst := domain.Installation{ID: uuid.NewString(), Organization: org, Target: solution.Name, Status: domain.Active, Revision: 1,
-		AgentRole: "editor", PrincipalID: uuid.NewString(), InstalledBy: admin,
+		AgentRole: domain.AdminRole, PrincipalID: uuid.NewString(), InstalledBy: admin,
 		Consent: domain.ConsentReceipt{OperationID: uuid.NewString(), Intent: "intent", Revision: 1, Generation: 1, Digest: "sha256:offer", ReachDigest: digest, Reach: text}}
 	require.NoError(t, testStore.AuthorityCore().Write(testCtx, func(tx authority.Tx) error { return tx.PutInstallation(inst) }))
 	var read domain.Installation
@@ -235,13 +235,13 @@ func TestAConsentReRecordedWithoutAPlanMovesOnlyWhatTheCoreMoves(t *testing.T) {
 	})
 	item := []*basev0.WorkScopeV1{{ResourceKind: "rerecord.item", Actions: []string{"read"}}}
 	reach := func(operations ...string) string {
-		text, _, err := decide.EncodeReach(map[string][]domain.ReachRow{"viewer": {{Path: []string{"rerecord", "store"}, Module: "store", Via: "binding", Scopes: item, Operations: operations}}})
+		text, _, err := decide.EncodeReach(map[string][]domain.ReachRow{domain.UserRole: {{Path: []string{"rerecord", "store"}, Module: "store", Via: "binding", Scopes: item, Operations: operations}}})
 		require.NoError(t, err)
 		return text
 	}
 	approved := reach("/rerecord.Store/Get")
 	base := domain.Installation{ID: uuid.NewString(), Organization: org, Target: "rerecord-" + org[:8], Status: domain.Active, Revision: 1,
-		AgentRole: "installer", PrincipalID: uuid.NewString(), InstalledBy: admin,
+		AgentRole: domain.AdminRole, PrincipalID: uuid.NewString(), InstalledBy: admin,
 		Consent: domain.ConsentReceipt{OperationID: uuid.NewString(), Intent: "intent", Revision: 1, Generation: 2, Digest: "sha256:offer",
 			ReachDigest: decide.DigestReach(approved), Reach: approved}}
 	host := testStore.AuthorityCoreWithConsent(nil)
@@ -262,7 +262,7 @@ func TestAConsentReRecordedWithoutAPlanMovesOnlyWhatTheCoreMoves(t *testing.T) {
 
 	for name, edit := range map[string]func(*domain.Installation){
 		"another operation":       func(i *domain.Installation) { i.Consent.OperationID = uuid.NewString() },
-		"another agent role":      func(i *domain.Installation) { i.AgentRole = "viewer" },
+		"another agent role":      func(i *domain.Installation) { i.AgentRole = domain.UserRole },
 		"another principal":       func(i *domain.Installation) { i.PrincipalID = uuid.NewString() },
 		"another target":          func(i *domain.Installation) { i.Target = "elsewhere" },
 		"an earlier generation":   func(i *domain.Installation) { i.Consent.Generation = 1 },

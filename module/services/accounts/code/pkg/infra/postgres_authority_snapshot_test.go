@@ -76,8 +76,8 @@ func newSnapshotScenario(t *testing.T) *snapshotScenario {
 		{Name: sc.solution, Principal: sc.solution, Kind: domain.KindSolution, Generation: 1, OwnerAware: true, ResourceKinds: note,
 			Bindings: map[string]domain.Binding{"store": {ID: "store", Audience: sc.store, InvokeScopes: items("read", "write")}},
 			Roles: map[string][]*basev0.WorkScopeV1{
-				domain.InstallerRole: append(append([]*basev0.WorkScopeV1{}, note...), items("read", "write")...),
-				"viewer":             append(append([]*basev0.WorkScopeV1{}, note[0]), items("read")...),
+				domain.AdminRole: append(append([]*basev0.WorkScopeV1{}, note...), items("read", "write")...),
+				domain.UserRole:  append(append([]*basev0.WorkScopeV1{}, note[0]), items("read")...),
 			}},
 	} {
 		_, err := sc.core.ApplyModule(testCtx, m)
@@ -87,10 +87,10 @@ func newSnapshotScenario(t *testing.T) *snapshotScenario {
 	approval, err := sc.core.Review(testCtx, admin, sc.org, sc.solution)
 	require.NoError(t, err)
 	approval.OperationID = uuid.NewString()
-	inst, err := sc.core.Install(testCtx, admin, sc.org, sc.solution, domain.InstallerRole, admin.ID, &approval, nil)
+	inst, err := sc.core.Install(testCtx, admin, sc.org, sc.solution, domain.AdminRole, admin.ID, &approval, nil)
 	require.NoError(t, err)
 	sc.solutionInstallation = inst.ID
-	_, err = sc.core.GrantRole(testCtx, admin, authority.RoleRequest{Organization: sc.org, InstallationID: inst.ID, Role: "viewer", PersonID: sc.member})
+	_, err = sc.core.GrantRole(testCtx, admin, authority.RoleRequest{Organization: sc.org, InstallationID: inst.ID, Role: domain.UserRole, PersonID: sc.member})
 	require.NoError(t, err)
 	sc.child = sc.issue(t)
 	return sc
@@ -198,7 +198,7 @@ func TestARevocationCommittedBeforeAQuestionIsWhatItReads(t *testing.T) {
 	require.NotEmpty(t, granted)
 
 	admin := authority.Person{ID: sc.admin, Organization: sc.org, SessionID: "session-" + sc.admin}
-	_, err = sc.core.RevokeRole(testCtx, admin, authority.RoleRequest{Organization: sc.org, InstallationID: sc.solutionInstallation, Role: "viewer", PersonID: sc.member})
+	_, err = sc.core.RevokeRole(testCtx, admin, authority.RoleRequest{Organization: sc.org, InstallationID: sc.solutionInstallation, Role: domain.UserRole, PersonID: sc.member})
 	require.NoError(t, err)
 	_, err = ask()
 	require.Error(t, err, "the very next question reads the revocation")

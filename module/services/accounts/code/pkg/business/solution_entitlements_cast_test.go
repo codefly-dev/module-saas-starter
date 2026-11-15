@@ -34,8 +34,8 @@ func TestSolutionEntitlements_ACastIsReadAsItsTeam(t *testing.T) {
 	store.PutOrganization(domain.Organization{ID: "acme", Name: "Acme"})
 	store.PutTeam("acme", "finance")
 	store.PutTeam("acme", "legal")
-	// tam belongs to legal and holds viewer on "own" directly; finance holds
-	// viewer on "team", and tam is not in it.
+	// tam belongs to legal and holds user on "own" directly; finance holds
+	// user on "team", and tam is not in it.
 	store.PutPerson(domain.Person{ID: "tam", Organization: "acme", Teams: []string{"legal"}})
 	store.PutPerson(domain.Person{ID: "ines", Organization: "acme", Teams: []string{"finance"}})
 	require.NoError(t, store.Write(ctx, func(tx authority.Tx) error {
@@ -45,9 +45,9 @@ func TestSolutionEntitlements_ACastIsReadAsItsTeam(t *testing.T) {
 			}
 		}
 		for _, g := range []domain.RoleGrant{
-			{InstallationID: "inst-own", Role: "viewer", PersonID: "tam"},
-			{InstallationID: "inst-legal", Role: "viewer", TeamID: "legal"},
-			{InstallationID: "inst-team", Role: "viewer", TeamID: "finance"},
+			{InstallationID: "inst-own", Role: "user", PersonID: "tam"},
+			{InstallationID: "inst-legal", Role: "user", TeamID: "legal"},
+			{InstallationID: "inst-team", Role: "user", TeamID: "finance"},
 		} {
 			if err := tx.PutRoleGrant(g); err != nil {
 				return err

@@ -86,9 +86,9 @@ func pairCore(t *testing.T) *authority.Service {
 }
 
 // pagesDelivery is the module page pages at generation, binding legacy-store
-// for legacy:read, its installer and viewer roles declared in a signed
+// for legacy:read, its admin and user roles declared in a signed
 // authority document; beyondReach names legacy:write through that binding
-// for the viewer, which the composition does not reach.
+// for the user, which the composition does not reach.
 type pagesDelivery struct {
 	manifest  *solutionhost.ModuleManifest
 	carrier   *solutionhost.Signed
@@ -112,13 +112,13 @@ func pagesAt(t *testing.T, generation uint64, beyondReach bool) pagesDelivery {
 	entry := func(actions ...string) []*authorityv1.WorkScopeV1 {
 		return []*authorityv1.WorkScopeV1{{ResourceKind: "pages.entry", Actions: actions}}
 	}
-	viewer := &compositionv1.RoleV1{Name: "viewer", Scopes: entry("read")}
+	user := &compositionv1.RoleV1{Name: "user", Scopes: entry("read")}
 	if beyondReach {
-		viewer.Through = []*compositionv1.RoleThroughV1{{Binding: "legacy", Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "legacy", Actions: []string{"write"}}}}}
+		user.Through = []*compositionv1.RoleThroughV1{{Binding: "legacy", Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "legacy", Actions: []string{"write"}}}}}
 	}
 	document, err := proto.Marshal(&compositionv1.AuthorityManifestV1{Module: "pages", Generation: generation, CoreManifestDigest: delivery.Digest(raw),
 		InstallationRole: domain.NoInstallationRole, ScopeCeilings: entry("read", "write"),
-		Roles: []*compositionv1.RoleV1{{Name: InstallerRole, Scopes: entry("read", "write")}, viewer}})
+		Roles: []*compositionv1.RoleV1{{Name: domain.AdminRole, Scopes: entry("read", "write")}, user}})
 	require.NoError(t, err)
 	signer := deliverytest.Signer(t, testDeliveryKey)
 	envelope, err := delivery.Sign(document, signer.KeyID(), signer.Sign)
@@ -163,7 +163,7 @@ func TestThePassAppliesNothingTheCoreRefuses(t *testing.T) {
 	refused := func(generation uint64) {
 		t.Helper()
 		err := deliver(pagesAt(t, generation, true))
-		require.ErrorContains(t, err, `role "viewer" of pages names legacy:write through binding "legacy", which reaches it nowhere in the composition`)
+		require.ErrorContains(t, err, `role "user" of pages names legacy:write through binding "legacy", which reaches it nowhere in the composition`)
 		notComposed()
 		require.Contains(t, store.row.PendingReason, "the authority core refused generation "+strconv.FormatUint(generation, 10)+": ", "the refusal is the binding's pending reason")
 		require.Contains(t, store.row.PendingReason, "reaches it nowhere")
@@ -209,7 +209,7 @@ func TestTheEndpointRefusesWithTheCoresAdmissionBeforeRecording(t *testing.T) {
 	})
 	_, err := svc.ApplyComposition(ctx, &compositionv1.ApplyManifestRequest{
 		Carrier: &compositionv1.SignedManifestV1{Document: beyond.carrier.Document, Envelope: beyond.carrier.Envelope}, Authority: beyond.authority, Credential: "host-delivery"})
-	require.ErrorContains(t, err, `role "viewer" of pages names legacy:write through binding "legacy", which reaches it nowhere in the composition`)
+	require.ErrorContains(t, err, `role "user" of pages names legacy:write through binding "legacy", which reaches it nowhere in the composition`)
 	require.Nil(t, store.receipt, "nothing was recorded")
 	_, err = core.Composed(ctx, "pages")
 	code, _ := domain.CodeOf(err)

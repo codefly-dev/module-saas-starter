@@ -144,7 +144,7 @@ func testOwnSessionOwnerRule(t *testing.T, conn grpc.ClientConnInterface, admin 
 		const module = "conformance-owner-page"
 		note := wireScope(module+".note", "read")
 		deliver(conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{note}, page: page, installationRole: domain.NoInstallationRole,
-			roles:    map[string][]*authorityv1.WorkScopeV1{"installer": {note}, "viewer": {note}},
+			roles:    map[string][]*authorityv1.WorkScopeV1{"admin": {note}, "user": {note}},
 			bindings: []solutionhost.AuthorityBinding{{ID: "documents", Audience: "documents", Operations: map[string][]string{"invoke": {"example-records:read"}}}}})
 		own, err := start(module, scope(module+".note", "read"))
 		require.NoError(t, err, "its own owned kind on a person's own session")

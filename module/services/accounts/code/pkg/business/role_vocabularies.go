@@ -9,8 +9,8 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 )
 
-// RoleVocabulary is one of the three sets of role words on this host. Two of
-// them share words (editor, viewer) and none stands in for another, so each
+// RoleVocabulary is one of the three sets of role words on this host. They
+// share words (admin above all) and none stands in for another, so each
 // says what it decides and where its words are declared. The matrix renders
 // this table; nothing types the words a second time.
 type RoleVocabulary struct {
@@ -50,9 +50,11 @@ func RoleVocabularies() []RoleVocabulary {
 			Words: installationRoleWords(),
 			Decides: "What a person holds through one installation of a solution or of a module page that declares roles: " +
 				"its page, its navigation entry, its Setup tab, and what a Work Context at its audience carries. " +
-				"The shared authority core requires every solution, and every module page that declares roles, to declare " +
-				"`installer`; `editor` and `viewer` are the standard an open handbook proposal sets, checked by nothing yet. " +
-				"The installation's owner holds `installer`.",
+				"Every solution, and every module page that declares roles, declares `admin`, which the shared authority core requires, " +
+				"and the standard `user` beside it; a role a target declares beyond those two is its own. " +
+				"The installation's owner holds `admin`, whose holder also grants the installation's roles and approves a module page's update; " +
+				"`user` carries only the scopes it declares. The page names each qualified by its product (\"<Product> admin\"), " +
+				"never to be read as the organisation's `admin`.",
 			DeclaredIn: "the signed authority document of the solution or module page; granted per installation to a person or a team",
 		},
 	}
@@ -93,11 +95,10 @@ func catalogueBuiltInRoleWords() []string {
 	return words
 }
 
-// installationRoleWords are the roles the shared authority core requires an
-// installation target to declare: the installer alone, today; whatever else
-// the target declares is its own.
+// installationRoleWords are the standard roles of an installation target: the
+// shared authority core's admin, which it requires, and user beside it.
 func installationRoleWords() []string {
-	return []string{domain.InstallerRole}
+	return []string{domain.AdminRole, domain.UserRole}
 }
 
 // renderRoleVocabularies is the matrix's "Three vocabularies" section, rendered
@@ -114,9 +115,6 @@ func renderRoleVocabularies() string {
 			words = append(words, "`"+w+"`")
 		}
 		spelled := strings.Join(words, ", ")
-		if v.Name == "Installation role" {
-			spelled += ", and whatever else a solution or a module page declares (the proposed standard adds `editor`, `viewer`)"
-		}
 		b.WriteString("| " + v.Name + " | " + spelled + " | " + escapeCell(v.Decides) + " | " + v.DeclaredIn + " |\n")
 	}
 	b.WriteString(`

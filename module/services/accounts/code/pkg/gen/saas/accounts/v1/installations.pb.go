@@ -427,7 +427,7 @@ type Installation struct {
 	UpgradeAvailable bool `protobuf:"varint,18,opt,name=upgrade_available,json=upgradeAvailable,proto3" json:"upgrade_available,omitempty"`
 	// What of the access an administrator's install assigned could not be
 	// applied once the installation became active, one entry per role in words
-	// ("viewer: the role could not be granted to its team: ..."). Set only on
+	// ("user: the role could not be granted to its team: ..."). Set only on
 	// the answer of the call that applied it (InstallReviewedSolution,
 	// RetryInstallation); the installation stands, and Set up grants the rest.
 	AccessProblems []string `protobuf:"bytes,19,rep,name=access_problems,json=accessProblems,proto3" json:"access_problems,omitempty"`

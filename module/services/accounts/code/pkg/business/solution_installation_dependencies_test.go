@@ -251,7 +251,7 @@ func TestTheWalkersClosureIsTheCoresClosure(t *testing.T) {
 	read := []*basev0.WorkScopeV1{{ResourceKind: "support", Actions: []string{"read"}}}
 	entries := []*basev0.WorkScopeV1{{ResourceKind: "directory.entry", Actions: []string{"read"}}}
 	page := domain.Module{Name: "directory", Principal: "module:directory", Kind: domain.KindModule, Generation: 2, ResourceKinds: entries,
-		InstallationRole: domain.NoInstallationRole, Roles: map[string][]*basev0.WorkScopeV1{"viewer": entries},
+		InstallationRole: domain.NoInstallationRole, Roles: map[string][]*basev0.WorkScopeV1{"user": entries},
 		Bindings: map[string]domain.Binding{"behind": {ID: "behind", Audience: "module:behind-page"}}}
 	behindPage := domain.Module{Name: "behind-page", Principal: "module:behind-page", Kind: domain.KindModule, Generation: 1}
 	model := domain.Module{Name: "model", Principal: "module:model", Kind: domain.KindModule, Generation: 4}
@@ -279,7 +279,7 @@ func TestTheWalkersClosureIsTheCoresClosure(t *testing.T) {
 		"a solution reaching it only through a supporting module's edge": {Name: "through-edge", Principal: "solution:through-edge", Kind: domain.KindSolution, Generation: 1,
 			EdgeDependencies: []domain.EdgeDependency{{Module: "module:edged", Presence: "required"}}},
 		"a module page reaching another module page": {Name: "other-page", Principal: "module:other-page", Kind: domain.KindModule, Generation: 1,
-			InstallationRole: domain.NoInstallationRole, Roles: map[string][]*basev0.WorkScopeV1{"viewer": read},
+			InstallationRole: domain.NoInstallationRole, Roles: map[string][]*basev0.WorkScopeV1{"user": read},
 			Bindings: map[string]domain.Binding{"support": {ID: "support", Audience: "module:support", InvokeScopes: read}, "directory": {ID: "directory", Audience: "module:directory", InvokeScopes: entries}}},
 	} {
 		t.Run(name, func(t *testing.T) {

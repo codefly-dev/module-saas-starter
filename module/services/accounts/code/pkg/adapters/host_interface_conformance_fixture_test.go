@@ -277,13 +277,13 @@ func consentModule(ctx context.Context, svc *business.Service, store *infra.Post
 			if err != nil {
 				return err
 			}
-			if held.Role == business.InstallerRole {
+			if held.Role == domain.AdminRole {
 				return nil
 			}
 		}
 	}
 	if authority != nil {
-		role = business.InstallerRole
+		role = domain.AdminRole
 	} else if err := store.WithOrgTx(ctx, org, func(ctx context.Context) error {
 		return store.CreateRole(ctx, &gen.Role{Id: business.NewIDString(), OrgId: org, Name: role, Permissions: []*gen.Permission{{Resource: "solution", Action: "use"}}})
 	}); err != nil && !strings.Contains(err.Error(), "roles_org_id_name_key") {
