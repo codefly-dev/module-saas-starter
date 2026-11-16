@@ -1894,7 +1894,9 @@ describe("an installation survives delivery: the host offers an update, and the 
 
 	it("offers a module page's update the same way: held at its approved reach, reviewed and installed on the same installation", async () => {
 		// A module page (kind module) is held at the reach it had, as a
-		// solution is; the host offers its update on the same row.
+		// solution is; the host offers its update on the same row. Its
+		// installation is composition's record, which carries a host scope
+		// root as the host lists it.
 		const expenses = {
 			...available.solutions[0],
 			appliedGeneration: "4",
@@ -1909,12 +1911,10 @@ describe("an installation survives delivery: the host offers an update, and the 
 						...installations.installations[0],
 						installation: {
 							...installations.installations[0].installation,
-							rootScopeNodeId: "",
 							approvedGeneration: "3",
 							upgradeAvailable: true,
 						},
 						target: expenses,
-						rootScopePath: "",
 						grantedTeams: [],
 						inheritedTeams: [],
 					},
@@ -1981,6 +1981,17 @@ describe("an installation survives delivery: the host offers an update, and the 
 			name: "Installed solutions",
 		});
 		await within(installedTable).findByText("Update available");
+		// Beside its access, never an uninstall: composition retires it.
+		expect(
+			within(installedTable).getByRole("link", {
+				name: "Manage access to expenses",
+			}),
+		).toBeTruthy();
+		expect(
+			within(installedTable).queryByRole("button", {
+				name: "Uninstall expenses",
+			}),
+		).toBeNull();
 		fireEvent.click(
 			within(installedTable).getByRole("button", { name: "Update expenses" }),
 		);

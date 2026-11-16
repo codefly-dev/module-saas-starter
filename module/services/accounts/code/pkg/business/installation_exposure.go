@@ -107,6 +107,12 @@ func (s *Service) ListOrganizationInstallations(
 		return nil, "", w.Wrapf(err, "cannot list organization installations")
 	}
 
+	// A module page's installation is accounts' own record, held by the core
+	// at its approved reach as a solution's is: it offers an update the same
+	// way, reviewed and approved through the same install.
+	if err := s.upgradesAvailable(ctx, summaries); err != nil {
+		return nil, "", w.Wrapf(err, "cannot read which installations offer an update")
+	}
 	canonical, err := s.canonicalSolutionSummaries(ctx, orgID, "", pageToken, gen.InstallationStatus_INSTALLATION_STATUS_UNSPECIFIED, pageSize+1)
 	if err != nil {
 		return nil, "", err

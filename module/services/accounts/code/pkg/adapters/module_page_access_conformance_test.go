@@ -356,12 +356,32 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		}
 		held := installation()
 		require.Equal(t, domain.ComposedConsent, held.Consent.OperationID, "held by composition")
+		// What Admin reads: the organization's installations and the one
+		// installation, which must agree with the core. Red before: a module
+		// page's installation is accounts' own record, and only the core's
+		// solution rows were asked, so Admin never offered the page's update
+		// and nobody could approve it.
+		offered := func() bool {
+			t.Helper()
+			rows, _, err := h.svc.ListOrganizationInstallations(h.ctx, fixtureOrganization, "", 500)
+			require.NoError(t, err)
+			i := slices.IndexFunc(rows, func(row *business.OrganizationInstallation) bool {
+				return row.Summary.GetInstallation().GetId() == held.ID
+			})
+			require.GreaterOrEqual(t, i, 0, "the module page's installation is listed")
+			read, _, err := h.svc.GetInstallation(h.ctx, fixtureOrganization, held.ID)
+			require.NoError(t, err)
+			require.Equal(t, rows[i].Summary.GetInstallation().GetUpgradeAvailable(), read.GetUpgradeAvailable(), "the listing and the one read agree")
+			return read.GetUpgradeAvailable()
+		}
+		require.False(t, offered(), "a page at its approved reach offers no update")
 		// The store widens Purge to write, which the page's roles reach
 		// through its binding: an update is offered, and approved.
 		deliverStore(2, "write")
 		upgrade, err := h.core.UpgradeAvailable(h.ctx, installation())
 		require.NoError(t, err)
 		require.True(t, upgrade, "the page's reach widened, so an update is offered on it")
+		require.True(t, offered(), "Admin is offered the page's update, as the core answers it")
 		review, err := h.svc.ReviewSolutionInstall(h.ctx, alex, fixtureOrganization, available(upgraded).TargetID)
 		require.NoError(t, err)
 		approved, err := h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{})
@@ -369,6 +389,7 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		require.Equal(t, held.ID, approved.ID, "on composition's installation")
 		require.Empty(t, approved.InstalledBy, "whose installer stays none")
 		require.Equal(t, review.GetApproval().GetOperationId(), approved.Consent.OperationID, "its receipt now the administrator's")
+		require.False(t, offered(), "the approved update is offered no more")
 		set, err := h.svc.SetUpModulePage(h.ctx, alex, fixtureOrganization, available(upgraded).TargetID, business.InstallAccess{InstallerRoles: []string{"user"}})
 		require.NoError(t, err, "the upgraded page is set up")
 		require.Empty(t, set.AccessProblems)
