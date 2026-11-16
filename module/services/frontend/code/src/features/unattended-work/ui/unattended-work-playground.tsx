@@ -43,7 +43,7 @@ import {
 	useSourceTriggerDeclaration,
 	useTriggerSources,
 } from "../service/queries";
-import { declaredIdentity, Fact, instant } from "./source-trigger-schedules";
+import { declaredIdentity, Fact, instant } from "./declaration-facts";
 
 /**
  * The unattended-work playground: the whole of this module's answer to "whose

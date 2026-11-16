@@ -536,8 +536,8 @@ refreshes sources, collection grants and readable boundaries. Preview stories
   recovery. A lookup answering `"unknown"` is **inconclusive**, never "it did
   not happen". The panel and `<DeclaredSourceCard>` render the outcome the
   operation returned — the identity, the status and the job.
-  `onSourceReconcileAdmitted((pass) => …)` hears each one, which is how a host
-  surface shows a person's pass beside the declared schedule's occurrences.
+  `onSourceReconcileAdmitted((pass) => …)` hears each one, for a host surface
+  that keeps its own record of the passes it admitted.
   There is **no `syncSource`**: it reached the same engines carrying no effect
   identity, so two presses were two passes, and it is deleted rather than
   deprecated.
