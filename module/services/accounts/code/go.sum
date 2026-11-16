@@ -58,8 +58,8 @@ github.com/cloudflare/circl v1.6.3 h1:9GPOhQGF9MCYUeXyMYlqTR6a5gTrgR/fBLXvUgtVcg
 github.com/cloudflare/circl v1.6.3/go.mod h1:2eXP6Qfat4O/Yhh8BznvKnJ+uzEoTQ6jVKJRn81BiS4=
 github.com/codefly-dev/authority/libraries/authority-client/go v0.2.1-0.20261115131434-3574603a5f27 h1:JOSWT6YZ6ju3a9dgu3QcqveLjrRZhS6yD/9iuffhSqQ=
 github.com/codefly-dev/authority/libraries/authority-client/go v0.2.1-0.20261115131434-3574603a5f27/go.mod h1:SkqsON9hTIITJba+fGFupUk7Q+osyYNX/fUn8zoXer8=
-github.com/codefly-dev/authority/libraries/authority-core/go v0.1.1-0.20261116063656-59feb0444d0b h1:uVTHLudQ6SUVPk++OVolj1+Astk3Vz5Z6hAp0eMGynk=
-github.com/codefly-dev/authority/libraries/authority-core/go v0.1.1-0.20261116063656-59feb0444d0b/go.mod h1:B5sc5W1u7kE++T++8A50HO6lMnwP+izh6c6UygsAwbA=
+github.com/codefly-dev/authority/libraries/authority-core/go v0.1.1-0.20261116073508-4f825d19c48b h1:eVFQVqnp3ykD1Iv3BqAx3OCEz1sEoqMJ7ZDl3Y9kA8o=
+github.com/codefly-dev/authority/libraries/authority-core/go v0.1.1-0.20261116073508-4f825d19c48b/go.mod h1:B5sc5W1u7kE++T++8A50HO6lMnwP+izh6c6UygsAwbA=
 github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261115171111-fecafe1e3c12 h1:AZv59lTREnHVxT3GmPRqoG2AEIC1xTQVykI4HPjBfZM=
 github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261115171111-fecafe1e3c12/go.mod h1:UxcATC11BD5EU2/RJtl498hTtNaSnxiBX6r0j2F0Dvw=
 github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261115131434-3574603a5f27 h1:brtGQP6yQPuZMtBRqWHRx1ZQez04wpQEGFD7zfk9kHs=
