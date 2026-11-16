@@ -277,6 +277,10 @@ func (s *Service) GetInstallation(ctx context.Context, orgID, installationID str
 	}); err != nil {
 		return nil, gen.InstallationHealth_INSTALLATION_HEALTH_UNSPECIFIED, w.Wrapf(err, "cannot get installation")
 	}
+	// A module page's record offers an update as a solution's does.
+	if err := s.upgradesAvailable(ctx, []*gen.InstallationSummary{{Installation: installation}}); err != nil {
+		return nil, gen.InstallationHealth_INSTALLATION_HEALTH_UNSPECIFIED, w.Wrapf(err, "cannot read whether the installation offers an update")
+	}
 	return installation, health, nil
 }
 

@@ -2,6 +2,7 @@ package business
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -33,8 +34,11 @@ func (s *Service) canonicalSolutionSummaries(ctx context.Context, org, id, curso
 // answers it (Service.UpgradeAvailable): its target delivered past the
 // approved generation, as the store's read already says, or what its roles
 // reach in the composition now widened past the approved reach (a module it
-// reaches redelivered), or a consent recorded before reach was kept. A host
-// whose core is not configured keeps the store's answer. The installations
+// reaches redelivered), or a consent recorded before reach was kept. It
+// answers for every installation the core holds: a solution's, and a module
+// page's composition record, which accounts keeps and the core holds at its
+// approved reach; a record the core does not hold (a retired legacy one) keeps
+// the store's answer, as does a host whose core is not configured. The installations
 // and the composition are read once per listing; each answer is kept per
 // installation revision and composition (upgradeCache), so a listing read
 // again computes no reach that cannot have moved.
@@ -63,6 +67,9 @@ func (s *Service) upgradesAvailable(ctx context.Context, summaries []*gen.Instal
 		composition = compositionStamp(modules)
 		for id := range pending {
 			inst, err := tx.Installation(id)
+			if errors.Is(err, domain.ErrNotFound) {
+				continue
+			}
 			if err != nil {
 				return err
 			}
@@ -73,7 +80,10 @@ func (s *Service) upgradesAvailable(ctx context.Context, summaries []*gen.Instal
 		return err
 	}
 	for id, i := range pending {
-		inst := held[id]
+		inst, ok := held[id]
+		if !ok {
+			continue
+		}
 		key := fmt.Sprintf("%s@%d@%d@%s", inst.ID, inst.Revision, inst.Consent.Generation, inst.Consent.ReachDigest)
 		if upgrade, ok := s.upgradeCache.get(composition, key); ok {
 			i.UpgradeAvailable = upgrade
