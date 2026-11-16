@@ -6,7 +6,7 @@ require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2
 	connectrpc.com/connect v1.21.1
 	github.com/codefly-dev/authority/libraries/authority-client/go v0.2.1-0.20261115131434-3574603a5f27
-	github.com/codefly-dev/authority/libraries/authority-core/go v0.1.1-0.20261116073839-421d5c58d948
+	github.com/codefly-dev/authority/libraries/authority-core/go v0.1.1
 	github.com/codefly-dev/authority/libraries/hop/go v0.2.1-0.20261115131434-3574603a5f27
 	github.com/codefly-dev/core v0.19.32
 	github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261021192505-6fd56dae2e04
