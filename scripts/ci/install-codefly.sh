@@ -2,7 +2,7 @@
 # The hosted CI runner is Linux x64. Keep the release and archive digest paired.
 set -euo pipefail
 
-version="${CODEFLY_VERSION:-0.1.221}"
+version="${CODEFLY_VERSION:-0.1.242}"
 source_revision=""
 case "${version}" in
   source-8de0f6674550fb040f03bc6cb2530116878c8c6b)
@@ -77,6 +77,15 @@ case "${version}" in
     # hop-routes producer, which resolves the authority interface dependency.
     # Digest of the downloaded Linux amd64 archive; matches checksums.txt.
     checksum=e144417e595aa4e98937e01e5c2ce15123ae962fbe446479e8cd82e70ff7536a
+    ;;
+  0.1.242)
+    # cli#1323: the `codefly ci` test phase schedules suites by runtime
+    # ownership, so a service's tests no longer queue behind its dependency's
+    # tests (cli#1319). Behaviour change: with --fail-fast=false a dependent's
+    # suite now runs even when its dependency's tests failed, and the
+    # `failed_prerequisite` skip reason can no longer occur in the test phase.
+    # Published checksums.txt, Linux amd64 archive (re-hashed locally).
+    checksum=2e2c0392a8e3782ca78fa43dc6ed45accad234b5b442cea67e60b9c5f9e68021
     ;;
   0.1.221)
     # Released CLI for current host generation and dependency initialization.
