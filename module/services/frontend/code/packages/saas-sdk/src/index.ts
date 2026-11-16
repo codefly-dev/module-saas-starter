@@ -40,6 +40,7 @@ export {
 	ApiOAuth2Config_Grant,
 	type Datasource,
 	type DatasourceAccountLink,
+	DatasourceCredentialMode,
 	DatasourceDomainStatus,
 	type DatasourceGroupBinding,
 	DatasourceLiveDelivery,

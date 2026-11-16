@@ -452,6 +452,25 @@ func (d *DatasourceSource) WebhookConfigured() bool {
 	return strings.TrimSpace(d.WebhookSecretRef) != ""
 }
 
+// CredentialMode is how the Source authenticates to its provider, read from
+// what the host holds for it — the installation it is bound to, the public
+// marker, or a sealed credential — never from the credential, which stays
+// sealed. A person is shown it so they know a token is saved without ever
+// seeing the token.
+func (d *DatasourceSource) CredentialMode() connector.CredentialMode {
+	switch {
+	case d.Provider == DatasourceProviderGitHub && d.GitHubInstallationID != "":
+		return connector.CredentialOrgApp
+	case d.Provider == DatasourceProviderGitHub && d.GitHubCredentialKind == githubCredentialKindPublic:
+		return connector.CredentialNone
+	case d.Provider == DatasourceProviderAPI && d.PersonalOwnerUserID != "":
+		return connector.CredentialUserOAuth
+	case strings.TrimSpace(d.CredentialSecretRef) != "":
+		return connector.CredentialStaticSecret
+	}
+	return connector.CredentialNone
+}
+
 // AddGitHubSourceInput is the caller-supplied configuration for a GitHub Source.
 // AccessToken and WebhookSecret are plaintext; each is encrypted through the
 // SecretCipher and only its envelope reference is persisted.
@@ -1616,6 +1635,55 @@ func (s *Service) ReconnectDatasourceSource(ctx context.Context, actorID, orgID,
 				"This source was given a credential while it was being reconnected. Press Reconnect again to reaffirm it.")
 		}
 		return s.recordSourceDelegationsOnConnectTx(ctx, actorID, orgID, source.ID)
+	}); err != nil {
+		return "", err
+	}
+	return s.SyncDatasourceSource(ctx, actorID, orgID, id)
+}
+
+// RemoveDatasourceSourceCredential deletes the access token a GitHub source
+// holds and reconnects it as a public repository, as actorID, then queues a
+// sync. It is the inverse of giving a public source a token: only a source
+// connected with a token has one to remove (an App-bound source holds an
+// installation, a public one nothing), and only while GitHub serves the
+// repository to a request that carries none — removing the token of a private
+// repository would stop the source dead, so that is refused and the token
+// stays. The token is cleared under the row lock, with the delegation the
+// reconnect records, so a concurrent replacement is never silently undone.
+func (s *Service) RemoveDatasourceSourceCredential(ctx context.Context, actorID, orgID, id string) (string, error) {
+	source, err := s.GetDatasourceSource(ctx, orgID, id)
+	if err != nil {
+		return "", err
+	}
+	if source.CredentialMode() != connector.CredentialStaticSecret || source.Provider != DatasourceProviderGitHub {
+		return "", status.Error(codes.FailedPrecondition,
+			"Only a repository connected with an access token has a token to remove.")
+	}
+	public, err := s.resolvePublicGitHubRepository(ctx, source.Repo, source.Branch)
+	if err != nil {
+		return "", err
+	}
+	if !public {
+		return "", status.Error(codes.FailedPrecondition,
+			"GitHub serves this repository only with a token, so its token can't be removed. Replace it instead.")
+	}
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		ref, err := s.store.LockDatasourceSourceCredentialRef(ctx, orgID, id)
+		if err != nil {
+			return err
+		}
+		if ref == "" {
+			return status.Error(codes.FailedPrecondition,
+				"This source's token was removed while you were removing it.")
+		}
+		if err := s.store.ClearDatasourceSourceCredential(ctx, orgID, id); err != nil {
+			return err
+		}
+		if err := s.emitTx(ctx, actorID, "user", EventDatasourceCredentialUpdated, "datasource", id, orgID,
+			map[string]any{"repo": source.Repo, "credential_kind": githubCredentialKindPublic}); err != nil {
+			return err
+		}
+		return s.recordSourceDelegationsOnConnectTx(ctx, actorID, orgID, id)
 	}); err != nil {
 		return "", err
 	}

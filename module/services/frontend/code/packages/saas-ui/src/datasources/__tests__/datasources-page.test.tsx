@@ -148,7 +148,12 @@ function client(overrides: Partial<DatasourceClient> = {}): DatasourceClient {
 		grantCollectionRead: vi.fn(async () => {}),
 		revokeCollectionRead: vi.fn(async () => {}),
 		listAccessibleScopes: vi.fn(async () => [
-			{ nodeId: COLLECTION, label: "Handbook", kind: "collection", actions: ["read"] },
+			{
+				nodeId: COLLECTION,
+				label: "Handbook",
+				kind: "collection",
+				actions: ["read"],
+			},
 		]),
 		addGitHubSource: vi.fn(async () => {}),
 		reconcileSource: vi.fn(async () => ({
@@ -368,6 +373,59 @@ describe("Data sources page", () => {
 		expect(document.body.innerHTML).not.toContain("github_pat_SECRET123");
 		for (const input of document.querySelectorAll("input"))
 			expect(input.value).not.toBe("github_pat_SECRET123");
+	});
+
+	it("says a token is saved, and offers to replace or remove it without ever showing it", async () => {
+		const confirm = vi.fn(() => true);
+		vi.stubGlobal("confirm", confirm);
+		const datasources = client({
+			listSources: vi.fn(async () => [
+				{ ...handbook, credentialMode: "token" as const },
+			]),
+			reconnectSource: vi.fn(async () => "job"),
+			removeSourceCredential: vi.fn(async () => "job"),
+		});
+		renderPanel(<DatasourcesPanel client={datasources} orgId="org-1" />);
+		const row = await sourceRow("acme/handbook");
+		expect(row).toHaveTextContent("Token saved");
+
+		fireEvent.click(
+			within(row).getByRole("button", { name: "More for acme/handbook" }),
+		);
+		expect(
+			await screen.findByRole("menuitem", { name: "Replace token" }),
+		).toBeVisible();
+		fireEvent.click(screen.getByRole("menuitem", { name: "Remove token" }));
+		expect(confirm).toHaveBeenCalledOnce();
+		await waitFor(() =>
+			expect(datasources.removeSourceCredential).toHaveBeenCalledWith(
+				"org-1",
+				SOURCE,
+			),
+		);
+		expect(await screen.findByText(/no longer uses a token/)).toBeVisible();
+		vi.unstubAllGlobals();
+	});
+
+	it("offers no token to replace or remove for a source connected through the app", async () => {
+		renderPanel(
+			<DatasourcesPanel
+				client={client({
+					listSources: vi.fn(async () => [
+						{ ...handbook, credentialMode: "app" as const },
+					]),
+					reconnectSource: vi.fn(async () => "job"),
+					removeSourceCredential: vi.fn(async () => "job"),
+				})}
+				orgId="org-1"
+			/>,
+		);
+		const row = await sourceRow("acme/handbook");
+		expect(row).toHaveTextContent("GitHub app");
+		expect(row).not.toHaveTextContent("Token saved");
+		expect(
+			within(row).queryByRole("button", { name: "More for acme/handbook" }),
+		).toBeNull();
 	});
 
 	it("shows no identifier and no word about how the host works", async () => {

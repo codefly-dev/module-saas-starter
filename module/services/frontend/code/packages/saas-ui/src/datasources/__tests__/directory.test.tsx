@@ -153,7 +153,9 @@ describe("DatasourceAccountLinks", () => {
 		});
 		renderWithClient(<DatasourceAccountLinks client={client} orgId="org-1" />);
 
-		expect((await screen.findAllByText(/Linked as jane/)).length).toBeGreaterThan(0);
+		expect(
+			(await screen.findAllByText(/Linked as jane/)).length,
+		).toBeGreaterThan(0);
 		expect(client.completeAccountLink).toHaveBeenCalledTimes(1);
 		expect(client.completeAccountLink).toHaveBeenCalledWith(
 			"org-1",
@@ -340,9 +342,7 @@ describe("DatasourceAccountLinks for one source", () => {
 				sourceId="ds-api"
 			/>,
 		);
-		expect(
-			await screen.findByText("Signed in to Example API."),
-		).toBeTruthy();
+		expect(await screen.findByText("Signed in to Example API.")).toBeTruthy();
 		expect(client.completeAccountLink).toHaveBeenCalledTimes(1);
 		expect(client.completeAccountLink).toHaveBeenCalledWith(
 			"org-1",
@@ -361,6 +361,7 @@ const directory: DatasourceDirectoryView = {
 			connector: "github",
 			providerAccountId: "1001",
 			providerAccountLogin: "jane",
+			memberLabel: "jane@example.com",
 		},
 	],
 	bindings: [
@@ -399,7 +400,9 @@ describe("DatasourceDirectoryPanel", () => {
 			screen.getByText("_saas-datasource-verification.example.com"),
 		).toBeTruthy();
 		expect(screen.getByText("saas-datasource-verification=tok")).toBeTruthy();
-		expect(screen.getByText("jane")).toBeTruthy();
+		// Who linked, as the organization names its members, then the account.
+		expect(screen.getByText("jane@example.com")).toBeTruthy();
+		expect(screen.getByText(/GitHub: jane/)).toBeTruthy();
 	});
 
 	it("binds a group to a chosen team, and claims and verifies a domain", async () => {
@@ -463,7 +466,9 @@ describe("DatasourceDirectoryPanel", () => {
 		renderWithClient(
 			<DatasourceDirectoryPanel client={client} orgId="org-1" />,
 		);
-		fireEvent.click((await screen.findAllByRole("button", { name: "Remove" }))[0]);
+		fireEvent.click(
+			(await screen.findAllByRole("button", { name: "Remove" }))[0],
+		);
 		expect(await screen.findByText("group binding not found")).toBeTruthy();
 	});
 

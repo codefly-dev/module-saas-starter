@@ -7,6 +7,16 @@
 import type { JsonObject } from "@bufbuild/protobuf";
 import type { SourceReconcileStatus } from "./reconcile-passes.js";
 
+/**
+ * How a source authenticates, as the host reports it: a sealed token or key, an
+ * app installation, a person's own sign-in, or nothing at all.
+ */
+export type DatasourceCredentialModeName =
+	| "token"
+	| "app"
+	| "personal"
+	| "public";
+
 /** Spelled as the host's catalog keys each provider (its `connector`). */
 export type DatasourceProviderName =
 	| "github"
@@ -91,6 +101,11 @@ export interface DatasourceView {
 	/** What keeps a non-conformant provider off the envelope, in the host's words. */
 	conformanceGap?: string | undefined;
 	lastSyncedAt: string | undefined;
+	/**
+	 * How the source authenticates. Absent from an older host, where nothing
+	 * may be claimed about a saved token.
+	 */
+	credentialMode?: DatasourceCredentialModeName | undefined;
 	/**
 	 * When the change-set compiler last durably enqueued a change set — advanced
 	 * by a webhook delivery or by a reconcile pass — a declared schedule's
@@ -592,6 +607,12 @@ export interface DatasourceClient {
 	 * Resolves `undefined` when the source has no sync yet. Optional so a
 	 * consumer adapting its own client keeps compiling without it.
 	 */
+	/**
+	 * Removes the token a GitHub source holds and reconnects it as a public
+	 * repository, then queues a sync; resolves to the sync's job. The host
+	 * refuses it for a repository GitHub serves only with a token.
+	 */
+	removeSourceCredential?(orgId: string, id: string): Promise<string>;
 	getSourceSync?(
 		orgId: string,
 		sourceId: string,
@@ -684,6 +705,8 @@ export interface AccountLinkView {
 	providerAccountId: string;
 	/** The account's current handle at the provider; not identity. */
 	providerAccountLogin: string;
+	/** The member's label in the organization (their email); absent from an older host. */
+	memberLabel?: string | undefined;
 }
 
 /** Where to send the browser to sign in, and the state it echoes back. */

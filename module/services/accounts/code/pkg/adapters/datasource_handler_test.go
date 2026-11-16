@@ -277,3 +277,47 @@ func TestDatasourceSourceToProto_ProjectsFileExtensions(t *testing.T) {
 		t.Errorf("legacy file_extensions = %v, want empty", got)
 	}
 }
+
+// A source says how it authenticates, so a client can say "Token saved"
+// truthfully; the credential itself is never on the wire.
+func TestDatasourceSourceToProto_SaysHowTheSourceAuthenticates(t *testing.T) {
+	for _, c := range []struct {
+		source business.DatasourceSource
+		want   gen.DatasourceCredentialMode
+	}{
+		{business.DatasourceSource{Provider: business.DatasourceProviderGitHub, CredentialSecretRef: "enc"}, gen.DatasourceCredentialMode_DATASOURCE_CREDENTIAL_MODE_STATIC_SECRET},
+		{business.DatasourceSource{Provider: business.DatasourceProviderGitHub, CredentialSecretRef: "enc", GitHubInstallationID: "42"}, gen.DatasourceCredentialMode_DATASOURCE_CREDENTIAL_MODE_ORG_APP},
+		{business.DatasourceSource{Provider: business.DatasourceProviderGitHub, GitHubCredentialKind: "public"}, gen.DatasourceCredentialMode_DATASOURCE_CREDENTIAL_MODE_NONE},
+	} {
+		out := datasourceSourceToProto(&c.source, nil, business.DatasourceLiveDeliveryNone)
+		if out.GetCredentialMode() != c.want {
+			t.Errorf("credential mode = %v, want %v", out.GetCredentialMode(), c.want)
+		}
+	}
+}
+
+// A linked account names its member the way every member listing does.
+func TestAccountLinkToProto_CarriesTheMemberLabel(t *testing.T) {
+	out := accountLinkToProto(&business.DatasourceAccountLink{ID: "l1", UserID: "u1", MemberLabel: "jane@example.com"})
+	if out.GetMemberLabel() != "jane@example.com" {
+		t.Fatalf("member label = %q", out.GetMemberLabel())
+	}
+}
+
+// Removing a token is a reconnect with no replacement: a request that also
+// carries a token, or that is not a reconnect, asks for two different things.
+func TestSyncSourceRequest_RemovingATokenIsAReconnectWithoutOne(t *testing.T) {
+	for _, c := range []struct {
+		msg     *gen.SyncSourceRequest
+		refused bool
+	}{
+		{&gen.SyncSourceRequest{Reconnect: true, RemoveCredential: true}, false},
+		{&gen.SyncSourceRequest{Reconnect: true, RemoveCredential: true, AccessToken: "ghp_x"}, true},
+		{&gen.SyncSourceRequest{RemoveCredential: true}, true},
+		{&gen.SyncSourceRequest{Reconnect: true}, false},
+	} {
+		if err := validateSyncSourceRequest(c.msg); (err != nil) != c.refused {
+			t.Errorf("%v: err = %v, want refused=%v", c.msg, err, c.refused)
+		}
+	}
+}

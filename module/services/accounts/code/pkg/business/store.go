@@ -157,6 +157,9 @@ type Store interface {
 	// transaction commits.
 	LockDatasourceSourceCredentialRef(ctx context.Context, orgID, id string) (string, error)
 	UpdateDatasourceSourceCredential(ctx context.Context, orgID, id, credentialRef string) error
+	// ClearDatasourceSourceCredential deletes a GitHub source's sealed token and
+	// webhook signing secret and marks it a public repository, in one write.
+	ClearDatasourceSourceCredential(ctx context.Context, orgID, id string) error
 	GetDatasourceSourceByID(ctx context.Context, id string) (*DatasourceSource, error)
 	// AdvanceDatasourceCursor records the head commit fully enqueued as a change
 	// set, its delivery provenance, and pushes next_reconcile_at out by the

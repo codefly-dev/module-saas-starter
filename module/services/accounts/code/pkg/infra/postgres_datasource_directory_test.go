@@ -54,6 +54,17 @@ func TestDatasourceDirectoryRowsStayInTheirTenant(t *testing.T) {
 		return testStore.MarkDatasourceDomainVerified(ctx, orgID, d.ID, time.Now().UTC())
 	}))
 
+	// A link names its member the way every member listing of the organization
+	// does, so an administrator reads who linked, not a user id.
+	seedOrgMember(t, orgID, userA)
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		links, err := testStore.ListDatasourceAccountLinks(ctx, orgID, "")
+		require.NoError(t, err)
+		require.Len(t, links, 1)
+		require.Equal(t, "user-"+userA+"@test.local", links[0].MemberLabel)
+		return nil
+	}))
+
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
 		users, err := testStore.LinkedDatasourceUsers(ctx, orgID, "github", []string{"1001", "1002"})
 		require.NoError(t, err)

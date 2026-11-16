@@ -231,6 +231,7 @@ function DatasourcesPanelView({
 	const completeAppSetup = client.completeGitHubAppSetup?.bind(client);
 	const migrateToApp = client.migrateGitHubSourceToApp?.bind(client);
 	const reconnectSource = client.reconnectSource?.bind(client);
+	const removeSourceCredential = client.removeSourceCredential?.bind(client);
 	const canEditSource = !!client.updateSource;
 
 	// The return leg, captured once during the first render: the redirect's
@@ -470,6 +471,32 @@ function DatasourcesPanelView({
 		} catch (error) {
 			setBeginError(messageOf(error));
 			setBeginPending(false);
+		}
+	};
+
+	// Removing a token turns the source into a public repository. The host
+	// refuses it when GitHub serves the repository only with a token, and the
+	// token then stays, so the question names that outcome too.
+	const handleRemoveToken = async (source: DatasourceView) => {
+		if (!removeSourceCredential) return;
+		const ok = window.confirm(
+			`Remove the token saved for ${source.repo}?\n\n` +
+				"It will sync as a public repository. If GitHub needs a token to read it, the token stays.",
+		);
+		if (!ok) return;
+		setSyncNotice(null);
+		setActionError(null);
+		try {
+			await removeSourceCredential(orgId, source.id);
+			setSyncNotice({
+				title: "Token removed",
+				body: `${source.repo} no longer uses a token; it syncs as a public repository.`,
+			});
+			await list.refetch();
+		} catch (error) {
+			setActionError(
+				`Couldn't remove the token of ${source.repo}: ${messageOf(error)}`,
+			);
 		}
 	};
 
@@ -748,15 +775,26 @@ function DatasourcesPanelView({
 											: undefined
 									}
 									onReplaceToken={
-										reconnectSource && source.provider === "github"
+										reconnectSource &&
+										source.provider === "github" &&
+										source.credentialMode !== "app"
 											? () => {
 													setReconnectError(undefined);
 													setReconnecting(source);
 												}
 											: undefined
 									}
+									onRemoveToken={
+										removeSourceCredential &&
+										source.provider === "github" &&
+										source.credentialMode === "token"
+											? () => void handleRemoveToken(source)
+											: undefined
+									}
 									onUseApp={
-										migrateToApp && source.provider === "github"
+										migrateToApp &&
+										source.provider === "github" &&
+										source.credentialMode !== "app"
 											? () => void handleMigrateToApp(source)
 											: undefined
 									}
@@ -1000,6 +1038,24 @@ export function describeContents(source: DatasourceView): string {
 }
 
 /**
+ * How the source connects, in the words a person chose it by. A saved token is
+ * named and never shown; an older host that does not say gets no claim at all.
+ */
+function describeCredential(source: DatasourceView): string | undefined {
+	switch (source.credentialMode) {
+		case "token":
+			return source.provider === "github" ? "Token saved" : "Key saved";
+		case "app":
+			return "GitHub app";
+		case "personal":
+			return "Your sign-in";
+		case "public":
+			return source.provider === "github" ? "Public repository" : undefined;
+	}
+	return undefined;
+}
+
+/**
  * When the source last brought content in. At most one of the two clocks
  * ticks for a given source — a repository advances its ingest, a pulled
  * provider its sync — so whichever is set is the answer.
@@ -1050,8 +1106,9 @@ function Readers({
 					readers.join(", ")
 				) : (
 					<span className="text-muted-foreground">
-						Nobody yet. Connecting doesn&apos;t share anything; choose who can
-						read it.
+						{onChoose
+							? "Nobody yet. Connecting doesn't share anything; choose who can read it."
+							: "Nobody yet."}
 					</span>
 				)}
 			</p>
@@ -1086,6 +1143,7 @@ function SourceRow({
 	onRemove,
 	onEdit,
 	onReplaceToken,
+	onRemoveToken,
 	onUseApp,
 	onActivity,
 	onExecution,
@@ -1107,6 +1165,8 @@ function SourceRow({
 	/** Absent when the client cannot edit this source; no control is offered. */
 	onEdit?: (() => void) | undefined;
 	onReplaceToken?: (() => void) | undefined;
+	/** Present only for a repository connected with a token. */
+	onRemoveToken?: (() => void) | undefined;
 	onUseApp?: (() => void) | undefined;
 	onActivity?: (() => void) | undefined;
 	/** Present only when a consumer handed the panel an execution view. */
@@ -1122,7 +1182,13 @@ function SourceRow({
 	const lands = collection?.label ?? source.boundaryLabel;
 	const more = [
 		canManage &&
-			onReplaceToken && { label: "Replace token", run: onReplaceToken },
+			onReplaceToken && {
+				// A public repository has no token to replace; it can be given one.
+				label:
+					source.credentialMode === "public" ? "Add a token" : "Replace token",
+				run: onReplaceToken,
+			},
+		canManage && onRemoveToken && { label: "Remove token", run: onRemoveToken },
 		canManage &&
 			onUseApp && {
 				label: migrating
@@ -1151,7 +1217,11 @@ function SourceRow({
 						</Badge>
 					</div>
 					<p className="type-caption-plain text-muted-foreground">
-						{[providerName, describeContents(source)]
+						{[
+							providerName,
+							describeCredential(source),
+							describeContents(source),
+						]
 							.filter(Boolean)
 							.join(" · ")}
 						{lands && ` → ${lands}`}
@@ -1584,7 +1654,8 @@ function ReplaceToken({
 					className="type-caption-plain text-muted-foreground"
 				>
 					A saved token is never shown. Paste a new one to replace it, or leave
-					this empty for a public repository. A sync starts right away.
+					this empty to keep what is saved and reconnect as you. A sync starts
+					right away.
 				</p>
 			</div>
 			{error && (

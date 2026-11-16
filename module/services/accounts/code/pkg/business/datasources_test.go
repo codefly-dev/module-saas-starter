@@ -356,6 +356,17 @@ func (f *datasourceFakeStore) UpdateDatasourceSourceCredential(_ context.Context
 	return nil
 }
 
+func (f *datasourceFakeStore) ClearDatasourceSourceCredential(_ context.Context, orgID, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if s, ok := f.sources[id]; ok && s.OrgID == orgID {
+		s.CredentialSecretRef = ""
+		s.WebhookSecretRef = ""
+		s.GitHubCredentialKind = "public"
+	}
+	return nil
+}
+
 func (f *datasourceFakeStore) WithControlPlane(ctx context.Context, fn func(ctx context.Context) error) error {
 	return fn(ctx)
 }

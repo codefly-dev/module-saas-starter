@@ -62,12 +62,18 @@ func (s *PostgresStore) UpsertDatasourceAccountLink(ctx context.Context, link *b
 	return &out, nil
 }
 
+// accountLinkColumns are what scanAccountLinks reads, ending with the member's
+// label in the organization — the tenant-scoped directory label every member
+// listing shows — so an administrator reads who linked, never a user id.
+const accountLinkColumns = `id::text, org_id::text, user_id::text, connector, provider_account_id, provider_account_login, created_at,
+		COALESCE(public.organization_member_primary_email(user_id), '')`
+
 func scanAccountLinks(rows pgx.Rows) ([]*business.DatasourceAccountLink, error) {
 	defer rows.Close()
 	var out []*business.DatasourceAccountLink
 	for rows.Next() {
 		var l business.DatasourceAccountLink
-		if err := rows.Scan(&l.ID, &l.OrgID, &l.UserID, &l.Connector, &l.ProviderAccountID, &l.ProviderAccountLogin, &l.CreatedAt); err != nil {
+		if err := rows.Scan(&l.ID, &l.OrgID, &l.UserID, &l.Connector, &l.ProviderAccountID, &l.ProviderAccountLogin, &l.CreatedAt, &l.MemberLabel); err != nil {
 			return nil, err
 		}
 		out = append(out, &l)
@@ -81,7 +87,7 @@ func (s *PostgresStore) ListDatasourceAccountLinks(ctx context.Context, orgID, u
 		user = userID
 	}
 	rows, err := s.getQueryExecutor(ctx).Query(ctx, `
-		SELECT id::text, org_id::text, user_id::text, connector, provider_account_id, provider_account_login, created_at
+		SELECT `+accountLinkColumns+`
 		FROM datasource_account_links
 		WHERE org_id = $1::uuid AND ($2::uuid IS NULL OR user_id = $2::uuid)
 		ORDER BY created_at, id`, orgID, user)
@@ -93,7 +99,7 @@ func (s *PostgresStore) ListDatasourceAccountLinks(ctx context.Context, orgID, u
 
 func (s *PostgresStore) GetDatasourceAccountLink(ctx context.Context, orgID, id string) (*business.DatasourceAccountLink, error) {
 	rows, err := s.getQueryExecutor(ctx).Query(ctx, `
-		SELECT id::text, org_id::text, user_id::text, connector, provider_account_id, provider_account_login, created_at
+		SELECT `+accountLinkColumns+`
 		FROM datasource_account_links
 		WHERE org_id = $1::uuid AND id = $2::uuid`, orgID, id)
 	if err != nil {

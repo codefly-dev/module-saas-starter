@@ -47,6 +47,9 @@ type DatasourceAccountLink struct {
 	ProviderAccountID    string
 	ProviderAccountLogin string
 	CreatedAt            time.Time
+	// MemberLabel is the member's label in the organization, the one every
+	// member listing shows (their email address); empty for a member who left.
+	MemberLabel string
 }
 
 // DatasourceGroupBinding maps one provider group onto one host team.

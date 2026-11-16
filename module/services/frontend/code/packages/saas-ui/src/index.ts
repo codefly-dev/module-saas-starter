@@ -139,6 +139,7 @@ export type {
 	DatasourceCredential,
 	DatasourceDirectoryView,
 	DatasourceProviderName,
+	DatasourceCredentialModeName,
 	DatasourceProviderView,
 	DatasourceStatusName,
 	DatasourceView,

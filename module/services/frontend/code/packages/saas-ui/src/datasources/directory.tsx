@@ -421,7 +421,8 @@ export function DatasourceDirectoryPanel({
 					{providerName} teams
 				</h4>
 				<p className="type-caption-plain text-muted-foreground">
-					Give a {providerName} team&apos;s members what one of your teams can read.
+					Give a {providerName} team&apos;s members what one of your teams can
+					read.
 				</p>
 				{data.bindings.length > 0 && (
 					<ul className="divide-y rounded-md border">
@@ -564,8 +565,14 @@ export function DatasourceDirectoryPanel({
 								key={l.id}
 								className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
 							>
-								<span className="type-body">
-									{l.providerAccountLogin || "An unnamed account"}
+								<span className="space-y-0.5">
+									{l.memberLabel && (
+										<span className="block type-body">{l.memberLabel}</span>
+									)}
+									<span className="block type-caption-plain text-muted-foreground">
+										{providerName}:{" "}
+										{l.providerAccountLogin || "an unnamed account"}
+									</span>
 								</span>
 								<Button
 									variant="ghost"
