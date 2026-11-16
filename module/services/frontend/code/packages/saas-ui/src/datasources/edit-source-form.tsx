@@ -67,11 +67,11 @@ export function EditSourceForm({
 				<div className="mb-4 space-y-1">
 					<h3 className="type-dialog-title">Edit {source.repo}</h3>
 					<p className="type-dialog-description text-muted-foreground">
-						Change what this source fetches. Its repository
+						Change what it brings in. The repository
 						{source.boundaryLabel
-							? `, its collection ${source.boundaryLabel}`
+							? `, the ${source.boundaryLabel} collection`
 							: ""}{" "}
-						and its credential stay as they are, and so does its sync history.
+						and how it connects stay as they are.
 					</p>
 					{/*
 					 * Said separately, and said at all, because narrowing a filter is
@@ -86,9 +86,8 @@ export function EditSourceForm({
 					 * act on.
 					 */}
 					<p className="type-caption-plain text-muted-foreground">
-						Saving does not delete anything that was already ingested. The next
-						sync hands off what the new scope covers; what becomes of files it
-						no longer covers is up to whatever reads this collection.
+						Saving deletes nothing already brought in; the next sync brings in
+						what you chose.
 					</p>
 				</div>
 
@@ -98,19 +97,18 @@ export function EditSourceForm({
 					noValidate
 				>
 					<div className="space-y-2">
-						<Label htmlFor={idFor("branch")}>Branch (optional)</Label>
+						<Label htmlFor={idFor("branch")}>Branch</Label>
 						<Input
 							id={idFor("branch")}
 							aria-invalid={!!errors.branch}
 							aria-describedby={
 								errors.branch ? idFor("branch-error") : undefined
 							}
-							placeholder="Defaults to the repository default branch"
+							placeholder="main"
 							{...form.register("branch")}
 						/>
 						<p className="type-caption-plain text-muted-foreground">
-							Changing the branch re-snapshots the source: the consuming module
-							receives the new branch&apos;s files as one change set.
+							Leave empty for the repository&apos;s default branch.
 						</p>
 						{errors.branch && (
 							<p id={idFor("branch-error")} className={errorClass}>
@@ -120,16 +118,16 @@ export function EditSourceForm({
 					</div>
 
 					<div className="space-y-2">
-						<Label htmlFor={idFor("paths")}>Paths (optional)</Label>
+						<Label htmlFor={idFor("paths")}>Folders</Label>
 						<Textarea
 							id={idFor("paths")}
 							className="resize-none font-mono"
 							rows={2}
-							placeholder={"docs/\nsrc/api/"}
+							placeholder={"docs/\nhandbook/"}
 							{...form.register("paths")}
 						/>
 						<p className="type-caption-plain text-muted-foreground">
-							One path prefix per line. Leave empty to ingest the whole repo.
+							One per line. Leave empty for the whole repository.
 						</p>
 						{errors.paths && (
 							<p role="alert" className={errorClass}>
@@ -139,7 +137,7 @@ export function EditSourceForm({
 					</div>
 
 					<div className="space-y-2">
-						<Label htmlFor={idFor("extensions")}>File types (optional)</Label>
+						<Label htmlFor={idFor("extensions")}>File types</Label>
 						<Input
 							id={idFor("extensions")}
 							placeholder=".md, .mdx"
@@ -147,8 +145,7 @@ export function EditSourceForm({
 							{...form.register("fileExtensions")}
 						/>
 						<p className="type-caption-plain text-muted-foreground">
-							Comma-separated suffixes, case-insensitive. Empty includes all
-							file types.
+							Separate with commas, e.g. .md, .mdx. Leave empty for every type.
 						</p>
 						{errors.fileExtensions && (
 							<p role="alert" className={errorClass}>
@@ -168,7 +165,7 @@ export function EditSourceForm({
 							Cancel
 						</Button>
 						<Button type="submit" disabled={isPending} aria-busy={isPending}>
-							{isPending ? "Validating GitHub access…" : "Save changes"}
+							{isPending ? "Checking access…" : "Save changes"}
 						</Button>
 					</div>
 				</form>

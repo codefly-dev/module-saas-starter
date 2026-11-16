@@ -123,7 +123,7 @@ describe("collection read access", () => {
 		);
 		expect(screen.queryByText("Private")).toBeNull();
 	});
-	it("shows explicit reader and creator policy for the selected collection", () => {
+	it("says who can already read the collection a source would land in", () => {
 		render(
 			<ConnectGitHubForm
 				collections={[collection]}
@@ -133,16 +133,14 @@ describe("collection read access", () => {
 				isPending={false}
 			/>,
 		);
-		fireEvent.change(screen.getByLabelText("Existing collection"), {
+		fireEvent.change(screen.getByLabelText("Collection"), {
 			target: { value: "collection-id" },
 		});
-		expect(screen.getByText(/Readers: No collection read grants/)).toBeTruthy();
-		expect(screen.getByText(/You do not have read access/)).toBeTruthy();
-		expect(
-			(screen.getByLabelText("Target collection") as HTMLInputElement).readOnly,
-		).toBe(true);
+		expect(screen.getByText(/Nobody can read this collection yet/)).toBeTruthy();
+		// An existing collection has its name; there is nothing to type.
+		expect(screen.queryByLabelText("New collection name")).toBeNull();
 	});
-	it("grants a chosen team and revokes the exact inherited grant with actor identity", async () => {
+	it("grants a chosen team and revokes the exact inherited grant", async () => {
 		const subject = {
 			id: "team",
 			kind: "team" as const,
@@ -173,12 +171,12 @@ describe("collection read access", () => {
 				/>
 			</QueryClientProvider>,
 		);
-		expect(screen.getByText(/Granted by Jane Doe/)).toBeTruthy();
+		expect(screen.getByText(/from a wider grant/)).toBeTruthy();
 		await screen.findByRole("option", { name: "Example Team" });
 		selectSubjects("team:team");
 		await act(async () => {
 			fireEvent.click(
-				screen.getByRole("button", { name: "Grant read access" }),
+				screen.getByRole("button", { name: "Let them read it" }),
 			);
 		});
 		expect(api.grantCollectionRead).toHaveBeenCalledWith(
@@ -187,7 +185,7 @@ describe("collection read access", () => {
 			subject,
 		);
 		await act(async () => {
-			fireEvent.click(screen.getByRole("button", { name: "Revoke grant" }));
+			fireEvent.click(screen.getByRole("button", { name: "Remove Example Team" }));
 		});
 		expect(api.revokeCollectionRead).toHaveBeenCalledWith("org", grant);
 	});
@@ -214,11 +212,11 @@ describe("collection read access", () => {
 		selectSubjects("team:team", "principal:u1");
 
 		expect(
-			screen.getByRole("button", { name: /Grant read access to 2 subjects/ }),
+			screen.getByRole("button", { name: /Let 2 read it/ }),
 		).toBeTruthy();
 		await act(async () => {
 			fireEvent.click(
-				screen.getByRole("button", { name: /Grant read access/ }),
+				screen.getByRole("button", { name: /^Let / }),
 			);
 		});
 
@@ -239,7 +237,7 @@ describe("collection read access", () => {
 			"example_path",
 			subjects[2],
 		);
-		expect(screen.getByText(/Granted read access to/)).toBeTruthy();
+		expect(screen.getByText(/can now read/)).toBeTruthy();
 	});
 
 	// The loop has no single answer: one subject may be refused while the rest
@@ -266,13 +264,13 @@ describe("collection read access", () => {
 		selectSubjects("team:team", "principal:u1");
 		await act(async () => {
 			fireEvent.click(
-				screen.getByRole("button", { name: /Grant read access/ }),
+				screen.getByRole("button", { name: /^Let / }),
 			);
 		});
 
-		expect(screen.getByText(/Granted read access to Example Team/)).toBeTruthy();
+		expect(screen.getByText(/Example Team can now read/)).toBeTruthy();
 		expect(
-			screen.getByText(/Couldn’t grant read access to Jane Doe/),
+			screen.getByText(/Couldn’t share with Jane Doe/),
 		).toBeTruthy();
 		// The retry is the same press: the one that landed is dropped from the
 		// selection, the one that did not stays in it. Read through what pressing
@@ -282,7 +280,7 @@ describe("collection read access", () => {
 		(api.grantCollectionRead as ReturnType<typeof vi.fn>).mockClear();
 		await act(async () => {
 			fireEvent.click(
-				screen.getByRole("button", { name: /Grant read access/ }),
+				screen.getByRole("button", { name: /^Let / }),
 			);
 		});
 		expect(api.grantCollectionRead).toHaveBeenCalledTimes(1);
@@ -311,9 +309,9 @@ describe("collection read access", () => {
 			</QueryClientProvider>,
 		);
 		expect(
-			screen.getByText(/acme\/handbook is connected and syncing/),
+			screen.getByText(/acme\/handbook is connected/),
 		).toBeTruthy();
-		expect(screen.getByText(/Nobody can read it yet/)).toBeTruthy();
+		expect(screen.getByText(/Connecting doesn't share anything/)).toBeTruthy();
 		fireEvent.click(screen.getByRole("button", { name: "Not now" }));
 		expect(dismiss).toHaveBeenCalled();
 	});
@@ -328,9 +326,9 @@ describe("collection read access", () => {
 				<CollectionGrants client={api} orgId="org" collection={collection} />
 			</QueryClientProvider>,
 		);
-		expect(screen.queryByText(/has no members or teams/)).toBeNull();
+		expect(screen.queryByText(/no people or teams/)).toBeNull();
 		expect(
-			await screen.findByText(/has no members or teams to grant read access/),
+			await screen.findByText(/no people or teams to share it with/),
 		).toBeTruthy();
 	});
 });
@@ -339,7 +337,7 @@ describe("collection read access", () => {
 // selection is made the way a person makes it: by marking the options.
 function selectSubjects(...values: string[]) {
 	const picker = screen.getByLabelText(
-		"Grant read access to",
+		"People and teams",
 	) as HTMLSelectElement;
 	for (const option of Array.from(picker.options)) {
 		option.selected = values.includes(option.value);

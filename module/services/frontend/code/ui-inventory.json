@@ -1542,6 +1542,7 @@
     {
       "source": "packages/saas-ui/src/datasources/collection-access.tsx",
       "imports": [
+        "@codefly-dev/ui/layout",
         "@tanstack/react-query",
         "react",
         "./queries.js",
@@ -1557,9 +1558,9 @@
     {
       "source": "packages/saas-ui/src/datasources/collection-field.tsx",
       "imports": [
-        "react-hook-form",
-        "./credential-mode.js",
         "@codefly-dev/ui/layout",
+        "react",
+        "./credential-mode.js",
         "./types.js"
       ],
       "owner": "@codefly-dev/saas-ui",
@@ -1581,12 +1582,13 @@
     {
       "source": "packages/saas-ui/src/datasources/connect-github-form.tsx",
       "imports": [
+        "@codefly-dev/ui/layout",
         "@hookform/resolvers/zod",
         "react",
         "react-hook-form",
         "./collection-field.js",
+        "./credential-mode.js",
         "./schema.js",
-        "@codefly-dev/ui/layout",
         "./types.js"
       ],
       "owner": "@codefly-dev/saas-ui",
@@ -1637,6 +1639,7 @@
         "@codefly-dev/ui/layout",
         "@tanstack/react-query",
         "react",
+        "./collection-field.js",
         "./types.js"
       ],
       "owner": "@codefly-dev/saas-ui",
@@ -1672,20 +1675,23 @@
       "source": "packages/saas-ui/src/datasources/datasources-panel.tsx",
       "imports": [
         "@codefly-dev/ui/layout",
-        "@connectrpc/connect",
         "@tanstack/react-query",
         "react",
         "../solution/no-readable-collection.js",
         "../solution/viewer.js",
+        "./collection-access.js",
+        "./connect-source.js",
         "./connect-github-form.js",
+        "./edit-source-form.js",
+        "./errors.js",
         "./gateway.js",
+        "./github-app-setup.js",
         "./queries.js",
+        "./reconcile-passes.js",
         "./schema.js",
-        "./types.js",
-        "./util.js",
         "./sync-progress.js",
-        "./sync-progress-model.js",
-        "./connect-source.js"
+        "./types.js",
+        "./util.js"
       ],
       "owner": "@codefly-dev/saas-ui",
       "disposition": "already canonical",
@@ -1766,6 +1772,7 @@
         "@tanstack/react-query",
         "react",
         "./api-source.js",
+        "./collection-field.js",
         "./types.js"
       ],
       "owner": "@codefly-dev/saas-ui",
@@ -1842,6 +1849,26 @@
       ],
       "coverage": "owner stories and unit tests; browser/skin verification pending",
       "remaining": "Verify explorer rendering and the stalled/failed tones under external skins."
+    },
+    {
+      "source": "packages/saas-ui/src/datasources/sync-schedule.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout",
+        "./queries.js",
+        "./types.js",
+        "./util.js"
+      ],
+      "owner": "@codefly-dev/saas-ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "SyncSchedule"
+        }
+      ],
+      "coverage": "owner story; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
     },
     {
       "source": "packages/saas-ui/src/solution/no-readable-collection.tsx",
@@ -4173,9 +4200,9 @@
       "source": "src/features/datasources/datasources-admin.tsx",
       "imports": [
         "@codefly-dev/saas-ui",
+        "@codefly-dev/ui/layout",
         "lucide-react",
         "react",
-        "sonner",
         "@/components/empty-state",
         "@/components/org-selector",
         "@/lib/auth",

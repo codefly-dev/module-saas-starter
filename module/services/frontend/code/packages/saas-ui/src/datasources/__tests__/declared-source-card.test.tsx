@@ -128,7 +128,7 @@ describe("DeclaredSourceCard", () => {
 		// as a field" below for the half that matters.
 		expect(screen.getByText("example-org/handbook")).toBeTruthy();
 		expect(screen.getByText("proposals/")).toBeTruthy();
-		expect(screen.getByLabelText("Authentication")).toBeTruthy();
+		expect(screen.getByRole("radiogroup", { name: "How to connect" })).toBeTruthy();
 	});
 
 	it("connects the declared repository, paths and ref, not anything typed", async () => {
@@ -165,11 +165,11 @@ describe("DeclaredSourceCard", () => {
 		// connect something other than what the solution is built on.
 		expect(screen.queryByLabelText("Repository")).toBeNull();
 		expect(screen.queryByRole("textbox")).toBeNull();
+		// The only choice is how to connect.
+		expect(screen.queryByRole("combobox")).toBeNull();
 		expect(
-			screen
-				.getAllByRole("combobox")
-				.map((element) => (element as HTMLSelectElement).id),
-		).toHaveLength(1);
+			screen.getByRole("radiogroup", { name: "How to connect" }),
+		).toBeTruthy();
 	});
 
 	it("tells a viewer who cannot manage who does, and offers nothing", async () => {
@@ -187,7 +187,7 @@ describe("DeclaredSourceCard", () => {
 		expect(
 			screen.getByText(/An organization administrator connects it/),
 		).toBeTruthy();
-		expect(screen.queryByLabelText("Authentication")).toBeNull();
+		expect(screen.queryByRole("radiogroup", { name: "How to connect" })).toBeNull();
 		expect(screen.queryByRole("button", { name: "Connect" })).toBeNull();
 	});
 
@@ -212,7 +212,7 @@ describe("DeclaredSourceCard", () => {
 		).toBeTruthy();
 		expect(screen.getByText(/reconciled every 1 hour/)).toBeTruthy();
 		// Connected is not a state that asks for a credential again.
-		expect(screen.queryByLabelText("Authentication")).toBeNull();
+		expect(screen.queryByRole("radiogroup", { name: "How to connect" })).toBeNull();
 
 		// "Sync now" admits the host's reconcile OPERATION under an effect
 		// identity the card minted, so the card asks for one pass rather than
@@ -400,7 +400,7 @@ describe("DeclaredSourceCard", () => {
 		expect(screen.getByText(/ds-1/)).toBeTruthy();
 		expect(screen.getByText(/2 connected sources read/)).toBeTruthy();
 		expect(screen.queryByRole("button", { name: "Sync now" })).toBeNull();
-		expect(screen.queryByLabelText("Authentication")).toBeNull();
+		expect(screen.queryByRole("radiogroup", { name: "How to connect" })).toBeNull();
 	});
 
 	describe("the GitHub App return leg", () => {
@@ -432,10 +432,11 @@ describe("DeclaredSourceCard", () => {
 
 			// The App is the default where it is available, and it sends no
 			// credential: the host resolves the installation covering the repo.
-			expect(await screen.findByLabelText("Authentication")).toHaveProperty(
-				"value",
-				"app",
-			);
+			expect(
+				(
+					await screen.findByRole("radio", { name: /GitHub app/ })
+				).getAttribute("aria-checked"),
+			).toBe("true");
 			expect(screen.queryByLabelText("Access token")).toBeNull();
 			fireEvent.click(screen.getByRole("button", { name: "Connect" }));
 
@@ -508,6 +509,6 @@ describe("DeclaredSourceCard", () => {
 			await screen.findByText(/has not been reported as disconnected/),
 		).toBeTruthy();
 		expect(screen.queryByText("Set up")).toBeNull();
-		expect(screen.queryByLabelText("Authentication")).toBeNull();
+		expect(screen.queryByRole("radiogroup", { name: "How to connect" })).toBeNull();
 	});
 });

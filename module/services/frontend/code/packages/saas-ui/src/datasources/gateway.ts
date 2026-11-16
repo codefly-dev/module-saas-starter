@@ -650,7 +650,29 @@ const providerNames: Partial<
 > = {
 	[DatasourceProvider.GITHUB]: "github",
 	[DatasourceProvider.API]: "api",
+	[DatasourceProvider.CRAWLER]: "crawler",
+	[DatasourceProvider.UPLOAD]: "upload",
 };
+
+/**
+ * What a source is called where a repository has no name to give: a bucket
+ * and its prefix, or the site a crawler reads.
+ */
+function sourceName(source: Datasource): string {
+	if (source.github) return source.github.repo;
+	if (source.upload)
+		return [source.upload.bucket, source.upload.prefix]
+			.filter(Boolean)
+			.join("/");
+	if (source.crawler?.sitemapUrl) {
+		try {
+			return new URL(source.crawler.sitemapUrl).host;
+		} catch {
+			return source.crawler.sitemapUrl;
+		}
+	}
+	return "";
+}
 
 const statusNames: Partial<Record<DatasourceStatus, DatasourceStatusName>> = {
 	[DatasourceStatus.ACTIVE]: "active",
@@ -663,7 +685,7 @@ function toDatasourceView(source: Datasource): DatasourceView {
 		id: source.id,
 		orgId: source.orgId,
 		provider: providerNames[source.provider] ?? "unknown",
-		repo: source.github?.repo ?? "",
+		repo: sourceName(source),
 		paths: source.github ? [...source.github.paths] : [],
 		fileExtensions: source.github ? [...source.github.fileExtensions] : [],
 		branch: source.github?.branch ?? "",

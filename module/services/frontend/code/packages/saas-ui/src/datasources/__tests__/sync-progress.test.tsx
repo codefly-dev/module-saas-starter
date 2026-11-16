@@ -97,12 +97,12 @@ describe("SourceSyncProgress", () => {
 		);
 		// The words, not the number, are what assistive tech reads out.
 		expect(bar().getAttribute("aria-valuetext")).toBe(
-			"Accepted, waiting for a worker",
+			"Waiting to start",
 		);
 		expect(screen.getByText("Step 1 of 4")).toBeTruthy();
 		// The badge names the state, the headline says what the state does not.
 		expect(screen.getByText("Queued")).toBeTruthy();
-		expect(screen.getByText("Accepted, waiting for a worker")).toBeTruthy();
+		expect(screen.getByText("Waiting to start")).toBeTruthy();
 	});
 
 	it("renders the counts of a compiled change set", () => {
@@ -131,8 +131,8 @@ describe("SourceSyncProgress", () => {
 		expect(screen.getByText("Files:")).toBeTruthy();
 		expect(screen.getByText("162")).toBeTruthy();
 		expect(screen.getByText("150")).toBeTruthy();
-		// The commit is abbreviated, as everywhere else a commit appears here.
-		expect(screen.getByText(/abcdef1$/)).toBeTruthy();
+		// A commit is a repository's handle, not the reader's: it is not shown.
+		expect(screen.queryByText(/abcdef1/)).toBeNull();
 	});
 
 	it("announces a failure assertively and shows the host's reason", () => {
@@ -260,7 +260,7 @@ describe("the panel's live sync progress", () => {
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 
 		expect(await screen.findByRole("progressbar")).toBeTruthy();
-		expect(screen.getByText("Fetching from the repository")).toBeTruthy();
+		expect(screen.getByText("Reading the repository")).toBeTruthy();
 		expect(client.getSourceSync).toHaveBeenCalledWith("org-1", "ds-1");
 	});
 
@@ -353,7 +353,7 @@ describe("the panel's live sync progress", () => {
 		notifySourceSyncRequested("ds-1");
 
 		expect(
-			await screen.findByText("Accepted, waiting for a worker"),
+			await screen.findByText("Waiting to start"),
 		).toBeTruthy();
 	});
 
@@ -372,7 +372,7 @@ describe("the panel's live sync progress", () => {
 			});
 			renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 			expect(
-				await screen.findByText("Fetching from the repository"),
+				await screen.findByText("Reading the repository"),
 			).toBeTruthy();
 			expect(screen.queryByText("No progress")).toBeNull();
 
@@ -454,7 +454,7 @@ describe("the panel does not flash a loading indicator", () => {
 			await act(async () => {
 				await vi.advanceTimersByTimeAsync(150);
 			});
-			expect(screen.queryByText("Loading data sources…")).toBeNull();
+			expect(screen.queryByText("Loading sources…")).toBeNull();
 
 			await act(async () => {
 				release([source]);
@@ -463,7 +463,7 @@ describe("the panel does not flash a loading indicator", () => {
 				await vi.advanceTimersByTimeAsync(500);
 			});
 			// It resolved inside the window, so the line must never have appeared.
-			expect(screen.queryByText("Loading data sources…")).toBeNull();
+			expect(screen.queryByText("Loading sources…")).toBeNull();
 			expect(screen.getByText("example-org/example-repo")).toBeTruthy();
 		} finally {
 			vi.useRealTimers();
@@ -486,11 +486,11 @@ describe("the panel does not flash a loading indicator", () => {
 			});
 			renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 
-			expect(screen.queryByText("Loading data sources…")).toBeNull();
+			expect(screen.queryByText("Loading sources…")).toBeNull();
 			await act(async () => {
 				await vi.advanceTimersByTimeAsync(250);
 			});
-			expect(screen.getByText("Loading data sources…")).toBeTruthy();
+			expect(screen.getByText("Loading sources…")).toBeTruthy();
 
 			await act(async () => {
 				release([source]);
@@ -523,7 +523,7 @@ describe("the panel does not flash a loading indicator", () => {
 			await act(async () => {
 				await vi.advanceTimersByTimeAsync(200);
 			});
-			expect(screen.getByText("Loading data sources…")).toBeTruthy();
+			expect(screen.getByText("Loading sources…")).toBeTruthy();
 
 			// The answer arrives 10ms after the line went up.
 			await act(async () => {
@@ -532,23 +532,35 @@ describe("the panel does not flash a loading indicator", () => {
 			await act(async () => {
 				release([source]);
 			});
-			expect(screen.getByText("Loading data sources…")).toBeTruthy();
+			expect(screen.getByText("Loading sources…")).toBeTruthy();
 
 			// 290ms of the 300ms floor remain from when the line appeared.
 			await act(async () => {
 				await vi.advanceTimersByTimeAsync(289);
 			});
-			expect(screen.getByText("Loading data sources…")).toBeTruthy();
+			expect(screen.getByText("Loading sources…")).toBeTruthy();
 			await act(async () => {
 				await vi.advanceTimersByTimeAsync(1);
 			});
-			expect(screen.queryByText("Loading data sources…")).toBeNull();
+			expect(screen.queryByText("Loading sources…")).toBeNull();
 			expect(screen.getByText("example-org/example-repo")).toBeTruthy();
 		} finally {
 			vi.useRealTimers();
 		}
 	});
 });
+
+/** The execution view opens from the row's More menu. */
+async function openExecution() {
+	fireEvent.click(
+		await screen.findByRole("button", {
+			name: "More for example-org/example-repo",
+		}),
+	);
+	fireEvent.click(
+		await screen.findByRole("menuitem", { name: "Sync details" }),
+	);
+}
 
 describe("the panel's execution extension point", () => {
 	it("offers no execution action when no view was handed in", async () => {
@@ -588,10 +600,12 @@ describe("the panel's execution extension point", () => {
 
 		fireEvent.click(
 			await screen.findByRole("button", {
-				name: "More actions for example-org/example-repo",
+				name: "More for example-org/example-repo",
 			}),
 		);
-		fireEvent.click(await screen.findByRole("menuitem", { name: "Execution" }));
+		fireEvent.click(
+			await screen.findByRole("menuitem", { name: "Sync details" }),
+		);
 
 		expect(
 			await screen.findByText(
@@ -620,11 +634,7 @@ describe("the panel's execution extension point", () => {
 			/>,
 		);
 
-		fireEvent.click(
-			await screen.findByRole("button", {
-				name: "Execution of example-org/example-repo",
-			}),
-		);
+		await openExecution();
 		expect(await screen.findByText("member execution")).toBeTruthy();
 	});
 
@@ -644,11 +654,7 @@ describe("the panel's execution extension point", () => {
 				renderSourceExecution={() => null}
 			/>,
 		);
-		fireEvent.click(
-			await screen.findByRole("button", {
-				name: "Execution of example-org/example-repo",
-			}),
-		);
+		await openExecution();
 
 		expect(
 			await screen.findByText(/you may not have permission to see them/i),
@@ -668,11 +674,7 @@ describe("the panel's execution extension point", () => {
 					renderSourceExecution={() => empty}
 				/>,
 			);
-			fireEvent.click(
-				await screen.findByRole("button", {
-					name: "Execution of example-org/example-repo",
-				}),
-			);
+			await openExecution();
 			expect(
 				await screen.findByText(/you may not have permission to see them/i),
 			).toBeTruthy();
@@ -692,11 +694,7 @@ describe("the panel's execution extension point", () => {
 				renderSourceExecution={() => <SourceExecutionRestricted />}
 			/>,
 		);
-		fireEvent.click(
-			await screen.findByRole("button", {
-				name: "Execution of example-org/example-repo",
-			}),
-		);
+		await openExecution();
 
 		expect(
 			await screen.findByText(
@@ -717,11 +715,7 @@ describe("the panel's execution extension point", () => {
 				renderSourceExecution={() => <span>member execution</span>}
 			/>,
 		);
-		fireEvent.click(
-			await screen.findByRole("button", {
-				name: "Execution of example-org/example-repo",
-			}),
-		);
+		await openExecution();
 		fireEvent.click(
 			await screen.findByRole("button", { name: "Close execution" }),
 		);

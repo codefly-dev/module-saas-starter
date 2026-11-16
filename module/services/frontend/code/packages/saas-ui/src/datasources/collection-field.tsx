@@ -1,35 +1,39 @@
 "use client";
 
 import { Input, Label } from "@codefly-dev/ui/layout";
-import type { UseFormRegisterReturn } from "react-hook-form";
+import type { ComponentProps } from "react";
 import { fieldErrorClass as errorClass } from "./credential-mode.js";
 import type { CollectionAccessView } from "./types.js";
+
+/** A native select drawn like the kit's input, so a form reads as one surface. */
+export const selectClass =
+	"control-height-default w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 type-input-touch outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:type-input dark:bg-input/30";
 
 interface CollectionFieldProps {
 	idFor: (name: string) => string;
 	collections?: CollectionAccessView[];
+	/** Kept for callers that pass it; who can read is chosen after connecting. */
 	readableNodeIds?: string[];
 	collectionError?: boolean;
 	boundaryNodeId?: string;
 	targetCollection?: string;
 	/** An existing collection was picked, or "" to create one. */
 	onSelect: (nodeId: string, label: string) => void;
-	inputProps: UseFormRegisterReturn;
+	/** The new collection's name input: a form registration or plain props. */
+	inputProps: ComponentProps<"input">;
 	error?: string;
 }
 
 /**
- * Where a new source's content lands: an existing collection, or a label to
- * create one under. Every connect form shares it, so who can read the result
- * is told the same way whichever provider is being connected.
+ * Where a new source's content lands: one of the organization's collections,
+ * or a new one named here. Every connect form shares it, so who can read the
+ * result is said the same way whichever provider is being connected.
  */
 export function CollectionField({
 	idFor,
 	collections,
-	readableNodeIds,
 	collectionError,
 	boundaryNodeId,
-	targetCollection,
 	onSelect,
 	inputProps,
 	error,
@@ -37,29 +41,28 @@ export function CollectionField({
 	const selected = collections?.find(
 		(collection) => collection.nodeId === boundaryNodeId,
 	);
-	const named =
-		selected ??
-		collections?.find((collection) => collection.label === targetCollection);
+	const listed = !!collections?.length;
+	const readers = selected?.grants.map((grant) => grant.subjectLabel) ?? [];
 	return (
 		<div className="space-y-2">
-			{collections && (
+			{listed && (
 				<>
-					<Label htmlFor={idFor("existing")}>Existing collection</Label>
+					<Label htmlFor={idFor("existing")}>Collection</Label>
 					<select
 						id={idFor("existing")}
-						aria-label="Existing collection"
+						className={selectClass}
 						value={boundaryNodeId ?? ""}
 						onChange={(event) =>
 							onSelect(
 								event.target.value,
-								collections.find(
+								collections?.find(
 									(collection) => collection.nodeId === event.target.value,
 								)?.label ?? "",
 							)
 						}
 					>
-						<option value="">Create a collection</option>
-						{collections.map((collection) => (
+						<option value="">A new collection</option>
+						{collections?.map((collection) => (
 							<option key={collection.nodeId} value={collection.nodeId}>
 								{collection.label}
 							</option>
@@ -67,39 +70,32 @@ export function CollectionField({
 					</select>
 				</>
 			)}
-			<Label htmlFor={idFor("collection")}>Target collection</Label>
-			<Input
-				id={idFor("collection")}
-				readOnly={!!selected}
-				aria-invalid={!!error}
-				aria-describedby={error ? idFor("collection-error") : undefined}
-				placeholder="Documents-store collection to land entries in"
-				{...inputProps}
-			/>
-			<p className="type-body">
-				Connecting grants no read access to the creator or a default team.
-				Organization administrators explicitly grant members or teams read
-				access. Platform administrators read every collection without a grant.
+			{!selected && (
+				<>
+					<Label htmlFor={idFor("collection")}>
+						{listed ? "New collection name" : "Collection"}
+					</Label>
+					<Input
+						id={idFor("collection")}
+						aria-invalid={!!error}
+						aria-describedby={error ? idFor("collection-error") : undefined}
+						placeholder="e.g. Engineering handbook"
+						maxLength={255}
+						{...inputProps}
+					/>
+				</>
+			)}
+			<p className="type-caption-plain text-muted-foreground">
+				{selected
+					? readers.length
+						? `Already readable by ${readers.join(", ")}.`
+						: "Nobody can read this collection yet."
+					: "Where its content lands. Connecting doesn't share anything; choose who can read it after."}
 			</p>
-			{collectionError ? (
-				<p role="alert">Couldn’t inspect collection grants.</p>
-			) : named ? (
-				<p>
-					Readers:{" "}
-					{named.grants.map((grant) => grant.subjectLabel).join(", ") ||
-						"No collection read grants"}
-					.{" "}
-					{readableNodeIds === undefined
-						? "Your read permission is unresolved."
-						: readableNodeIds.includes(named.nodeId)
-							? "You can read this collection."
-							: "You do not have read access. Ask an administrator for access."}
-				</p>
-			) : (
-				<p>
-					{collections
-						? "New collections have no read grants. Your read permission must be checked after creation."
-						: "Collection grants are unresolved. Inspect them in the host after connecting."}
+			{collectionError && (
+				<p role="alert" className={errorClass}>
+					Couldn’t load this organization’s collections. You can still name a
+					new one.
 				</p>
 			)}
 			{error && (

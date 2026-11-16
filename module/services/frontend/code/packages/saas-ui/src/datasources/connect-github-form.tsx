@@ -2,13 +2,15 @@
 
 import { Button, Input, Label, Textarea } from "@codefly-dev/ui/layout";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useId } from "react";
+import { type ReactNode, useId } from "react";
 import { useForm, useWatch } from "react-hook-form";
-import { CollectionField } from "./collection-field.js";
+import { CollectionField, selectClass } from "./collection-field.js";
 import {
 	AccessTokenField,
 	AppInstallPrompt,
+	type CredentialMethod,
 	CredentialMethodField,
+	credentialMethodFrom,
 	fieldErrorClass as errorClass,
 	WebhookSecretField,
 } from "./credential-mode.js";
@@ -34,6 +36,8 @@ interface ConnectGitHubFormProps {
 	onCancel: () => void;
 	isPending: boolean;
 	errorMessage?: string;
+	/** The way to connect selected first; the token unless the caller says. */
+	defaultMethod?: CredentialMethod;
 }
 
 export function ConnectGitHubForm({
@@ -48,6 +52,7 @@ export function ConnectGitHubForm({
 	onCancel,
 	isPending,
 	errorMessage,
+	defaultMethod,
 }: ConnectGitHubFormProps) {
 	// Unique per instance so two mounted forms don't collide on id/htmlFor
 	// (breaks label association + a11y when the panel is reused in more than one
@@ -57,7 +62,9 @@ export function ConnectGitHubForm({
 	const form = useForm<ConnectGitHubValues>({
 		resolver: zodResolver(connectGitHubSchema),
 		defaultValues: {
-			method: onBeginAppSetup ? "app" : "pat",
+			// Equal choices: the token comes first unless the caller is landing
+			// back from installing the app, whose repositories it just granted.
+			method: credentialMethodFrom(defaultMethod ?? "pat", !!onBeginAppSetup),
 			repo: "",
 			boundaryNodeId: "",
 			paths: "",
@@ -80,218 +87,52 @@ export function ConnectGitHubForm({
 		name: "targetCollection",
 	});
 
+	// The App path picks its repository from the installation, so until one
+	// returns there is nothing below the install button to fill in.
+	const awaitingInstall = method === "app" && !appRepositories;
+	const repoError = errors.repo && (
+		<p id={idFor("repo-error")} className={errorClass}>
+			{errors.repo.message}
+		</p>
+	);
+
 	return (
-		<div
-			className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-			role="dialog"
-			aria-modal="true"
+		<form
 			aria-label="Connect GitHub"
+			onSubmit={form.handleSubmit((values) => {
+				form.setValue("accessToken", "");
+				form.setValue("webhookSecret", "");
+				onSubmit(values);
+			})}
+			className="max-w-2xl space-y-6"
+			noValidate
 		>
-			<div className="w-full max-w-[500px] max-h-[90dvh] overflow-y-auto rounded-lg border bg-card p-6 text-card-foreground shadow-lg">
-				<div className="mb-4 space-y-1">
-					<h3 className="text-lg font-semibold tracking-tight">
-						Connect GitHub
-					</h3>
-					<p className="text-sm text-muted-foreground">
-						Register a repository as a data source. Its contents are pulled and
-						enqueued for ingestion.
-					</p>
-				</div>
-
-				<form
-					onSubmit={form.handleSubmit((values) => {
-						form.setValue("accessToken", "");
-						form.setValue("webhookSecret", "");
-						onSubmit(values);
-					})}
-					className="space-y-4"
-					noValidate
-				>
-					<CredentialMethodField
-						id={idFor("method")}
-						value={method}
-						appAvailable={!!onBeginAppSetup}
-						onChange={(next) => {
-							form.setValue("method", next);
-							// The App path can only connect what the installation
-							// grants, and the picker renders blank for anything else —
-							// leaving a repository typed on another path selected would
-							// submit a repository the reader cannot see chosen.
-							if (
-								next === "app" &&
-								!appRepositories?.some(
-									(candidate) => candidate.repo === form.getValues("repo"),
-								)
-							) {
-								form.setValue("repo", "");
-								// The branch was filled in from the repository, so it
-								// describes one that is no longer selected.
-								form.setValue("branch", "");
-							}
-						}}
-					/>
-
-					{method === "app" && !appRepositories ? (
-						<AppInstallPrompt
-							description="Installing sends you to GitHub to pick the repositories this organization may read. You come back here to choose the branch and paths."
-							onBeginAppSetup={onBeginAppSetup!}
-							{...(appSetupPhase ? { phase: appSetupPhase } : {})}
-							{...(appSetupError ? { error: appSetupError } : {})}
-						/>
-					) : method === "app" ? (
-						<div className="space-y-2">
-							<Label htmlFor={idFor("repo")}>Repository</Label>
-							<select
-								id={idFor("repo")}
-								value={repo ?? ""}
-								onChange={(event) => {
-									form.setValue("repo", event.target.value);
-									form.setValue(
-										"branch",
-										appRepositories?.find(
-											(candidate) => candidate.repo === event.target.value,
-										)?.defaultBranch ?? "",
-									);
-								}}
-							>
-								<option value="">Select a repository</option>
-								{appRepositories?.map((candidate) => (
-									<option
-										key={candidate.repo}
-										value={candidate.repo}
-										disabled={candidate.alreadyConnected}
-									>
-										{candidate.repo}
-										{candidate.alreadyConnected
-											? " · already connected"
-											: candidate.defaultBranch
-												? ` · ${candidate.defaultBranch}`
-												: ""}
-									</option>
-								))}
-							</select>
-							{appRepositories?.length === 0 ? (
-								<p role="status" className="text-xs text-muted-foreground">
-									This installation grants access to no repository. Choose one
-									for it on GitHub to connect it here.
-								</p>
-							) : appRepositories?.some(
-									(candidate) => !candidate.alreadyConnected,
-								) ? (
-								<p className="text-xs text-muted-foreground">
-									The installation grants these repositories. Connecting one
-									needs no token.
-								</p>
-							) : (
-								<p role="status" className="text-xs text-muted-foreground">
-									This organization already connects every repository the
-									installation grants. Add another repository to the
-									installation on GitHub to connect it here.
-								</p>
-							)}
-							{errors.repo && (
-								<p id={idFor("repo-error")} className={errorClass}>
-									{errors.repo.message}
-								</p>
-							)}
-						</div>
-					) : (
-						<div className="space-y-2">
-							<Label htmlFor={idFor("repo")}>Repository</Label>
-							<Input
-								id={idFor("repo")}
-								aria-invalid={!!errors.repo}
-								aria-describedby={errors.repo ? idFor("repo-error") : undefined}
-								placeholder="owner/name"
-								{...form.register("repo")}
-							/>
-							{errors.repo && (
-								<p id={idFor("repo-error")} className={errorClass}>
-									{errors.repo.message}
-								</p>
-							)}
-						</div>
-					)}
-
-					<div className="space-y-2">
-						<Label htmlFor={idFor("paths")}>Paths (optional)</Label>
-						<Textarea
-							id={idFor("paths")}
-							className="resize-none font-mono"
-							rows={2}
-							placeholder={"docs/\nsrc/api/"}
-							{...form.register("paths")}
-						/>
-						<p className="text-xs text-muted-foreground">
-							One path prefix per line. Leave empty to ingest the whole repo.
-						</p>
-					</div>
-
-					<div className="space-y-2">
-						<Label htmlFor={idFor("extensions")}>File types (optional)</Label>
-						<Input
-							id={idFor("extensions")}
-							placeholder=".md, .mdx"
-							aria-invalid={!!errors.fileExtensions}
-							{...form.register("fileExtensions")}
-						/>
-						<Button
-							type="button"
-							variant="link"
-							className="h-auto px-0 text-xs"
-							onClick={() =>
-								form.setValue("fileExtensions", ".md", { shouldValidate: true })
-							}
-						>
-							Markdown only (.md)
-						</Button>
-						<p className="text-xs text-muted-foreground">
-							Comma-separated suffixes, case-insensitive. Empty includes all
-							file types. Applied during ingestion within the paths above.
-						</p>
-						{errors.fileExtensions && (
-							<p role="alert" className={errorClass}>
-								{errors.fileExtensions.message}
-							</p>
-						)}
-					</div>
-
-					<div className="space-y-2">
-						<Label htmlFor={idFor("branch")}>Branch (optional)</Label>
-						<Input
-							id={idFor("branch")}
-							aria-invalid={!!errors.branch}
-							aria-describedby={
-								errors.branch ? idFor("branch-error") : undefined
-							}
-							placeholder="Defaults to the repository default branch"
-							{...form.register("branch")}
-						/>
-						{errors.branch && (
-							<p id={idFor("branch-error")} className={errorClass}>
-								{errors.branch.message}
-							</p>
-						)}
-					</div>
-
-					<CollectionField
-						idFor={idFor}
-						{...(collections ? { collections } : {})}
-						{...(readableNodeIds ? { readableNodeIds } : {})}
-						{...(collectionError ? { collectionError } : {})}
-						{...(boundaryNodeId ? { boundaryNodeId } : {})}
-						targetCollection={targetCollection}
-						onSelect={(nodeId, label) => {
-							form.setValue("boundaryNodeId", nodeId);
-							form.setValue("targetCollection", label);
-						}}
-						inputProps={form.register("targetCollection")}
-						{...(errors.targetCollection?.message
-							? { error: errors.targetCollection.message }
-							: {})}
-					/>
-
-					{method === "pat" && (
+			<Step number={1} title="How to connect">
+				<CredentialMethodField
+					id={idFor("method")}
+					value={method}
+					appAvailable={!!onBeginAppSetup}
+					onChange={(next) => {
+						form.setValue("method", next);
+						// The App path can only connect what the installation
+						// grants, and the picker renders blank for anything else —
+						// leaving a repository typed on another path selected would
+						// submit a repository the reader cannot see chosen.
+						if (
+							next === "app" &&
+							!appRepositories?.some(
+								(candidate) => candidate.repo === form.getValues("repo"),
+							)
+						) {
+							form.setValue("repo", "");
+							// The branch was filled in from the repository, so it
+							// describes one that is no longer selected.
+							form.setValue("branch", "");
+						}
+					}}
+				/>
+				{method === "pat" && (
+					<>
 						<AccessTokenField
 							id={idFor("token")}
 							errorId={idFor("token-error")}
@@ -300,12 +141,6 @@ export function ConnectGitHubForm({
 								: {})}
 							inputProps={form.register("accessToken")}
 						/>
-					)}
-
-					{/* A public repository is read with no credential, and a webhook
-					    needs administration of the repository — the host refuses a
-					    secret there and keeps the source current by periodic sync. */}
-					{method !== "public" && (
 						<WebhookSecretField
 							id={idFor("secret")}
 							errorId={idFor("secret-error")}
@@ -314,30 +149,227 @@ export function ConnectGitHubForm({
 								: {})}
 							inputProps={form.register("webhookSecret")}
 						/>
-					)}
+					</>
+				)}
+				{awaitingInstall && (
+					<AppInstallPrompt
+						description="You choose the repositories on GitHub, then come back here to finish."
+						onBeginAppSetup={onBeginAppSetup!}
+						{...(appSetupPhase ? { phase: appSetupPhase } : {})}
+						{...(appSetupError ? { error: appSetupError } : {})}
+					/>
+				)}
+			</Step>
 
-					{errorMessage && (
-						<p role="alert" className={errorClass}>
-							{errorMessage}
-						</p>
-					)}
+			{!awaitingInstall && (
+				<>
+					<Step number={2} title="Which repository">
+						{method === "app" ? (
+							<div className="space-y-2">
+								<Label htmlFor={idFor("repo")}>Repository</Label>
+								<select
+									id={idFor("repo")}
+									className={selectClass}
+									value={repo ?? ""}
+									onChange={(event) => {
+										form.setValue("repo", event.target.value);
+										form.setValue(
+											"branch",
+											appRepositories?.find(
+												(candidate) => candidate.repo === event.target.value,
+											)?.defaultBranch ?? "",
+										);
+									}}
+								>
+									<option value="">Select a repository</option>
+									{appRepositories?.map((candidate) => (
+										<option
+											key={candidate.repo}
+											value={candidate.repo}
+											disabled={candidate.alreadyConnected}
+										>
+											{candidate.repo}
+											{candidate.alreadyConnected
+												? " · already connected"
+												: candidate.defaultBranch
+													? ` · ${candidate.defaultBranch}`
+													: ""}
+										</option>
+									))}
+								</select>
+								{appRepositories?.length === 0 ? (
+									<p role="status" className={hintClass}>
+										The app can&apos;t see any repository yet. Choose some for
+										it on GitHub to connect them here.
+									</p>
+								) : appRepositories?.every(
+										(candidate) => candidate.alreadyConnected,
+									) ? (
+									<p role="status" className={hintClass}>
+										Every repository the app can see is already connected. Give
+										it another repository on GitHub to connect it here.
+									</p>
+								) : (
+									<p className={hintClass}>The repositories the app can see.</p>
+								)}
+								{repoError}
+							</div>
+						) : (
+							<div className="space-y-2">
+								<Label htmlFor={idFor("repo")}>Repository</Label>
+								<Input
+									id={idFor("repo")}
+									aria-invalid={!!errors.repo}
+									aria-describedby={idFor(
+										errors.repo ? "repo-error" : "repo-help",
+									)}
+									placeholder="owner/name"
+									autoComplete="off"
+									spellCheck={false}
+									{...form.register("repo")}
+								/>
+								<p id={idFor("repo-help")} className={hintClass}>
+									As it appears on GitHub, e.g. acme/handbook.
+								</p>
+								{repoError}
+							</div>
+						)}
+						<div className="space-y-2">
+							<Label htmlFor={idFor("branch")}>Branch</Label>
+							<Input
+								id={idFor("branch")}
+								aria-invalid={!!errors.branch}
+								aria-describedby={idFor(
+									errors.branch ? "branch-error" : "branch-help",
+								)}
+								placeholder="main"
+								autoComplete="off"
+								spellCheck={false}
+								{...form.register("branch")}
+							/>
+							<p id={idFor("branch-help")} className={hintClass}>
+								Leave empty for the repository&apos;s default branch.
+							</p>
+							{errors.branch && (
+								<p id={idFor("branch-error")} className={errorClass}>
+									{errors.branch.message}
+								</p>
+							)}
+						</div>
+					</Step>
 
-					<div className="flex justify-end gap-2 pt-2">
-						<Button type="button" onClick={onCancel} variant="outline">
-							Cancel
-						</Button>
-						<Button type="submit" disabled={isPending} aria-busy={isPending}>
-							{isPending
-								? "Validating GitHub access…"
-								: method === "app"
-									? "Connect through the GitHub App"
-									: method === "public"
-										? "Connect public repository"
-										: "Validate and connect"}
-						</Button>
-					</div>
-				</form>
+					<Step number={3} title="What to include">
+						<div className="space-y-2">
+							<Label htmlFor={idFor("paths")}>Folders</Label>
+							<Textarea
+								id={idFor("paths")}
+								className="resize-none font-mono"
+								rows={2}
+								placeholder="docs/"
+								aria-describedby={idFor("paths-help")}
+								{...form.register("paths")}
+							/>
+							<p id={idFor("paths-help")} className={hintClass}>
+								One per line. Leave empty for the whole repository.
+							</p>
+						</div>
+						<div className="space-y-2">
+							<Label htmlFor={idFor("extensions")}>File types</Label>
+							<Input
+								id={idFor("extensions")}
+								placeholder=".md, .mdx"
+								aria-invalid={!!errors.fileExtensions}
+								aria-describedby={idFor("extensions-help")}
+								{...form.register("fileExtensions")}
+							/>
+							<p id={idFor("extensions-help")} className={hintClass}>
+								Separate with commas. Leave empty for every type.{" "}
+								<Button
+									type="button"
+									variant="link"
+									className="h-auto p-0 type-caption-plain"
+									onClick={() =>
+										form.setValue("fileExtensions", ".md", {
+											shouldValidate: true,
+										})
+									}
+								>
+									Markdown only
+								</Button>
+							</p>
+							{errors.fileExtensions && (
+								<p role="alert" className={errorClass}>
+									{errors.fileExtensions.message}
+								</p>
+							)}
+						</div>
+					</Step>
+
+					<Step number={4} title="Where it lands">
+						<CollectionField
+							idFor={idFor}
+							{...(collections ? { collections } : {})}
+							{...(readableNodeIds ? { readableNodeIds } : {})}
+							{...(collectionError ? { collectionError } : {})}
+							{...(boundaryNodeId ? { boundaryNodeId } : {})}
+							targetCollection={targetCollection}
+							onSelect={(nodeId, label) => {
+								form.setValue("boundaryNodeId", nodeId);
+								form.setValue("targetCollection", label);
+							}}
+							inputProps={form.register("targetCollection")}
+							{...(errors.targetCollection?.message
+								? { error: errors.targetCollection.message }
+								: {})}
+						/>
+					</Step>
+				</>
+			)}
+
+			{errorMessage && (
+				<p role="alert" className={errorClass}>
+					{errorMessage}
+				</p>
+			)}
+
+			<div className="flex flex-wrap justify-end gap-2">
+				<Button type="button" onClick={onCancel} variant="outline">
+					Cancel
+				</Button>
+				{!awaitingInstall && (
+					<Button type="submit" disabled={isPending} aria-busy={isPending}>
+						{isPending ? "Checking access…" : "Connect repository"}
+					</Button>
+				)}
 			</div>
-		</div>
+		</form>
+	);
+}
+
+const hintClass = "type-caption-plain text-muted-foreground";
+
+/** One numbered step of the form: a fieldset its fields belong to. */
+function Step({
+	number,
+	title,
+	children,
+}: {
+	number: number;
+	title: string;
+	children: ReactNode;
+}) {
+	return (
+		<fieldset className="space-y-3">
+			<legend className="mb-2 flex items-center gap-2 type-label">
+				<span
+					aria-hidden="true"
+					className="inline-flex size-5 items-center justify-center rounded-full border type-caption-plain"
+				>
+					{number}
+				</span>
+				{title}
+			</legend>
+			{children}
+		</fieldset>
 	);
 }

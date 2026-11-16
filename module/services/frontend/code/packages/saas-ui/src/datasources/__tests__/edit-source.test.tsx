@@ -69,10 +69,7 @@ function fieldValue(label: string): string {
 
 async function openEditDialog(client: DatasourceClient) {
 	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
-	fireEvent.click(
-		await screen.findByRole("button", { name: /^More actions for / }),
-	);
-	fireEvent.click(await screen.findByRole("menuitem", { name: "Edit" }));
+	fireEvent.click(await screen.findByRole("button", { name: /^Edit / }));
 }
 
 it("seeds the edit dialog from the source and saves the whole scope", async () => {
@@ -85,22 +82,19 @@ it("seeds the edit dialog from the source and saves the whole scope", async () =
 			onSyncEnqueued={onSyncEnqueued}
 		/>,
 	);
-	fireEvent.click(
-		await screen.findByRole("button", { name: /^More actions for / }),
-	);
-	fireEvent.click(await screen.findByRole("menuitem", { name: "Edit" }));
+	fireEvent.click(await screen.findByRole("button", { name: /^Edit / }));
 
 	// The fields arrive holding what the source already fetches, so a person
 	// editing one filter does not have to retype the other two — which, with a
 	// whole-field replacement, would otherwise clear them.
-	expect(fieldValue("Branch (optional)")).toBe("main");
-	expect(fieldValue("Paths (optional)")).toBe("docs/");
-	expect(fieldValue("File types (optional)")).toBe(".md");
+	expect(fieldValue("Branch")).toBe("main");
+	expect(fieldValue("Folders")).toBe("docs/");
+	expect(fieldValue("File types")).toBe(".md");
 
-	fireEvent.change(screen.getByLabelText("Branch (optional)"), {
+	fireEvent.change(screen.getByLabelText("Branch"), {
 		target: { value: "release" },
 	});
-	fireEvent.change(screen.getByLabelText("Paths (optional)"), {
+	fireEvent.change(screen.getByLabelText("Folders"), {
 		target: { value: "docs/\nguides/" },
 	});
 	fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
@@ -123,7 +117,7 @@ it("seeds the edit dialog from the source and saves the whole scope", async () =
 	expect(client.addGitHubSource).not.toHaveBeenCalled();
 	expect(client.deleteSource).not.toHaveBeenCalled();
 	expect((await screen.findByRole("status")).textContent).toContain(
-		"re-snapshot is queued",
+		"is syncing what you chose",
 	);
 	expect(onSyncEnqueued).toHaveBeenCalledExactlyOnceWith("job-resnapshot");
 });
@@ -150,7 +144,7 @@ it("keeps the dialog open and surfaces a refusal", async () => {
 		}),
 	});
 	await openEditDialog(client);
-	fireEvent.change(screen.getByLabelText("Branch (optional)"), {
+	fireEvent.change(screen.getByLabelText("Branch"), {
 		target: { value: "gone" },
 	});
 	fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
@@ -158,7 +152,7 @@ it("keeps the dialog open and surfaces a refusal", async () => {
 	expect((await screen.findByRole("alert")).textContent).toContain(
 		"was not found",
 	);
-	expect(fieldValue("Branch (optional)")).toBe("gone");
+	expect(fieldValue("Branch")).toBe("gone");
 });
 
 // A client with no updateSource — an older host, or a consumer's own adapter —
@@ -167,11 +161,8 @@ it("offers no Edit to a client that cannot edit a source", async () => {
 	const client = fakeClient();
 	delete client.updateSource;
 	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
-	fireEvent.click(
-		await screen.findByRole("button", { name: /^More actions for / }),
-	);
-	await screen.findByRole("menuitem", { name: "Delete" });
-	expect(screen.queryByRole("menuitem", { name: "Edit" })).toBeNull();
+	await screen.findByRole("button", { name: /^Remove / });
+	expect(screen.queryByRole("button", { name: /^Edit / })).toBeNull();
 });
 
 // The repository and the collection are the source's identity: the host refuses
@@ -182,7 +173,7 @@ it("does not offer the repository or the collection as fields", async () => {
 	expect(screen.queryByLabelText("Target collection")).toBeNull();
 	expect(
 		screen.getByRole("dialog", { name: "Edit acme/handbook" }).textContent,
-	).toContain("its collection Handbook");
+	).toContain("the Handbook collection");
 });
 
 // The sync a reconfigure starts hands off the whole new scope. Beside an
@@ -207,7 +198,7 @@ it("states that a reconfigured sync re-snapshots the source", () => {
 		attempt: 1,
 		maxAttempts: 24,
 	};
-	expect(describeSync(base).detail).toContain("re-snapshots it");
+	expect(describeSync(base).detail).toContain("Reading everything again");
 	// An ordinary manual sync says nothing extra: the note is a fact about the
 	// pass the host reported, not decoration on every snapshot.
 	expect(describeSync({ ...base, trigger: "manual" }).detail).toBeUndefined();
@@ -232,7 +223,7 @@ it("does not claim a re-snapshot on a reconfigured sync that handed nothing off"
 	const report = describeSync(unchanged);
 	expect(report.state).toBe("unchanged");
 	expect(report.detail).toContain("nothing was handed off");
-	expect(report.detail).not.toContain("re-snapshots it");
+	expect(report.detail).not.toContain("Reading everything again");
 
 	// An ordinary sync that handed nothing off still reads as it always did.
 	expect(describeSync({ ...unchanged, trigger: "manual" }).detail).toBe(
@@ -252,7 +243,7 @@ it("keeps the dialog open and refreshes the list when the scope moved", async ()
 		}),
 	});
 	await openEditDialog(client);
-	fireEvent.change(screen.getByLabelText("Branch (optional)"), {
+	fireEvent.change(screen.getByLabelText("Branch"), {
 		target: { value: "release" },
 	});
 	fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
@@ -260,7 +251,7 @@ it("keeps the dialog open and refreshes the list when the scope moved", async ()
 	const alert = await screen.findByText(/changed after this form was opened/);
 	expect(alert).toBeDefined();
 	// Still open, still holding what was typed, so nothing has to be retyped.
-	expect(fieldValue("Branch (optional)")).toBe("release");
+	expect(fieldValue("Branch")).toBe("release");
 	// Refetched, so reopening the dialog seeds from the current row rather than
 	// re-sending the same stale expectation and being refused again.
 	await waitFor(() => expect(listSources.mock.calls.length).toBeGreaterThan(1));

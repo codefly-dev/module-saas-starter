@@ -127,3 +127,18 @@ export function formatLiveDelivery(
 			? "On push, through the GitHub App"
 			: "No live updates";
 }
+
+/**
+ * How often a source refreshes on its own, said to an administrator: "Syncs
+ * every 6 hours; you can also sync now." Empty when the host does not say.
+ */
+export function formatSchedule(seconds: number | undefined): string {
+	if (seconds === undefined) return "";
+	if (seconds <= 0) return "Syncs only when you press Sync now.";
+	const [count, unit] =
+		seconds % 3600 === 0
+			? [seconds / 3600, "hour"]
+			: [Math.max(1, Math.round(seconds / 60)), "minute"];
+	const every = count === 1 ? unit : `${count} ${unit}s`;
+	return `Syncs every ${every}; you can also sync now.`;
+}

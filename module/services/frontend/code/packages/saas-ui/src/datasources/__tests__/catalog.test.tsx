@@ -53,17 +53,15 @@ function mount(client: DatasourceClient) {
 }
 async function fill(provider: DatasourceProviderView) {
 	fireEvent.click(
-		await screen.findByRole("button", {
-			name: `Connect ${provider.displayName}`,
-		}),
+		await screen.findByRole("radio", { name: provider.displayName }),
 	);
-	fireEvent.change(screen.getByLabelText("Target collection"), {
+	fireEvent.change(screen.getByLabelText("Collection"), {
 		target: { value: "Example collection" },
 	});
 	fireEvent.change(screen.getByLabelText(provider.fields[0].displayName), {
 		target: { value: "example/" },
 	});
-	fireEvent.change(screen.getByLabelText("Credential"), {
+	fireEvent.change(screen.getByLabelText("Secret key"), {
 		target: { value: "example-secret" },
 	});
 }
@@ -75,24 +73,21 @@ it("offers every admitted descriptor, including one unknown to this kit, and pas
 		refusedProvider,
 	]);
 	mount(client);
-	for (const provider of [repositoryProvider, exampleProvider]) {
-		await fill(provider);
-		if (provider === exampleProvider) {
-			fireEvent.change(screen.getByLabelText("Include patterns"), {
-				target: { value: "docs/**\nnotes/**" },
-			});
-			fireEvent.change(screen.getByLabelText("Exclude patterns"), {
-				target: { value: "**/private/**" },
-			});
-			expect(screen.queryByLabelText("Repository")).toBeNull();
-		}
-		fireEvent.click(screen.getByRole("button", { name: "Connect source" }));
-		await screen.findByRole("button", {
-			name: `Connect ${provider.displayName}`,
-		});
-	}
-	expect(client.addSource).toHaveBeenNthCalledWith(
-		2,
+	await fill(exampleProvider);
+	fireEvent.change(screen.getByLabelText(/^Include patterns/), {
+		target: { value: "docs/**\nnotes/**" },
+	});
+	fireEvent.change(screen.getByLabelText(/^Exclude patterns/), {
+		target: { value: "**/private/**" },
+	});
+	expect(screen.queryByLabelText("Repository")).toBeNull();
+	fireEvent.click(
+		screen.getByRole("button", {
+			name: `Connect ${exampleProvider.displayName}`,
+		}),
+	);
+	await waitFor(() => expect(client.addSource).toHaveBeenCalledTimes(1));
+	expect(client.addSource).toHaveBeenCalledWith(
 		expect.objectContaining({
 			provider: exampleProvider,
 			config: {
@@ -107,15 +102,18 @@ it("offers every admitted descriptor, including one unknown to this kit, and pas
 			},
 		}),
 	);
-	expect(client.addGitHubSource).not.toHaveBeenCalled();
-	expect(screen.getByText(refusedProvider.gap).textContent).toBe(
-		refusedProvider.gap,
+	// A repository has its own form, labelled for a repository.
+	fireEvent.click(
+		screen.getByRole("radio", { name: repositoryProvider.displayName }),
 	);
+	expect(screen.getByRole("form", { name: "Connect GitHub" })).toBeTruthy();
+	expect(client.addGitHubSource).not.toHaveBeenCalled();
+	// A provider that takes no new source is not offered, and its note is not
+	// shown: why it is closed is the host's business.
 	expect(
-		screen.queryByRole("button", {
-			name: `Connect ${refusedProvider.displayName}`,
-		}),
+		screen.queryByRole("radio", { name: refusedProvider.displayName }),
 	).toBeNull();
+	expect(screen.queryByText(refusedProvider.gap)).toBeNull();
 });
 
 it.each(["removed", "refused", "failed"])(
@@ -140,7 +138,7 @@ it.each(["removed", "refused", "failed"])(
 			queries.invalidateQueries({ queryKey: ["datasource-catalog"] }),
 		);
 		await waitFor(() =>
-			expect(screen.queryByLabelText("Credential")).toBeNull(),
+			expect(screen.queryByLabelText("Secret key")).toBeNull(),
 		);
 		expect(
 			screen.queryByRole("button", {
@@ -149,10 +147,10 @@ it.each(["removed", "refused", "failed"])(
 		).toBeNull();
 		expect(client.addSource).not.toHaveBeenCalled();
 		if (change === "refused")
-			expect(screen.getByText(refusedProvider.gap)).toBeTruthy();
+			expect(screen.queryByText(refusedProvider.gap)).toBeNull();
 		if (change === "failed")
 			expect(screen.getByRole("alert").textContent).toContain(
-				"Could not load the provider catalog",
+				"Couldn’t load what can be connected",
 			);
 	},
 );
@@ -177,11 +175,7 @@ it.each(["removed", "refused"])(
 		}));
 		try {
 			mount(client);
-			await screen.findByText(
-				change === "removed"
-					? "The host reports no source providers."
-					: refusedProvider.gap,
-			);
+			await screen.findByText("Nothing can be connected right now.");
 			expect(client.completeGitHubAppSetup).not.toHaveBeenCalled();
 			expect(screen.queryByLabelText("Repository")).toBeNull();
 			expect(screen.queryByRole("button", { name: /^Connect/ })).toBeNull();
@@ -212,7 +206,7 @@ it("withdraws the installation-return form when its provider leaves the catalog"
 		await act(() =>
 			queries.invalidateQueries({ queryKey: ["datasource-catalog"] }),
 		);
-		await screen.findByText("The host reports no source providers.");
+		await screen.findByText("Nothing can be connected right now.");
 		expect(screen.queryByLabelText("Repository")).toBeNull();
 		expect(screen.queryByRole("button", { name: /^Connect/ })).toBeNull();
 	} finally {
@@ -234,7 +228,7 @@ it.each([false, true])(
 		);
 		const { queries } = mount(client);
 		await fill(exampleProvider);
-		const input = screen.getByLabelText("Credential") as HTMLInputElement;
+		const input = screen.getByLabelText("Secret key") as HTMLInputElement;
 		const form = screen.getByRole("form", {
 			name: `Connect ${exampleProvider.displayName}`,
 		});
@@ -255,7 +249,7 @@ it.each([false, true])(
 		expect(document.body.textContent).not.toContain("example-secret");
 		if (reject)
 			expect(
-				(screen.getByLabelText("Credential") as HTMLInputElement).value,
+				(screen.getByLabelText("Secret key") as HTMLInputElement).value,
 			).toBe("");
 	},
 );
@@ -265,20 +259,19 @@ it("discards a credential on cancellation and provider change", async () => {
 	await fill(exampleProvider);
 	fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 	fireEvent.click(
-		screen.getByRole("button", {
-			name: `Connect ${exampleProvider.displayName}`,
-		}),
+		screen.getByRole("radio", { name: exampleProvider.displayName }),
 	);
-	expect(screen.getByLabelText("Credential")).toHaveProperty("value", "");
-	fireEvent.change(screen.getByLabelText("Credential"), {
+	expect(screen.getByLabelText("Secret key")).toHaveProperty("value", "");
+	fireEvent.change(screen.getByLabelText("Secret key"), {
 		target: { value: "example-secret" },
 	});
 	fireEvent.click(
-		screen.getByRole("button", {
-			name: `Connect ${repositoryProvider.displayName}`,
-		}),
+		screen.getByRole("radio", { name: repositoryProvider.displayName }),
 	);
-	expect(screen.getByLabelText("Credential")).toHaveProperty("value", "");
+	fireEvent.click(
+		screen.getByRole("radio", { name: exampleProvider.displayName }),
+	);
+	expect(screen.getByLabelText("Secret key")).toHaveProperty("value", "");
 });
 
 it("keeps today's client and props valid without inventing a provider when catalog support is absent", async () => {
@@ -286,10 +279,8 @@ it("keeps today's client and props valid without inventing a provider when catal
 	delete legacy.getCatalog;
 	delete legacy.addSource;
 	mount(legacy);
-	expect(
-		await screen.findByText("Provider catalog unavailable with this client."),
-	).toBeTruthy();
-	expect(screen.queryByRole("button", { name: /^Connect/ })).toBeNull();
+	expect(await screen.findByText("No sources yet")).toBeTruthy();
+	expect(screen.queryByRole("region", { name: "Connect a source" })).toBeNull();
 });
 
 it("reads the host catalog over the existing transport and encodes two different AddSource oneofs", async () => {
@@ -412,18 +403,20 @@ it.each([CatalogProviders, RefusedProvider])(
 	async (story) => {
 		const Story = story.render;
 		render(<Story />);
-		expect(await screen.findByText(refusedProvider.gap)).toBeTruthy();
-		const region = screen.getByRole("region", { name: "Source providers" });
+		const region = await screen.findByRole("region", {
+			name: "Connect a source",
+		});
+		expect(screen.queryByText(refusedProvider.gap)).toBeNull();
 		if (story === CatalogProviders)
 			expect(
-				within(region).getByRole("button", {
-					name: `Connect ${exampleProvider.displayName}`,
+				await within(region).findByRole("radio", {
+					name: exampleProvider.displayName,
 				}),
 			).toBeTruthy();
 		else
 			expect(
-				within(region).queryByRole("button", { name: /^Connect/ }),
-			).toBeNull();
+				await within(region).findByText("Nothing can be connected right now."),
+			).toBeTruthy();
 	},
 );
 
@@ -447,7 +440,11 @@ it("ties every source a solution's page connects to its installation, and sends 
 		</QueryClientProvider>,
 	);
 	await fill(exampleProvider);
-	fireEvent.click(screen.getByRole("button", { name: "Connect source" }));
+	fireEvent.click(
+		screen.getByRole("button", {
+			name: `Connect ${exampleProvider.displayName}`,
+		}),
+	);
 	await waitFor(() => expect(client.addSource).toHaveBeenCalledTimes(1));
 	expect(client.addSource).toHaveBeenCalledWith(
 		expect.objectContaining({ provider: exampleProvider, governance }),

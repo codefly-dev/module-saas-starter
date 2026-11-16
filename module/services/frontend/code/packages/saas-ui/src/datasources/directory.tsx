@@ -11,6 +11,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { apiSourceRefusal, sourceLinks } from "./api-source.js";
+import { selectClass } from "./collection-field.js";
 import type { DatasourceClient, DomainView } from "./types.js";
 
 /**
@@ -151,7 +152,8 @@ export function DatasourceAccountLinks({
 	const { indicator: linksIndicator, quiet: linksQuiet } = useLoadingPhase(
 		links.isPending && links.fetchStatus !== "idle",
 	);
-	const redeemable = linkReturn && "code" in linkReturn ? linkReturn : undefined;
+	const redeemable =
+		linkReturn && "code" in linkReturn ? linkReturn : undefined;
 	const completed = useQuery({
 		queryKey: ["datasource-account-link-return", orgId, redeemable?.state],
 		queryFn: async () => {
@@ -199,8 +201,8 @@ export function DatasourceAccountLinks({
 			>
 				<h3 className="type-section-title">Your {providerName} sign-in</h3>
 				<p className="type-body">
-					Signing in lets this source call {providerName} as you. The source
-					is yours: no one else in the organization can use it.
+					Signing in lets this source call {providerName} as you. The source is
+					yours: no one else in the organization can use it.
 				</p>
 				{completed.isSuccess && (
 					<p role="status" className="type-body">
@@ -229,16 +231,14 @@ export function DatasourceAccountLinks({
 					<p className="type-body">You have not signed in yet.</p>
 				) : (
 					<p className="type-body">
-						Signed in. Signing in again replaces the authorization. To stop
-						this source calling {providerName} as you, revoke its access at{" "}
+						Signed in. Signing in again replaces the authorization. To stop this
+						source calling {providerName} as you, revoke its access at{" "}
 						{providerName}, or remove the source.
 					</p>
 				)}
 				{client.beginAccountLink && (
 					<Button disabled={begin.isPending} onClick={() => begin.mutate()}>
-						{mine.length === 0
-							? `Sign in to ${providerName}`
-							: "Sign in again"}
+						{mine.length === 0 ? `Sign in to ${providerName}` : "Sign in again"}
 					</Button>
 				)}
 				{begin.isError && (
@@ -252,49 +252,54 @@ export function DatasourceAccountLinks({
 	}
 	const mine = (links.data ?? []).filter((l) => l.connector === connector);
 	return (
-		<section
-			aria-label={`Your ${providerName} account`}
-			className="space-y-3 rounded border p-4"
-		>
-			<h3 className="type-section-title">Your {providerName} account</h3>
-			<p className="type-body">
-				Linking proves which {providerName} account is yours, so content shared
-				with that account there is readable by you here. You sign in to{" "}
-				{providerName}; your email address is never used to match you.
+		<section aria-label={`Your ${providerName} account`} className="space-y-2">
+			<h4 className="type-label">Your {providerName} account</h4>
+			<p className="type-caption-plain text-muted-foreground">
+				Link it so what is shared with you on {providerName} is readable here
+				too. You sign in to {providerName}; your email is never used to match
+				you.
 			</p>
 			{completed.isSuccess && (
 				<p role="status" className="type-body">
-					Linked {providerName} account {completed.data.providerAccountLogin}.
+					Linked as {completed.data.providerAccountLogin}.
 				</p>
 			)}
 			{completed.isError && (
-				<p role="alert" className="type-body">
+				<p role="alert" className="type-body text-destructive">
 					Couldn’t link the account: {completed.error.message}
 				</p>
 			)}
 			{declined && (
-				<p role="alert" className="type-body">
-					The sign-in at {providerName} did not finish ({declined.error}). Start
-					it again.
+				<p role="alert" className="type-body text-destructive">
+					The sign-in at {providerName} did not finish. Start it again.
 				</p>
 			)}
 			{links.isError ? (
-				<p role="alert" className="type-body">
-					Couldn’t load your linked accounts.
+				<p role="alert" className="type-body text-destructive">
+					Couldn’t load your linked account.
 				</p>
 			) : linksQuiet ? null : linksIndicator ? (
-				<Spinner label="Loading your linked accounts" size="sm" />
+				<Spinner label="Loading your linked account" size="sm" />
 			) : mine.length === 0 ? (
-				<p className="type-body">No {providerName} account is linked.</p>
+				client.beginAccountLink && (
+					<Button
+						size="sm"
+						variant="outline"
+						disabled={begin.isPending}
+						onClick={() => begin.mutate()}
+					>
+						Link your {providerName} account
+					</Button>
+				)
 			) : (
 				<ul className="space-y-2">
 					{mine.map((l) => (
-						<li key={l.id} className="flex items-center gap-2">
-							<Badge variant="secondary">
-								{l.providerAccountLogin || l.providerAccountId}
-							</Badge>
+						<li key={l.id} className="flex flex-wrap items-center gap-2">
+							<span className="type-body">
+								Linked as {l.providerAccountLogin || "your account"}
+							</span>
 							<Button
-								variant="outline"
+								variant="ghost"
 								size="sm"
 								disabled={remove.isPending}
 								onClick={() => remove.mutate(l.id)}
@@ -305,18 +310,13 @@ export function DatasourceAccountLinks({
 					))}
 				</ul>
 			)}
-			{client.beginAccountLink && (
-				<Button disabled={begin.isPending} onClick={() => begin.mutate()}>
-					Link your {providerName} account
-				</Button>
-			)}
 			{begin.isError && (
-				<p role="alert" className="type-body">
+				<p role="alert" className="type-body text-destructive">
 					Couldn’t start the link: {begin.error.message}
 				</p>
 			)}
 			{remove.isError && (
-				<p role="alert" className="type-body">
+				<p role="alert" className="type-body text-destructive">
 					Couldn’t unlink: {remove.error.message}
 				</p>
 			)}
@@ -333,11 +333,13 @@ export function DatasourceDirectoryPanel({
 	client,
 	orgId,
 	connector = "github",
-	groupHint = "organization/team, e.g. acme/platform",
+	providerName = "GitHub",
+	groupHint = "acme/platform",
 }: {
 	client: DatasourceClient;
 	orgId: string;
 	connector?: string;
+	providerName?: string;
 	groupHint?: string;
 }) {
 	const cache = useQueryClient();
@@ -391,69 +393,73 @@ export function DatasourceDirectoryPanel({
 	if (!client.getDirectory) return null;
 	if (directory.isError)
 		return (
-			<p role="alert" className="type-body">
-				Couldn’t load the datasource directory.
+			<p role="alert" className="type-body text-destructive">
+				Couldn’t load the {providerName} matching settings.
 			</p>
 		);
 	if (directoryQuiet) return null;
 	if (directoryIndicator)
-		return <Spinner label="Loading the datasource directory" size="sm" />;
+		return <Spinner label={`Loading the ${providerName} settings`} size="sm" />;
 	if (directory.isPending) return null;
 	const data = directory.data;
 	const teamName = (id: string) =>
-		data.teams.find((t) => t.id === id)?.name ?? id;
+		data.teams.find((t) => t.id === id)?.name ?? "A removed team";
 	const failure = [bind, unbind, claim, verify, removeDomain, unlink].find(
 		(m) => m.isError,
 	);
+	const id = (name: string) => `directory-${orgId}-${name}`;
 	return (
-		<section aria-label="Datasource directory" className="space-y-6">
-			<p className="type-body">
-				A source that shares items with particular people or groups is read here
-				only through these mappings. Anything not mapped grants nothing.
-			</p>
+		<div className="space-y-6">
 			{failure?.error && (
-				<p role="alert" className="type-body">
+				<p role="alert" className="type-body text-destructive">
 					{failure.error.message}
 				</p>
 			)}
 
-			<div className="space-y-2">
-				<h3 className="type-section-title">Provider groups</h3>
-				{data.bindings.length === 0 ? (
-					<p className="type-body">No provider group is bound to a team.</p>
-				) : (
-					<ul className="space-y-2">
+			<section aria-labelledby={id("groups")} className="space-y-2">
+				<h4 id={id("groups")} className="type-label">
+					{providerName} teams
+				</h4>
+				<p className="type-caption-plain text-muted-foreground">
+					Give a {providerName} team&apos;s members what one of your teams can read.
+				</p>
+				{data.bindings.length > 0 && (
+					<ul className="divide-y rounded-md border">
 						{data.bindings.map((b) => (
-							<li key={b.id} className="flex items-center gap-2">
-								<span className="type-body">
+							<li
+								key={b.id}
+								className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
+							>
+								<span className="type-body break-all">
 									{b.providerGroupId} → {teamName(b.teamId)}
 								</span>
 								<Button
-									variant="outline"
+									variant="ghost"
 									size="sm"
 									disabled={unbind.isPending}
 									onClick={() => unbind.mutate(b.id)}
 								>
-									Unbind
+									Remove
 								</Button>
 							</li>
 						))}
 					</ul>
 				)}
 				<div className="flex flex-wrap items-end gap-2">
-					<div className="space-y-1">
-						<Label htmlFor="directory-group">Provider group</Label>
+					<div className="min-w-48 flex-1 space-y-1">
+						<Label htmlFor={id("group")}>{providerName} team</Label>
 						<Input
-							id="directory-group"
+							id={id("group")}
 							value={group}
 							placeholder={groupHint}
 							onChange={(event) => setGroup(event.target.value)}
 						/>
 					</div>
-					<label className="type-body">
-						Team{" "}
+					<div className="min-w-40 flex-1 space-y-1">
+						<Label htmlFor={id("team")}>Your team</Label>
 						<select
-							aria-label="Team"
+							id={id("team")}
+							className={selectClass}
 							value={teamId}
 							onChange={(event) => setTeamId(event.target.value)}
 						>
@@ -464,56 +470,59 @@ export function DatasourceDirectoryPanel({
 								</option>
 							))}
 						</select>
-					</label>
+					</div>
 					<Button
+						variant="outline"
 						disabled={!group.trim() || !teamId || bind.isPending}
 						onClick={() => bind.mutate()}
 					>
-						Bind group
+						Match
 					</Button>
 				</div>
-			</div>
+			</section>
 
-			<div className="space-y-2">
-				<h3 className="type-section-title">Verified domains</h3>
-				<p className="type-body">
-					“Anyone in the domain” at a provider reads here only for a domain
-					verified to this organization.
+			<section aria-labelledby={id("domains")} className="space-y-2">
+				<h4 id={id("domains")} className="type-label">
+					Verified domains
+				</h4>
+				<p className="type-caption-plain text-muted-foreground">
+					Prove you own a domain, so what is shared with everyone at it on{" "}
+					{providerName} is readable here.
 				</p>
-				{data.domains.length === 0 ? (
-					<p className="type-body">No domain is claimed.</p>
-				) : (
-					<ul className="space-y-3">
+				{data.domains.length > 0 && (
+					<ul className="divide-y rounded-md border">
 						{data.domains.map((d) => (
-							<li key={d.id} className="space-y-1">
-								<div className="flex items-center gap-2">
+							<li key={d.id} className="space-y-1 px-3 py-2">
+								<div className="flex flex-wrap items-center gap-2">
 									<span className="type-body">{d.domain}</span>
-									<Badge variant={d.verified ? "secondary" : "outline"}>
-										{d.verified ? "Verified" : "Pending"}
+									<Badge tone={d.verified ? "success" : "warning"} dot>
+										{d.verified ? "Verified" : "Waiting for DNS"}
 									</Badge>
-									{!d.verified && (
+									<span className="ml-auto flex gap-1">
+										{!d.verified && (
+											<Button
+												variant="outline"
+												size="sm"
+												disabled={verify.isPending}
+												onClick={() => verify.mutate(d)}
+											>
+												Check now
+											</Button>
+										)}
 										<Button
-											variant="outline"
+											variant="ghost"
 											size="sm"
-											disabled={verify.isPending}
-											onClick={() => verify.mutate(d)}
+											disabled={removeDomain.isPending}
+											onClick={() => removeDomain.mutate(d.id)}
 										>
-											Verify
+											Remove
 										</Button>
-									)}
-									<Button
-										variant="outline"
-										size="sm"
-										disabled={removeDomain.isPending}
-										onClick={() => removeDomain.mutate(d.id)}
-									>
-										Remove
-									</Button>
+									</span>
 								</div>
 								{!d.verified && (
-									<p className="type-caption-plain">
-										Publish a TXT record named <code>{d.txtRecordName}</code>{" "}
-										with the value <code>{d.txtRecordValue}</code>, then verify.
+									<p className="type-caption-plain text-muted-foreground break-all">
+										Add a TXT record named <code>{d.txtRecordName}</code> with
+										the value <code>{d.txtRecordValue}</code>, then check.
 									</p>
 								)}
 							</li>
@@ -521,48 +530,56 @@ export function DatasourceDirectoryPanel({
 					</ul>
 				)}
 				<div className="flex flex-wrap items-end gap-2">
-					<div className="space-y-1">
-						<Label htmlFor="directory-domain">Domain</Label>
+					<div className="min-w-48 flex-1 space-y-1">
+						<Label htmlFor={id("domain")}>Domain</Label>
 						<Input
-							id="directory-domain"
+							id={id("domain")}
 							value={domain}
 							placeholder="example.com"
 							onChange={(event) => setDomain(event.target.value)}
 						/>
 					</div>
 					<Button
+						variant="outline"
 						disabled={!domain.trim() || claim.isPending}
 						onClick={() => claim.mutate()}
 					>
-						Claim domain
+						Add domain
 					</Button>
 				</div>
-			</div>
+			</section>
 
-			<div className="space-y-2">
-				<h3 className="type-section-title">Linked accounts</h3>
-				{data.links.length === 0 ? (
-					<p className="type-body">No member has linked a provider account.</p>
-				) : (
-					<ul className="space-y-2">
+			{data.links.length > 0 && (
+				<section aria-labelledby={id("links")} className="space-y-2">
+					<h4 id={id("links")} className="type-label">
+						Members&apos; linked accounts
+					</h4>
+					<p className="type-caption-plain text-muted-foreground">
+						Members who linked their {providerName} account. Removing one stops
+						what is shared with them there from reaching them here.
+					</p>
+					<ul className="divide-y rounded-md border">
 						{data.links.map((l) => (
-							<li key={l.id} className="flex items-center gap-2">
+							<li
+								key={l.id}
+								className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
+							>
 								<span className="type-body">
-									{l.connector} {l.providerAccountLogin || l.providerAccountId}
+									{l.providerAccountLogin || "An unnamed account"}
 								</span>
 								<Button
-									variant="outline"
+									variant="ghost"
 									size="sm"
 									disabled={unlink.isPending}
 									onClick={() => unlink.mutate(l.id)}
 								>
-									Remove link
+									Remove
 								</Button>
 							</li>
 						))}
 					</ul>
-				)}
-			</div>
-		</section>
+				</section>
+			)}
+		</div>
 	);
 }

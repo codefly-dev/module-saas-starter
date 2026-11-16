@@ -122,10 +122,10 @@ const STEP_HEADLINE: Record<SyncStepName, string> = {
 	// Not "Queued": that is the state's name, which a view shows beside this. The
 	// headline's job is to add what the state does not say — here, that the sync
 	// is accepted and waiting on a worker rather than being looked at.
-	queued: "Accepted, waiting for a worker",
-	fetching: "Fetching from the repository",
-	compiled: "Compiling the change set",
-	handed_off: "Handed off for ingestion",
+	queued: "Waiting to start",
+	fetching: "Reading the repository",
+	compiled: "Working out what changed",
+	handed_off: "Bringing the changes in",
 };
 
 /**
@@ -205,7 +205,7 @@ export function describeSync(
 	// unless something says the source itself moved.
 	const scopeNote =
 		view.trigger === "reconfigured"
-			? "The source was reconfigured, so this sync re-snapshots it at the branch and filters now saved."
+			? "Reading everything again with the settings you saved."
 			: undefined;
 
 	const base = {
@@ -302,7 +302,7 @@ export function describeSync(
 			active: true,
 			percent: percentFor(step, stepCount),
 			headline,
-			detail: `No progress for ${formatDuration(waiting)}. The host has not given up; open the execution view for the durable attempts.`,
+			detail: `No progress for ${formatDuration(waiting)}. It is still trying; nothing is lost.`,
 		};
 	}
 	return {

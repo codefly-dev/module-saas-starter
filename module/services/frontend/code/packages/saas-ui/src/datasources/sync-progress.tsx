@@ -172,7 +172,7 @@ function stepLine(report: SyncProgressReport): string {
 	const where = `${Math.min(report.step, report.stepCount)} of ${report.stepCount}`;
 	const line =
 		report.tone === "danger" ? `Stopped at step ${where}` : `Step ${where}`;
-	return report.commit ? `${line} · ${report.commit.slice(0, 7)}` : line;
+	return line;
 }
 
 /**

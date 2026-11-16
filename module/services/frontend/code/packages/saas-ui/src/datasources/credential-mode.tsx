@@ -1,6 +1,12 @@
 "use client";
 
-import { Button, Input, Label } from "@codefly-dev/ui/layout";
+import {
+	Button,
+	Input,
+	Label,
+	Radio,
+	RadioGroup,
+} from "@codefly-dev/ui/layout";
 import type { ComponentProps, ReactNode } from "react";
 
 /**
@@ -10,11 +16,9 @@ import type { ComponentProps, ReactNode } from "react";
  * repository — `<DeclaredSourceCard>`, where the solution declares what it
  * reads and the person supplies only the credential — asks for the credential
  * in exactly the same words, with exactly the same three modes, without
- * copying the form. A second copy of this choice is the failure mode worth
- * naming: the App's "nothing to paste or rotate", the public path's 60
- * requests an hour, and the PAT's Contents: Read-only scope are the whole of
- * what a person has to decide between, and two surfaces that say them
- * differently teach two different products.
+ * copying the form. Two surfaces that say the three ways differently teach two
+ * different products, so the choice and its one-line explanations live here
+ * once.
  *
  * Everything here is presentational and controlled. The form drives it through
  * react-hook-form; the card drives it from `useState`. Neither mode's meaning
@@ -27,9 +31,9 @@ export type CredentialMethod = "app" | "public" | "pat";
 export const fieldErrorClass = "type-body text-destructive";
 
 /**
- * Narrows a `<select>` value to a mode the caller can actually offer. The App
+ * Narrows a chosen value to a mode the caller can actually offer. The App
  * option is absent when the client cannot drive App onboarding, so a value of
- * `app` arriving from anywhere else falls back to the PAT path rather than
+ * `app` arriving from anywhere else falls back to the token path rather than
  * selecting a mode with no way to complete it.
  */
 export function credentialMethodFrom(
@@ -41,14 +45,30 @@ export function credentialMethodFrom(
 	return "pat";
 }
 
-const methodHelp: Record<CredentialMethod, string> = {
-	app: "Install the app on repositories you choose. Nothing to create, paste, or rotate.",
-	public:
-		"No token needed, but GitHub allows only 60 unauthenticated requests an hour, so large repositories sync slowly — use the App or a token for those.",
-	pat: "For an existing connection, or for development. Restrict the token to this repository with Contents: Read-only.",
-};
+/**
+ * The three ways to connect, as equal choices, each said in one line. The
+ * order is the order a person meets them in GitHub's own settings: a token
+ * they already hold, the app an owner installs, or nothing at all.
+ */
+const methods: { value: CredentialMethod; label: string; help: string }[] = [
+	{
+		value: "pat",
+		label: "Access token",
+		help: "Paste a fine-grained token with read access to the repository.",
+	},
+	{
+		value: "app",
+		label: "GitHub app",
+		help: "Install it on the organization; no token to manage, syncs on every push.",
+	},
+	{
+		value: "public",
+		label: "Public repository",
+		help: "No credential needed.",
+	},
+];
 
-/** The Authentication choice and the sentence explaining the selected mode. */
+/** How to connect: one radio card per way, with the line that explains it. */
 export function CredentialMethodField({
 	id,
 	value,
@@ -56,28 +76,38 @@ export function CredentialMethodField({
 	onChange,
 }: {
 	id: string;
-	/** Undefined reads as the PAT path, which is what an unset mode means. */
+	/** Undefined reads as the token path, which is what an unset mode means. */
 	value: CredentialMethod | undefined;
 	appAvailable: boolean;
 	onChange: (next: CredentialMethod) => void;
 }) {
-	const method = value ?? "pat";
 	return (
-		<div className="space-y-2">
-			<Label htmlFor={id}>Authentication</Label>
-			<select
-				id={id}
-				value={method}
-				onChange={(event) =>
-					onChange(credentialMethodFrom(event.target.value, appAvailable))
-				}
-			>
-				{appAvailable && <option value="app">GitHub App (recommended)</option>}
-				<option value="public">Public repository (no token)</option>
-				<option value="pat">Fine-grained personal access token</option>
-			</select>
-			<p className="type-caption-plain text-muted-foreground">{methodHelp[method]}</p>
-		</div>
+		<RadioGroup
+			id={id}
+			aria-label="How to connect"
+			value={value ?? "pat"}
+			onValueChange={(next) =>
+				onChange(credentialMethodFrom(String(next), appAvailable))
+			}
+			className="grid gap-2 sm:grid-cols-3"
+		>
+			{methods
+				.filter((method) => method.value !== "app" || appAvailable)
+				.map((method) => (
+					<Label
+						key={method.value}
+						className="cursor-pointer items-start gap-3 rounded-lg border p-3 has-[[data-checked]]:border-primary has-[[data-checked]]:bg-muted/40"
+					>
+						<Radio value={method.value} className="mt-0.5" />
+						<span className="space-y-0.5">
+							<span className="block type-label">{method.label}</span>
+							<span className="block type-caption-plain text-muted-foreground">
+								{method.help}
+							</span>
+						</span>
+					</Label>
+				))}
+		</RadioGroup>
 	);
 }
 
@@ -114,7 +144,7 @@ export function AppInstallPrompt({
 					? "Completing setup…"
 					: phase === "beginning"
 						? "Opening GitHub…"
-						: "Install or select repositories on GitHub"}
+						: "Install the GitHub app"}
 			</Button>
 			{error && (
 				<p role="alert" className={fieldErrorClass}>
@@ -143,15 +173,15 @@ export function AccessTokenField({
 			<Input
 				id={id}
 				aria-invalid={!!error}
-				aria-describedby={error ? errorId : undefined}
+				aria-describedby={error ? errorId : `${id}-help`}
 				type="password"
-				placeholder="PAT or GitHub App installation token"
+				autoComplete="new-password"
+				spellCheck={false}
 				{...inputProps}
 			/>
-			<p className="type-caption-plain text-muted-foreground">
-				Use a fine-grained PAT restricted to this repository with Contents:
-				Read-only. Your organization may require approval or SSO authorization.
-				Repository and branch access are verified before saving.
+			<p id={`${id}-help`} className="type-caption-plain text-muted-foreground">
+				Give it read-only access to this repository&apos;s contents. It is checked
+				before saving and never shown again.
 			</p>
 			{error && (
 				<p id={errorId} className={fieldErrorClass}>
@@ -165,10 +195,11 @@ export function AccessTokenField({
 /**
  * The shared secret GitHub signs push deliveries with.
  *
- * Offered on the App and PAT paths only: a public repository is read with no
+ * Offered on the token path only: a public repository is read with no
  * credential and a webhook needs administration of the repository, so the host
- * refuses a secret there and keeps the source current by periodic sync. The
- * caller decides whether to render it; this component does not re-derive that.
+ * refuses a secret there; an App-connected source receives its pushes through
+ * the App and holds no secret of its own. The caller decides whether to render
+ * it; this component does not re-derive that.
  */
 export function WebhookSecretField({
 	id,
@@ -187,14 +218,15 @@ export function WebhookSecretField({
 			<Input
 				id={id}
 				aria-invalid={!!error}
-				aria-describedby={error ? errorId : undefined}
+				aria-describedby={error ? errorId : `${id}-help`}
 				type="password"
-				placeholder="Shared secret GitHub signs push deliveries with"
+				autoComplete="new-password"
+				spellCheck={false}
 				{...inputProps}
 			/>
-			<p className="type-caption-plain text-muted-foreground">
-				Enables live webhook ingestion. Add it later if you don&apos;t have it
-				yet.
+			<p id={`${id}-help`} className="type-caption-plain text-muted-foreground">
+				Lets GitHub send each push as it happens. Without it, the source still
+				syncs on its schedule.
 			</p>
 			{error && (
 				<p id={errorId} className={fieldErrorClass}>

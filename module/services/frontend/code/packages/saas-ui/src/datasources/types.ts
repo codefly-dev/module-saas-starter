@@ -7,7 +7,13 @@
 import type { JsonObject } from "@bufbuild/protobuf";
 import type { SourceReconcileStatus } from "./reconcile-passes.js";
 
-export type DatasourceProviderName = "github" | "api" | "unknown";
+/** Spelled as the host's catalog keys each provider (its `connector`). */
+export type DatasourceProviderName =
+	| "github"
+	| "api"
+	| "crawler"
+	| "upload"
+	| "unknown";
 
 export type DatasourceStatusName = "active" | "paused" | "degraded" | "unknown";
 

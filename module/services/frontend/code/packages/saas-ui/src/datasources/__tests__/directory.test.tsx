@@ -69,7 +69,9 @@ describe("DatasourceAccountLinks", () => {
 		renderWithClient(<DatasourceAccountLinks client={client} orgId="org-1" />);
 
 		await waitFor(() => expect(client.listMyAccountLinks).toHaveBeenCalled());
-		expect(screen.queryByText(/No .* account is linked/)).toBeNull();
+		expect(
+			screen.queryByRole("button", { name: /link your github/i }),
+		).toBeNull();
 
 		release([
 			{
@@ -80,11 +82,13 @@ describe("DatasourceAccountLinks", () => {
 				providerAccountLogin: "jane",
 			},
 		]);
-		expect(await screen.findByText("jane")).toBeTruthy();
-		expect(screen.queryByText(/No .* account is linked/)).toBeNull();
+		expect(await screen.findByText("Linked as jane")).toBeTruthy();
+		expect(
+			screen.queryByRole("button", { name: /link your github/i }),
+		).toBeNull();
 	});
 
-	it("lists the person's link and starts a sign-in to link one", async () => {
+	it("lists the person's link and unlinks it", async () => {
 		const assign = vi.fn();
 		vi.stubGlobal("location", { ...window.location, assign });
 		const client = baseClient({
@@ -105,17 +109,34 @@ describe("DatasourceAccountLinks", () => {
 		});
 		renderWithClient(<DatasourceAccountLinks client={client} orgId="org-1" />);
 
-		expect(await screen.findByText("jane")).toBeTruthy();
-		fireEvent.click(screen.getByRole("button", { name: /link your github/i }));
+		expect(await screen.findByText("Linked as jane")).toBeTruthy();
+		fireEvent.click(screen.getByRole("button", { name: /unlink/i }));
+		await waitFor(() =>
+			expect(client.deleteAccountLink).toHaveBeenCalledWith("org-1", "l1"),
+		);
+	});
+
+	it("starts a sign-in when no account is linked", async () => {
+		const assign = vi.fn();
+		vi.stubGlobal("location", { ...window.location, assign });
+		const client = baseClient({
+			listMyAccountLinks: vi.fn(async () => []),
+			beginAccountLink: vi.fn(async () => ({
+				authorizeUrl: "https://provider.example.com/authorize",
+				state: "dl.x",
+			})),
+		});
+		renderWithClient(<DatasourceAccountLinks client={client} orgId="org-1" />);
+
+		fireEvent.click(
+			await screen.findByRole("button", { name: /link your github/i }),
+		);
 		await waitFor(() =>
 			expect(assign).toHaveBeenCalledWith(
 				"https://provider.example.com/authorize",
 			),
 		);
-		fireEvent.click(screen.getByRole("button", { name: /unlink/i }));
-		await waitFor(() =>
-			expect(client.deleteAccountLink).toHaveBeenCalledWith("org-1", "l1"),
-		);
+		vi.unstubAllGlobals();
 	});
 
 	it("completes a link from the provider's return, once, and clears the address bar", async () => {
@@ -132,7 +153,7 @@ describe("DatasourceAccountLinks", () => {
 		});
 		renderWithClient(<DatasourceAccountLinks client={client} orgId="org-1" />);
 
-		expect(await screen.findByText(/linked github account jane/i)).toBeTruthy();
+		expect((await screen.findAllByText(/Linked as jane/)).length).toBeGreaterThan(0);
 		expect(client.completeAccountLink).toHaveBeenCalledTimes(1);
 		expect(client.completeAccountLink).toHaveBeenCalledWith(
 			"org-1",
@@ -154,7 +175,7 @@ describe("DatasourceAccountLinks", () => {
 		});
 		renderWithClient(<DatasourceAccountLinks client={client} orgId="org-1" />);
 		expect(
-			await screen.findByText(/sign-in at github did not finish \(access_denied\)/i),
+			await screen.findByText(/sign-in at github did not finish/i),
 		).toBeTruthy();
 		expect(client.completeAccountLink).not.toHaveBeenCalled();
 		expect(window.location.search).toBe("?tab=links");
@@ -168,8 +189,9 @@ describe("DatasourceAccountLinks", () => {
 			completeAccountLink: vi.fn(),
 		});
 		renderWithClient(<DatasourceAccountLinks client={client} orgId="org-1" />);
+		await waitFor(() => expect(client.listMyAccountLinks).toHaveBeenCalled());
 		expect(
-			await screen.findByText(/no github account is linked/i),
+			await screen.findByRole("heading", { name: "Your GitHub account" }),
 		).toBeTruthy();
 		expect(client.completeAccountLink).not.toHaveBeenCalled();
 		expect(window.location.search).toBe("?state=setup&code=xyz");
@@ -372,12 +394,12 @@ describe("DatasourceDirectoryPanel", () => {
 		);
 
 		expect(await screen.findByText("acme/platform → Platform")).toBeTruthy();
-		expect(screen.getByText("Pending")).toBeTruthy();
+		expect(screen.getByText("Waiting for DNS")).toBeTruthy();
 		expect(
 			screen.getByText("_saas-datasource-verification.example.com"),
 		).toBeTruthy();
 		expect(screen.getByText("saas-datasource-verification=tok")).toBeTruthy();
-		expect(screen.getByText("github jane")).toBeTruthy();
+		expect(screen.getByText("jane")).toBeTruthy();
 	});
 
 	it("binds a group to a chosen team, and claims and verifies a domain", async () => {
@@ -401,13 +423,13 @@ describe("DatasourceDirectoryPanel", () => {
 		await screen.findByText("acme/platform → Platform");
 
 		const bind = screen.getByRole("button", {
-			name: "Bind group",
+			name: "Match",
 		}) as HTMLButtonElement;
 		expect(bind.disabled).toBe(true);
-		fireEvent.change(screen.getByLabelText("Provider group"), {
+		fireEvent.change(screen.getByLabelText("GitHub team"), {
 			target: { value: "acme/support" },
 		});
-		fireEvent.change(screen.getByLabelText("Team"), {
+		fireEvent.change(screen.getByLabelText("Your team"), {
 			target: { value: "t2" },
 		});
 		fireEvent.click(bind);
@@ -423,11 +445,11 @@ describe("DatasourceDirectoryPanel", () => {
 		fireEvent.change(screen.getByLabelText("Domain"), {
 			target: { value: "example.org" },
 		});
-		fireEvent.click(screen.getByRole("button", { name: "Claim domain" }));
+		fireEvent.click(screen.getByRole("button", { name: "Add domain" }));
 		await waitFor(() =>
 			expect(client.claimDomain).toHaveBeenCalledWith("org-1", "example.org"),
 		);
-		fireEvent.click(screen.getByRole("button", { name: "Verify" }));
+		fireEvent.click(screen.getByRole("button", { name: "Check now" }));
 		await waitFor(() => expect(client.verifyDomain).toHaveBeenCalled());
 	});
 
@@ -441,7 +463,7 @@ describe("DatasourceDirectoryPanel", () => {
 		renderWithClient(
 			<DatasourceDirectoryPanel client={client} orgId="org-1" />,
 		);
-		fireEvent.click(await screen.findByRole("button", { name: "Unbind" }));
+		fireEvent.click((await screen.findAllByRole("button", { name: "Remove" }))[0]);
 		expect(await screen.findByText("group binding not found")).toBeTruthy();
 	});
 
