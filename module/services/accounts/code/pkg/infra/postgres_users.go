@@ -151,7 +151,19 @@ func (s *PostgresStore) ListUsers(ctx context.Context, orgID string, statusFilte
 		argIdx++
 	}
 
-	query += fmt.Sprintf(` ORDER BY u.created_at DESC LIMIT $%d`, argIdx)
+	// Keyset on (created_at, uuid): users created in one transaction share a
+	// creation time, so the uuid makes the order total and the token exact.
+	if pageToken != "" {
+		createdAt, id, err := keysetPosition(pageToken)
+		if err != nil {
+			return nil, "", err
+		}
+		query += fmt.Sprintf(` AND (u.created_at, u.uuid) < ($%d, $%d)`, argIdx, argIdx+1)
+		args = append(args, createdAt, id)
+		argIdx += 2
+	}
+
+	query += fmt.Sprintf(` ORDER BY u.created_at DESC, u.uuid DESC LIMIT $%d`, argIdx)
 	args = append(args, pageSize+1)
 
 	rows, err := executor.Query(ctx, query, args...)
@@ -182,7 +194,8 @@ func (s *PostgresStore) ListUsers(ctx context.Context, orgID string, statusFilte
 	nextToken := ""
 	if int32(len(users)) > pageSize {
 		users = users[:pageSize]
-		nextToken = users[len(users)-1].Uuid
+		last := users[len(users)-1]
+		nextToken = encodeAuditCursor(last.CreatedAt.AsTime(), last.Uuid)
 	}
 
 	return users, nextToken, nil

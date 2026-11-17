@@ -204,7 +204,8 @@ func (s *UserServer) ListUsers(ctx context.Context, req *gen.ListUsersRequest) (
 	if err := requirePlatformAdmin(ctx, actorID); err != nil {
 		return nil, err
 	}
-	return service.ListUsers(ctx, req)
+	response, err := service.ListUsers(ctx, req)
+	return response, pageTokenStatus(err)
 }
 
 func (s *UserServer) UpdateUser(ctx context.Context, req *gen.UpdateUserRequest) (*gen.User, error) {
