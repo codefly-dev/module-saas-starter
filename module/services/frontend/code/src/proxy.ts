@@ -150,7 +150,6 @@ const PUBLIC_PATHS = [
 	"/auth/login",
 	"/auth/callback",
 	"/auth/mfa",
-	"/auth/magic-link",
 	"/auth/logout",
 	"/invitations/accept",
 	"/invitations/accept/api",

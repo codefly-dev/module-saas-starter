@@ -9,14 +9,6 @@ export interface PlatformAdmin {
 	grantedAt?: string;
 }
 
-export interface FeatureFlag {
-	name: string;
-	description: string;
-	enabled: boolean;
-	rolloutPercent: number;
-	targetOrgIds: string[];
-}
-
 export interface SessionInfo {
 	id: string;
 	userId: string;

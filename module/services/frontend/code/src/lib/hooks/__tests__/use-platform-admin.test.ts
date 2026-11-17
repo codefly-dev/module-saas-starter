@@ -3,7 +3,6 @@ import { renderHook, waitFor } from "@testing-library/react";
 import React from "react";
 import { describe, expect, it } from "vitest";
 import {
-	useFeatureFlags,
 	useGrantPlatformRole,
 	usePlatformAdmins,
 	useRevokePlatformRole,
@@ -49,17 +48,5 @@ describe("useRevokePlatformRole", () => {
 		});
 		const response = await result.current.mutateAsync("user-1");
 		expect(response).toBeDefined();
-	});
-});
-
-describe("useFeatureFlags", () => {
-	it("returns list of feature flags", async () => {
-		const { result } = renderHook(() => useFeatureFlags(), {
-			wrapper: createWrapper(),
-		});
-		await waitFor(() => expect(result.current.isSuccess).toBe(true));
-		expect(result.current.data).toBeDefined();
-		expect(Array.isArray(result.current.data)).toBe(true);
-		expect(result.current.data!.length).toBeGreaterThan(0);
 	});
 });

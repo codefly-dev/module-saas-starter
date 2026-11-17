@@ -18,7 +18,6 @@ vi.mock("@/lib/auth", () => ({
 
 import { AdminsPage } from "./admins-page";
 import { EntitlementsPage } from "./entitlements-page";
-import { FlagsPage } from "./flags-page";
 import { SessionsPage } from "./sessions-page";
 
 afterEach(cleanup);
@@ -43,7 +42,6 @@ describe.each<{ name: string; method?: string; page: () => ReactElement }>([
 		method: "ListPlatformAdmins",
 		page: () => <AdminsPage />,
 	},
-	{ name: "FlagsPage", method: "ListFeatureFlags", page: () => <FlagsPage /> },
 	// The table is replaced by the refusal here, so this one never looped; it
 	// holds the same rule so a change to that layout cannot start one.
 	{

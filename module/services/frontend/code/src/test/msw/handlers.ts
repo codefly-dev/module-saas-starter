@@ -8,7 +8,6 @@
 import { HttpResponse, http } from "msw";
 import {
 	mockAuditEvent,
-	mockFeatureFlag,
 	mockInvitation,
 	mockOrganization,
 	mockPlatformAdmin,
@@ -216,9 +215,6 @@ export const handlers = [
 	),
 	http.post(rpc("PlatformAdminService", "ListPlatformAdmins"), () =>
 		HttpResponse.json({ admins: [mockPlatformAdmin()] }),
-	),
-	http.post(rpc("PlatformAdminService", "ListFeatureFlags"), () =>
-		HttpResponse.json({ flags: [mockFeatureFlag()] }),
 	),
 	http.post(rpc("PlatformAdminService", "ListAllOrganizations"), () =>
 		HttpResponse.json({

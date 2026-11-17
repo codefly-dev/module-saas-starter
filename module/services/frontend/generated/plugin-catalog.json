@@ -114,12 +114,6 @@
       "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
     },
     {
-      "path": "/admin/platform/feature-flags",
-      "source_path": "src/app/admin/platform/feature-flags/page.tsx",
-      "match": "FRONTEND_ROUTE_MATCH_EXACT",
-      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
-    },
-    {
       "path": "/admin/platform/jobs",
       "source_path": "src/app/admin/platform/jobs/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
@@ -134,12 +128,6 @@
     {
       "path": "/admin/platform/organizations",
       "source_path": "src/app/admin/platform/organizations/page.tsx",
-      "match": "FRONTEND_ROUTE_MATCH_EXACT",
-      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
-    },
-    {
-      "path": "/admin/platform/plugin-transport",
-      "source_path": "src/app/admin/platform/plugin-transport/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
       "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
     },
@@ -246,12 +234,6 @@
       "access": "FRONTEND_ROUTE_ACCESS_PUBLIC"
     },
     {
-      "path": "/auth/magic-link",
-      "source_path": "src/app/(auth)/auth/magic-link/page.tsx",
-      "match": "FRONTEND_ROUTE_MATCH_EXACT",
-      "access": "FRONTEND_ROUTE_ACCESS_PUBLIC"
-    },
-    {
       "path": "/auth/mfa",
       "source_path": "src/app/(auth)/auth/mfa/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
@@ -272,18 +254,6 @@
     {
       "path": "/docs/compliance",
       "source_path": "src/app/(dashboard)/docs/compliance/page.tsx",
-      "match": "FRONTEND_ROUTE_MATCH_EXACT",
-      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
-    },
-    {
-      "path": "/docs/sdks",
-      "source_path": "src/app/(dashboard)/docs/sdks/page.tsx",
-      "match": "FRONTEND_ROUTE_MATCH_EXACT",
-      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
-    },
-    {
-      "path": "/insights",
-      "source_path": "src/app/(dashboard)/insights/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
       "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
     },
@@ -327,12 +297,6 @@
       "path": "/s/{solutionId}",
       "source_path": "src/app/(dashboard)/s/[solutionId]/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_PARAMETER",
-      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
-    },
-    {
-      "path": "/security",
-      "source_path": "src/app/(dashboard)/security/page.tsx",
-      "match": "FRONTEND_ROUTE_MATCH_EXACT",
       "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
     },
     {
@@ -555,21 +519,6 @@
       "order": 205
     },
     {
-      "id": "admin-feature-flags",
-      "plugin": "platform-admin",
-      "label": "Feature Flags",
-      "path": "/admin/platform/feature-flags",
-      "icon": "Flag",
-      "group": "Platform",
-      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN",
-      "surfaces": [
-        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
-        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
-        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
-      ],
-      "order": 210
-    },
-    {
       "id": "admin-waitlist",
       "plugin": "platform-admin",
       "label": "Waitlist",
@@ -689,20 +638,6 @@
       "order": 242
     },
     {
-      "id": "admin-plugin-transport",
-      "plugin": "platform-admin",
-      "label": "Plugin Transport",
-      "path": "/admin/platform/plugin-transport",
-      "icon": "Globe",
-      "group": "Platform",
-      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN",
-      "surfaces": [
-        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
-        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY"
-      ],
-      "order": 243
-    },
-    {
       "id": "admin-unattended-work",
       "plugin": "platform-admin",
       "label": "Unattended Work",
@@ -818,19 +753,6 @@
         "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
       ],
       "order": 500
-    },
-    {
-      "id": "sdks",
-      "plugin": "audit",
-      "label": "SDKs",
-      "path": "/docs/sdks",
-      "icon": "FileText",
-      "group": "Developer",
-      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
-      "surfaces": [
-        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY"
-      ],
-      "order": 510
     },
     {
       "id": "compliance",

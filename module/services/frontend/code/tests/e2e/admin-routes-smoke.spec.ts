@@ -40,7 +40,6 @@ const ROUTES: AdminRoute[] = [
 		heading: /Waitlist/,
 		platformGated: true,
 	},
-	{ path: "/admin/platform/feature-flags", platformGated: true },
 	{
 		path: "/admin/platform/admins",
 		heading: /Platform Admins/,

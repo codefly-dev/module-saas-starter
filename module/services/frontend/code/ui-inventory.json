@@ -2017,35 +2017,6 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
-      "source": "src/app/(auth)/auth/magic-link/magic-link-client.tsx",
-      "imports": [
-        "lucide-react",
-        "next/navigation",
-        "react",
-        "@/features/auth/service/mutations",
-        "@/lib/auth",
-        "@/shared/ui"
-      ],
-      "owner": "SaaS application",
-      "disposition": "keep feature-local",
-      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
-    },
-    {
-      "source": "src/app/(auth)/auth/magic-link/page.tsx",
-      "imports": [
-        "./magic-link-client"
-      ],
-      "owner": "SaaS application",
-      "disposition": "keep feature-local",
-      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
-    },
-    {
       "source": "src/app/(auth)/auth/mfa/mfa-client.tsx",
       "imports": [
         "lucide-react",
@@ -2260,35 +2231,6 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
-      "source": "src/app/(dashboard)/docs/sdks/page.tsx",
-      "imports": [
-        "@/shared/ui",
-        "@connectrpc/connect",
-        "@connectrpc/connect-web",
-        "./gen/saas/accounts/v1/authentication_pb",
-        "./gen/saas/accounts/v1/identity_pb",
-        "./gen/saas/accounts/v1/organizations_pb"
-      ],
-      "owner": "SaaS application",
-      "disposition": "keep feature-local",
-      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
-    },
-    {
-      "source": "src/app/(dashboard)/insights/page.tsx",
-      "imports": [
-        "@/features/dashboard"
-      ],
-      "owner": "SaaS application",
-      "disposition": "keep feature-local",
-      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
-    },
-    {
       "source": "src/app/(dashboard)/layout.tsx",
       "imports": [
         "@/components/dashboard-route-shell"
@@ -2386,18 +2328,6 @@
         "@/solutions/SolutionDashboard",
         "@/solutions/SolutionRuntime",
         "@/solutions/registry"
-      ],
-      "owner": "SaaS application",
-      "disposition": "keep feature-local",
-      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
-    },
-    {
-      "source": "src/app/(dashboard)/security/page.tsx",
-      "imports": [
-        "@/features/dashboard"
       ],
       "owner": "SaaS application",
       "disposition": "keep feature-local",
@@ -2710,18 +2640,6 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
-      "source": "src/app/admin/platform/feature-flags/page.tsx",
-      "imports": [
-        "@/features/platform/ui/flags-page"
-      ],
-      "owner": "SaaS application",
-      "disposition": "keep feature-local",
-      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
-    },
-    {
       "source": "src/app/admin/platform/jobs/page.tsx",
       "imports": [
         "@/components/auth/role-gate",
@@ -2751,19 +2669,6 @@
       "source": "src/app/admin/platform/organizations/page.tsx",
       "imports": [
         "@/features/platform/ui/platform-organizations-page"
-      ],
-      "owner": "SaaS application",
-      "disposition": "keep feature-local",
-      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
-    },
-    {
-      "source": "src/app/admin/platform/plugin-transport/page.tsx",
-      "imports": [
-        "@/components/auth/role-gate",
-        "@/features/plugin-transport"
       ],
       "owner": "SaaS application",
       "disposition": "keep feature-local",
@@ -4358,26 +4263,6 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
-      "source": "src/features/mfa/ui/mfa-challenge.tsx",
-      "imports": [
-        "@hookform/resolvers/zod",
-        "@tanstack/react-query",
-        "lucide-react",
-        "react",
-        "react-hook-form",
-        "sonner",
-        "@/shared/ui",
-        "../model/schemas",
-        "../service/mutations"
-      ],
-      "owner": "SaaS application",
-      "disposition": "keep feature-local",
-      "reason": "Owns the mfa workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
-    },
-    {
       "source": "src/features/mfa/ui/mfa-devices.tsx",
       "imports": [
         "@tanstack/react-table",
@@ -4968,23 +4853,6 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
-      "source": "src/features/platform/ui/flags-page.tsx",
-      "imports": [
-        "@tanstack/react-table",
-        "react",
-        "@/shared/ui",
-        "@/shared/ui/data-table",
-        "../model/types",
-        "../service/queries"
-      ],
-      "owner": "SaaS application",
-      "disposition": "keep feature-local",
-      "reason": "Owns the platform workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
-    },
-    {
       "source": "src/features/platform/ui/platform-organizations-page.tsx",
       "imports": [
         "@bufbuild/protobuf/wkt",
@@ -5024,21 +4892,6 @@
       "owner": "SaaS application",
       "disposition": "keep feature-local",
       "reason": "Owns the platform workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
-    },
-    {
-      "source": "src/features/plugin-transport/ui/plugin-transport-playground.tsx",
-      "imports": [
-        "@codefly-dev/ui/plugin-host/runtime",
-        "react",
-        "@/shared/ui",
-        "../model/demo-plugin"
-      ],
-      "owner": "SaaS application",
-      "disposition": "keep feature-local",
-      "reason": "Owns the plugin-transport workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
       "stories": [],
       "coverage": "missing",
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."

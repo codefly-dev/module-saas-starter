@@ -144,23 +144,3 @@ export function mockPlatformAdmin(
 	};
 }
 
-interface MockFeatureFlag {
-	name: string;
-	description: string;
-	enabled: boolean;
-	rolloutPercent: number;
-	targetOrgIds: string[];
-}
-
-export function mockFeatureFlag(
-	overrides: Partial<MockFeatureFlag> = {},
-): MockFeatureFlag {
-	return {
-		name: `feature-${idCounter}`,
-		description: `Feature flag ${idCounter}`,
-		enabled: true,
-		rolloutPercent: 100,
-		targetOrgIds: [],
-		...overrides,
-	};
-}

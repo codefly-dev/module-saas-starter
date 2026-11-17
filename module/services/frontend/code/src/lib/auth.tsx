@@ -533,14 +533,6 @@ interface AuthContextType extends AuthState {
 	completeMFA: (code: string) => Promise<void>;
 	completeMFAWithPasskey: () => Promise<void>;
 	cancelMFA: () => void;
-	// Stores tokens received from magic link verification. The caller is
-	// responsible for redirecting after this call.
-	setTokensFromMagicLink: (
-		accessToken: string,
-		refreshToken: string,
-		userId?: string,
-		mfaToken?: string,
-	) => boolean;
 	// Reports whether the sign-out COMPLETED. An incomplete one (the server
 	// answers 503 "logout incomplete, retry") leaves an unmarked access token
 	// valid until it expires, so a caller that presents sign-out to a person must
@@ -1435,23 +1427,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		};
 	}, [setTokens]);
 
-	const setTokensFromMagicLink = useCallback(
-		(
-			accessToken: string,
-			refreshToken: string,
-			userId?: string,
-			mfaToken?: string,
-		) => {
-			if (mfaToken) {
-				beginMFA({ mfaToken, user: userId ? { uuid: userId } : undefined });
-				return false;
-			}
-			setTokens(accessToken, refreshToken, userId);
-			return true;
-		},
-		[beginMFA, setTokens],
-	);
-
 	// What the host says this session is, keyed by the token it was read for
 	// so a token swap never shows the previous token's answer. Until the read
 	// for THIS token succeeds the session is unconfirmed, never the token's
@@ -1514,7 +1489,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			completeMFA,
 			completeMFAWithPasskey,
 			cancelMFA,
-			setTokensFromMagicLink,
 			logout,
 			switchOrganization,
 			enterImpersonation,
@@ -1537,7 +1511,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			completeMFA,
 			completeMFAWithPasskey,
 			cancelMFA,
-			setTokensFromMagicLink,
 			logout,
 			switchOrganization,
 			enterImpersonation,
