@@ -15,7 +15,7 @@ import (
 	"accounts/pkg/business/executiontest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
-	"github.com/codefly-dev/core/solutionhost"
+	"github.com/codefly-dev/authority/libraries/solutionhost/go"
 	"github.com/stretchr/testify/require"
 )
 

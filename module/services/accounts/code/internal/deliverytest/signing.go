@@ -10,7 +10,7 @@ import (
 	"encoding/pem"
 	"testing"
 
-	"github.com/codefly-dev/core/solutionhost"
+	"github.com/codefly-dev/authority/libraries/solutionhost/go"
 )
 
 func Signer(t testing.TB, keyID string) *solutionhost.InMemorySigner {

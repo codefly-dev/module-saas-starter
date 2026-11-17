@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/codefly-dev/core/solutionhost"
+	"github.com/codefly-dev/authority/libraries/solutionhost/go"
 )
 
 // The delivery inbox: how a signed module manifest reaches this host, and why

@@ -16,7 +16,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/infra/storetx"
 
-	"github.com/codefly-dev/core/solutionhost"
+	"github.com/codefly-dev/authority/libraries/solutionhost/go"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"

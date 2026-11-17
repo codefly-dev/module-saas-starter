@@ -33,7 +33,7 @@ import (
 	modulecontract "github.com/codefly-dev/core/contracts/module"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/sdk"
-	"github.com/codefly-dev/core/solutionhost"
+	"github.com/codefly-dev/authority/libraries/solutionhost/go"
 	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"

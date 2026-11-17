@@ -11,7 +11,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
 	modulecontract "github.com/codefly-dev/core/contracts/module"
-	"github.com/codefly-dev/core/solutionhost"
+	"github.com/codefly-dev/authority/libraries/solutionhost/go"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 )

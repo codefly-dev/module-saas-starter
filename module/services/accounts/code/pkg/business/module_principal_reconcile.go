@@ -13,7 +13,7 @@ import (
 	"github.com/codefly-dev/core/wool"
 
 	modulecontract "github.com/codefly-dev/core/contracts/module"
-	"github.com/codefly-dev/core/solutionhost"
+	"github.com/codefly-dev/authority/libraries/solutionhost/go"
 )
 
 // The module registry, DERIVED (the solution lifecycle design, §3 and §4.2).

@@ -10,7 +10,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	modulecontract "github.com/codefly-dev/core/contracts/module"
-	"github.com/codefly-dev/core/solutionhost"
+	"github.com/codefly-dev/authority/libraries/solutionhost/go"
 )
 
 // manifestCeiling grants only what this signed manifest declares. Tenancy is

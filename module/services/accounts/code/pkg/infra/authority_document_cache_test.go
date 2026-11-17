@@ -12,7 +12,7 @@ import (
 	compositionv1 "accounts/pkg/gen/host/composition/v1"
 
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
-	"github.com/codefly-dev/core/solutionhost"
+	"github.com/codefly-dev/authority/libraries/solutionhost/go"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 )

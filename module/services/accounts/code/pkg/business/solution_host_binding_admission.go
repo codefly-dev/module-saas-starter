@@ -3,7 +3,7 @@ package business
 import (
 	"slices"
 
-	"github.com/codefly-dev/core/solutionhost"
+	"github.com/codefly-dev/authority/libraries/solutionhost/go"
 )
 
 // Admission of a delivered desired set (issue #952).

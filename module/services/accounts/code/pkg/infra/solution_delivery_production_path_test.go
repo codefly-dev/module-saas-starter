@@ -19,7 +19,7 @@ import (
 	"accounts/pkg/infra"
 
 	authoritydelivery "github.com/codefly-dev/authority/libraries/delivery/go"
-	"github.com/codefly-dev/core/solutionhost"
+	"github.com/codefly-dev/authority/libraries/solutionhost/go"
 	"github.com/stretchr/testify/require"
 )
 

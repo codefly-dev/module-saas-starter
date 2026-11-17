@@ -43,7 +43,7 @@ import (
 
 	"github.com/codefly-dev/core/resources"
 	"github.com/codefly-dev/core/wool"
-	"github.com/codefly-dev/core/workloadidentity/native"
+	"github.com/codefly-dev/authority/libraries/solutionhost/go/workloadidentity/native"
 	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 	codefly "github.com/codefly-dev/sdk-go"
 	storagev0 "github.com/codefly-dev/service-object-storage/gen/codefly/storage/v0"

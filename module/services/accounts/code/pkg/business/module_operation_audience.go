@@ -11,7 +11,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	modulecontract "github.com/codefly-dev/core/contracts/module"
-	"github.com/codefly-dev/core/solutionhost"
+	"github.com/codefly-dev/authority/libraries/solutionhost/go"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

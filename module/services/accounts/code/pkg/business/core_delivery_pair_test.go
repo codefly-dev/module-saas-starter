@@ -14,7 +14,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/memstore"
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/core/solutionhost"
+	"github.com/codefly-dev/authority/libraries/solutionhost/go"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"

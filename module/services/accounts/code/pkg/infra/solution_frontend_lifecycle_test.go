@@ -16,7 +16,7 @@ import (
 	"accounts/pkg/business"
 
 	"github.com/codefly-dev/core/composition"
-	"github.com/codefly-dev/core/solutionhost"
+	"github.com/codefly-dev/authority/libraries/solutionhost/go"
 	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 	"github.com/stretchr/testify/require"
 )

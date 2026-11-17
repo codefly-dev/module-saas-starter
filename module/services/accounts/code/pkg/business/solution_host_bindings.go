@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
-	"github.com/codefly-dev/core/solutionhost"
+	"github.com/codefly-dev/authority/libraries/solutionhost/go"
 	"github.com/codefly-dev/core/wool"
 	"gopkg.in/yaml.v3"
 )
