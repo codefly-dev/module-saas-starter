@@ -32,10 +32,8 @@ export const ADMIN_CARD_DESCRIPTIONS: Readonly<Record<string, string>> = {
 	"admin-webhooks": "Send events to your own systems as they happen.",
 	"admin-solutions":
 		"Install solutions, and give each role to the people who need it.",
-	"admin-modules": "The platform's modules, their releases and health.",
 	"admin-datasources": "Connect the systems your documents come from.",
 	"api-docs": "Reference for every API operation.",
-	compliance: "How the platform handles data and security.",
 	settings: "Your own profile and preferences.",
 	security: "Your password, two-factor sign-in and sessions.",
 	notifications: "Which notifications you receive, and where.",

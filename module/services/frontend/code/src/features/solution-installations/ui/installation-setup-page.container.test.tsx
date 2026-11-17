@@ -632,7 +632,7 @@ it("keeps the host team access card for a module the authority reads no roles of
 		screen
 			.getByRole("link", { name: "Supporting modules" })
 			.getAttribute("href"),
-	).toBe("/admin/modules");
+	).toBe("/admin/solutions?view=modules");
 	expect(screen.getByText(/^Module — /)).toBeTruthy();
 });
 

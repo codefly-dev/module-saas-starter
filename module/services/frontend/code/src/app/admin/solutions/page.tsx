@@ -1,5 +1,6 @@
 import { RoleGate } from "@/components/auth/role-gate";
-import { SolutionInstallationsPage } from "@/features/solution-installations";
+import { Suspense } from "react";
+import { SolutionInstallationsRoute } from "@/features/solution-installations";
 import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
 
 function AccessDenied() {
@@ -22,7 +23,9 @@ export default function Page() {
 			requirePermission={PERMISSIONS.ROLES_WRITE}
 			fallback={<AccessDenied />}
 		>
-			<SolutionInstallationsPage />
+			<Suspense fallback={null}>
+				<SolutionInstallationsRoute />
+			</Suspense>
 		</RoleGate>
 	);
 }

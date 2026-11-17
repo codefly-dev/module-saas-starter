@@ -15,7 +15,10 @@ import { setToken } from "@/lib/connect/token-store";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock("next/navigation", () => ({
+	useRouter: () => ({ push: vi.fn() }),
+	useSearchParams: () => new URLSearchParams(),
+}));
 vi.mock("@/lib/auth", () => ({
 	useAuth: () => ({
 		organizationId: "org-1",

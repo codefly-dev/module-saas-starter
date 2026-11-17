@@ -2095,33 +2095,6 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
-      "source": "src/app/(auth)/status/page.tsx",
-      "imports": [
-        "./status-client"
-      ],
-      "owner": "SaaS application",
-      "disposition": "keep feature-local",
-      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
-    },
-    {
-      "source": "src/app/(auth)/status/status-client.tsx",
-      "imports": [
-        "lucide-react",
-        "react",
-        "@/components/brand-mark",
-        "@/lib/appearance-provider"
-      ],
-      "owner": "SaaS application",
-      "disposition": "keep feature-local",
-      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
-    },
-    {
       "source": "src/app/(auth)/waitlist/page.tsx",
       "imports": [
         "next",
@@ -2167,49 +2140,9 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
-      "source": "src/app/(dashboard)/dashboards/page.tsx",
-      "imports": [
-        "@/features/dashboard"
-      ],
-      "owner": "SaaS application",
-      "disposition": "keep feature-local",
-      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
-    },
-    {
       "source": "src/app/(dashboard)/docs/api-docs-frame.tsx",
       "imports": [
         "swagger-ui-react"
-      ],
-      "owner": "SaaS application",
-      "disposition": "keep feature-local",
-      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
-    },
-    {
-      "source": "src/app/(dashboard)/docs/compliance/compliance-section.tsx",
-      "imports": [
-        "lucide-react",
-        "react",
-        "@/shared/ui"
-      ],
-      "owner": "SaaS application",
-      "disposition": "keep feature-local",
-      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
-    },
-    {
-      "source": "src/app/(dashboard)/docs/compliance/page.tsx",
-      "imports": [
-        "@/features/trust/model/capabilities",
-        "@/features/trust/model/capabilities.server",
-        "./compliance-section"
       ],
       "owner": "SaaS application",
       "disposition": "keep feature-local",
@@ -2760,20 +2693,6 @@
       "owner": "SaaS application",
       "disposition": "keep feature-local",
       "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
-    },
-    {
-      "source": "src/app/admin/modules/page.tsx",
-      "imports": [
-        "@/components/auth/role-gate",
-        "@/features/solution-installations",
-        "@/gen/saas/accounts/v1/frontend_catalog"
-      ],
-      "owner": "SaaS application",
-      "disposition": "keep feature-local",
-      "reason": "Next.js route entry for direct supporting-module administration; owns host routing only. Full-page preview coverage is still pending.",
       "stories": [],
       "coverage": "missing",
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."

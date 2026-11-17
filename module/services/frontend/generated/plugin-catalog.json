@@ -72,12 +72,6 @@
       "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
     },
     {
-      "path": "/admin/modules",
-      "source_path": "src/app/admin/modules/page.tsx",
-      "match": "FRONTEND_ROUTE_MATCH_EXACT",
-      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
-    },
-    {
       "path": "/admin/organizations",
       "source_path": "src/app/admin/organizations/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
@@ -240,20 +234,8 @@
       "access": "FRONTEND_ROUTE_ACCESS_PUBLIC"
     },
     {
-      "path": "/dashboards",
-      "source_path": "src/app/(dashboard)/dashboards/page.tsx",
-      "match": "FRONTEND_ROUTE_MATCH_EXACT",
-      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
-    },
-    {
       "path": "/docs",
       "source_path": "src/app/(dashboard)/docs/page.tsx",
-      "match": "FRONTEND_ROUTE_MATCH_EXACT",
-      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
-    },
-    {
-      "path": "/docs/compliance",
-      "source_path": "src/app/(dashboard)/docs/compliance/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
       "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
     },
@@ -328,12 +310,6 @@
       "source_path": "src/app/(dashboard)/settings/privacy/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
       "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
-    },
-    {
-      "path": "/status",
-      "source_path": "src/app/(auth)/status/page.tsx",
-      "match": "FRONTEND_ROUTE_MATCH_EXACT",
-      "access": "FRONTEND_ROUTE_ACCESS_PUBLIC"
     },
     {
       "path": "/waitlist",
@@ -698,21 +674,6 @@
       "order": 405
     },
     {
-      "id": "admin-modules",
-      "plugin": "core-users",
-      "label": "Supporting Modules",
-      "path": "/admin/modules",
-      "icon": "Layers",
-      "group": "Integrations",
-      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
-      "permission": "roles:write",
-      "surfaces": [
-        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
-        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY"
-      ],
-      "order": 406
-    },
-    {
       "id": "admin-datasources",
       "plugin": "core-users",
       "label": "Data sources",
@@ -753,19 +714,6 @@
         "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
       ],
       "order": 500
-    },
-    {
-      "id": "compliance",
-      "plugin": "audit",
-      "label": "Compliance",
-      "path": "/docs/compliance",
-      "icon": "ShieldCheck",
-      "group": "Developer",
-      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
-      "surfaces": [
-        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY"
-      ],
-      "order": 520
     },
     {
       "id": "settings",

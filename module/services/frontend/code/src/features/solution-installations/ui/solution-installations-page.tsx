@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Layers, RefreshCw, X } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
@@ -50,6 +50,9 @@ import {
 	TableHeader,
 	TableRow,
 	useLoadingPhase,
+	Tabs,
+	TabsList,
+	TabsTrigger,
 } from "@/shared/ui";
 import { holdersByRole, statusLine } from "../model/access";
 import {
@@ -138,6 +141,15 @@ export function SolutionInstallationsPage({
 			showModules={supportingModules}
 		/>
 	);
+}
+
+/**
+ * The Solutions route: solutions, or the supporting modules when the address
+ * says `?view=modules`. One page, two views, so the navigation has one entry.
+ */
+export function SolutionInstallationsRoute() {
+	const view = useSearchParams().get("view");
+	return <SolutionInstallationsPage supportingModules={view === "modules"} />;
 }
 
 function SolutionInstallationsForOrganization({
@@ -253,14 +265,22 @@ function SolutionInstallationsForOrganization({
 							? "Modules are part of the platform: every organization has each one, kept up to date by the platform. This page shows which release each is at and whether it is healthy; nothing here installs or removes one."
 							: "The solutions this organization can install, and the module pages whose access it sets up. Install a solution after reviewing what each role can do and its supporting modules; a module page is already part of the platform, and nobody can use it until its roles are given to teams."}
 					</p>
-					{!showModules && (
-						<Link
-							href="/admin/modules"
-							className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-						>
-							See the supporting modules and their health →
-						</Link>
-					)}
+					<Tabs
+						value={showModules ? "modules" : "solutions"}
+						onValueChange={(view) =>
+							router.push(
+								view === "modules"
+									? "/admin/solutions?view=modules"
+									: "/admin/solutions",
+							)
+						}
+						className="mt-3"
+					>
+						<TabsList variant="line">
+							<TabsTrigger value="solutions">Solutions</TabsTrigger>
+							<TabsTrigger value="modules">Supporting modules</TabsTrigger>
+						</TabsList>
+					</Tabs>
 				</div>
 				<div className="flex items-center gap-3">
 					<OrgSelector />

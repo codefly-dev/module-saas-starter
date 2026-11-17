@@ -10,8 +10,7 @@ import {
 import { HttpResponse, http, type JsonBodyType } from "msw";
 import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import Page from "@/app/admin/modules/page";
-import SolutionsPage from "@/app/admin/solutions/page";
+import SolutionsRoutePage from "@/app/admin/solutions/page";
 import { FRONTEND_NAVIGATION } from "@/gen/saas/frontend/v1/plugin_catalog";
 import type { OrgRole, PlatformRole } from "@/lib/auth-session";
 import { canPresent } from "@/lib/plugins/presentation";
@@ -30,7 +29,21 @@ const session = vi.hoisted(() => ({
 	switchOrganization: async () => {},
 }));
 const push = vi.hoisted(() => vi.fn());
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
+const view = vi.hoisted(() => ({ current: "" }));
+vi.mock("next/navigation", () => ({
+	useRouter: () => ({ push }),
+	useSearchParams: () => new URLSearchParams(view.current),
+}));
+
+// One route, two views: the address chooses which.
+function Page() {
+	view.current = "view=modules";
+	return <SolutionsRoutePage />;
+}
+function SolutionsPage() {
+	view.current = "";
+	return <SolutionsRoutePage />;
+}
 vi.mock("@/lib/auth", () => ({ useAuth: () => session }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
