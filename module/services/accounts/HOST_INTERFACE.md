@@ -96,9 +96,11 @@ behavior-preserving rollback.
 
 ## The interfaces, method by method
 
-- **authority**: `Issue` for a person (the signed-in session), a workload, an
-  installation acting for itself, a parent token (a module's hop through its
-  binding), or a delegation; `Check`, with a named method held to the audience's
+- **authority**: `Issue` for a person (the signed-in session, or a credential
+  the gateway validated and states for one solution:
+  [stated credentials](#a-stated-credential-is-issued-its-own-grants-at-one-solution)),
+  a workload, an installation acting for itself, a parent token (a module's
+  hop through its binding), or a delegation; `Check`, with a named method held to the audience's
   delivered method policy (advisory answers the refusal beside the context);
   `ListResources`; `Delegate`, `RevokeDelegation`, `GetDelegation`;
   `AttachResource`, `DetachResource`, `AuthorizeTransfer`; `Keys`;
@@ -231,7 +233,7 @@ makes it a row of the journal the host already keeps:
   organization of this host. No tenant reads a row filed on a claim.
 - **A probe is no decision.** Where this host asks the core a question whose
   answer it discards (a legacy mint held to what the core would issue, a
-  source's governing scope), the context is
+  source's governing scope, the whole holding a key is cut to), the context is
   marked `business.AuthorityProbe` and nothing is recorded: the operation that
   asked records what it did.
 
@@ -242,6 +244,37 @@ a method no route serves, an authority that did not answer in time), which
 never reach the core. The hop library hands them to a sink
 (`forward.Config.Refused`); this host's hop is the gateway, and wiring that sink
 to this journal needs a route from the gateway to it that does not exist yet.
+
+## A stated credential is issued its own grants at one solution
+
+No caller credential is forwarded to a solution. For an API key and for a token
+an authorization grant bound to one solution's resource, the gateway states
+what it verified under its own credential and asks `Issue` for the capability
+the solution is handed instead
+([../auth-gateway/AGENTS.md](../auth-gateway/AGENTS.md#what-a-runtime-registered-upstream-receives-and-what-it-does-not)).
+`issueForStatedCredential` (`pkg/adapters/host_interface_stated.go`) decides
+it, and the core issues it as for a person:
+
+- **An API key** carries its scopes within what its owner holds at the
+  solution through their role on the installation: each `<kind>:<action>` of
+  the key, wildcards honoured, keeps that action of that kind. A scope the
+  owner does not hold adds nothing, and a key whose scopes hold nothing there
+  is refused. An ask naming scopes is held to what the key carries. Admission
+  lets a key reach `Issue` and no other method of the interface
+  (`enforceAPIKeyScopePolicy`): this is the one operation that holds a key to
+  its scopes in what it answers.
+- **A resource-bound token** is issued what the person holds at the solution
+  its resource names, on its own open session, and at no other audience. It
+  must arrive with the installation the perimeter admitted it under.
+- **Both are issued at a solution alone**: never at a module (reached through
+  the hop, by a person present), never for a page's call or through a binding.
+- **An impersonated session, and an identity acting on someone's behalf, stay
+  refused**, whatever credential carries them. Every other method that reads a
+  person (`signedInPerson`) still refuses a key and a confined credential.
+
+A refusal this host makes itself here, before the core is asked, is recorded
+as the core's own would be. `pkg/adapters/host_interface_stated_credential_test.go`
+holds the rules against the real core.
 
 ## Proof
 

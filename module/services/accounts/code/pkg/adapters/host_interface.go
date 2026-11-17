@@ -95,6 +95,8 @@ func coreStatus(err error) error {
 // Only an interactive session acts as a person here: never a credential
 // confined to one consumer's ceiling, an identity acting on someone's behalf
 // (X-Act), an administrator viewing as someone (impersonation) or an API key.
+// Issue alone admits two of those, each held to its own grants at one
+// solution (issueForStatedCredential); every other method refuses them here.
 func signedInPerson(ctx context.Context, what string) (authority.Person, error) {
 	identity, ok := accountsauth.VerifiedRequestIdentity(ctx)
 	if !ok || identity.EffectiveSubject == uuid.Nil {
@@ -256,6 +258,15 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 	var out authority.Issued
 	switch as := req.GetAs().(type) {
 	case *authorityv1.IssueRequest_Person:
+		// A credential the gateway validated and states (an API key, a token
+		// confined to one solution's resource) is issued from its own grants
+		// at that solution alone (host_interface_stated.go).
+		if stated, sout, serr := issueForStatedCredential(ctx, core, req, r); stated {
+			if serr != nil {
+				return nil, coreStatus(serr)
+			}
+			return s.issued(sout)
+		}
 		person, perr := signedInPerson(ctx, "be issued a capability")
 		if perr != nil {
 			return nil, perr

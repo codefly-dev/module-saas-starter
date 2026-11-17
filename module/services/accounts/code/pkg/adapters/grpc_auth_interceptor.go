@@ -379,7 +379,8 @@ func enforceImpersonationPolicy(ctx context.Context, fullMethod string, req any)
 // scopes covers one of them. The rules, all fail-closed:
 //
 //   - an RPC that declares no scope has not been opened to API keys and
-//     refuses every key, whatever it carries;
+//     refuses every key, whatever it carries, but the host interface's Issue,
+//     which holds the key to its scopes in what it issues;
 //   - a key with no scopes has no authority anywhere;
 //   - an RPC whose policy will not resolve refuses the key.
 //
@@ -397,10 +398,21 @@ func enforceAPIKeyScopePolicy(ctx context.Context, fullMethod string) error {
 	if !ok {
 		return status.Error(codes.PermissionDenied, "RPC is not classified by the authorization policy")
 	}
+	granted := scopesFromContext(ctx)
+	if fullMethod == business.HostIssueMethod {
+		// The one operation that holds a key to its scopes itself: what is
+		// issued carries the key's scopes within what its owner holds at the
+		// solution, and a key whose scopes hold nothing there is refused
+		// (issueForStatedCredential). No fixed scope names that, so any
+		// scope reaches the handler; a key with none still has no authority.
+		if len(granted) == 0 {
+			return status.Error(codes.PermissionDenied, "missing_scope: the key carries no scopes")
+		}
+		return nil
+	}
 	if len(policy.Scopes) == 0 {
 		return status.Error(codes.PermissionDenied, "this operation does not accept API keys")
 	}
-	granted := scopesFromContext(ctx)
 	for _, required := range policy.Scopes {
 		if grantsScope(granted, required) {
 			return nil

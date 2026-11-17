@@ -217,3 +217,12 @@ func (s *Service) recordAuthorityDecision(ctx context.Context, d authority.Decis
 	s.emit(ctx, actorID, actorType, EventAuthorityDecisionRefused, "authority_decision", d.Audience, organization, payload)
 	return nil
 }
+
+// RecordAuthorityRefusal records a refusal this host made itself while
+// deciding an issue, before the core was asked for it: a stated credential
+// whose own grants hold nothing at the audience, or that is confined
+// elsewhere. It is the row the core's own refusal would have been.
+func (s *Service) RecordAuthorityRefusal(ctx context.Context, kind authority.DecisionKind, organization, person, audience, reason string) {
+	_ = s.recordAuthorityDecision(ctx, authority.Decision{Kind: kind, Outcome: authority.Refused, Code: authority.CodeDenied, Reason: reason,
+		Organization: organization, Owner: person, Actor: person, Audience: audience})
+}

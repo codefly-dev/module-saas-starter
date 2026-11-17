@@ -128,9 +128,10 @@ func userRPCs(t *testing.T) []business.RPCPolicy {
 
 // An API key's authority is the scope list the RPC declares, on every RPC and
 // every transport — not only on the handlers that remember to ask. An RPC that
-// declares no scope has not been opened to API keys, so it refuses one; a key
-// with no scopes has no authority; and a session is unchanged, because its
-// authority is RBAC.
+// declares no scope has not been opened to API keys, so it refuses one (the
+// host interface's Issue apart, which holds the key to its scopes in what it
+// issues); a key with no scopes has no authority; and a session is unchanged,
+// because its authority is RBAC.
 func TestAPIKeyAdmissionFollowsTheDeclaredScopesOnEveryRPC(t *testing.T) {
 	withGatewayToken(t)
 	withoutCentralEnforcement(t)
@@ -150,9 +151,13 @@ func TestAPIKeyAdmissionFollowsTheDeclaredScopesOnEveryRPC(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			for _, policy := range policies {
 				declared := len(policy.Scopes) > 0
+				// The host interface's Issue declares no scope and admits a
+				// key carrying any: it holds the key to its scopes in what it
+				// issues (issueForStatedCredential), which no fixed scope names.
+				heldByItsHandler := policy.FullMethod == business.HostIssueMethod
 
 				executed, err := admit(t, policy.FullMethod, gatewayAssertion(credentialKindAPIKey, "*:*"))
-				if declared {
+				if declared || heldByItsHandler {
 					require.NoError(t, err, "%s declares %v; a root key must be admitted", policy.FullMethod, policy.Scopes)
 					require.True(t, executed, policy.FullMethod)
 				} else {
