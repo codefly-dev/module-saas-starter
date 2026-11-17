@@ -1,12 +1,14 @@
 "use client";
 
 import { timestampDate } from "@bufbuild/protobuf/wkt";
-import { AlertTriangle, ListChecks, RefreshCw, RotateCcw } from "lucide-react";
+import { ListChecks, RefreshCw, RotateCcw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ResourceLabel } from "@/components/resource-label";
 import type { JobSummary } from "@/gen/saas/jobs/v1/jobs_pb";
 import { JobState } from "@/gen/saas/jobs/v1/jobs_pb";
+import { failureText } from "@/shared/lib/failure-text";
+import { readOutcome } from "@/shared/lib/read-outcome";
 import { formatDate } from "@/shared/lib/utils";
 import {
 	AlertDialog,
@@ -29,7 +31,11 @@ import {
 	DialogDescription,
 	DialogHeader,
 	DialogTitle,
+	ErrorState,
 	Input,
+	Page as PageBody,
+	PageHeader,
+	Panel,
 	Select,
 	SelectContent,
 	SelectItem,
@@ -62,7 +68,7 @@ export function jobStateLabel(state: JobState): string {
 			[JobState.PROCESSING]: "Processing",
 			[JobState.RETRYING]: "Retrying",
 			[JobState.SUCCEEDED]: "Succeeded",
-			[JobState.DEAD_LETTER]: "Dead letter",
+			[JobState.DEAD_LETTER]: "Failed for good",
 			[JobState.CANCELED]: "Canceled",
 			[JobState.UNSPECIFIED]: "Unknown",
 		} satisfies Record<JobState, string>
@@ -90,7 +96,7 @@ function scopeLabel(job: JobSummary) {
 		case "subjectId":
 			return <ResourceLabel resource="user" id={job.scope.value.value} />;
 		case "global":
-			return "global";
+			return "Whole platform";
 		default:
 			return "-";
 	}
@@ -100,6 +106,14 @@ function count(values: bigint[]): string {
 	return values
 		.reduce((total, value) => total + value, BigInt(0))
 		.toLocaleString();
+}
+
+// What a person can do about a read that did not come back: nothing but ask,
+// when it was refused; otherwise the Refresh button is right there.
+function loadFailureDetail(error: unknown): string {
+	return readOutcome(true, error) === "forbidden"
+		? "Your account doesn't have the platform role this page needs."
+		: "Use Refresh to try again. If it keeps failing, tell your administrator.";
 }
 
 export function JobOperationsPage() {
@@ -120,6 +134,9 @@ export function JobOperationsPage() {
 		[operations.data?.queues],
 	);
 
+	// Totals are sums over a read; with no answer there is nothing to sum, and
+	// a row of zeros would read as four healthy queues.
+	const counted = operations.data !== undefined;
 	const totals = useMemo(
 		() => ({
 			ready: count(snapshots.map((item) => item.ready)),
@@ -143,47 +160,43 @@ export function JobOperationsPage() {
 	}
 
 	return (
-		<div className="space-y-6">
-			<div className="flex flex-wrap items-start justify-between gap-3">
-				<div>
-					<h1 data-slot="page-title" className="type-page-title">
-						Job operations
-					</h1>
-					<p className="text-muted-foreground">
-						Queue health and payload-free lifecycle history across the platform.
-					</p>
-				</div>
-				<Button
-					variant="outline"
-					onClick={() => Promise.all([operations.refetch(), jobs.refetch()])}
-					disabled={operations.isFetching || jobs.isFetching}
-				>
-					<RefreshCw className="h-4 w-4" />
-					Refresh
-				</Button>
-			</div>
+		<PageBody>
+			<PageHeader
+				title="Job operations"
+				description="How the platform's background work queues are doing, and the history of each job. What a job carries is never shown here."
+				actions={
+					<Button
+						variant="outline"
+						onClick={() => Promise.all([operations.refetch(), jobs.refetch()])}
+						disabled={operations.isFetching || jobs.isFetching}
+					>
+						<RefreshCw className="h-4 w-4" />
+						Refresh
+					</Button>
+				}
+			/>
 
 			<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
 				<MetricCard
 					title="Ready"
-					value={totals.ready}
-					description="Claimable now"
+					value={counted ? totals.ready : "—"}
+					description="Waiting to start"
 				/>
 				<MetricCard
 					title="Processing"
-					value={totals.processing}
-					description="Active leases"
+					value={counted ? totals.processing : "—"}
+					description="Running now"
 				/>
 				<MetricCard
-					title="Dead letter"
-					value={totals.deadLetter}
-					description="Operator review"
+					title="Failed for good"
+					value={counted ? totals.deadLetter : "—"}
+					description="Needs someone to look"
 				/>
 				<MetricCard
-					title="Expired leases"
-					value={totals.expired}
-					description="Awaiting recovery"
-					warning={totals.expired !== "0"}
+					title="Stalled"
+					value={counted ? totals.expired : "—"}
+					description="Stopped mid-run, waiting to be picked up again"
+					warning={counted && totals.expired !== "0"}
 				/>
 			</div>
 
@@ -191,12 +204,17 @@ export function JobOperationsPage() {
 				<CardHeader>
 					<CardTitle className="text-base">Queues</CardTitle>
 					<CardDescription>
-						Database-derived counts; queue is the only metric label.
+						How many jobs each queue holds right now.
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
 					{operations.isLoading ? (
 						<Skeleton className="h-24 w-full" />
+					) : operations.isError ? (
+						<ErrorState
+							title="Couldn't load the queues"
+							detail={loadFailureDetail(operations.error)}
+						/>
 					) : snapshots.length === 0 ? (
 						<p className="text-sm text-muted-foreground">No queues found.</p>
 					) : (
@@ -207,7 +225,7 @@ export function JobOperationsPage() {
 									<TableHead>Ready</TableHead>
 									<TableHead>Processing</TableHead>
 									<TableHead>Scheduled</TableHead>
-									<TableHead>Dead letter</TableHead>
+									<TableHead>Failed for good</TableHead>
 									<TableHead>Oldest ready</TableHead>
 								</TableRow>
 							</TableHeader>
@@ -244,8 +262,8 @@ export function JobOperationsPage() {
 				<CardHeader>
 					<CardTitle className="text-base">Jobs</CardTitle>
 					<CardDescription>
-						Routing, lease, retry, and failure metadata only. Payloads and
-						attributes are never returned.
+						Where each job went, how many times it was tried and why it
+						failed. What a job carries is never shown.
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-4">
@@ -254,7 +272,8 @@ export function JobOperationsPage() {
 							value={queueDraft}
 							onChange={(event) => setQueueDraft(event.target.value)}
 							onKeyDown={(event) => event.key === "Enter" && applyQueue()}
-							placeholder="Filter queue"
+							placeholder="Filter by queue"
+							aria-label="Filter by queue"
 							className="max-w-xs"
 						/>
 						<Button variant="outline" onClick={applyQueue}>
@@ -288,10 +307,10 @@ export function JobOperationsPage() {
 					{jobs.isLoading ? (
 						<Skeleton className="h-64 w-full" />
 					) : jobs.isError ? (
-						<div className="flex items-center gap-2 text-sm text-destructive">
-							<AlertTriangle className="h-4 w-4" />
-							Unable to load job metadata.
-						</div>
+						<ErrorState
+							title="Couldn't load the jobs"
+							detail={loadFailureDetail(jobs.error)}
+						/>
 					) : jobs.data?.jobs.length === 0 ? (
 						<div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
 							<ListChecks className="h-8 w-8" />
@@ -385,10 +404,20 @@ export function JobOperationsPage() {
 					<DialogHeader>
 						<DialogTitle>Job details</DialogTitle>
 						<DialogDescription>
-							Payload-free immutable lifecycle metadata.
+							The job's history as it was recorded. What it carries is never
+							shown.
 						</DialogDescription>
 					</DialogHeader>
-					{detail.isLoading || !detail.data?.job ? (
+					{detail.isError ? (
+						<ErrorState
+							title="Couldn't load this job"
+							detail={
+								readOutcome(true, detail.error) === "forbidden"
+									? "Your account doesn't have the platform role this needs."
+									: "Close this and open the job again. If it keeps failing, tell your administrator."
+							}
+						/>
+					) : detail.isLoading || !detail.data?.job ? (
 						<Skeleton className="h-64 w-full" />
 					) : (
 						<div className="space-y-5">
@@ -402,15 +431,12 @@ export function JobOperationsPage() {
 								) : (
 									<div className="space-y-2">
 										{detail.data.attempts.map((attempt) => (
-											<div
-												key={attempt.id}
-												className="rounded-md border p-3 text-xs"
-											>
+											<Panel key={attempt.id} className="p-3 text-xs">
 												<div className="flex justify-between">
 													<span>
 														Attempt {attempt.number} · {attempt.workerId}
 													</span>
-													<span>{attempt.failure?.code ?? "in progress"}</span>
+													<span>{attempt.failure?.code ?? "In progress"}</span>
 												</div>
 												<div className="mt-1 text-muted-foreground">
 													Started{" "}
@@ -420,7 +446,7 @@ export function JobOperationsPage() {
 															: undefined,
 													)}
 												</div>
-											</div>
+											</Panel>
 										))}
 									</div>
 								)}
@@ -429,9 +455,9 @@ export function JobOperationsPage() {
 								<h3 className="mb-2 font-medium">State history</h3>
 								<div className="space-y-2">
 									{detail.data.transitions.map((transition) => (
-										<div
+										<Panel
 											key={transition.sequence.toString()}
-											className="flex justify-between rounded-md border p-3 text-xs"
+											className="flex justify-between p-3 text-xs"
 										>
 											<span>
 												{transition.fromState === JobState.UNSPECIFIED
@@ -446,7 +472,7 @@ export function JobOperationsPage() {
 														: undefined,
 												)}
 											</span>
-										</div>
+										</Panel>
 									))}
 								</div>
 							</div>
@@ -456,7 +482,7 @@ export function JobOperationsPage() {
 									onClick={() => setReplayTarget(detail.data?.job ?? null)}
 								>
 									<RotateCcw className="h-4 w-4" />
-									Replay dead-lettered job
+									Run this job again
 								</Button>
 							)}
 						</div>
@@ -470,11 +496,11 @@ export function JobOperationsPage() {
 			>
 				<AlertDialogContent>
 					<AlertDialogHeader>
-						<AlertDialogTitle>Replay this job?</AlertDialogTitle>
+						<AlertDialogTitle>Run this job again?</AlertDialogTitle>
 						<AlertDialogDescription>
-							This creates a new pending job linked to the dead-lettered source.
-							It does not rewrite history. The operation requires a recent MFA
-							step-up.
+							This queues a new job linked to the one that failed. The failed
+							job and its history stay as they are. You may be asked to confirm
+							your identity first.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
@@ -485,25 +511,23 @@ export function JobOperationsPage() {
 								replayTarget &&
 								replay.mutate(replayTarget.id, {
 									onSuccess: () => {
-										toast.success("Job replayed", {
+										toast.success("Job queued again", {
 											description: "A new job has been queued.",
 										});
 										setReplayTarget(null);
 										setSelectedJobID(null);
 									},
 									onError: (error) =>
-										toast.error("Replay failed", {
-											description: error.message,
-										}),
+										toast.error(failureText("run the job again", error)),
 								})
 							}
 						>
-							{replay.isPending ? "Replaying…" : "Replay"}
+							{replay.isPending ? "Queueing…" : "Run again"}
 						</AlertDialogAction>
 					</AlertDialogFooter>
 				</AlertDialogContent>
 			</AlertDialog>
-		</div>
+		</PageBody>
 	);
 }
 
@@ -535,81 +559,83 @@ function MetricCard({
 
 function JobDetail({ job }: { job: JobSummary }) {
 	return (
-		<dl className="grid gap-3 rounded-md border p-4 text-sm sm:grid-cols-2">
-			<div>
-				<dt className="text-muted-foreground">Reference</dt>
-				<dd>
-					<details>
-						<summary className="cursor-pointer">Technical details</summary>
-						<code className="break-all text-xs">{job.id}</code>
-					</details>
-				</dd>
-			</div>
-			<div>
-				<dt className="text-muted-foreground">State</dt>
-				<dd>
-					<Badge variant={stateBadgeVariant(job.state)}>
-						{jobStateLabel(job.state)}
-					</Badge>
-				</dd>
-			</div>
-			<div>
-				<dt className="text-muted-foreground">Queue</dt>
-				<dd className="font-mono text-xs">{job.queue}</dd>
-			</div>
-			<div>
-				<dt className="text-muted-foreground">Topic</dt>
-				<dd className="font-mono text-xs">{job.topic}</dd>
-			</div>
-			<div>
-				<dt className="text-muted-foreground">Source</dt>
-				<dd className="font-mono text-xs">{job.source}</dd>
-			</div>
-			<div>
-				<dt className="text-muted-foreground">Scope</dt>
-				<dd className="font-mono text-xs">{scopeLabel(job)}</dd>
-			</div>
-			<div>
-				<dt className="text-muted-foreground">Idempotency key</dt>
-				<dd className="break-all font-mono text-xs">{job.idempotencyKey}</dd>
-			</div>
-			<div>
-				<dt className="text-muted-foreground">Ordering key</dt>
-				<dd className="break-all font-mono text-xs">
-					{job.orderingKey || "-"}
-				</dd>
-			</div>
-			<div>
-				<dt className="text-muted-foreground">Attempts</dt>
-				<dd>
-					{job.attemptCount}/{job.maxAttempts}
-				</dd>
-			</div>
-			<div>
-				<dt className="text-muted-foreground">Content type / schema</dt>
-				<dd>
-					{job.contentType} · v{job.schemaVersion}
-				</dd>
-			</div>
-			{job.replayOf && (
-				<div className="sm:col-span-2">
-					<dt className="text-muted-foreground">Replay of</dt>
-					<dd className="font-mono text-xs">{job.replayOf}</dd>
-				</div>
-			)}
-			{job.lastFailure && (
-				<div className="sm:col-span-2">
-					<dt className="text-muted-foreground">Last safe failure</dt>
+		<Panel>
+			<dl className="grid gap-3 text-sm sm:grid-cols-2">
+				<div>
+					<dt className="text-muted-foreground">Reference</dt>
 					<dd>
-						<span className="font-mono text-xs">{job.lastFailure.code}</span>
-						{job.lastFailure.message && (
-							<span className="ml-2 text-muted-foreground">
-								{job.lastFailure.message}
-							</span>
-						)}
+						<details>
+							<summary className="cursor-pointer">Show the job's id</summary>
+							<code className="break-all text-xs">{job.id}</code>
+						</details>
 					</dd>
 				</div>
-			)}
-		</dl>
+				<div>
+					<dt className="text-muted-foreground">State</dt>
+					<dd>
+						<Badge variant={stateBadgeVariant(job.state)}>
+							{jobStateLabel(job.state)}
+						</Badge>
+					</dd>
+				</div>
+				<div>
+					<dt className="text-muted-foreground">Queue</dt>
+					<dd className="font-mono text-xs">{job.queue}</dd>
+				</div>
+				<div>
+					<dt className="text-muted-foreground">Topic</dt>
+					<dd className="font-mono text-xs">{job.topic}</dd>
+				</div>
+				<div>
+					<dt className="text-muted-foreground">Source</dt>
+					<dd className="font-mono text-xs">{job.source}</dd>
+				</div>
+				<div>
+					<dt className="text-muted-foreground">Scope</dt>
+					<dd className="font-mono text-xs">{scopeLabel(job)}</dd>
+				</div>
+				<div>
+					<dt className="text-muted-foreground">Duplicate-protection key</dt>
+					<dd className="break-all font-mono text-xs">{job.idempotencyKey}</dd>
+				</div>
+				<div>
+					<dt className="text-muted-foreground">Ordering key</dt>
+					<dd className="break-all font-mono text-xs">
+						{job.orderingKey || "-"}
+					</dd>
+				</div>
+				<div>
+					<dt className="text-muted-foreground">Attempts</dt>
+					<dd>
+						{job.attemptCount}/{job.maxAttempts}
+					</dd>
+				</div>
+				<div>
+					<dt className="text-muted-foreground">Format and version</dt>
+					<dd>
+						{job.contentType} · v{job.schemaVersion}
+					</dd>
+				</div>
+				{job.replayOf && (
+					<div className="sm:col-span-2">
+						<dt className="text-muted-foreground">Re-run of</dt>
+						<dd className="font-mono text-xs">{job.replayOf}</dd>
+					</div>
+				)}
+				{job.lastFailure && (
+					<div className="sm:col-span-2">
+						<dt className="text-muted-foreground">Last failure</dt>
+						<dd>
+							<span className="font-mono text-xs">{job.lastFailure.code}</span>
+							{job.lastFailure.message && (
+								<span className="ml-2 text-muted-foreground">
+									{job.lastFailure.message}
+								</span>
+							)}
+						</dd>
+					</div>
+				)}
+			</dl>
+		</Panel>
 	);
 }

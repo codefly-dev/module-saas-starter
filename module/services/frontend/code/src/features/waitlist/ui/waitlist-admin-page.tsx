@@ -12,6 +12,8 @@ import {
 	WaitlistState,
 } from "@/gen/saas/accounts/v1/waitlist_pb";
 import { apiTransport } from "@/lib/connect/transport";
+import { failureText } from "@/shared/lib/failure-text";
+import { readOutcome } from "@/shared/lib/read-outcome";
 import {
 	Badge,
 	Button,
@@ -20,24 +22,41 @@ import {
 	CardDescription,
 	CardHeader,
 	CardTitle,
+	ErrorState,
 	Input,
+	Page as PageBody,
+	PageHeader,
+	Panel,
 	Select,
 	SelectContent,
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
+	Spinner,
 	Table,
 	TableBody,
 	TableCell,
 	TableHead,
 	TableHeader,
 	TableRow,
+	useLoadingPhase,
 } from "@/shared/ui";
 
 const client = createClient(WaitlistService, apiTransport);
 
+// What each state is called on screen, in the reviewer's words.
+const STATE_LABELS: Partial<Record<WaitlistState, string>> = {
+	[WaitlistState.PENDING]: "Waiting for review",
+	[WaitlistState.VERIFIED]: "Email confirmed",
+	[WaitlistState.APPROVED]: "Approved",
+	[WaitlistState.REJECTED]: "Rejected",
+	[WaitlistState.INVITED]: "Invited",
+	[WaitlistState.CONVERTED]: "Signed up",
+	[WaitlistState.UNSUBSCRIBED]: "Unsubscribed",
+};
+
 function stateLabel(state: WaitlistState): string {
-	return WaitlistState[state]?.toLowerCase() ?? "unknown";
+	return STATE_LABELS[state] ?? "Unknown";
 }
 
 export function WaitlistAdminPage() {
@@ -84,9 +103,10 @@ export function WaitlistAdminPage() {
 			}),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ["waitlist"] });
-			toast.success("Waitlist entry updated");
+			toast.success("Access request updated");
 		},
-		onError: () => toast.error("Waitlist entry could not be updated"),
+		onError: (error) =>
+			toast.error(failureText("update this access request", error)),
 	});
 	const invite = useMutation({
 		mutationFn: (id: string) => client.invite({ id }),
@@ -94,24 +114,22 @@ export function WaitlistAdminPage() {
 			queryClient.invalidateQueries({ queryKey: ["waitlist"] });
 			toast.success("Access invitation queued");
 		},
-		onError: () => toast.error("Invitation could not be queued"),
+		onError: (error) => toast.error(failureText("send the invitation", error)),
 	});
+	const { indicator, quiet } = useLoadingPhase(entries.isLoading);
+	const outcome = readOutcome(entries.isError, entries.error);
 
 	return (
-		<div className="space-y-6">
-			<div>
-				<h1 data-slot="page-title" className="type-page-title">
-					Waitlist
-				</h1>
-				<p className="text-muted-foreground">
-					Review access requests and their acquisition attribution.
-				</p>
-			</div>
+		<PageBody>
+			<PageHeader
+				title="Waitlist"
+				description="Review requests for access and where each one came from."
+			/>
 			<Card>
 				<CardHeader>
 					<CardTitle>Access requests</CardTitle>
 					<CardDescription>
-						Approval and invitations are audited server-side.
+						Every approval and invitation is recorded in the audit log.
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-4">
@@ -134,19 +152,19 @@ export function WaitlistAdminPage() {
 									value: String(value),
 									label:
 										value === WaitlistState.UNSPECIFIED
-											? "All states"
+											? "All statuses"
 											: stateLabel(value),
 								}))}
 							onValueChange={(value) =>
 								setState(Number(value) as WaitlistState)
 							}
 						>
-							<SelectTrigger aria-label="Filter by state">
+							<SelectTrigger aria-label="Filter by status">
 								<SelectValue />
 							</SelectTrigger>
 							<SelectContent>
 								<SelectItem value={String(WaitlistState.UNSPECIFIED)}>
-									All states
+									All statuses
 								</SelectItem>
 								{Object.values(WaitlistState)
 									.filter(
@@ -174,31 +192,43 @@ export function WaitlistAdminPage() {
 							placeholder="Campaign"
 						/>
 					</div>
-					<div className="overflow-x-auto rounded-lg border">
+					<Panel className="overflow-x-auto p-0">
 						<Table>
 							<TableHeader>
 								<TableRow>
-									<TableHead>Lead</TableHead>
-									<TableHead>State</TableHead>
-									<TableHead>Attribution</TableHead>
+									<TableHead>Person</TableHead>
+									<TableHead>Status</TableHead>
+									<TableHead>Came from</TableHead>
 									<TableHead>Created</TableHead>
 									<TableHead className="text-right">Actions</TableHead>
 								</TableRow>
 							</TableHeader>
 							<TableBody>
-								{entries.isLoading && (
+								{indicator && (
 									<TableRow>
-										<TableCell colSpan={5}>Loading access requests…</TableCell>
+										<TableCell colSpan={5}>
+											<Spinner label="Loading access requests" size="sm" />
+										</TableCell>
 									</TableRow>
 								)}
 								{entries.isError && (
 									<TableRow>
-										<TableCell colSpan={5} className="text-destructive">
-											Waitlist data is unavailable. Retry the request.
+										<TableCell colSpan={5}>
+											<ErrorState
+												title="Couldn't load the access requests"
+												detail={
+													outcome === "forbidden"
+														? "Your account doesn't have the platform role this list needs."
+														: "Reload the page to try again. If it keeps failing, tell your administrator."
+												}
+											/>
 										</TableCell>
 									</TableRow>
 								)}
-								{!entries.isLoading && entries.data?.entries.length === 0 && (
+								{!quiet &&
+									!indicator &&
+									!entries.isError &&
+									entries.data?.entries.length === 0 && (
 									<TableRow>
 										<TableCell colSpan={5}>
 											No matching access requests.
@@ -277,7 +307,7 @@ export function WaitlistAdminPage() {
 								))}
 							</TableBody>
 						</Table>
-					</div>
+					</Panel>
 					<div className="flex justify-end gap-2">
 						<Button
 							variant="outline"
@@ -309,6 +339,6 @@ export function WaitlistAdminPage() {
 					</div>
 				</CardContent>
 			</Card>
-		</div>
+		</PageBody>
 	);
 }

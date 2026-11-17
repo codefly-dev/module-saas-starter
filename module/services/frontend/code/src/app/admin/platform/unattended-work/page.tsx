@@ -1,20 +1,6 @@
+import { AccessDenied } from "@/components/access-denied";
 import { RoleGate } from "@/components/auth/role-gate";
 import { UnattendedWorkPlayground } from "@/features/unattended-work";
-
-function AccessDenied() {
-	return (
-		<div className="rounded-lg border p-6">
-			<h1 data-slot="page-title" className="type-page-title">
-				Organization administrator required
-			</h1>
-			<p className="mt-2 text-sm text-muted-foreground">
-				Binding the identity unattended work runs under reaches the delegations
-				of the organization you are acting in, and is restricted to its
-				administrators.
-			</p>
-		</div>
-	);
-}
 
 /**
  * The playground for whose authority work no person started runs under.
@@ -29,7 +15,15 @@ function AccessDenied() {
  */
 export default function Page() {
 	return (
-		<RoleGate require="admin" fallback={<AccessDenied />}>
+		<RoleGate
+			require="admin"
+			fallback={
+				<AccessDenied
+					title="Organization administrator required"
+					description="Binding the identity unattended work runs under reaches the delegations of the organization you are acting in, and is restricted to its administrators."
+				/>
+			}
+		>
 			<UnattendedWorkPlayground />
 		</RoleGate>
 	);

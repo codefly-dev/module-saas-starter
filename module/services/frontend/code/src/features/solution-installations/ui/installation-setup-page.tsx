@@ -21,6 +21,8 @@ import {
 	CardDescription,
 	CardHeader,
 	CardTitle,
+	Page as PageBody,
+	PageHeader,
 	Spinner,
 	useLoadingPhase,
 } from "@/shared/ui";
@@ -102,39 +104,44 @@ export function InstallationSetupPage({
 	const titles = useTargetTitles();
 
 	return (
-		<div className="space-y-6">
-			<div className="flex flex-wrap items-start justify-between gap-3">
-				<div className="space-y-1">
-					<Link
-						href={supporting ? "/admin/solutions?view=modules" : "/admin/solutions"}
-						className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"
-					>
-						<ArrowLeft className="h-3 w-3" />
-						{supporting ? "Supporting modules" : "Solutions"}
-					</Link>
-					<h1 data-slot="page-title" className="type-page-title">
-						{row?.target?.routeAlias ? (
-							<TargetName alias={row.target.routeAlias} titles={titles} />
-						) : (
-							"This installation"
-						)}
-					</h1>
-					<p className="text-muted-foreground">
+		<PageBody>
+			<PageHeader
+				title={
+					row?.target?.routeAlias ? (
+						<TargetName alias={row.target.routeAlias} titles={titles} />
+					) : (
+						"This installation"
+					)
+				}
+				description={
+					<>
 						{entryKindText(row, rolesDeclared)} —{" "}
 						{row?.target?.kind === "module"
 							? "who has each of its roles."
 							: "where it stands, what each role can do, and who has it."}
-					</p>
-				</div>
-				<Button
-					variant="outline"
-					onClick={() => void query.refetch()}
-					disabled={query.isFetching}
+					</>
+				}
+				actions={
+					<Button
+						variant="outline"
+						onClick={() => void query.refetch()}
+						disabled={query.isFetching}
+					>
+						<RefreshCw className="h-4 w-4" />
+						Refresh
+					</Button>
+				}
+			>
+				<Link
+					href={
+						supporting ? "/admin/solutions?view=modules" : "/admin/solutions"
+					}
+					className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"
 				>
-					<RefreshCw className="h-4 w-4" />
-					Refresh
-				</Button>
-			</div>
+					<ArrowLeft className="h-3 w-3" />
+					{supporting ? "Supporting modules" : "Solutions"}
+				</Link>
+			</PageHeader>
 
 			{quiet ? null : indicator ? (
 				<Spinner label="Loading this installation" />
@@ -155,7 +162,7 @@ export function InstallationSetupPage({
 					rolesDeclared={rolesDeclared}
 				/>
 			)}
-		</div>
+		</PageBody>
 	);
 }
 

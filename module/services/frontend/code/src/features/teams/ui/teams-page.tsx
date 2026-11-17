@@ -1,14 +1,17 @@
 "use client";
 
 import { timestampDate } from "@bufbuild/protobuf/wkt";
+import { useCasting } from "@codefly-dev/saas-ui/casting";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Plus, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { useCasting } from "@codefly-dev/saas-ui/casting";
+import { EmptyState } from "@/components/empty-state";
 import { OrgSelector } from "@/components/org-selector";
 import { useAuth } from "@/lib/auth";
+import { failureText } from "@/shared/lib/failure-text";
+import { readOutcome } from "@/shared/lib/read-outcome";
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -19,6 +22,11 @@ import {
 	AlertDialogHeader,
 	AlertDialogTitle,
 	Button,
+	ErrorState,
+	Page as PageBody,
+	PageHeader,
+	Panel,
+	Stack,
 } from "@/shared/ui";
 import type { Team } from "../model/types";
 import { teamMutations } from "../service/mutations";
@@ -48,6 +56,7 @@ function TeamsPageForOrganization({ orgId }: { orgId: string }) {
 		data: raw,
 		isLoading,
 		isError,
+		error,
 		refetch,
 	} = useQuery({
 		...teamQueries.list(orgId),
@@ -77,7 +86,7 @@ function TeamsPageForOrganization({ orgId }: { orgId: string }) {
 			queryClient.invalidateQueries({ queryKey: ["teams", orgId] });
 			setShowCreate(false);
 		},
-		onError: () => toast.error("Failed to create team"),
+		onError: (error) => toast.error(failureText("create the team", error)),
 	});
 
 	const updateMutation = useMutation({
@@ -95,7 +104,7 @@ function TeamsPageForOrganization({ orgId }: { orgId: string }) {
 			queryClient.invalidateQueries({ queryKey: ["teams", orgId] });
 			setRenameTarget(null);
 		},
-		onError: () => toast.error("Failed to update team"),
+		onError: (error) => toast.error(failureText("update the team", error)),
 	});
 
 	const deleteMutation = useMutation({
@@ -105,7 +114,7 @@ function TeamsPageForOrganization({ orgId }: { orgId: string }) {
 			queryClient.invalidateQueries({ queryKey: ["teams", orgId] });
 			setDeleteTarget(null);
 		},
-		onError: () => toast.error("Failed to delete team"),
+		onError: (error) => toast.error(failureText("delete the team", error)),
 	});
 
 	const handleViewMembers = useCallback(
@@ -135,37 +144,58 @@ function TeamsPageForOrganization({ orgId }: { orgId: string }) {
 			),
 		[ask, holdings],
 	);
+	// A refusal is not cured by asking again, so only a read that did not come
+	// back offers the retry.
+	const refused = readOutcome(isError, error) === "forbidden";
 	const handleRename = useCallback((team: Team) => setRenameTarget(team), []);
 	const handleDelete = useCallback((team: Team) => setDeleteTarget(team), []);
 
 	return (
-		<div className="space-y-6">
-			<div className="flex items-center justify-between">
-				<h2 data-slot="page-title" className="type-page-title">
-					Teams
-				</h2>
-				<div className="flex items-center gap-3">
-					<OrgSelector />
-					{orgId && canManage && (
-						<Button onClick={() => setShowCreate(true)}>
-							<Plus className="mr-2 h-4 w-4" />
-							Create Team
-						</Button>
-					)}
-				</div>
-			</div>
+		<PageBody>
+			<PageHeader
+				title="Teams"
+				description="Group the people of this organization, and choose what each group can use."
+				actions={
+					<>
+						<OrgSelector />
+						{orgId && canManage && (
+							<Button onClick={() => setShowCreate(true)}>
+								<Plus className="mr-2 h-4 w-4" />
+								Create Team
+							</Button>
+						)}
+					</>
+				}
+			/>
 
 			{!orgId ? (
-				<div className="flex h-48 items-center justify-center rounded-md border border-dashed">
-					<p className="text-muted-foreground">
-						Select an organization to view teams.
-					</p>
-				</div>
+				<EmptyState
+					icon={Users}
+					title="Select an organization to view teams"
+					description="Each team belongs to one organization. Pick an organization from the selector above."
+				/>
 			) : isError ? (
-				<div role="alert">
-					Couldn&apos;t load teams.{" "}
-					<Button onClick={() => void refetch()}>Retry</Button>
-				</div>
+				<Panel>
+					<Stack gap={3} align="start">
+						<ErrorState
+							title="Couldn't load the teams"
+							detail={
+								refused
+									? "You don't have permission to see this organization's teams. Ask one of its administrators for access."
+									: "Whether this organization has any is unknown. Try again; if it keeps failing, tell your administrator."
+							}
+						/>
+						{!refused && (
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() => void refetch()}
+							>
+								Try again
+							</Button>
+						)}
+					</Stack>
+				</Panel>
 			) : (
 				<TeamsTable
 					data={teams}
@@ -233,6 +263,6 @@ function TeamsPageForOrganization({ orgId }: { orgId: string }) {
 					</AlertDialogContent>
 				</AlertDialog>
 			)}
-		</div>
+		</PageBody>
 	);
 }

@@ -25,4 +25,29 @@ describe("ConsentSettingsPage admin container", () => {
 
 		expect(await screen.findByText("Policy version 2025-01")).toBeTruthy();
 	});
+
+	// A failed read used to leave both switches reading "off" with nothing said:
+	// a default passing for the person's answer, one save away from withdrawing
+	// consent they had given.
+	it("says the choices could not be loaded and offers nothing to save", async () => {
+		server.use(
+			http.post(rpc("ConsentService", "GetStatus"), () =>
+				HttpResponse.json(
+					{ code: "unavailable", message: "upstream connect error" },
+					{ status: 503 },
+				),
+			),
+		);
+
+		renderInApp(<ConsentSettingsPage />);
+
+		expect(
+			await screen.findByText("Couldn't load your privacy choices"),
+		).toBeTruthy();
+		expect(screen.queryByText(/upstream connect error/)).toBeNull();
+		expect(
+			screen.queryByRole("switch", { name: "Allow analytics" }),
+		).toBeNull();
+		expect(screen.queryByRole("button", { name: "Save choices" })).toBeNull();
+	});
 });

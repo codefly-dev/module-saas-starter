@@ -5,7 +5,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import { Button } from "@/shared/ui";
+import { readOutcome } from "@/shared/lib/read-outcome";
+import {
+	Button,
+	ErrorState,
+	Page as PageBody,
+	PageHeader,
+	Panel,
+	Stack,
+} from "@/shared/ui";
 import { lifecycleErrorMessage } from "../model/errors";
 import type { Organization } from "../model/types";
 import { orgMutations } from "../service/mutations";
@@ -20,7 +28,16 @@ export function OrganizationsPage() {
 	const [selectedOrg, setSelectedOrg] = useState<Organization | null>(null);
 
 	// --- queries ---
-	const { data: raw, isLoading } = useQuery(orgQueries.list());
+	const {
+		data: raw,
+		isLoading,
+		isError,
+		error,
+		refetch,
+	} = useQuery(orgQueries.list());
+	// A refusal is not cured by asking again, so only a read that did not come
+	// back offers the retry.
+	const refused = readOutcome(isError, error) === "forbidden";
 	const orgs: Organization[] = (raw?.organizations ?? []).map((o) => ({
 		id: o.id,
 		name: o.name,
@@ -51,24 +68,51 @@ export function OrganizationsPage() {
 	}, []);
 
 	return (
-		<div className="space-y-6">
-			<div className="flex items-center justify-between">
-				<h2 data-slot="page-title" className="type-page-title">Organizations</h2>
-				{/* The deployment's creation policy decides; the server enforces it
-				    either way, so this only stops offering what it would refuse. */}
-				{raw?.canCreate && (
-					<Button onClick={() => setShowCreate(true)}>
-						<Plus className="mr-2 h-4 w-4" />
-						Create Organization
-					</Button>
-				)}
-			</div>
-
-			<OrganizationsTable
-				data={orgs}
-				isLoading={isLoading}
-				onViewMembers={handleViewMembers}
+		<PageBody>
+			<PageHeader
+				title="Organizations"
+				description="The organizations you belong to, and who is in each."
+				actions={
+					// The deployment's creation policy decides; the server enforces it
+					// either way, so this only stops offering what it would refuse.
+					raw?.canCreate ? (
+						<Button onClick={() => setShowCreate(true)}>
+							<Plus className="mr-2 h-4 w-4" />
+							Create Organization
+						</Button>
+					) : undefined
+				}
 			/>
+
+			{isError ? (
+				<Panel>
+					<Stack gap={3} align="start">
+						<ErrorState
+							title="Couldn't load the organizations"
+							detail={
+								refused
+									? "You don't have permission to see the organizations. Ask an administrator for access."
+									: "Whether you belong to any is unknown. Try again; if it keeps failing, tell your administrator."
+							}
+						/>
+						{!refused && (
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() => void refetch()}
+							>
+								Try again
+							</Button>
+						)}
+					</Stack>
+				</Panel>
+			) : (
+				<OrganizationsTable
+					data={orgs}
+					isLoading={isLoading}
+					onViewMembers={handleViewMembers}
+				/>
+			)}
 
 			{selectedOrg && (
 				<OrganizationDetail
@@ -88,6 +132,6 @@ export function OrganizationsPage() {
 				onCancel={() => setShowCreate(false)}
 				isPending={createMutation.isPending}
 			/>
-		</div>
+		</PageBody>
 	);
 }

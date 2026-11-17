@@ -13,6 +13,16 @@ import {
 } from "@/features/auth/model/client-authorization";
 import { useAppearance } from "@/lib/appearance-provider";
 import { useAuth } from "@/lib/auth";
+import {
+	Button,
+	Card,
+	CardContent,
+	CardDescription,
+	CardFooter,
+	CardHeader,
+	ErrorState,
+	Panel,
+} from "@/shared/ui";
 
 // sessionStorage is an external store, and this page's whole job is to render
 // what is in it. useSyncExternalStore is how React reads one: it takes a server
@@ -102,10 +112,11 @@ export function ConsentPage() {
 			});
 		} catch (err) {
 			setDeciding(null);
+			// Said in this page's own words whatever was thrown: the cause is the
+			// host's or the network's, and neither's text is for the person.
+			console.error("The application could not be authorized", err);
 			setError(
-				err instanceof Error
-					? err.message
-					: "This application could not be authorized.",
+				"You are signed in, but the application could not be authorized. Try again, or cancel and start again from the application.",
 			);
 		}
 	}
@@ -121,9 +132,18 @@ export function ConsentPage() {
 	// the same honest answer: this page does not know yet.
 	if (isLoading) {
 		return (
-			<div className="flex items-center gap-3 rounded-lg border bg-card p-6 text-sm text-muted-foreground">
-				<Loader2 className="h-5 w-5 animate-spin shrink-0" />
-				<span>Loading…</span>
+			<div className="flex min-h-screen w-full items-center justify-center p-4">
+				<Card className="w-full max-w-md">
+					<CardContent>
+						<p
+							role="status"
+							className="flex items-center gap-2 text-sm text-muted-foreground"
+						>
+							<Loader2 className="size-4 shrink-0 animate-spin" />
+							Loading…
+						</p>
+					</CardContent>
+				</Card>
 			</div>
 		);
 	}
@@ -141,33 +161,34 @@ export function ConsentPage() {
 	// person is told to start again.
 	if (!request || !resolution || !isAuthenticated) {
 		return (
-			<div className="w-full max-w-sm rounded-2xl border bg-card p-8 text-card-foreground">
-				<div className="flex items-start gap-2 rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
-					<AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-					<span>
-						There is no sign-in request to approve here, or its details could
-						not be confirmed. Start again from the application you were using.
-					</span>
-				</div>
+			<div className="flex min-h-screen w-full items-center justify-center p-4">
+				<Card className="w-full max-w-md">
+					<CardContent>
+						<ErrorState
+							title="Nothing to approve"
+							detail="There is no sign-in request to approve here, or its details could not be confirmed. Start again from the application you were using."
+						/>
+					</CardContent>
+				</Card>
 			</div>
 		);
 	}
 
 	return (
-		<div className="w-full max-w-md">
-			<div className="rounded-2xl border bg-card text-card-foreground shadow-xl shadow-black/5 dark:shadow-black/20">
-				<div className="p-8 space-y-6">
-					<div className="flex items-center gap-3">
-						<BrandMark
-							className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-primary text-lg font-bold text-primary-foreground"
-							imageClassName="p-1"
-						/>
-						<span className="text-lg font-semibold tracking-tight">
-							{branding.name}
-						</span>
-					</div>
+		<div className="flex min-h-screen w-full items-center justify-center p-4">
+			<div className="w-full max-w-md space-y-6">
+				<div className="flex items-center justify-center gap-3">
+					<BrandMark
+						className="flex size-10 items-center justify-center overflow-hidden rounded-xl bg-primary text-lg font-bold text-primary-foreground"
+						imageClassName="p-1"
+					/>
+					<span className="text-xl font-semibold tracking-tight">
+						{branding.name}
+					</span>
+				</div>
 
-					<div className="space-y-1.5">
+				<Card>
+					<CardHeader>
 						<h1 data-slot="page-title" className="type-page-title">
 							Allow {clientName}?
 						</h1>
@@ -177,84 +198,81 @@ export function ConsentPage() {
 						    unconditionally so a trusted-looking name can never be the
 						    only thing the person sees. CIMD draft-02 §8.5. */}
 						{verifiedOrigin && (
-							<p className="text-sm text-muted-foreground break-all">
+							<CardDescription className="break-all">
 								<code>{verifiedOrigin}</code>
-							</p>
+							</CardDescription>
 						)}
-						<p className="text-sm text-muted-foreground">
+						<CardDescription>
 							{resourceName
 								? `It is asking to use ${resourceName} as you.`
 								: "It is asking to act as you."}
-						</p>
-					</div>
-
-					<div className="rounded-lg border bg-background p-4 space-y-3 text-sm">
-						<div className="flex items-start gap-2.5">
-							<ShieldCheck className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
-							<span className="text-muted-foreground">
-								It will act with your own permissions — never more — and
-								everything it does is recorded against both you and it.
-							</span>
-						</div>
-						{resolution?.resource && (
+						</CardDescription>
+					</CardHeader>
+					<CardContent className="space-y-4">
+						<Panel className="space-y-3 text-sm text-muted-foreground">
 							<div className="flex items-start gap-2.5">
-								<Check className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
-								<span className="text-muted-foreground">
-									Its access is limited to{" "}
-									<code className="break-all text-foreground">
-										{resolution.resource}
-									</code>
-									.
+								<ShieldCheck className="mt-0.5 size-4 shrink-0" />
+								<span>
+									It will act with your own permissions — never more — and
+									everything it does is recorded against both you and it.
 								</span>
 							</div>
-						)}
-						{unvetted && (
-							<div className="flex items-start gap-2.5">
-								<AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
-								<span className="text-muted-foreground">
-									This application was not installed by your administrator. The
-									host verified only that its registration is published at{" "}
-									<code className="break-all text-foreground">
-										{resolution?.clientOrigin ?? request.clientId}
-									</code>
-									. Allow it only if you started this yourself.
-								</span>
-							</div>
-						)}
-					</div>
+							{resolution?.resource && (
+								<div className="flex items-start gap-2.5">
+									<Check className="mt-0.5 size-4 shrink-0" />
+									<span>
+										Its access is limited to{" "}
+										<code className="break-all text-foreground">
+											{resolution.resource}
+										</code>
+										.
+									</span>
+								</div>
+							)}
+							{unvetted && (
+								<div className="flex items-start gap-2.5">
+									<AlertCircle className="mt-0.5 size-4 shrink-0" />
+									<span>
+										This application was not installed by your administrator.
+										The only thing checked about it is that its registration is
+										published at{" "}
+										<code className="break-all text-foreground">
+											{resolution?.clientOrigin ?? request.clientId}
+										</code>
+										. Allow it only if you started this yourself.
+									</span>
+								</div>
+							)}
+						</Panel>
 
-					{error && (
-						<div className="flex items-start gap-2 rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
-							<AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-							<span>{error}</span>
-						</div>
-					)}
-
-					<div className="flex gap-2.5">
-						<button
-							type="button"
+						{error && <ErrorState title={error} />}
+					</CardContent>
+					<CardFooter className="gap-2">
+						<Button
+							size="lg"
+							className="flex-1"
 							onClick={allow}
 							disabled={deciding !== null}
-							className="flex-1 flex items-center justify-center gap-2 h-11 rounded-lg bg-primary text-primary-foreground text-sm font-medium transition-colors hover:bg-primary/90 disabled:opacity-50"
 						>
 							{deciding === "allow" ? (
-								<Loader2 className="h-4 w-4 animate-spin" />
+								<Loader2 className="animate-spin" />
 							) : (
-								<Check className="h-4 w-4" />
+								<Check />
 							)}
 							Allow
-						</button>
-						<button
-							type="button"
+						</Button>
+						<Button
+							variant="outline"
+							size="lg"
+							className="flex-1"
 							onClick={deny}
 							disabled={deciding !== null}
-							className="flex-1 flex items-center justify-center gap-2 h-11 rounded-lg border bg-background text-sm font-medium transition-colors hover:bg-accent/50 disabled:opacity-50"
 						>
-							<X className="h-4 w-4" />
+							<X />
 							Cancel
-						</button>
-					</div>
-				</div>
+						</Button>
+					</CardFooter>
+				</Card>
 			</div>
 		</div>
 	);

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Settings } from "@/features/user-settings/model/settings";
 import { userSettingsMutations } from "@/features/user-settings/service/mutations";
 import { userSettingsQueries } from "@/features/user-settings/service/queries";
+import { failureText } from "@/shared/lib/failure-text";
 import {
 	Button,
 	Card,
@@ -14,13 +15,16 @@ import {
 	CardFooter,
 	CardHeader,
 	CardTitle,
+	ErrorState,
 	Label,
+	Page as PageBody,
+	PageHeader,
 	Switch,
 } from "@/shared/ui";
 
 export function NotificationSettings() {
 	const queryClient = useQueryClient();
-	const { data, isLoading } = useQuery(userSettingsQueries.current());
+	const { data, isLoading, isError } = useQuery(userSettingsQueries.current());
 
 	const [draft, setDraft] = useState<boolean>();
 	const inApp = draft ?? Settings.notifications.inApp.get(data);
@@ -38,19 +42,16 @@ export function NotificationSettings() {
 			toast.success("Notification preferences saved");
 			queryClient.invalidateQueries({ queryKey: ["user-settings"] });
 		},
-		onError: () => toast.error("Failed to save preferences"),
+		onError: (error) =>
+			toast.error(failureText("save your notification preferences", error)),
 	});
 
 	return (
-		<div className="space-y-6">
-			<div>
-				<h1 data-slot="page-title" className="type-page-title">
-					Notification Preferences
-				</h1>
-				<p className="text-muted-foreground">
-					Choose whether optional updates appear in your notification center.
-				</p>
-			</div>
+		<PageBody>
+			<PageHeader
+				title="Notification preferences"
+				description="Choose whether optional updates appear in your notification center."
+			/>
 
 			<Card>
 				<CardHeader>
@@ -59,12 +60,18 @@ export function NotificationSettings() {
 						Push notifications and notification sounds are not available.
 					</CardDescription>
 				</CardHeader>
-				<CardContent>
+				<CardContent className="space-y-4">
+					{/* The switch shows a default when the read fails, so it is locked
+					    and the page says the real setting is unknown. */}
+					{isError && (
+						<ErrorState
+							title="Couldn't load your notification preferences"
+							detail="Your current choice is unknown, so it can't be changed here yet. Reload the page; if it keeps failing, tell your administrator."
+						/>
+					)}
 					<div className="flex items-center justify-between gap-4">
 						<div className="space-y-0.5">
-							<Label htmlFor="notif-in-app" className="text-sm font-medium">
-								Optional updates
-							</Label>
+							<Label htmlFor="notif-in-app">Optional updates</Label>
 							<p className="text-sm text-muted-foreground">
 								Show product activity and invitations in the notification
 								center. Essential security and billing messages still appear.
@@ -73,7 +80,7 @@ export function NotificationSettings() {
 						<Switch
 							id="notif-in-app"
 							checked={inApp}
-							disabled={isLoading}
+							disabled={isLoading || isError}
 							onCheckedChange={setDraft}
 						/>
 					</div>
@@ -81,12 +88,12 @@ export function NotificationSettings() {
 				<CardFooter>
 					<Button
 						onClick={() => save.mutate()}
-						disabled={isLoading || save.isPending}
+						disabled={isLoading || isError || save.isPending}
 					>
-						{save.isPending ? "Saving..." : "Save Preferences"}
+						{save.isPending ? "Saving…" : "Save preferences"}
 					</Button>
 				</CardFooter>
 			</Card>
-		</div>
+		</PageBody>
 	);
 }

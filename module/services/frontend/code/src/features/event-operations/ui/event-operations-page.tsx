@@ -2,12 +2,13 @@
 
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
-import { AlertTriangle, Radio, RefreshCw, Workflow } from "lucide-react";
+import { Radio, RefreshCw, Workflow } from "lucide-react";
 import { useMemo } from "react";
 import type {
 	EventSubscriptionSummary,
 	EventTypeSnapshot,
 } from "@/gen/saas/events/v1/operations_pb";
+import { readOutcome } from "@/shared/lib/read-outcome";
 import { formatDate, truncateUUID } from "@/shared/lib/utils";
 import {
 	Badge,
@@ -17,6 +18,9 @@ import {
 	CardDescription,
 	CardHeader,
 	CardTitle,
+	ErrorState,
+	Page as PageBody,
+	PageHeader,
 	Skeleton,
 	Table,
 	TableBody,
@@ -52,6 +56,14 @@ function optionalDate(value?: Timestamp): string {
 	return formatDate(value ? timestampDate(value).toISOString() : undefined);
 }
 
+// What a person can do about a read that did not come back: nothing but ask,
+// when it was refused; otherwise the Refresh button is right there.
+function loadFailureDetail(error: unknown): string {
+	return readOutcome(true, error) === "forbidden"
+		? "Your account doesn't have the platform role this page needs."
+		: "Use Refresh to try again. If it keeps failing, tell your administrator.";
+}
+
 export function EventOperationsPage() {
 	const operations = useEventOperations();
 	const subscriptions = useEventSubscriptions();
@@ -69,48 +81,45 @@ export function EventOperationsPage() {
 	const backlog = relay?.backlog ?? BigInt(0);
 
 	return (
-		<div className="space-y-6">
-			<div className="flex flex-wrap items-start justify-between gap-3">
-				<div>
-					<h1 data-slot="page-title" className="type-page-title">Event operations</h1>
-					<p className="text-muted-foreground">
-						Domain-event catalog, subscribers, relay lag, and dead letters across
-						the platform. Payloads never cross this surface.
-					</p>
-				</div>
-				<Button
-					variant="outline"
-					onClick={() =>
-						Promise.all([operations.refetch(), subscriptions.refetch()])
-					}
-					disabled={operations.isFetching || subscriptions.isFetching}
-				>
-					<RefreshCw className="h-4 w-4" />
-					Refresh
-				</Button>
-			</div>
+		<PageBody>
+			<PageHeader
+				title="Event operations"
+				description="The events the platform publishes, who subscribes to them, how far delivery is behind, and what could not be delivered. Event contents are never shown here."
+				actions={
+					<Button
+						variant="outline"
+						onClick={() =>
+							Promise.all([operations.refetch(), subscriptions.refetch()])
+						}
+						disabled={operations.isFetching || subscriptions.isFetching}
+					>
+						<RefreshCw className="h-4 w-4" />
+						Refresh
+					</Button>
+				}
+			/>
 
 			<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
 				<MetricCard
 					title="Total events"
-					value={(relay?.totalEvents ?? BigInt(0)).toLocaleString()}
-					description="Durable outbox rows"
+					value={relay ? relay.totalEvents.toLocaleString() : "—"}
+					description="Recorded for delivery"
 				/>
 				<MetricCard
 					title="Published"
-					value={(relay?.publishedEvents ?? BigInt(0)).toLocaleString()}
-					description="Fanned out by the relay"
+					value={relay ? relay.publishedEvents.toLocaleString() : "—"}
+					description="Sent on to subscribers"
 				/>
 				<MetricCard
 					title="Backlog"
-					value={backlog.toLocaleString()}
-					description="Awaiting fan-out"
+					value={relay ? backlog.toLocaleString() : "—"}
+					description="Waiting to be sent"
 					warning={backlog !== BigInt(0)}
 				/>
 				<MetricCard
-					title="Head-of-line lag"
+					title="Oldest waiting event"
 					value={optionalDate(relay?.oldestUnpublishedAt)}
-					description="Oldest unpublished event"
+					description="When the oldest unsent event was recorded"
 					warning={Boolean(relay?.oldestUnpublishedAt)}
 				/>
 			</div>
@@ -119,18 +128,18 @@ export function EventOperationsPage() {
 				<CardHeader>
 					<CardTitle className="text-base">Event types</CardTitle>
 					<CardDescription>
-						Declared catalog types merged with outbox counters. Undeclared
-						emitters are surfaced so nothing can hide.
+						Every declared event type with its counts. Types that were
+						published without being declared are listed too.
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
 					{operations.isLoading ? (
 						<Skeleton className="h-48 w-full" />
 					) : operations.isError ? (
-						<div className="flex items-center gap-2 text-sm text-destructive">
-							<AlertTriangle className="h-4 w-4" />
-							Unable to load event operations.
-						</div>
+						<ErrorState
+							title="Couldn't load the event types"
+							detail={loadFailureDetail(operations.error)}
+						/>
 					) : eventTypes.length === 0 ? (
 						<div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
 							<Workflow className="h-8 w-8" />
@@ -143,10 +152,10 @@ export function EventOperationsPage() {
 									<TableHead>Type</TableHead>
 									<TableHead>Visibility</TableHead>
 									<TableHead>Publisher</TableHead>
-									<TableHead>Major</TableHead>
+									<TableHead>Version</TableHead>
 									<TableHead>Subscribers</TableHead>
 									<TableHead>Total</TableHead>
-									<TableHead>Unpublished</TableHead>
+									<TableHead>Waiting</TableHead>
 									<TableHead>Last event</TableHead>
 								</TableRow>
 							</TableHeader>
@@ -164,22 +173,22 @@ export function EventOperationsPage() {
 				<CardHeader>
 					<CardTitle className="text-base">Subscriptions</CardTitle>
 					<CardDescription>
-						Live (non-revoked) control-plane subscriptions across all principals,
-						each with its queue dead-letter depth.
+						Every active subscription on the platform, with the number of
+						events its queue could not deliver.
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
 					{subscriptions.isLoading ? (
 						<Skeleton className="h-48 w-full" />
 					) : subscriptions.isError ? (
-						<div className="flex items-center gap-2 text-sm text-destructive">
-							<AlertTriangle className="h-4 w-4" />
-							Unable to load subscriptions.
-						</div>
+						<ErrorState
+							title="Couldn't load the subscriptions"
+							detail={loadFailureDetail(subscriptions.error)}
+						/>
 					) : subscriptions.data?.subscriptions.length === 0 ? (
 						<div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
 							<Radio className="h-8 w-8" />
-							<p className="text-sm">No live subscriptions.</p>
+							<p className="text-sm">No active subscriptions.</p>
 						</div>
 					) : (
 						<Table>
@@ -189,7 +198,7 @@ export function EventOperationsPage() {
 									<TableHead>Pattern</TableHead>
 									<TableHead>Queue</TableHead>
 									<TableHead>Delivery</TableHead>
-									<TableHead>Dead letter</TableHead>
+									<TableHead>Undelivered</TableHead>
 									<TableHead>Created</TableHead>
 								</TableRow>
 							</TableHeader>
@@ -206,9 +215,9 @@ export function EventOperationsPage() {
 			{deadLetters.length > 0 && (
 				<Card>
 					<CardHeader>
-						<CardTitle className="text-base">Dead letters by queue</CardTitle>
+						<CardTitle className="text-base">Undelivered events by queue</CardTitle>
 						<CardDescription>
-							Exhausted deliveries parked on live subscriber queues.
+							Events set aside after every delivery attempt failed.
 						</CardDescription>
 					</CardHeader>
 					<CardContent>
@@ -216,7 +225,7 @@ export function EventOperationsPage() {
 							<TableHeader>
 								<TableRow>
 									<TableHead>Queue</TableHead>
-									<TableHead>Dead letter</TableHead>
+									<TableHead>Undelivered</TableHead>
 								</TableRow>
 							</TableHeader>
 							<TableBody>
@@ -241,7 +250,7 @@ export function EventOperationsPage() {
 					</CardContent>
 				</Card>
 			)}
-		</div>
+		</PageBody>
 	);
 }
 

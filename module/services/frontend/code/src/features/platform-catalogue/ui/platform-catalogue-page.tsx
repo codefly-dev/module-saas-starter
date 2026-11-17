@@ -25,6 +25,8 @@ import {
 	CardHeader,
 	CardTitle,
 	Label,
+	Page as PageBody,
+	PageHeader,
 	Skeleton,
 	Switch,
 	Table,
@@ -216,26 +218,21 @@ export function PlatformCataloguePage() {
 		});
 
 	return (
-		<div className="space-y-6">
-			<div className="flex flex-wrap items-start justify-between gap-3">
-				<div>
-					<h1 data-slot="page-title" className="type-page-title">
-						Catalogue
-					</h1>
-					<p className="text-muted-foreground">
-						Every module and solution deployed on this platform: what it
-						declares, what runs, and which organizations have it installed.
-					</p>
-				</div>
-				<Button
-					variant="outline"
-					onClick={() => catalogue.refetch()}
-					disabled={catalogue.isFetching}
-				>
-					<RefreshCw className="h-4 w-4" />
-					Refresh
-				</Button>
-			</div>
+		<PageBody>
+			<PageHeader
+				title="Catalogue"
+				description="Every module and solution deployed on this platform: what it declares, what runs, and which organizations have it installed."
+				actions={
+					<Button
+						variant="outline"
+						onClick={() => catalogue.refetch()}
+						disabled={catalogue.isFetching}
+					>
+						<RefreshCw className="h-4 w-4" />
+						Refresh
+					</Button>
+				}
+			/>
 
 			<div className="flex items-center gap-2">
 				<Switch
@@ -257,7 +254,10 @@ export function PlatformCataloguePage() {
 					{catalogue.isLoading ? (
 						<Skeleton className="h-48 w-full" />
 					) : entries.length === 0 ? (
-						<p className="py-10 text-center text-sm text-muted-foreground">
+						<p
+							className="py-10 text-center text-sm text-muted-foreground"
+							{...(catalogue.isError ? { role: "alert" as const } : {})}
+						>
 							{readOutcomeMessage(
 								outcome,
 								"the catalogue",
@@ -373,7 +373,7 @@ export function PlatformCataloguePage() {
 				description="Facts no component reports yet, so the Catalogue carries no column for them. Nothing is misconfigured."
 				notes={unbuilt}
 			/>
-		</div>
+		</PageBody>
 	);
 }
 

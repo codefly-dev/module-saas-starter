@@ -16,6 +16,7 @@ import { SubjectKind } from "@/gen/saas/accounts/v1/common_pb";
 import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
 import { useAuth } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
+import { failureText } from "@/shared/lib/failure-text";
 import {
 	mayKeepRetainedRows,
 	readOutcome,
@@ -217,8 +218,7 @@ function RolePermissionsEditor({
 			{ id: role.id, description, permissions, orgId },
 			{
 				onSuccess: () => toast.success(`Role "${role.name}" updated`),
-				onError: (error) =>
-					toast.error(`Failed to update role: ${(error as Error).message}`),
+				onError: (error) => toast.error(failureText("update the role", error)),
 			},
 		);
 	};
@@ -410,7 +410,7 @@ function RoleHolders({
 																		toast.success("Role revoked"),
 																	onError: (error) =>
 																		toast.error(
-																			`Failed to revoke: ${(error as Error).message}`,
+																			failureText("revoke the role", error),
 																		),
 																},
 															)

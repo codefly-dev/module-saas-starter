@@ -18,17 +18,26 @@ describe("DataPrivacyPage", () => {
 		expect(
 			(
 				screen.getByRole("button", {
-					name: "Export Adapter Required",
+					name: "Request export",
 				}) as HTMLButtonElement
 			).disabled,
 		).toBe(true);
 		expect(
 			(
 				screen.getByRole("button", {
-					name: "Deletion Policy Required",
+					name: "Delete account",
 				}) as HTMLButtonElement
 			).disabled,
 		).toBe(true);
+		// A disabled button alone does not say why. The person is told the
+		// action is not offered here and what to do instead, in their words.
+		expect(
+			screen.getByText(/Data export is not available here yet/),
+		).toBeTruthy();
+		expect(
+			screen.getByText(/Account deletion is not available here yet/),
+		).toBeTruthy();
+		expect(screen.queryByText(/adapter|starter|anonymization/i)).toBeNull();
 		expect(
 			screen.queryByText(/in accordance with GDPR regulations/i),
 		).toBeNull();
@@ -50,16 +59,17 @@ describe("DataPrivacyPage", () => {
 		expect(
 			(
 				screen.getByRole("button", {
-					name: "Request Export",
+					name: "Request export",
 				}) as HTMLButtonElement
 			).disabled,
 		).toBe(false);
 		expect(
 			(
 				screen.getByRole("button", {
-					name: "Delete Account",
+					name: "Delete account",
 				}) as HTMLButtonElement
 			).disabled,
 		).toBe(false);
+		expect(screen.queryByText(/not available here yet/)).toBeNull();
 	});
 });

@@ -8,6 +8,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import { Button, Page as PageBody, PageHeader, Panel } from "@/shared/ui";
 
 export default function BillingSuccessClient() {
 	const router = useRouter();
@@ -18,26 +19,18 @@ export default function BillingSuccessClient() {
 	}, [router]);
 
 	return (
-		<div
-			style={{
-				maxWidth: "560px",
-				margin: "6rem auto",
-				padding: "2rem",
-				textAlign: "center",
-				fontFamily: "system-ui, sans-serif",
-			}}
-		>
-			<div style={{ fontSize: "3rem", marginBottom: "1rem" }}>🎉</div>
-			<h1>Subscription active</h1>
-			<p style={{ color: "#666", marginTop: "1rem" }}>
-				Thanks for subscribing. Your account has been upgraded and you&apos;ll
-				be redirected to the dashboard shortly.
-			</p>
-			<p style={{ marginTop: "2rem" }}>
-				<Link href="/" style={{ color: "#0066cc" }}>
-					Go to dashboard →
-				</Link>
-			</p>
-		</div>
+		<PageBody>
+			<Panel className="p-6">
+				<PageHeader
+					title="Subscription active"
+					description="Thanks for subscribing. Your account has been upgraded and you'll be taken to the dashboard shortly."
+					actions={
+						<Button nativeButton={false} render={<Link href="/" />}>
+							Go to dashboard
+						</Button>
+					}
+				/>
+			</Panel>
+		</PageBody>
 	);
 }

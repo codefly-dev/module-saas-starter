@@ -3,8 +3,8 @@
 import {
 	DatasourceAccountLinks,
 	DatasourceDirectoryPanel,
-	DatasourcesPanel,
 	DatasourceSyncSchedule,
+	DatasourcesPanel,
 } from "@codefly-dev/saas-ui";
 import { Disclosure } from "@codefly-dev/ui/layout";
 import { HardDriveDownload } from "lucide-react";
@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/empty-state";
 import { OrgSelector } from "@/components/org-selector";
 import { useAuth } from "@/lib/auth";
 import { usePublicRuntimeConfig } from "@/lib/public-runtime-config-provider";
+import { Page as PageBody, PageHeader } from "@/shared/ui";
 import { createDatasourceClient } from "./datasource-client";
 
 /**
@@ -40,19 +41,12 @@ export function DatasourcesAdmin() {
 	);
 
 	return (
-		<div className="space-y-8">
-			<div className="flex flex-wrap items-start justify-between gap-3">
-				<div className="space-y-1">
-					<h2 data-slot="page-title" className="type-page-title">
-						Data sources
-					</h2>
-					<p className="text-muted-foreground">
-						Bring content in from the tools your organization uses, and choose
-						who can read it.
-					</p>
-				</div>
-				<OrgSelector />
-			</div>
+		<PageBody className="space-y-8">
+			<PageHeader
+				title="Data sources"
+				description="Bring content in from the tools your organization uses, and choose who can read it."
+				actions={<OrgSelector />}
+			/>
 
 			{orgId ? (
 				<>
@@ -89,7 +83,7 @@ export function DatasourcesAdmin() {
 					description="Pick an organization from the selector above."
 				/>
 			)}
-		</div>
+		</PageBody>
 	);
 }
 

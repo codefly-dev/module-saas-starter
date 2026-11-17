@@ -4,7 +4,15 @@ import { OrgSelector } from "@/components/org-selector";
 import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
 import { useAuth } from "@/lib/auth";
 import { hasPermission, isSuperAdmin } from "@/lib/permissions";
-import { Button } from "@/shared/ui";
+import { readOutcome } from "@/shared/lib/read-outcome";
+import {
+	Button,
+	ErrorState,
+	Page as PageBody,
+	PageHeader,
+	Panel,
+	Stack,
+} from "@/shared/ui";
 import type { Role } from "../model/types";
 import { useRoles } from "../service/queries";
 import { RoleForm } from "./role-form";
@@ -29,40 +37,55 @@ function RolesPageForOrganization({
 	orgId: string;
 	canCreate: boolean;
 }) {
-	const { data: roles = [], isLoading, isError, refetch } = useRoles(orgId);
+	const {
+		data: roles = [],
+		isLoading,
+		isError,
+		error,
+		refetch,
+	} = useRoles(orgId);
+	// A refusal is not cured by asking again, so only a read that did not come
+	// back offers the retry.
+	const refused = readOutcome(isError, error) === "forbidden";
 
 	return (
-		<div className="space-y-6">
-			<div className="flex items-center justify-between">
-				<div>
-					<h1 data-slot="page-title" className="type-page-title">
-						Roles
-					</h1>
-					<p className="text-muted-foreground">
-						{orgId
-							? "Manage roles and permissions for the selected organization."
-							: "Global roles. Select an organization to manage its roles."}
-					</p>
-				</div>
-				<div className="flex items-center gap-3">
-					<OrgSelector />
-					{canCreate && <RoleForm orgId={orgId} />}
-				</div>
-			</div>
+		<PageBody>
+			<PageHeader
+				title="Roles"
+				description={
+					orgId
+						? "Manage roles and permissions for the selected organization."
+						: "Roles shared by every organization. Select an organization to create or manage its own roles."
+				}
+				actions={
+					<>
+						<OrgSelector />
+						{canCreate && <RoleForm orgId={orgId} />}
+					</>
+				}
+			/>
 
-			{!orgId && (
-				<p>Select an organization to create or manage its custom roles.</p>
-			)}
 			{isError ? (
-				<div role="alert">
-					Couldn&apos;t load roles.{" "}
-					<Button variant="outline" onClick={() => refetch()}>
-						Try again
-					</Button>
-				</div>
+				<Panel>
+					<Stack gap={3} align="start">
+						<ErrorState
+							title="Couldn't load the roles"
+							detail={
+								refused
+									? "You don't have permission to see these roles. Ask an organization administrator for access."
+									: "Whether any are defined is unknown. Try again; if it keeps failing, tell your administrator."
+							}
+						/>
+						{!refused && (
+							<Button variant="outline" size="sm" onClick={() => refetch()}>
+								Try again
+							</Button>
+						)}
+					</Stack>
+				</Panel>
 			) : (
 				<RolesTable roles={roles as Role[]} isLoading={isLoading} />
 			)}
-		</div>
+		</PageBody>
 	);
 }

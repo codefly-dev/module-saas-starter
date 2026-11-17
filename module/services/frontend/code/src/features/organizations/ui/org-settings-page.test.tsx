@@ -40,7 +40,7 @@ describe("organization settings tenant selection", () => {
 		);
 		renderInApp(<OrgSettingsPage />);
 		expect((await screen.findByRole("alert")).textContent).toContain(
-			"Couldn't load organization settings",
+			"Couldn't load the organization settings",
 		);
 		expect(screen.queryByRole("button", { name: "Save Settings" })).toBeNull();
 	});

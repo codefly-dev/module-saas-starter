@@ -29,15 +29,27 @@ import {
 } from "@/gen/saas/accounts/v1/usage_pb";
 import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
+import { failureText } from "@/shared/lib/failure-text";
+import { readOutcome } from "@/shared/lib/read-outcome";
 import {
 	Badge,
+	Banner,
 	Button,
 	Card,
 	CardContent,
 	CardDescription,
 	CardHeader,
 	CardTitle,
+	ErrorState,
+	Page as PageBody,
+	PageHeader,
 	Skeleton,
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
 } from "@/shared/ui";
 import { billingMutations } from "../service/mutations";
 
@@ -46,7 +58,12 @@ const billingClient = createClient(BillingService, apiTransport);
 export function BillingAdminPage() {
 	const { organizationId: orgId = "", getToken } = useAuth();
 
-	const { data: entitlements, isLoading } = useOrgEntitlements(orgId || null);
+	const {
+		data: entitlements,
+		isLoading,
+		isError: planFailed,
+		error: planError,
+	} = useOrgEntitlements(orgId || null);
 	const {
 		data: usage,
 		isLoading: usageLoading,
@@ -82,50 +99,41 @@ export function BillingAdminPage() {
 			),
 		onSuccess: (resp) => {
 			if (!resp.url) {
-				toast.error("Portal failed", { description: "No URL returned" });
+				toast.error(failureText("open the billing portal", undefined));
 				return;
 			}
 			window.location.href = resp.url;
 		},
-		onError: (err) =>
-			toast.error("Couldn't open portal", { description: err.message }),
+		onError: (error) =>
+			toast.error(failureText("open the billing portal", error)),
 	});
 	const freePlan = useMutation({
 		mutationFn: () => billingMutations.selectFreePlan(getToken()),
 		onSuccess: () => toast.success("Free plan activated"),
-		onError: (err) =>
-			toast.error("Couldn't activate the free plan", {
-				description: err.message,
-			}),
+		onError: (error) =>
+			toast.error(failureText("activate the free plan", error)),
 	});
 	const checkout = useMutation({
 		mutationFn: () => billingMutations.startCheckout(getToken(), "pro"),
 		onSuccess: (url) => {
 			window.location.href = url;
 		},
-		onError: (err) =>
-			toast.error("Couldn't start checkout", { description: err.message }),
+		onError: (error) => toast.error(failureText("start the checkout", error)),
 	});
 
 	return (
-		<div className="space-y-6 max-w-4xl">
-			<div className="flex items-center justify-between">
-				<div>
-					<h1 data-slot="page-title" className="type-page-title">
-						Subscription
-					</h1>
-					<p className="text-muted-foreground">
-						Plan, usage, invoices, and payment management. Powered by Stripe.
-					</p>
-				</div>
-				<OrgSelector />
-			</div>
+		<PageBody className="max-w-4xl">
+			<PageHeader
+				title="Subscription"
+				description="Your plan, what you have used, your invoices and how you pay."
+				actions={<OrgSelector />}
+			/>
 
 			{!orgId ? (
 				<EmptyState
 					icon={CreditCard}
 					title="Select an organization"
-					description="Subscriptions are scoped per organization. Pick one above to see its current plan, usage, invoices, and payment settings."
+					description="Each organization has its own subscription. Pick one above to see its current plan, usage, invoices and payment settings."
 				/>
 			) : (
 				<div className="space-y-6">
@@ -140,13 +148,22 @@ export function BillingAdminPage() {
 									)}
 								</CardTitle>
 								<CardDescription>
-									Manage your subscription, payment method, and invoices through
-									the Stripe-hosted billing portal.
+									Manage your subscription, payment method and invoices in the
+									billing portal.
 								</CardDescription>
 							</CardHeader>
 							<CardContent className="space-y-3">
 								{isLoading ? (
 									<Skeleton className="h-10 w-full" />
+								) : planFailed ? (
+									<ErrorState
+										title="Couldn't load the current plan"
+										detail={
+											readOutcome(true, planError) === "forbidden"
+												? "You don't have permission to see this organization's plan. Ask one of its administrators for access."
+												: "Whether a plan is active is unknown. Reload the page; if it keeps failing, tell your administrator."
+										}
+									/>
 								) : (
 									<div className="text-sm text-muted-foreground">
 										{entitlements?.entitlements.length
@@ -257,8 +274,8 @@ export function BillingAdminPage() {
 								Invoices
 							</CardTitle>
 							<CardDescription>
-								Last 12 invoices from Stripe. Click an invoice number to view
-								the hosted detail page or download the PDF.
+								Your last 12 invoices. Select an invoice number to open it, or
+								download it as a PDF.
 							</CardDescription>
 						</CardHeader>
 						<CardContent>
@@ -269,104 +286,114 @@ export function BillingAdminPage() {
 									<Skeleton className="h-10 w-full" />
 								</div>
 							) : stripeMissing ? (
-								<div className="rounded-md border bg-muted/30 p-4 text-sm space-y-1">
-									<div className="font-medium">Stripe not configured</div>
-									<div className="text-xs text-muted-foreground">
-										Set <code className="font-mono">STRIPE_API_KEY</code> in
-										your codefly secret to enable invoices and the Manage-
-										subscription portal. Plan + usage display works without it.
-									</div>
-								</div>
+								<Banner tone="info" title="Billing isn't set up yet">
+									Invoices and subscription management become available once the
+									people who run this application connect a payment provider.
+									Your plan and usage are shown without it.
+								</Banner>
+							) : invoicesError ? (
+								// A failed read is not "no invoices": whether there are any
+								// is unknown, and saying so keeps a person from concluding
+								// they were never billed.
+								<ErrorState
+									title="Couldn't load the invoices"
+									detail={
+										readOutcome(true, invoicesError) === "forbidden"
+											? "You don't have permission to see this organization's invoices. Ask one of its administrators for access."
+											: "Whether there are any is unknown. Reload the page; if it keeps failing, tell your administrator."
+									}
+								/>
 							) : invoices.length === 0 ? (
 								<div className="text-sm text-muted-foreground py-6 text-center">
-									No invoices yet — start a checkout to enable billing.
+									No invoices yet. They appear here once you choose a paid plan.
 								</div>
 							) : (
-								<div className="overflow-x-auto">
-									<table className="w-full text-sm">
-										<thead>
-											<tr className="border-b text-xs text-muted-foreground">
-												<th className="text-left py-2 font-medium">Number</th>
-												<th className="text-left py-2 font-medium">Date</th>
-												<th className="text-left py-2 font-medium">Status</th>
-												<th className="text-right py-2 font-medium">Amount</th>
-												<th className="py-2"></th>
-											</tr>
-										</thead>
-										<tbody>
-											{invoices.map((inv) => (
-												<tr key={inv.id} className="border-b last:border-0">
-													<td className="py-2.5 font-mono text-xs">
-														{inv.hostedInvoiceUrl ? (
-															<Link
-																href={inv.hostedInvoiceUrl}
-																target="_blank"
-																className="underline underline-offset-2 hover:text-foreground"
-															>
-																{inv.number || "View invoice"}
-															</Link>
-														) : (
-															<span>{inv.number || "Invoice"}</span>
-														)}
-													</td>
-													<td className="py-2.5 text-muted-foreground">
-														{inv.created
-															? new Date(
-																	Number(inv.created.seconds) * 1000,
-																).toLocaleDateString()
-															: "—"}
-													</td>
-													<td className="py-2.5">
-														<InvoiceStatusBadge status={inv.status} />
-													</td>
-													<td className="py-2.5 text-right font-mono text-xs">
-														{formatMoney(
-															Number(inv.amountPaid || inv.amountDue),
-															inv.currency,
-														)}
-													</td>
-													<td className="py-2.5 text-right">
-														{inv.invoicePdf && (
-															<Link
-																href={inv.invoicePdf}
-																target="_blank"
-																aria-label="Download PDF"
-																className="inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
-															>
-																<Download className="h-3.5 w-3.5" />
-															</Link>
-														)}
-													</td>
-												</tr>
-											))}
-										</tbody>
-									</table>
-								</div>
+								<Table>
+									<TableHeader>
+										<TableRow>
+											<TableHead>Number</TableHead>
+											<TableHead>Date</TableHead>
+											<TableHead>Status</TableHead>
+											<TableHead className="text-right">Amount</TableHead>
+											<TableHead />
+										</TableRow>
+									</TableHeader>
+									<TableBody>
+										{invoices.map((inv) => (
+											<TableRow key={inv.id}>
+												<TableCell className="font-mono text-xs">
+													{inv.hostedInvoiceUrl ? (
+														<Link
+															href={inv.hostedInvoiceUrl}
+															target="_blank"
+															className="underline underline-offset-2 hover:text-foreground"
+														>
+															{inv.number || "View invoice"}
+														</Link>
+													) : (
+														<span>{inv.number || "Invoice"}</span>
+													)}
+												</TableCell>
+												<TableCell className="text-muted-foreground">
+													{inv.created
+														? new Date(
+																Number(inv.created.seconds) * 1000,
+															).toLocaleDateString()
+														: "—"}
+												</TableCell>
+												<TableCell>
+													<InvoiceStatusBadge status={inv.status} />
+												</TableCell>
+												<TableCell className="text-right font-mono text-xs">
+													{formatMoney(
+														Number(inv.amountPaid || inv.amountDue),
+														inv.currency,
+													)}
+												</TableCell>
+												<TableCell className="text-right">
+													{inv.invoicePdf && (
+														<Button
+															variant="ghost"
+															size="icon-sm"
+															nativeButton={false}
+															aria-label="Download PDF"
+															render={
+																<Link href={inv.invoicePdf} target="_blank" />
+															}
+														>
+															<Download />
+														</Button>
+													)}
+												</TableCell>
+											</TableRow>
+										))}
+									</TableBody>
+								</Table>
 							)}
 						</CardContent>
 					</Card>
 				</div>
 			)}
-		</div>
+		</PageBody>
 	);
 }
 
 function InvoiceStatusBadge({ status }: { status: string }) {
-	const variant: "default" | "secondary" | "destructive" | "outline" = (() => {
+	const tone: "success" | "info" | "danger" | "neutral" = (() => {
 		switch (status) {
 			case "paid":
-				return "default";
+				return "success";
 			case "open":
-				return "secondary";
+				return "info";
 			case "void":
 			case "uncollectible":
-				return "destructive";
+				return "danger";
 			default:
-				return "outline";
+				return "neutral";
 		}
 	})();
 	return (
-		<Badge variant={variant} className="text-[10px] capitalize">
+		<Badge tone={tone} className="capitalize">
 			{status || "draft"}
 		</Badge>
 	);
@@ -400,8 +427,8 @@ function MeterUsageRow({
 	const percent = usagePercent(used, limit);
 	const tone = {
 		critical: "bg-destructive",
-		warning: "bg-amber-500",
-		healthy: "bg-emerald-500",
+		warning: "bg-warning",
+		healthy: "bg-success",
 	}[usageTone(used, limit)];
 	const fromISO = snapshot.periodStart
 		? timestampDate(snapshot.periodStart).toISOString()

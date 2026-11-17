@@ -1,13 +1,15 @@
 "use client";
 
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { ProductFeature } from "@/lib/product-features";
 import { usePublicRuntimeConfig } from "@/lib/public-runtime-config-provider";
+import { Button, Page as PageBody, PageHeader } from "@/shared/ui";
 
 const featureLabels: Record<ProductFeature, string> = {
 	subscriptions: "Subscriptions",
-	sso: "Single Sign-On",
+	sso: "Single sign-on",
 	entitlements: "Entitlements",
 };
 
@@ -21,17 +23,21 @@ export function OptionalProductFeature({
 	const { productFeatures } = usePublicRuntimeConfig();
 	if (productFeatures[feature]) return children;
 	return (
-		<div className="space-y-3">
-			<h1 className="text-2xl font-bold">
-				{featureLabels[feature]} is not enabled
-			</h1>
-			<p className="text-muted-foreground">
-				This optional feature is turned off for this application. Contact your
-				application administrator to enable it.
-			</p>
-			<Link href="/admin" className="text-primary hover:underline">
-				Back to administration
-			</Link>
-		</div>
+		<PageBody>
+			<PageHeader
+				title={`${featureLabels[feature]} is not enabled`}
+				description="This optional feature is turned off for this application. Contact your application administrator to enable it."
+			>
+				<Button
+					variant="outline"
+					size="sm"
+					nativeButton={false}
+					render={<Link href="/admin" />}
+				>
+					<ArrowLeft className="mr-1 h-4 w-4" />
+					Back to administration
+				</Button>
+			</PageHeader>
+		</PageBody>
 	);
 }

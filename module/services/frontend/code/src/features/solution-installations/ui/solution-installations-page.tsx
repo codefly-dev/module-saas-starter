@@ -42,6 +42,7 @@ import {
 	CardHeader,
 	CardTitle,
 	DelayedLoading,
+	PageHeader,
 	Spinner,
 	Table,
 	TableBody,
@@ -255,50 +256,49 @@ function SolutionInstallationsForOrganization({
 
 	return (
 		<div className="space-y-6">
-			<div className="flex flex-wrap items-start justify-between gap-3">
-				<div>
-					<h1 data-slot="page-title" className="type-page-title">
-						{showModules ? "Supporting module administration" : "Solutions"}
-					</h1>
-					<p className="text-muted-foreground">
-						{showModules
-							? "Modules are part of the platform: every organization has each one, kept up to date by the platform. This page shows which release each is at and whether it is healthy; nothing here installs or removes one."
-							: "The solutions this organization can install, and the module pages whose access it sets up. Install a solution after reviewing what each role can do and its supporting modules; a module page is already part of the platform, and nobody can use it until its roles are given to teams."}
-					</p>
-					<Tabs
-						value={showModules ? "modules" : "solutions"}
-						onValueChange={(view) =>
-							router.push(
-								view === "modules"
-									? "/admin/solutions?view=modules"
-									: "/admin/solutions",
-							)
-						}
-						className="mt-3"
-					>
-						<TabsList variant="line">
-							<TabsTrigger value="solutions">Solutions</TabsTrigger>
-							<TabsTrigger value="modules">Supporting modules</TabsTrigger>
-						</TabsList>
-					</Tabs>
-				</div>
-				<div className="flex items-center gap-3">
-					<OrgSelector />
-					{orgId && (
-						<Button
-							variant="outline"
-							onClick={() => {
-								void available.refetch();
-								void installed.refetch();
-							}}
-							disabled={available.isFetching || installed.isFetching}
-						>
-							<RefreshCw className="h-4 w-4" />
-							Refresh
-						</Button>
-					)}
-				</div>
-			</div>
+			<PageHeader
+				title={showModules ? "Supporting module administration" : "Solutions"}
+				description={
+					showModules
+						? "Modules are part of the platform: every organization has each one, kept up to date by the platform. This page shows which release each is at and whether it is healthy; nothing here installs or removes one."
+						: "The solutions this organization can install, and the module pages whose access it sets up. Install a solution after reviewing what each role can do and its supporting modules; a module page is already part of the platform, and nobody can use it until its roles are given to teams."
+				}
+				actions={
+					<>
+						<OrgSelector />
+						{orgId && (
+							<Button
+								variant="outline"
+								onClick={() => {
+									void available.refetch();
+									void installed.refetch();
+								}}
+								disabled={available.isFetching || installed.isFetching}
+							>
+								<RefreshCw className="h-4 w-4" />
+								Refresh
+							</Button>
+						)}
+					</>
+				}
+			>
+				<Tabs
+					value={showModules ? "modules" : "solutions"}
+					onValueChange={(view) =>
+						router.push(
+							view === "modules"
+								? "/admin/solutions?view=modules"
+								: "/admin/solutions",
+						)
+					}
+					className="mt-3"
+				>
+					<TabsList variant="line">
+						<TabsTrigger value="solutions">Solutions</TabsTrigger>
+						<TabsTrigger value="modules">Supporting modules</TabsTrigger>
+					</TabsList>
+				</Tabs>
+			</PageHeader>
 
 			{!orgId ? (
 				<EmptyState

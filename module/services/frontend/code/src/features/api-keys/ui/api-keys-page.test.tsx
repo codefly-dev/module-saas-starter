@@ -131,7 +131,7 @@ describe("APIKeysPage admin container", () => {
 		);
 		renderInApp(<APIKeysPage />);
 		expect((await screen.findByRole("alert")).textContent).toContain(
-			"Couldn't load API keys.",
+			"Couldn't load the API keys",
 		);
 	});
 	it("renders the API keys the service returns for the active org", async () => {

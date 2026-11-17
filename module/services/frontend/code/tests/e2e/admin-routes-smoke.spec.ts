@@ -32,9 +32,9 @@ const ROUTES: AdminRoute[] = [
 	{ path: "/admin/permissions", heading: /^Permissions$/ },
 	{ path: "/admin/organizations", heading: /^Organizations$/ },
 	{ path: "/admin/invitations", heading: /^Invitations$/ },
-	{ path: "/admin/api-keys", heading: /^API Keys$/ },
+	{ path: "/admin/api-keys", heading: /^API keys$/ },
 	{ path: "/admin/entitlements", heading: /^Entitlements$/ },
-	{ path: "/admin/sessions", heading: /Active Sessions/ },
+	{ path: "/admin/sessions", heading: /Active sessions/ },
 	{
 		path: "/admin/platform/waitlist",
 		heading: /Waitlist/,
@@ -42,7 +42,7 @@ const ROUTES: AdminRoute[] = [
 	},
 	{
 		path: "/admin/platform/admins",
-		heading: /Platform Admins/,
+		heading: /Platform admins/,
 		platformGated: true,
 	},
 	{

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
 import { OrgSelector } from "@/components/org-selector";
 import { useAuth } from "@/lib/auth";
+import { failureText } from "@/shared/lib/failure-text";
 import {
 	mayKeepRetainedRows,
 	readOutcome,
@@ -21,6 +22,8 @@ import {
 	CardHeader,
 	CardTitle,
 	DelayedLoading,
+	Page as PageBody,
+	PageHeader,
 	Select,
 	SelectContent,
 	SelectItem,
@@ -78,20 +81,12 @@ export function UnattendedWorkPlayground() {
 	const selectedLabel = selectedSource ? sourceLabel(selectedSource) : "";
 
 	return (
-		<div className="space-y-6">
-			<div className="flex flex-wrap items-start justify-between gap-3">
-				<div>
-					<h1 data-slot="page-title" className="type-page-title">
-						Unattended work
-					</h1>
-					<p className="text-muted-foreground">
-						Work no person started still carries a signed identity. A release
-						declares whose, and this host re-derives it from current facts on
-						every occurrence.
-					</p>
-				</div>
-				<OrgSelector />
-			</div>
+		<PageBody>
+			<PageHeader
+				title="Unattended work"
+				description="Work no person started still carries a signed identity. A release declares whose, and this host re-derives it from current facts on every occurrence."
+				actions={<OrgSelector />}
+			/>
 
 			{stale && (
 				<p role="status" className="text-sm text-muted-foreground">
@@ -112,7 +107,7 @@ export function UnattendedWorkPlayground() {
 					/>
 				) : (
 					<p
-						role="status"
+						role="alert"
 						className="py-6 text-center text-sm text-muted-foreground"
 					>
 						{readOutcomeMessage(
@@ -167,7 +162,7 @@ export function UnattendedWorkPlayground() {
 					)}
 				</>
 			)}
-		</div>
+		</PageBody>
 	);
 }
 
@@ -270,7 +265,8 @@ function TriggerIdentityPanel({
 											? "Delegation reference minted"
 											: "No composed module accepts a delegation here",
 									),
-								onError: (error) => toast.error(String(error)),
+								onError: (error) =>
+									toast.error(failureText("mint a reference", error)),
 							})
 						}
 						disabled={delegate.isPending}
@@ -283,7 +279,7 @@ function TriggerIdentityPanel({
 				<CardContent>
 					{references.length === 0 ? (
 						<p
-							role="status"
+							role={outcome === "empty" ? "status" : "alert"}
 							className="py-6 text-center text-sm text-muted-foreground"
 						>
 							{outcome === "empty"
@@ -337,7 +333,8 @@ function TriggerIdentityPanel({
 															{
 																onSuccess: () =>
 																	toast.success("Reference revoked"),
-																onError: (error) => toast.error(String(error)),
+																onError: (error) =>
+																	toast.error(failureText("revoke the reference", error)),
 															},
 														)
 													}
@@ -374,7 +371,8 @@ function TriggerIdentityPanel({
 									toast.success("Occurrence admitted", {
 										description: `Job ${result.jobId}`,
 									}),
-								onError: (error) => toast.error(String(error)),
+								onError: (error) =>
+									toast.error(failureText("run an occurrence", error)),
 							})
 						}
 						disabled={reconcile.isPending || live.length === 0}
@@ -391,10 +389,14 @@ function TriggerIdentityPanel({
 				<CardContent>
 					{children.length === 0 ? (
 						<p
-							role="status"
+							role={outcome === "empty" ? "status" : "alert"}
 							className="py-6 text-center text-sm text-muted-foreground"
 						>
-							No child has been minted against this source&apos;s references.
+							{readOutcomeMessage(
+								outcome,
+								"what this source's occurrences minted",
+								"No child has been minted against this source's references.",
+							)}
 						</p>
 					) : (
 						<Table>

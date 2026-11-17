@@ -18,7 +18,7 @@ describe("jobStateLabel", () => {
 			"Processing",
 			"Retrying",
 			"Succeeded",
-			"Dead letter",
+			"Failed for good",
 			"Canceled",
 		]);
 	});

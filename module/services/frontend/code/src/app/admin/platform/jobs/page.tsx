@@ -1,21 +1,18 @@
+import { AccessDenied } from "@/components/access-denied";
 import { RoleGate } from "@/components/auth/role-gate";
 import { JobOperationsPage } from "@/features/job-operations";
 
-function AccessDenied() {
-	return (
-		<div className="rounded-lg border p-6">
-			<h1 data-slot="page-title" className="type-page-title">Super administrator required</h1>
-			<p className="mt-2 text-sm text-muted-foreground">
-				Job operations span all tenants and are restricted to platform super
-				administrators.
-			</p>
-		</div>
-	);
-}
-
 export default function Page() {
 	return (
-		<RoleGate require="super_admin" fallback={<AccessDenied />}>
+		<RoleGate
+			require="super_admin"
+			fallback={
+				<AccessDenied
+					title="Super administrator required"
+					description="Job operations span all tenants and are restricted to platform super administrators."
+				/>
+			}
+		>
 			<JobOperationsPage />
 		</RoleGate>
 	);

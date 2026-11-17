@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
@@ -10,8 +10,9 @@ import {
 	Card,
 	CardContent,
 	CardDescription,
+	CardFooter,
 	CardHeader,
-	CardTitle,
+	ErrorState,
 	Skeleton,
 } from "@/shared/ui";
 
@@ -30,19 +31,21 @@ function CallbackHandler() {
 	const state = params.get("state");
 	const providerError = params.get("error");
 	const providerErrorDescription = params.get("error_description");
-	// The identity provider's own error (or a malformed callback URL) is already
-	// specific and actionable, so it is surfaced verbatim with no reference line.
+	// The identity provider's own error is a code and a description written for
+	// whoever integrated it, and both arrive in the address bar, where anyone can
+	// put anything. The person is told what happened in this page's words; what
+	// the provider said goes on the reference line, for whoever they ask.
 	const parameterError = useMemo<CallbackFailure | null>(() => {
 		if (providerError) {
 			return {
-				message: `${providerError}${providerErrorDescription ? `: ${providerErrorDescription}` : ""}`,
-				reference: null,
+				message:
+					"Your sign-in provider did not sign you in. The sign-in was cancelled, or your account is not allowed to use this application.",
+				reference: `${providerError}${providerErrorDescription ? `: ${providerErrorDescription}` : ""}`,
 			};
 		}
 		if (!code || !state) {
 			return {
-				message:
-					"This sign-in link is missing its code or state. Please start over.",
+				message: "This sign-in link is incomplete. Start again.",
 				reference: null,
 			};
 		}
@@ -68,10 +71,13 @@ function CallbackHandler() {
 				});
 				return;
 			}
-			// State/CSRF guards and other pre-exchange checks throw a plain Error
-			// whose message is already user-facing.
+			// Anything else — the checks made before the exchange, a request that
+			// never left the browser — is worded for developers. The remedy is the
+			// same for all of them, so that is what is said.
+			console.error("Sign-in could not be completed", e);
 			setCompletionFailure({
-				message: e instanceof Error ? e.message : "Sign-in failed.",
+				message:
+					"This sign-in could not be completed, and nothing was changed. Start again from the sign-in page.",
 				reference: null,
 			});
 		});
@@ -81,44 +87,52 @@ function CallbackHandler() {
 
 	if (failure) {
 		return (
-			<div className="flex min-h-screen items-center justify-center bg-background px-4">
+			<div className="flex min-h-screen w-full items-center justify-center p-4">
 				<Card className="w-full max-w-md">
-					<CardHeader className="text-center">
-						<CardTitle className="text-xl">Sign-in failed</CardTitle>
+					<CardHeader>
+						<h1 data-slot="page-title" className="type-page-title">
+							Sign-in failed
+						</h1>
 						<CardDescription>
 							We couldn&apos;t finish signing you in.
 						</CardDescription>
 					</CardHeader>
 					<CardContent className="space-y-4">
-						<div className="flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-							<AlertCircle className="h-4 w-4 shrink-0" />
-							{failure.message}
-						</div>
+						<ErrorState title={failure.message} />
 						{failure.reference && (
-							<div className="rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">
+							<p className="text-xs text-muted-foreground">
 								<span className="font-medium">Reference: </span>
 								<span className="font-mono break-all">{failure.reference}</span>
-							</div>
+							</p>
 						)}
-						<a href="/auth/login" className="w-full">
-							<Button variant="outline" className="w-full">
-								Try again
-							</Button>
-						</a>
 					</CardContent>
+					<CardFooter>
+						<Button
+							variant="outline"
+							size="lg"
+							className="w-full"
+							nativeButton={false}
+							render={<a href="/auth/login" />}
+						>
+							Sign in again
+						</Button>
+					</CardFooter>
 				</Card>
 			</div>
 		);
 	}
 
 	return (
-		<div className="flex min-h-screen items-center justify-center bg-background px-4">
+		<div className="flex min-h-screen w-full items-center justify-center p-4">
 			<Card className="w-full max-w-md">
-				<CardHeader className="text-center">
-					<CardTitle className="text-xl flex items-center justify-center gap-2">
-						<Loader2 className="h-5 w-5 animate-spin" />
+				<CardHeader>
+					<h1
+						data-slot="page-title"
+						className="type-page-title flex items-center gap-2"
+					>
+						<Loader2 className="size-5 animate-spin" />
 						Signing you in
-					</CardTitle>
+					</h1>
 					<CardDescription>
 						Please wait while we complete the sign-in process.
 					</CardDescription>
@@ -132,11 +146,12 @@ export function CallbackPage() {
 	return (
 		<Suspense
 			fallback={
-				<div className="flex min-h-screen items-center justify-center bg-background px-4">
+				<div className="flex min-h-screen w-full items-center justify-center p-4">
 					<Card className="w-full max-w-md">
-						<CardContent className="flex items-center justify-center py-12">
-							<Skeleton className="h-8 w-48" />
-						</CardContent>
+						<CardHeader>
+							<Skeleton className="h-7 w-44" />
+							<Skeleton className="h-4 w-full" />
+						</CardHeader>
 					</Card>
 				</div>
 			}

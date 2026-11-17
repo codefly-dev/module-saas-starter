@@ -8,6 +8,7 @@ import { getNavigationIcon } from "@/lib/navigation-icons";
 import { groupNavigation, selectNavigation } from "@/lib/plugins/presentation";
 import { useFrontendConfig } from "@/lib/providers";
 import { usePublicRuntimeConfig } from "@/lib/public-runtime-config-provider";
+import { Page as PageBody, PageHeader } from "@/shared/ui";
 import { ADMIN_CARD_DESCRIPTIONS } from "./admin-overview-descriptions";
 
 export default function AdminOverviewClient() {
@@ -24,15 +25,11 @@ export default function AdminOverviewClient() {
 	);
 
 	return (
-		<div className="space-y-8">
-			<div>
-				<h1 data-slot="page-title" className="type-page-title">
-					Admin
-				</h1>
-				<p className="text-muted-foreground mt-1">
-					Manage application and platform settings.
-				</p>
-			</div>
+		<PageBody className="space-y-8">
+			<PageHeader
+				title="Admin"
+				description="Manage application and platform settings."
+			/>
 
 			{groups.map((group) => (
 				<section key={group.group} className="space-y-3">
@@ -66,6 +63,6 @@ export default function AdminOverviewClient() {
 					</div>
 				</section>
 			))}
-		</div>
+		</PageBody>
 	);
 }

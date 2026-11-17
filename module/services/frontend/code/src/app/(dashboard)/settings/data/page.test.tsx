@@ -29,14 +29,14 @@ describe("Data privacy settings page", () => {
 		expect(
 			(
 				screen.getByRole("button", {
-					name: "Request Export",
+					name: "Request export",
 				}) as HTMLButtonElement
 			).disabled,
 		).toBe(false);
 		expect(
 			(
 				screen.getByRole("button", {
-					name: "Delete Account",
+					name: "Delete account",
 				}) as HTMLButtonElement
 			).disabled,
 		).toBe(false);

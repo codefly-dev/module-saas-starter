@@ -2,11 +2,11 @@
 
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { isMFARequired, stepUpToast } from "@/features/auth/model/step-up";
-import { ConnectError } from "@connectrpc/connect";
 import { useState } from "react";
 import { toast } from "sonner";
 import type { ModuleAuthorityRequest } from "@/gen/saas/accounts/v1/platform_admin_pb";
-import { readOutcome, readOutcomeMessage } from "@/shared/lib/read-outcome";
+import { failureText } from "@/shared/lib/failure-text";
+import { readOutcome } from "@/shared/lib/read-outcome";
 import { formatDate } from "@/shared/lib/utils";
 import {
 	AlertDialog,
@@ -25,7 +25,11 @@ import {
 	CardDescription,
 	CardHeader,
 	CardTitle,
+	ErrorState,
 	Label,
+	Page as PageBody,
+	PageHeader,
+	Panel,
 	Spinner,
 	Table,
 	TableBody,
@@ -34,6 +38,7 @@ import {
 	TableHeader,
 	TableRow,
 	Textarea,
+	useLoadingPhase,
 } from "@/shared/ui";
 import { nextRevisionDraft, writeRefusal } from "../model/draft";
 import { usePutModuleEnvelope } from "../service/mutations";
@@ -50,6 +55,13 @@ type Draft = { base: bigint; text: string };
  * module manifests ask for, so the principals it does not allow are named
  * here instead of surfacing only as denied mints.
  */
+const header = (
+	<PageHeader
+		title="Module authority"
+		description="The ceiling every module's authority is derived inside. A module holds what its applied manifest asks for and this envelope allows — never more than either."
+	/>
+);
+
 export function ModuleAuthorityPage() {
 	const read = useModuleEnvelope();
 	const write = usePutModuleEnvelope();
@@ -57,17 +69,31 @@ export function ModuleAuthorityPage() {
 	const [confirming, setConfirming] = useState(false);
 	const [refusal, setRefusal] = useState<string | null>(null);
 
-	if (read.isPending) return <Spinner label="Loading the module envelope" />;
+	const { indicator } = useLoadingPhase(read.isPending);
+
+	if (read.isPending) {
+		return (
+			<PageBody>
+				{header}
+				{indicator && <Spinner label="Loading the module envelope" />}
+			</PageBody>
+		);
+	}
 	if (read.isError) {
 		return (
-			<p role="alert" className="text-sm text-muted-foreground">
-				{readOutcomeMessage(
-					readOutcome(true, read.error),
-					"the module envelope",
-					"",
-				)}{" "}
-				{ConnectError.from(read.error).rawMessage}
-			</p>
+			<PageBody>
+				{header}
+				<Panel>
+					<ErrorState
+						title="The module envelope can't be shown"
+						detail={
+							readOutcome(true, read.error) === "forbidden"
+								? "Only a platform super administrator can see the module envelope."
+								: failureText("load the module envelope", read.error)
+						}
+					/>
+				</Panel>
+			</PageBody>
 		);
 	}
 
@@ -98,17 +124,8 @@ export function ModuleAuthorityPage() {
 		);
 
 	return (
-		<div className="space-y-6">
-			<div>
-				<h1 data-slot="page-title" className="type-page-title">
-					Module authority
-				</h1>
-				<p className="text-muted-foreground">
-					The ceiling every module&apos;s authority is derived inside. A module
-					holds what its applied manifest asks for and this envelope allows —
-					never more than either.
-				</p>
-			</div>
+		<PageBody>
+			{header}
 
 			<Card>
 				<CardHeader>
@@ -243,7 +260,7 @@ export function ModuleAuthorityPage() {
 					</AlertDialogFooter>
 				</AlertDialogContent>
 			</AlertDialog>
-		</div>
+		</PageBody>
 	);
 }
 

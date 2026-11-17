@@ -1,14 +1,12 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-	ChevronDown,
-	ChevronUp,
-	RotateCcw,
-} from "lucide-react";
 import { Content } from "@codefly-dev/ui/content";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { failureText } from "@/shared/lib/failure-text";
+import { readOutcome } from "@/shared/lib/read-outcome";
 import { formatDate } from "@/shared/lib/utils";
 import {
 	Badge,
@@ -17,6 +15,7 @@ import {
 	CardContent,
 	CardHeader,
 	CardTitle,
+	ErrorState,
 	Skeleton,
 } from "@/shared/ui";
 import { formatDeliveryStatus, formatEventType } from "../model/transforms";
@@ -50,7 +49,7 @@ export function WebhookDeliveriesPanel({
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const queryClient = useQueryClient();
 
-	const { data, isLoading } = useQuery(
+	const { data, isLoading, isError, error } = useQuery(
 		webhookQueries.deliveries(subscription.id),
 	);
 
@@ -83,14 +82,13 @@ export function WebhookDeliveriesPanel({
 		onSuccess: () => {
 			toast.success("Replay queued", {
 				description:
-					"A new delivery was created. Check the latest row for its worker-projected outcome.",
+					"A new delivery was created. Its outcome appears on the newest row.",
 			});
 			void queryClient.invalidateQueries({
 				queryKey: ["webhook-deliveries", subscription.id],
 			});
 		},
-		onError: (err) =>
-			toast.error("Failed to queue replay", { description: err.message }),
+		onError: (error) => toast.error(failureText("replay the delivery", error)),
 	});
 
 	return (
@@ -126,6 +124,17 @@ export function WebhookDeliveriesPanel({
 								<Skeleton key={key} className="h-12 w-full" />
 							))}
 						</div>
+					) : isError ? (
+						// A failed read is not "no deliveries": whether any were
+						// attempted is unknown.
+						<ErrorState
+							title="Couldn't load the deliveries"
+							detail={
+								readOutcome(true, error) === "forbidden"
+									? "You don't have permission to see this webhook's deliveries. Ask an organization administrator for access."
+									: "Whether any were sent is unknown. Close this panel and open it again; if it keeps failing, tell your administrator."
+							}
+						/>
 					) : deliveries.length === 0 ? (
 						<p className="text-sm text-muted-foreground py-8 text-center">
 							No deliveries yet. Use <span className="font-medium">Test</span>{" "}
@@ -202,8 +211,8 @@ function DeliveryRow({
 					<span
 						className={`font-mono ${
 							delivery.httpStatus >= 200 && delivery.httpStatus < 300
-								? "text-emerald-600 dark:text-emerald-400"
-								: "text-red-600 dark:text-red-400"
+								? "text-success"
+								: "text-destructive"
 						}`}
 					>
 						{delivery.httpStatus}

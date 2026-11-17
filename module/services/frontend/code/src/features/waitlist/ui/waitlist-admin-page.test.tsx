@@ -46,7 +46,8 @@ const waitlistClient = vi.hoisted(() => ({
 	invite: vi.fn(),
 }));
 
-vi.mock("@connectrpc/connect", () => ({
+vi.mock("@connectrpc/connect", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@connectrpc/connect")>()),
 	createClient: () => waitlistClient,
 }));
 

@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Download, FileArchive, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { failureText } from "@/shared/lib/failure-text";
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -20,6 +21,9 @@ import {
 	CardFooter,
 	CardHeader,
 	CardTitle,
+	Grid,
+	Page as PageBody,
+	PageHeader,
 } from "@/shared/ui";
 import { gdprMutations } from "../service/mutations";
 
@@ -37,10 +41,12 @@ export function DataPrivacyPage({
 	const exportMutation = useMutation({
 		mutationFn: () => gdprMutations.requestExport(),
 		onSuccess: () => {
-			toast.success("Data export requested. You will be notified when ready.");
+			toast.success(
+				"Data export requested. You will be notified when it is ready.",
+			);
 			queryClient.invalidateQueries({ queryKey: ["gdpr"] });
 		},
-		onError: () => toast.error("Failed to request data export"),
+		onError: (error) => toast.error(failureText("request the export", error)),
 	});
 
 	const deletionMutation = useMutation({
@@ -49,38 +55,35 @@ export function DataPrivacyPage({
 			toast.success("Account deletion requested.");
 			queryClient.invalidateQueries({ queryKey: ["gdpr"] });
 		},
-		onError: () => toast.error("Failed to request account deletion"),
+		onError: (error) =>
+			toast.error(failureText("request account deletion", error)),
 	});
 
 	return (
-		<div className="space-y-6">
-			<div>
-				<h2 data-slot="page-title" className="type-page-title">Data Privacy</h2>
-				<p className="text-muted-foreground">
-					Review the starter&apos;s data-request workflows and the production
-					adapters your deployment still requires.
-				</p>
-			</div>
+		<PageBody>
+			<PageHeader
+				title="Data and privacy"
+				description="Get a copy of your data, or ask for your account to be deleted."
+			/>
 
-			<div className="grid gap-4 md:grid-cols-2">
+			<Grid cols={2}>
 				<Card>
 					<CardHeader>
 						<div className="flex items-center gap-3">
-							<FileArchive className="h-5 w-5 text-primary" />
+							<FileArchive className="size-5 text-muted-foreground" />
 							<div>
-								<CardTitle className="text-lg">Export My Data</CardTitle>
+								<CardTitle>Export my data</CardTitle>
 								<CardDescription>
-									Requires a verified secure export adapter.
+									A copy of the data held about you.
 								</CardDescription>
 							</div>
 						</div>
 					</CardHeader>
 					<CardContent>
 						<p className="text-sm text-muted-foreground">
-							The starter includes a request and status workflow, but its server
-							fails closed until a complete production implementation is wired.
-							Configure subject-bound encrypted storage, expiry, deletion, and
-							dataset completeness before enabling this action.
+							{exportAvailable
+								? "Ask for a copy of your data. You will be notified when it is ready."
+								: "Data export is not available here yet. To get a copy of your data, contact your administrator."}
 						</p>
 					</CardContent>
 					<CardFooter>
@@ -90,39 +93,36 @@ export function DataPrivacyPage({
 						>
 							{exportMutation.isPending ? (
 								<>
-									<Loader2 className="mr-2 h-4 w-4 animate-spin" />
-									Requesting...
+									<Loader2 className="animate-spin" />
+									Requesting…
 								</>
 							) : (
 								<>
-									<Download className="mr-2 h-4 w-4" />
-									{exportAvailable
-										? "Request Export"
-										: "Export Adapter Required"}
+									<Download />
+									Request export
 								</>
 							)}
 						</Button>
 					</CardFooter>
 				</Card>
 
-				<Card className="border-destructive/30">
+				<Card>
 					<CardHeader>
 						<div className="flex items-center gap-3">
-							<Trash2 className="h-5 w-5 text-destructive" />
+							<Trash2 className="size-5 text-destructive" />
 							<div>
-								<CardTitle className="text-lg">Delete My Account</CardTitle>
+								<CardTitle>Delete my account</CardTitle>
 								<CardDescription>
-									Requires verified deletion and retention policy.
+									Close your account and remove your data.
 								</CardDescription>
 							</div>
 						</div>
 					</CardHeader>
 					<CardContent>
 						<p className="text-sm text-muted-foreground">
-							The starter&apos;s current anonymization path does not cover every
-							product dataset, provider, legal hold, financial record, or
-							backup. Keep this action unavailable until those rules and
-							adapters are complete.
+							{deletionAvailable
+								? "Ask for your account to be deleted. Some records may be kept for as long as the retention policy requires."
+								: "Account deletion is not available here yet. To have your account deleted, contact your administrator."}
 						</p>
 					</CardContent>
 					<CardFooter>
@@ -130,20 +130,17 @@ export function DataPrivacyPage({
 							<AlertDialogTrigger
 								render={
 									<Button variant="destructive" disabled={!deletionAvailable}>
-										<Trash2 className="mr-2 h-4 w-4" />
-										{deletionAvailable
-											? "Delete Account"
-											: "Deletion Policy Required"}
+										<Trash2 />
+										Delete account
 									</Button>
 								}
 							/>
 							<AlertDialogContent>
 								<AlertDialogHeader>
-									<AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+									<AlertDialogTitle>Delete your account?</AlertDialogTitle>
 									<AlertDialogDescription>
-										This action follows the configured deletion and retention
-										policy. Required retained records and backup-expiry behavior
-										remain governed by that reviewed policy.
+										This asks for your account to be deleted. Some records may
+										be kept for as long as the retention policy requires.
 									</AlertDialogDescription>
 								</AlertDialogHeader>
 								<AlertDialogFooter>
@@ -153,7 +150,7 @@ export function DataPrivacyPage({
 										className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
 									>
 										{deletionMutation.isPending
-											? "Requesting..."
+											? "Requesting…"
 											: "Yes, delete my account"}
 									</AlertDialogAction>
 								</AlertDialogFooter>
@@ -161,18 +158,7 @@ export function DataPrivacyPage({
 						</AlertDialog>
 					</CardFooter>
 				</Card>
-			</div>
-
-			<Card>
-				<CardHeader>
-					<CardTitle className="text-lg">Production enablement</CardTitle>
-					<CardDescription>
-						An adopter must connect durable jobs and provider cleanup, define
-						dataset ownership and retention exceptions, and record current
-						environment-scoped evidence before these controls become available.
-					</CardDescription>
-				</CardHeader>
-			</Card>
-		</div>
+			</Grid>
+		</PageBody>
 	);
 }

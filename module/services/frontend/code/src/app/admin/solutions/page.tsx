@@ -1,27 +1,19 @@
-import { RoleGate } from "@/components/auth/role-gate";
 import { Suspense } from "react";
+import { AccessDenied } from "@/components/access-denied";
+import { RoleGate } from "@/components/auth/role-gate";
 import { SolutionInstallationsRoute } from "@/features/solution-installations";
 import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
-
-function AccessDenied() {
-	return (
-		<div className="rounded-lg border p-6">
-			<h1 data-slot="page-title" className="type-page-title">
-				Organization administrator required
-			</h1>
-			<p className="mt-2 text-sm text-muted-foreground">
-				Solutions are managed by organization administrators and owners, or
-				platform super administrators.
-			</p>
-		</div>
-	);
-}
 
 export default function Page() {
 	return (
 		<RoleGate
 			requirePermission={PERMISSIONS.ROLES_WRITE}
-			fallback={<AccessDenied />}
+			fallback={
+				<AccessDenied
+					title="Organization administrator required"
+					description="Solutions are managed by organization administrators and owners, or platform super administrators."
+				/>
+			}
 		>
 			<Suspense fallback={null}>
 				<SolutionInstallationsRoute />
