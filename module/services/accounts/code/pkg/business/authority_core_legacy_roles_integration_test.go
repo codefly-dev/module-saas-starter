@@ -39,6 +39,11 @@ func (i legacyRolesInbox) ReadDeliveredDocument(ctx context.Context, binding str
 	return &legacy, nil
 }
 
+// legacyInstallerRole is the name a delivery composed before the rename gave
+// its admin role. The core no longer names it: admin and user are the only
+// roles. It is spelled here because the delivery this test replays carries it.
+const legacyInstallerRole = "installer"
+
 // A host holding a generation that declares old roles (installer, editor,
 // viewer) reads it again at boot and composes it as it was taken: only a NEW
 // generation is held to admin and user (decide.PageRoles), so the boot
@@ -60,7 +65,7 @@ func TestABootReadsAHeldGenerationDeclaringOldRolesAgain(t *testing.T) {
 	require.NotNil(t, record)
 	var wire compositionv1.AuthorityManifestV1
 	require.NoError(t, proto.Unmarshal(record.AuthorityDocument, &wire))
-	wire.Roles = []*compositionv1.RoleV1{{Name: domain.LegacyInstallerRole, Scopes: scopes}, {Name: "editor", Scopes: scopes},
+	wire.Roles = []*compositionv1.RoleV1{{Name: legacyInstallerRole, Scopes: scopes}, {Name: "editor", Scopes: scopes},
 		{Name: "viewer", Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "doc", Actions: []string{"read"}}}}}
 	document, err := proto.Marshal(&wire)
 	require.NoError(t, err)
@@ -80,7 +85,7 @@ func TestABootReadsAHeldGenerationDeclaringOldRolesAgain(t *testing.T) {
 		doc := func(actions ...string) []*basev0.WorkScopeV1 {
 			return []*basev0.WorkScopeV1{{ResourceKind: "doc", Actions: actions}}
 		}
-		m.Roles = map[string][]*basev0.WorkScopeV1{domain.LegacyInstallerRole: doc("read", "write"), "editor": doc("read", "write"), "viewer": doc("read")}
+		m.Roles = map[string][]*basev0.WorkScopeV1{legacyInstallerRole: doc("read", "write"), "editor": doc("read", "write"), "viewer": doc("read")}
 		m.Source = coredelivered.Source(record.Payload, document)
 		return tx.PutModule(m)
 	}))

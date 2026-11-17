@@ -172,11 +172,11 @@ type SolutionRoleHolders struct {
 // roles at one installation.
 func (a *SolutionAuthority) HeldBy(person string, teams []string, at SolutionRoleHolders) []*basev0.WorkScopeV1 {
 	var held []*basev0.WorkScopeV1
-	// The owner holds the admin role (domain.AdminRole); the core's
-	// DeclaredAdminRole also names, for one release, a delivery stored under
-	// the role's old name.
-	if admin, declared := domain.DeclaredAdminRole(a.Roles); at.Owner == person && declared {
-		held = append(held, a.Grants(admin)...)
+	// The owner holds the admin role (domain.AdminRole), when the solution
+	// declares it. Admin and user are the only role names: a delivery stored
+	// under any other name declares nothing its owner holds.
+	if _, declared := a.Roles[domain.AdminRole]; at.Owner == person && declared {
+		held = append(held, a.Grants(domain.AdminRole)...)
 	}
 	for _, team := range at.Teams {
 		if slices.Contains(teams, team) {
