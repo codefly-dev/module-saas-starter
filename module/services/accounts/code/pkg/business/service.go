@@ -31,6 +31,9 @@ import (
 )
 
 type Service struct {
+	// redelivery are the bindings whose held generation the core refuses to
+	// read again and that wait for their publisher (authority_core_redelivery.go).
+	redelivery                redeliveryNeeds
 	sourceReceiptStore        receipts.Store
 	sourceReceiptGuard        *receipts.Interceptor
 	store                     Store

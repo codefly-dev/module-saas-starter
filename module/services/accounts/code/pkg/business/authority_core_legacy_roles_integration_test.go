@@ -44,11 +44,14 @@ func (i legacyRolesInbox) ReadDeliveredDocument(ctx context.Context, binding str
 // roles. It is spelled here because the delivery this test replays carries it.
 const legacyInstallerRole = "installer"
 
-// A host holding a generation that declares old roles (installer, editor,
-// viewer) reads it again at boot and composes it as it was taken: only a NEW
-// generation is held to admin and user (decide.PageRoles), so the boot
-// reconciliation completes, and the held generation's next delivery moves the
-// old roles' holders.
+// Role names are admin and user only, so the core refuses to read again a
+// held generation that declares any other (installer, editor, viewer). A host
+// holding one does not fail its boot on it, start after start: the boot
+// reconciliation completes, reports the binding by name as needing
+// redelivery, on the binding's own row where an operator reads a delivery
+// this host could not take, and composes nothing new from it. Until its
+// publisher delivers the two roles the solution is unavailable: what the
+// store holds under another name holds nothing.
 func TestABootReadsAHeldGenerationDeclaringOldRolesAgain(t *testing.T) {
 	clearData(t)
 	withAuthorityCore(t)
@@ -94,11 +97,36 @@ func TestABootReadsAHeldGenerationDeclaringOldRolesAgain(t *testing.T) {
 	})
 
 	svc := line.boot(t, line.signer, legacyRolesInbox{PostgresStore: testStore, binding: line.alias, document: document, envelope: envelope})
-	require.NoError(t, svc.ReconcileHeldDeliveries(testCtx), "the held generation declaring old roles is read again, not refused")
+	require.NoError(t, svc.ReconcileHeldDeliveries(testCtx), "a held generation under old role names fails no boot")
+	reason := svc.RedeliveryReasons()[line.alias]
+	require.Contains(t, reason, "needs redelivery", "the binding is reported by name as needing redelivery")
+	require.Contains(t, reason, `"editor"`, "naming the role the core refuses")
+	require.Contains(t, reason, line.alias)
+	var row *business.SolutionHostBindingRecord
+	records, err := svc.ListSolutionHostBindings(testCtx)
+	require.NoError(t, err)
+	for _, record := range records {
+		if record.BindingID == line.alias {
+			row = record
+		}
+	}
+	require.NotNil(t, row)
+	require.Equal(t, reason, row.PendingReason, "on the binding's own row, beside the generation it holds")
+	require.NotNil(t, row.PendingSince)
+
+	// Unavailable until redelivered: the core still holds generation 1 as it
+	// was taken, and a role under an old name holds nothing.
 	core, err := svc.AuthorityCore()
 	require.NoError(t, err)
 	held, err := core.Composed(testCtx, line.alias)
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), held.Generation)
-	require.Contains(t, held.Roles, "editor", "the held generation is composed as it was taken")
+	for name := range held.Roles {
+		require.False(t, domain.IsRole(name), "role %q is one the core grants nothing by", name)
+	}
+
+	// The reason stands across passes (a second start reads the same), and is
+	// not an error of the pass.
+	require.NoError(t, svc.ReconcileHeldDeliveries(testCtx))
+	require.Equal(t, reason, svc.RedeliveryReasons()[line.alias])
 }

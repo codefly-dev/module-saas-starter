@@ -154,7 +154,12 @@ func (s *Service) applyCoreModule(ctx context.Context, manifest *solutionhost.Mo
 	// The core decides a replay of the generation it holds on its own
 	// transaction (ApplyModule): read here first, a slower path was refused
 	// the generation a faster one had just composed.
-	return core.ApplyModule(ctx, m)
+	ids, err := core.ApplyModule(ctx, m)
+	if held, herr := core.Composed(ctx, m.Name); err == nil && herr == nil && needsRedelivery(manifest.Binding, held) == "" {
+		// What the core holds now reads: a redelivery answered the reason.
+		s.clearNeedsRedelivery(manifest.Binding)
+	}
+	return ids, err
 }
 
 // coreUnconfiguredYet is the answer of a host whose core is not built yet: not
@@ -268,6 +273,12 @@ func (s *Service) rereadHeldGeneration(ctx context.Context, record *SolutionHost
 	m, err := coreModuleOf(again, delivered.Payload, signedAuthorityOf(delivered))
 	if err != nil {
 		return true, err
+	}
+	// A held generation the core refuses to read again by its role names is
+	// left as the core holds it and reported as needing redelivery, never a
+	// failure of the boot reconciliation (authority_core_redelivery.go).
+	if reason := needsRedelivery(record.BindingID, m); reason != "" {
+		return true, s.markNeedsRedelivery(ctx, record.BindingID, reason)
 	}
 	reread, err := core.RereadModule(ctx, m)
 	if reread {
