@@ -86,6 +86,7 @@ func (s *PostgresStore) InsertAuditEvent(ctx context.Context, entry business.Aud
 
 // encodeAuditCursor / decodeAuditCursor carry the keyset position for audit
 // pagination. The token is opaque to callers: base64 of "<RFC3339Nano>|<id>".
+// The API-key and user listings resume from the same token (keysetPosition).
 func encodeAuditCursor(ct time.Time, id string) string {
 	raw := ct.UTC().Format(time.RFC3339Nano) + "|" + id
 	return base64.RawURLEncoding.EncodeToString([]byte(raw))

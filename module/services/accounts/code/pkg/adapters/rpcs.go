@@ -34,6 +34,16 @@ func quotaStatusError(err error) error {
 	return err
 }
 
+// pageTokenStatus answers a page token the listing did not issue as the
+// caller's error it is, with the store's own sentence; anything else passes on.
+func pageTokenStatus(err error) error {
+	var storeErr *business.StoreError
+	if errors.As(err, &storeErr) && storeErr.StoreErrorType == business.ErrTypeValidation {
+		return status.Error(codes.InvalidArgument, storeErr.Error())
+	}
+	return err
+}
+
 // quotaRefusal carries the quota's own sentence ("seats quota exhausted: used
 // 5 of 5"), never the wrapped chain: the message is shown to the person who hit
 // the limit, and the internal call path is not theirs to read.
@@ -984,7 +994,8 @@ func (s *APIKeyServer) ListAPIKeys(ctx context.Context, req *gen.ListAPIKeysRequ
 	if err := requireOrgMember(ctx, actorID, req.OrganizationId); err != nil {
 		return nil, err
 	}
-	return service.ListAPIKeys(ctx, req)
+	response, err := service.ListAPIKeys(ctx, req)
+	return response, pageTokenStatus(err)
 }
 
 func (s *APIKeyServer) RevokeAPIKey(ctx context.Context, req *gen.RevokeAPIKeyRequest) (*emptypb.Empty, error) {

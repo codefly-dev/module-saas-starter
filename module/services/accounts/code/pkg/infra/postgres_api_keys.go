@@ -95,13 +95,29 @@ func (s *PostgresStore) GetAPIKeyByHash(ctx context.Context, keyHash string) (*g
 func (s *PostgresStore) ListAPIKeys(ctx context.Context, orgID string, pageSize int32, pageToken string) ([]*gen.APIKey, string, error) {
 	q := s.getQueryExecutor(ctx)
 
-	rows, err := q.Query(ctx, `
+	// Keyset on (created_at, id): keys made in one transaction share a
+	// creation time, so the id makes the order total and the token exact. One
+	// row past the page says whether a next page exists.
+	limit := pageSize + 1
+	if pageSize <= 0 {
+		limit = 0
+	}
+	query := `
 		SELECT id, organization_id, user_id, name, prefix, scopes, environment,
 		       created_at, expires_at, last_used_at, revoked_at
 		FROM api_keys
-		WHERE organization_id = $1 AND revoked_at IS NULL
-		ORDER BY created_at DESC
-		LIMIT $2`, orgID, pageSize)
+		WHERE organization_id = $1 AND revoked_at IS NULL`
+	args := []any{orgID}
+	if pageToken != "" {
+		createdAt, id, err := keysetPosition(pageToken)
+		if err != nil {
+			return nil, "", err
+		}
+		query += ` AND (created_at, id) < ($2, $3)`
+		args = append(args, createdAt, id)
+	}
+	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT $%d`, len(args)+1)
+	rows, err := q.Query(ctx, query, append(args, limit)...)
 	if err != nil {
 		return nil, "", err
 	}
@@ -139,8 +155,17 @@ func (s *PostgresStore) ListAPIKeys(ctx context.Context, orgID string, pageSize 
 		}
 		keys = append(keys, &key)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
 
-	return keys, "", nil
+	nextToken := ""
+	if int32(len(keys)) > pageSize {
+		keys = keys[:pageSize]
+		last := keys[len(keys)-1]
+		nextToken = encodeAuditCursor(last.CreatedAt.AsTime(), last.Id)
+	}
+	return keys, nextToken, nil
 }
 
 // RevokeAPIKey is ORG-SCOPED: the WHERE pins the key to the org the handler
