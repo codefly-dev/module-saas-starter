@@ -319,6 +319,19 @@ func withOnlyWorkContext(r *http.Request, token string) *http.Request {
 // binding to module when the target declares one (page_target). The hop's
 // Check narrows each call to what its method requires.
 func (h *hopRole) workContext(ctx context.Context, bearer, module, page string) (string, error) {
+	return h.workContextStated(ctx, bearer, module, page, nil)
+}
+
+// workContextStated is workContext for a credential the authority cannot
+// authenticate as a person's session by itself: an API key, which only this
+// perimeter validates, or a token confined to one resource, whose confinement
+// only this perimeter read. stated is then what this gateway verified about
+// the credential, under the gateway's own credential, and it is asked INSTEAD
+// of the bearer: the authority decides from who the credential acts as and
+// what bounds it, and the credential itself goes no further than here. The
+// bearer still keys what is held, so two credentials never share a context.
+// nil stated is the person's own session, presented as itself.
+func (h *hopRole) workContextStated(ctx context.Context, bearer, module, page string, stated metadata.MD) (string, error) {
 	key := sha256.Sum256([]byte(bearer + "\x00" + module + "\x00" + page))
 	now := h.clock()
 	h.mu.Lock()
@@ -332,7 +345,11 @@ func (h *hopRole) workContext(ctx context.Context, bearer, module, page string) 
 		return held.token, nil
 	}
 	h.mu.Unlock()
-	ask, cancel := context.WithTimeout(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+bearer), 10*time.Second)
+	presented := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+bearer)
+	if stated != nil {
+		presented = metadata.NewOutgoingContext(ctx, stated)
+	}
+	ask, cancel := context.WithTimeout(presented, 10*time.Second)
 	defer cancel()
 	req := &authorityv1.IssueRequest{
 		As:         &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}},

@@ -13,6 +13,7 @@ import (
 
 	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 	carrier "github.com/codefly-dev/sdk-go/workcontext"
+	"google.golang.org/grpc/metadata"
 )
 
 // Solution routing reads the durable declared registry. Every authenticated
@@ -383,42 +384,47 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	return true
 }
 
-// forwardUpstreamCredential replaces the person's session, on a request about
-// to be forwarded to a solution, with a credential that solution alone can
-// use, and reports whether the request goes on. It is SP-GW-07's positive
-// half on the person's path.
+// forwardUpstreamCredential replaces the caller's credential, on a request
+// about to be forwarded to a solution, with one that solution alone can use,
+// and reports whether the request goes on. It is SP-GW-07's positive half.
 //
-// The person's bearer is a credential for the whole host: a solution that
-// received it could call this host's API and every other solution as that
-// person, for as long as the token (or an API key, for as long as the key)
-// lasts. So it is never forwarded. What travels instead is the person's Work
-// Context at this solution: the authority's Issue for their own session,
-// addressed to the principal the solution's applied manifest declares, short
-// lived, and refused everywhere else (this edge refuses it at another
-// solution's route by its audience, and it is no access token at the host's
-// API). It is the mint the hop's browser path already uses for a module, held
-// the same way, so a person's requests do not each cost an Issue.
+// Whatever the caller presented is a credential for more than this solution: a
+// session reaches the whole host, an API key does for as long as the key
+// lasts, and a token bound to this solution's resource is still admitted at
+// the delegation mint. A solution that received any of them could act with it
+// elsewhere, so none is ever forwarded. What travels instead is a Work Context
+// at this solution: the authority's Issue, addressed to the principal the
+// solution's applied manifest declares, short lived, and refused everywhere
+// else (this edge refuses it at another solution's route by its audience, and
+// it is no access token at the host's API). It is the mint the hop's browser
+// path already uses for a module, held the same way, so a caller's requests do
+// not each cost an Issue.
 //
-// Three requests carry something else, and in none of them does the session
-// travel:
-//   - a resource-bound token (ext_authz stamped its resource) is already
-//     addressed to this one solution and admitted nowhere but here and the
-//     delegation mint, so it is the solution's credential and travels as it is;
+// One mint, three credentials, and the authority decides each:
+//   - a person's session is presented to the authority as itself, and the
+//     Work Context carries what the person holds at the solution;
+//   - an API key is validated here and nowhere else, so the gateway states
+//     who the key acts as and the scopes it carries (statedIdentity), and the
+//     Work Context carries the key's scopes within what its owner holds;
+//   - a resource-bound token is stated the same way with the resource it is
+//     confined to, and the authority issues only at the solution that
+//     resource names.
+//
+// Two requests carry something else, and in neither does the caller's
+// credential travel:
 //   - a caller that presented its own Work Context, which this edge already
 //     held to this route's audience, keeps it, and nothing is minted over it;
 //   - a solution whose delivery declares no authority principal has no
-//     audience a credential could name: it is handed who the person is (the
-//     identity ext_authz stamped) and no credential.
+//     audience a credential could name: it is handed who the caller is (the
+//     identity ext_authz stamped) and no credential, whatever was presented.
+//     Its readiness reports it (accounts, SolutionReadiness).
 //
 // The authority's refusal is the request's: a person who holds nothing at the
-// solution, or a credential that is no person's session (an API key, an
-// impersonation), is refused by the authority's reason and nothing is
-// forwarded. So is a gateway that cannot mint: the session is never the
-// fallback.
+// solution, a key whose scopes hold nothing there, or a credential that acts
+// for someone else (an impersonation) is refused by the authority's reason
+// and nothing is forwarded. So is a gateway that cannot mint: the caller's
+// credential is never the fallback.
 func (g *Gateway) forwardUpstreamCredential(w http.ResponseWriter, r *http.Request, routing *solutionRouting) bool {
-	if r.Header.Get(resourceConfinementHeader) != "" {
-		return true
-	}
 	bearer, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	removePersonsSessionCredential(r.Header)
 	if r.Header.Get(carrier.HeaderName) != "" || routing.Principal == "" {
@@ -428,7 +434,14 @@ func (g *Gateway) forwardUpstreamCredential(w http.ResponseWriter, r *http.Reque
 		httpError(w, http.StatusServiceUnavailable, "no credential can be issued for this solution")
 		return false
 	}
-	token, err := g.personContexts.workContext(r.Context(), bearer, routing.Principal, "")
+	var stated metadata.MD
+	if r.Header.Get("x-credential-kind") == credentialKindAPIKey || r.Header.Get(resourceConfinementHeader) != "" {
+		if stated = g.statedIdentity(r); stated == nil {
+			httpError(w, http.StatusServiceUnavailable, "no credential can be issued for this solution")
+			return false
+		}
+	}
+	token, err := g.personContexts.workContextStated(r.Context(), bearer, routing.Principal, "", stated)
 	if err != nil {
 		httpStatus, _, reason := personContextRefusal(r.Context(), err, routing.Alias)
 		httpError(w, httpStatus, reason)
@@ -436,6 +449,29 @@ func (g *Gateway) forwardUpstreamCredential(w http.ResponseWriter, r *http.Reque
 	}
 	r.Header.Set(carrier.HeaderName, token)
 	return true
+}
+
+// statedIdentity is what ext_authz verified about this request's credential,
+// as the gateway states it to accounts under its own credential: every
+// identity header ext_authz stamped (who, which organization, the credential
+// kind, an API key's scopes, the resource a token is confined to) and the
+// installation that admitted the request. It is the assertion proxyTo makes on
+// an accounts route, made here on the authority's Issue. Every name on it was
+// stripped from the caller's own headers before ext_authz stamped it, so none
+// of it is the caller's to say. nil when this gateway holds no credential of
+// its own to state anything under.
+func (g *Gateway) statedIdentity(r *http.Request) metadata.MD {
+	if g.authz == nil || g.authz.gatewayToken == "" {
+		return nil
+	}
+	stated := metadata.Pairs("x-codefly-gateway-token", g.authz.gatewayToken)
+	for _, name := range canonicalUpstreamAuthHeaders {
+		stated.Set(name, r.Header.Get(name))
+	}
+	if installation := r.Header.Get(installationConfinementHeader); installation != "" {
+		stated.Set(installationConfinementHeader, installation)
+	}
+	return stated
 }
 
 // solutionPublicPrefixes are the path segments a solution serves openly: its

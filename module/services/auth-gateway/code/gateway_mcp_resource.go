@@ -114,16 +114,17 @@ const workContextMintProcedure = "/saas.accounts.v1.WorkContextService/StartTask
 //
 // Why the mint is admitted at all:
 //
-// A resource-bound token is held by a third-party MCP client and, once
-// forwarded, by the solution runtime it dialled. Confinement exists so that
-// credential cannot act as the person anywhere but the resource it names. The
-// claim that nothing legitimate needed a host route was wrong: the runtime's MCP
-// viewer path derives a module gateway by minting a viewer-owned Work Context
-// here, carrying the viewer's bearer beside its own workload attestation. Its
-// module credential does not stand in for the viewer's — the mint is what turns
-// "this person asked" into a capability the destination module can check — so
-// refusing this route refuses the viewer's own tool call, which is a product
-// regression and not a security property.
+// A resource-bound token is held by a third-party MCP client. Confinement
+// exists so that credential cannot act as the person anywhere but the resource
+// it names. The claim that nothing legitimate needed a host route was wrong: a
+// runtime's MCP viewer path derived a module gateway by minting a viewer-owned
+// Work Context here, carrying the viewer's bearer beside its own workload
+// attestation. The gateway no longer hands a solution that bearer: the
+// solution receives the person's Work Context at it instead
+// (forwardUpstreamCredential) and derives from that. The route stays admitted
+// for a holder of the token itself, bounded as below, until no runtime that
+// was built against the forwarded bearer remains; nothing this gateway
+// forwards can reach it.
 //
 // So the mint is admitted and no other procedure of this host's is. Everything
 // else a resource token could otherwise have reached — this host's own API, the

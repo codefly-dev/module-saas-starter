@@ -34,6 +34,8 @@ type signingIssuer struct {
 	bearer   string
 	audience string
 	person   bool
+	// stated is everything the gateway said with the ask.
+	stated metadata.MD
 }
 
 func (f *signingIssuer) Issue(ctx context.Context, in *authorityv1.IssueRequest, _ ...grpc.CallOption) (*authorityv1.IssueResponse, error) {
@@ -42,6 +44,7 @@ func (f *signingIssuer) Issue(ctx context.Context, in *authorityv1.IssueRequest,
 	f.calls++
 	md, _ := metadata.FromOutgoingContext(ctx)
 	f.bearer = strings.Join(md.Get("authorization"), ",")
+	f.stated = md.Copy()
 	f.audience, f.person = in.GetAudience(), in.GetPerson() != nil
 	if f.refuse != nil {
 		return nil, f.refuse
@@ -156,7 +159,8 @@ func TestASolutionTheAuthorityRefusesThePersonAtReceivesNothing(t *testing.T) {
 		want   int
 	}{
 		{"the person holds no role there", status.Error(codes.PermissionDenied, "jane holds no role on audit"), http.StatusForbidden},
-		{"an API key or an ended session is no person's session", status.Error(codes.Unauthenticated, "the bearer names no open session"), http.StatusUnauthorized},
+		{"an ended session is no person's session", status.Error(codes.Unauthenticated, "the bearer names no open session"), http.StatusUnauthorized},
+		{"an impersonated session is issued nothing for the person it views as", status.Error(codes.PermissionDenied, "an impersonated session cannot be issued a capability for the person it views as"), http.StatusForbidden},
 		{"the authority gave no answer", status.Error(codes.Unavailable, "dial tcp 10.0.0.1:443: connection refused"), http.StatusServiceUnavailable},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -196,4 +200,114 @@ func TestASolutionDeclaringNoPrincipalReceivesNoCredential(t *testing.T) {
 	require.Empty(t, plain.lastHeaders.Get("Authorization"), "the person's session does not travel")
 	require.Empty(t, plain.lastHeaders.Get(carrier.HeaderName))
 	require.NotEmpty(t, plain.lastHeaders.Get("x-user-id"))
+}
+
+// requireNoCredentialOfTheCaller holds that nothing a solution received is the
+// credential the caller presented, in any header.
+func requireNoCredentialOfTheCaller(t *testing.T, received http.Header, presented string) {
+	t.Helper()
+	require.Empty(t, received.Get("Authorization"), "the caller's credential does not travel")
+	for name, values := range received {
+		for _, value := range values {
+			require.NotContains(t, value, presented, "%s carries the caller's credential", name)
+		}
+	}
+}
+
+// An API key at a solution's route is not refused and is never forwarded. The
+// gateway validated the key, so it states to the authority who the key acts
+// as and the scopes it carries, under its own credential, and the solution is
+// handed the Work Context the authority issues from them, addressed to it
+// alone. It used to be asked with the key as a bearer, which names no session:
+// every key was 401 at every solution that declares a principal.
+func TestAnAPIKeyAtASolutionIsExchangedForItsWorkContextAndNeverForwarded(t *testing.T) {
+	gw, api, audit, other, issuer, _ := audiencedHarness(t)
+	gw.authz.apiKey = scopesAPIKeyClient{scopes: []string{"audit:read"}}
+	const key = "cfly_sk_live_0123456789abcdef"
+
+	request := httptest.NewRequest(http.MethodGet, "/solutions/audit/v1/audit/logs", nil)
+	request.Header.Set("Authorization", "Bearer "+key)
+	recorder := httptest.NewRecorder()
+	gw.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	received := audit.lastHeaders.Clone()
+	require.NotNil(t, received, "the solution was reached")
+
+	requireNoCredentialOfTheCaller(t, received, key)
+	inspected, err := gw.workContext.Inspect(context.Background(), received.Get(carrier.HeaderName), "audit-principal")
+	require.NoError(t, err, "the solution is handed a Work Context addressed to its own principal")
+	require.Equal(t, "audit-principal", inspected.Audience())
+
+	// What the authority was asked: the key's owner and scopes, stated by the
+	// gateway that validated it, and never the key.
+	require.True(t, issuer.person)
+	require.Equal(t, "audit-principal", issuer.audience)
+	require.Empty(t, issuer.stated.Get("authorization"), "the key is not presented to the authority either")
+	for name, values := range issuer.stated {
+		require.NotContains(t, strings.Join(values, ","), key, "%s carries the key", name)
+	}
+	require.Equal(t, []string{"test-gateway-token"}, issuer.stated.Get("x-codefly-gateway-token"))
+	require.Equal(t, []string{credentialKindAPIKey}, issuer.stated.Get("x-credential-kind"))
+	require.Equal(t, []string{"audit:read"}, issuer.stated.Get("x-scopes"))
+	require.Equal(t, []string{"user-1"}, issuer.stated.Get("x-user-id"))
+	require.Equal(t, []string{"org-1"}, issuer.stated.Get("x-org-id"))
+
+	// What the solution holds is refused everywhere else, as a person's is.
+	api.lastHeaders, other.lastHeaders = nil, nil
+	for _, path := range []string{"/v1/users", "/solutions/other/v1/data"} {
+		again := httptest.NewRequest(http.MethodGet, path, nil)
+		again.Header = received.Clone()
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, again)
+		require.Equal(t, http.StatusUnauthorized, w.Code, "what the solution received, replayed at %s", path)
+	}
+	require.Nil(t, api.lastHeaders)
+	require.Nil(t, other.lastHeaders)
+
+	// The authority's refusal of a key (one whose scopes hold nothing there)
+	// is the request's, and the key is not the fallback.
+	issuer.refuse, audit.lastHeaders = status.Error(codes.PermissionDenied, "the key's scopes hold nothing at audit"), nil
+	gw.personContexts = &hopRole{issuer: issuer}
+	refused := httptest.NewRequest(http.MethodGet, "/solutions/audit/v1/audit/logs", nil)
+	refused.Header.Set("Authorization", "Bearer "+key)
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, refused)
+	require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+	require.Nil(t, audit.lastHeaders, "nothing reached the solution")
+}
+
+// A resource-bound token is addressed to one solution's endpoint, and it used
+// to travel to that solution as it is: a bearer this host still admits at the
+// delegation mint, for as long as the token lasts. It now stops at the gateway
+// like every other credential. The gateway states to the authority whose token
+// it verified and the resource it is confined to, and the solution receives
+// the person's Work Context at it.
+func TestAResourceBoundTokenAtItsSolutionIsExchangedForAWorkContextAndNeverForwarded(t *testing.T) {
+	withPublicBase(t, testPublicBase)
+	gw, _, audit, _, issuer, _ := audiencedHarness(t)
+	accessPriv := testRegistrationKey
+	resource := testPublicBase + "/api/solutions/audit/proxy/mcp"
+	token := signResourceToken(t, accessPriv, resource)
+
+	request := httptest.NewRequest(http.MethodPost, "/solutions/audit/mcp", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	recorder := httptest.NewRecorder()
+	gw.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	received := audit.lastHeaders.Clone()
+	require.NotNil(t, received, "the solution was reached")
+
+	requireNoCredentialOfTheCaller(t, received, token)
+	inspected, err := gw.workContext.Inspect(context.Background(), received.Get(carrier.HeaderName), "audit-principal")
+	require.NoError(t, err, "the solution is handed a Work Context addressed to its own principal")
+	require.Equal(t, "audit-principal", inspected.Audience())
+
+	require.True(t, issuer.person)
+	require.Equal(t, "audit-principal", issuer.audience)
+	require.Empty(t, issuer.stated.Get("authorization"), "the token is not presented to the authority as an unconfined session")
+	require.Equal(t, []string{"test-gateway-token"}, issuer.stated.Get("x-codefly-gateway-token"))
+	require.Equal(t, []string{resource}, issuer.stated.Get(resourceConfinementHeader), "the authority is told the resource the token is confined to")
+	require.Equal(t, []string{credentialKindSession}, issuer.stated.Get("x-credential-kind"))
+	require.NotEmpty(t, issuer.stated.Get("x-user-id"))
+	require.NotEmpty(t, issuer.stated.Get("x-session-id"))
 }

@@ -499,25 +499,20 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 	proxy.ServeHTTP(w, r)
 }
 
-// removePersonsSessionCredential strips the person's own session from a request
-// before it reaches a solution (SP-GW-07): the host access token carries a
-// host-wide audience and the person's full authority, and an API key lasts as
-// long as the key does, so neither is a credential any single upstream should
+// removePersonsSessionCredential strips the caller's own credential from a
+// request before it reaches a solution (SP-GW-07): the host access token
+// carries a host-wide audience and the person's full authority, an API key
+// lasts as long as the key does, and a resource-bound token is still admitted
+// at the delegation mint, so none is a credential any single upstream should
 // hold. The Cookie goes with it: the gateway has already resolved identity
 // from it, and it carries the refresh credential's value.
 //
 // The solution proxy calls it on every authenticated request it forwards
-// (forwardUpstreamCredential), which puts in its place the person's Work
-// Context addressed to that solution, and on the anonymous module-federation
-// surface, where no ext_authz runs. A solution still receives the identity
-// ext_authz stamped (the subject, the tenant, the session, the credential kind,
-// the scope ceiling), which names the person without carrying their authority.
-//
-// One bearer is not removed, and it is the invariant rather than a hole in it:
-// a resource-bound token on the routes of the solution its resource names.
-// ext_authz admits it there and at the delegation mint and nowhere else, so it
-// is already the audience-bound credential SP-GW-07's positive half asks for,
-// and the runtime mints the viewer's Work Context from it.
+// (forwardUpstreamCredential), which puts in its place a Work Context
+// addressed to that solution, and on the anonymous module-federation surface,
+// where no ext_authz runs. A solution still receives the identity ext_authz
+// stamped (the subject, the tenant, the session, the credential kind, the
+// scope ceiling), which names the caller without carrying their authority.
 //
 // Catalog routes are untouched: accounts is the host's own API, where the
 // session is the credential.

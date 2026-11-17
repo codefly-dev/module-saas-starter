@@ -150,42 +150,62 @@ pins every refusal to 401 before anything else is read.
 
 ## What a runtime-registered upstream receives, and what it does not
 
-A solution receives a credential addressed to it alone, and never the person's
-session: no `Authorization` bearer of theirs, no `Cookie`, no
+A solution receives a credential addressed to it alone, and never the
+credential the caller presented: no `Authorization` bearer, no `Cookie`, no
 `Proxy-Authorization`. A catalog route is untouched: accounts is the host's own
 API, where the session IS the credential. (A composed module is not proxied
 from here at all; every module call goes through the hop.)
 
-**The session stops at this gateway (SP-GW-07, closed on this side).** The host
-access token carries one host-wide audience and the person's full authority,
-and an API key lasts as long as the key: a solution holding either could call
-this host's API and every other solution as that person. So
+**Every caller credential stops at this gateway (SP-GW-07, closed on this
+side).** The host access token carries one host-wide audience and the person's
+full authority, an API key lasts as long as the key, and a token bound to the
+solution's own resource is still admitted at the delegation mint: a solution
+holding any of them could act with it somewhere else. So
 `forwardUpstreamCredential` (`gateway_solutions.go`) removes it from every
 authenticated request it forwards and puts in its place, under the Work
-Context header, **the person's Work Context at that solution**: the authority's
-`Issue` for the person's own session, addressed to the principal the solution's
-applied manifest declares, short lived, held until shortly before it lapses by
-the same holder the hop's browser path uses for a module (`personContexts`).
-It is refused everywhere else: this edge refuses it at another solution's
-route by its audience, and it is no access token at the host's API
+Context header, **a Work Context at that solution**: the authority's `Issue`,
+addressed to the principal the solution's applied manifest declares, short
+lived, held until shortly before it lapses by the same holder the hop's browser
+path uses for a module (`personContexts`). It is refused everywhere else: this
+edge refuses it at another solution's route by its audience, and it is no
+access token at the host's API
 (`TestWhatASolutionReceivesIsRefusedAtTheHostAPIAndAtAnotherSolution` replays
 everything a solution received at both).
+
+It is one mint for every credential, and the authority decides each:
+
+- **A person's session** is presented to the authority as itself (the bearer).
+  The Work Context carries what the person holds at the solution through their
+  role on its installation.
+- **An API key** is validated at this perimeter and nowhere else, so the
+  gateway does not present it: it states what `ext_authz` verified (the key's
+  owner and organization, `x-credential-kind: api_key`, the key's scopes) under
+  the gateway credential, the assertion `proxyTo` makes on an accounts route
+  (`statedIdentity`). The Work Context carries the key's scopes within what its
+  owner holds at the solution, and a key whose scopes hold nothing there is
+  refused. The key reaches neither the solution nor the authority.
+- **A resource-bound token** is stated the same way, with the resource it is
+  confined to (`x-codefly-resource`) and the installation that admitted the
+  request. The authority issues only at the solution that resource names.
 
 What travels in each case:
 
 | The request carries | The solution receives |
 |---|---|
 | a person's session, and the solution's delivery declares an authority principal | the person's Work Context addressed to that principal; no bearer |
-| a person's session, and the delivery declares no principal | the stamped identity and no credential (there is no audience to address one to) |
+| an API key, and the delivery declares a principal | a Work Context addressed to that principal, carrying the key's scopes within what its owner holds there; never the key |
+| a resource-bound token on the routes of the solution its resource names, and the delivery declares a principal | the person's Work Context addressed to that principal; never the token |
+| any of the three, and the delivery declares no principal | the stamped identity and no credential (there is no audience to address one to); accounts reports the installation as not ready for it |
 | the caller's own Work Context, which this edge held to the route's audience | that Work Context; no bearer, and nothing minted over it |
-| a resource-bound token on the routes of the solution its resource names | that token, as it is: it is already addressed to this one solution (ext_authz says which in `x-codefly-resource`) |
-| an API key, an impersonated session, or anything else the authority issues nothing for | nothing: the request is refused by the authority's reason |
+| an impersonated session, or anything else the authority issues nothing for | nothing: the request is refused by the authority's reason |
 
 **The authority's refusal is the request's.** A person who holds no role on the
 solution's installation is refused (403, the authority's reason) even though
-the entitlement check admitted them; a credential that is no person's session
-is 401; an authority that gave no answer is 503 with no transport detail. A
-gateway that cannot mint refuses (503). The session is never the fallback.
+the entitlement check admitted them; so is an impersonated session, which is
+issued nothing for the person it views as; a session that is no longer open is
+401; an authority that gave no answer is 503 with no transport detail. A
+gateway that cannot mint, or holds no gateway credential to state a key under,
+refuses (503). The caller's credential is never the fallback.
 
 **The cookie never travels, whatever else does.** Nothing upstream can
 authenticate with it (this perimeter refuses a cookie AS a credential by name,
@@ -197,32 +217,33 @@ that upstream, and the loader fetches those bytes without a person.
 
 A solution also receives the identity `ext_authz` stamped: the subject, the
 tenant, the session, the credential kind and the scope ceiling. That names the
-person; it is not a credential, and this gateway strips every one of those
+caller; it is not a credential, and this gateway strips every one of those
 names from a caller before it stamps them.
 
 **A consumer written against the old behaviour DOES have to change.** A
-solution runtime that authenticated the request by the forwarded bearer, or
-called the host back with it, now receives none: it verifies the Work Context
-it is handed (issuer, signature under the host's published keys, its own
-principal as the audience, the window) and calls a module with a child of it
-through the authority's `Issue`, never with the person's session.
+solution runtime that authenticated the request by the forwarded bearer (a
+session, or the resource-bound token on its MCP endpoint), or called the host
+back with it, now receives none: it verifies the Work Context it is handed
+(issuer, signature under the host's published keys, its own principal as the
+audience, the window) and calls a module with a child of it through the
+authority's `Issue`, never with the caller's credential.
 
 ## Two places for a resource-confined credential
 
 A token issued for a solution's MCP endpoint (RFC 8707 resource indicator) is held
-by a third-party client and, once forwarded, by the runtime it dialled. It reaches:
+by a third-party client. This perimeter admits it at:
 
-- that solution's own routes, where the resource and the path agree; and
+- that solution's own routes, where the resource and the path agree, and where
+  it is exchanged for the person's Work Context at the solution before anything
+  is forwarded; and
 - `/saas.accounts.v1.WorkContextService/StartTask`, the delegation mint.
 
-The runtime reaches a module with what the mint issued, through the hop's faces;
-the confined credential itself reaches no module route.
-
-The second exists because the consumer's own work needs it: the runtime's MCP
-viewer path mints a viewer-owned Work Context for the module its solution
-consumes, carrying the person's bearer because its own service credential does
-not stand in for the person, and then calls the module through the hop with that
-context alone.
+The second was added for a runtime's MCP viewer path, which minted a
+viewer-owned Work Context for the module its solution consumes, carrying the
+person's bearer the gateway used to forward. No solution receives that bearer
+any more, so a runtime derives from the Work Context it is handed instead; the
+route stays admitted, bounded on the accounts side, for a holder of the token
+itself until no runtime built against the forwarded bearer remains.
 
 **The edge check is core's `Inspector`** (`work_context.go`): encoding, issuer,
 the signature under the key the capability names, window, shape, and the audience

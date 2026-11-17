@@ -40,9 +40,12 @@ func TestDeclaredUpstreamNeverReceivesTheCallerCookie(t *testing.T) {
 }
 
 // The MCP tool path is the one the cookie leaked through, so it is asserted in
-// its own right: a resource-bound token is forwarded there, and the cookie beside
-// it is not.
-func TestToolPathForwardsTheResourceTokenWithoutTheCookie(t *testing.T) {
+// its own right: neither the cookie nor the resource-bound token beside it
+// reaches the solution. The token used to be forwarded as the credential the
+// runtime authenticated the caller by; it is exchanged at the gateway for a
+// Work Context like every other credential, and a solution that declares no
+// principal, as this one, is handed none.
+func TestToolPathForwardsNeitherTheResourceTokenNorTheCookie(t *testing.T) {
 	withPublicBase(t, testPublicBase)
 	gw, _, _, priv := newGatewayHarness(t)
 	example := registerSolutionUpstream(t, gw, "example")
@@ -55,10 +58,11 @@ func TestToolPathForwardsTheResourceTokenWithoutTheCookie(t *testing.T) {
 	gw.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
-	require.Equal(t, "Bearer "+token, example.lastHeaders.Get("Authorization"),
-		"a resource-bound token is what the runtime authenticates the caller by")
+	requireNoCredentialOfTheCaller(t, example.lastHeaders, token)
 	require.Empty(t, example.lastHeaders.Get("Cookie"),
 		"the cookie is withheld on this path too, which it was not")
+	require.NotEmpty(t, example.lastHeaders.Get("x-user-id"),
+		"the runtime still learns who the person is")
 }
 
 // The anonymous module-federation surface is the one place the whole session
