@@ -150,74 +150,62 @@ pins every refusal to 401 before anything else is read.
 
 ## What a runtime-registered upstream receives, and what it does not
 
-A runtime-registered upstream — a federated module prefix or a solution — receives
-the person's `Authorization` bearer and does NOT receive their `Cookie` or
-`Proxy-Authorization`. A catalog route is untouched: accounts is the host's own API,
-where the session IS the credential.
+A solution receives a credential addressed to it alone, and never the person's
+session: no `Authorization` bearer of theirs, no `Cookie`, no
+`Proxy-Authorization`. A catalog route is untouched: accounts is the host's own
+API, where the session IS the credential. (A composed module is not proxied
+from here at all; every module call goes through the hop.)
 
-That split is a decision, not a halfway implementation, and it replaces an earlier
-rule here that said all three were removed from every such request. Each half has
-its own reason:
+**The session stops at this gateway (SP-GW-07, closed on this side).** The host
+access token carries one host-wide audience and the person's full authority,
+and an API key lasts as long as the key: a solution holding either could call
+this host's API and every other solution as that person. So
+`forwardUpstreamCredential` (`gateway_solutions.go`) removes it from every
+authenticated request it forwards and puts in its place, under the Work
+Context header, **the person's Work Context at that solution**: the authority's
+`Issue` for the person's own session, addressed to the principal the solution's
+applied manifest declares, short lived, held until shortly before it lapses by
+the same holder the hop's browser path uses for a module (`personContexts`).
+It is refused everywhere else: this edge refuses it at another solution's
+route by its audience, and it is no access token at the host's API
+(`TestWhatASolutionReceivesIsRefusedAtTheHostAPIAndAtAnotherSolution` replays
+everything a solution received at both).
 
-**The cookie never travels, whatever the bearer does.** Nothing upstream can
-authenticate with it — this perimeter refuses a cookie AS a credential by name (see
-`ExtAuthz.Check`) — and it carries the longest-lived value a browser holds, the
-refresh credential. Forwarding it delivers that value to a third party for no
-purpose it could serve. The two removals used to be one decision, and the broader
-one silently carried the narrower: a request on the MCP tool path skipped the whole
-removal and forwarded `Cookie` with it.
+What travels in each case:
 
-**The bearer does travel, to a DECLARED upstream, when the request is
-authenticated.** A declared upstream authenticates the request by that header; the
-runtime's HTTP wrapper and its passthrough handler both answer 401 without it. The
-capability that should replace it — a host-minted context bound to that upstream's
-own audience — is minted by nothing here and verified by nothing on the consumer
-side, and the consumer half lives in another repository. Removing the header first
-would break every composed solution while shipping a credential no consumer reads.
+| The request carries | The solution receives |
+|---|---|
+| a person's session, and the solution's delivery declares an authority principal | the person's Work Context addressed to that principal; no bearer |
+| a person's session, and the delivery declares no principal | the stamped identity and no credential (there is no audience to address one to) |
+| the caller's own Work Context, which this edge held to the route's audience | that Work Context; no bearer, and nothing minted over it |
+| a resource-bound token on the routes of the solution its resource names | that token, as it is: it is already addressed to this one solution (ext_authz says which in `x-codefly-resource`) |
+| an API key, an impersonated session, or anything else the authority issues nothing for | nothing: the request is refused by the authority's reason |
 
-**It does not travel on the anonymous module-federation surface**, which runs no
-ext_authz at all: a bearer arriving there was never authenticated for that upstream,
-and the loader fetches those bytes without a person.
+**The authority's refusal is the request's.** A person who holds no role on the
+solution's installation is refused (403, the authority's reason) even though
+the entitlement check admitted them; a credential that is no person's session
+is 401; an authority that gave no answer is 503 with no transport detail. A
+gateway that cannot mint refuses (503). The session is never the fallback.
 
-An upstream also receives the identity `ext_authz` stamped: the subject, the tenant,
-the session, the credential kind and the scope ceiling. That names the person
-independently of the bearer beside it.
+**The cookie never travels, whatever else does.** Nothing upstream can
+authenticate with it (this perimeter refuses a cookie AS a credential by name,
+see `ExtAuthz.Check`) and it carries the refresh credential's value.
 
-**SP-GW-07's second half is open on the person path, recorded as `SA-F-BEARER`.**
-The invariant is that an upstream receives a host-minted context bound to THAT
-upstream's own audience — not merely that it stops receiving the person's session.
-A module call meets it: the module receives the person's Work Context for its own
-audience through the hop, and no bearer, no cookie and no identity header. A
-person's request to a solution still carries the bearer. The host access token
-carries one host-wide audience and the person's full authority, so a declared
-upstream holding it holds more than it needs, and that exposure is real while this
-stays open. What closes it: a host-minted context bound to the upstream's own
-audience, plus consumer verification of it, plus one composed browser-to-consumer
-request exercised end to end.
+**It does not travel on the anonymous module-federation surface** either, which
+runs no ext_authz at all: a bearer arriving there was never authenticated for
+that upstream, and the loader fetches those bytes without a person.
 
-What is missing is specific, so that the next person does not have to rediscover it.
-`WorkContextService` already exposes `ExchangeAudience`, which re-binds an existing
-Work Context to a different audience — and that is not the operation this needs. The
-caller here holds a browser SESSION, which is not a Work Context, so the edge would
-need a mint that takes a verified session and returns a context bound to one
-upstream's audience, with that person's authority narrowed to what the upstream may
-do on their behalf. No RPC does that today, and adding one is a descriptor change
-(contract digests, published clients, a verified regeneration).
+A solution also receives the identity `ext_authz` stamped: the subject, the
+tenant, the session, the credential kind and the scope ceiling. That names the
+person; it is not a credential, and this gateway strips every one of those
+names from a caller before it stamps them.
 
-Two things to settle with it, because they are the reason it is not a small change:
-the mint is per request on the proxy path, so its latency and its failure mode become
-the failure mode of all federated traffic; and the authority to narrow TO is the
-installation's ceiling. That second one is no longer unreachable — the entitlement
-authority answers it on the path that resolves consent, and this gateway now states
-it as `x-codefly-installation-id` (see below) — but it is answered for one request
-at a time, not as a lookup from a solution id (see
-`module/SOLUTION_REGISTRATION.md`).
-
-**A consumer written against the old behaviour does NOT have to change for the
-bearer.** Two things do change at the edge: a declared upstream no longer receives
-the caller's cookie, and a resource-bound token is confined — it reaches the three
-places below and nowhere else. Anything replaying such a token elsewhere stops
-working, deliberately.
+**A consumer written against the old behaviour DOES have to change.** A
+solution runtime that authenticated the request by the forwarded bearer, or
+called the host back with it, now receives none: it verifies the Work Context
+it is handed (issuer, signature under the host's published keys, its own
+principal as the audience, the window) and calls a module with a child of it
+through the authority's `Issue`, never with the person's session.
 
 ## Two places for a resource-confined credential
 

@@ -419,7 +419,12 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		solutionID, isSolutionPath := solutionIDFromPath(path)
 		switch {
 		case isSolutionPath && resourceAudienceAdmits(resource, solutionID, s.publicBase):
-			// The solution its own resource names. Admitted, as before.
+			// The solution its own resource names. Admitted, and said: the
+			// proxy forwards this credential to that solution as it is,
+			// because it is already addressed to it alone, and withholds
+			// every other bearer (forwardUpstreamCredential). It reads which
+			// one it holds from this value, never from a second parse.
+			resourceConfined = resource
 		case isWorkContextMintPath(path):
 			// THE ONE HOST ROUTE (isWorkContextMintPath carries the reasoning).
 			//

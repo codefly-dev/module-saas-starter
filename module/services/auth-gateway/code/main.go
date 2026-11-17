@@ -275,6 +275,10 @@ func main() {
 		clientRegistry := &accountsClientRegistry{conn: internalAPIConn, internalToken: authz.internalToken}
 		gateway := NewGateway(authz, matcher, upstreams, rateLimiter, solutionRegistry, clientRegistry)
 		gateway.hop = hopRole
+		// What a solution receives in place of a person's session is the
+		// authority's Issue for that session at the solution, asked over the
+		// same connection the hop asks on.
+		gateway.personContexts = newPersonContexts(authorityConn)
 		frontendSource, err := frontendpayload.Configure(ctx, codefly.For(ctx), codefly.IsLocal(), os.Getenv("KUBERNETES_SERVICE_HOST") != "")
 		if err != nil {
 			panic(err)

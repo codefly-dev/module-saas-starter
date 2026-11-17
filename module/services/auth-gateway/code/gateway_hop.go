@@ -246,30 +246,36 @@ func (g *Gateway) serveBrowser(w http.ResponseWriter, r *http.Request) bool {
 	g.rateLimitThenServe(w, r, entry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token, err := h.workContext(r.Context(), bearer, module, browserPage(r))
 		if err != nil {
-			code, httpStatus := status.Code(err), http.StatusForbidden
-			reason := "the authority refused this person at " + module + ": " + status.Convert(err).Message()
-			switch {
-			case code == codes.Unauthenticated:
-				httpStatus = http.StatusUnauthorized
-			case !isVerdict(code):
-				// Asked, but no answer: the person's request ended, the
-				// deadline passed, or the authority did not answer. Refused,
-				// and said as what it is.
-				//
-				// The authority's message for a failure can carry internal
-				// error text or a transport address, so the person is told the
-				// module and the code, and the message is logged here.
-				code, httpStatus = failureStatus(failureOf(r.Context(), err))
-				reason = "the authority gave no answer for this person at " + module + " (" + code.String() + ")"
-				log.Printf("WARN: hop: the authority gave no answer for a person at %s: code=%s reason=%q",
-					module, status.Code(err), status.Convert(err).Message())
-			}
+			httpStatus, code, reason := personContextRefusal(r.Context(), err, module)
 			hopBrowserError(w, r, httpStatus, code, reason)
 			return
 		}
 		h.face.ServeHTTP(w, withOnlyWorkContext(r, token))
 	}))
 	return true
+}
+
+// personContextRefusal is how a person's request is answered when the
+// authority issued them no Work Context at audience: its refusal by its own
+// reason (401 for a credential that is no session, 403 otherwise), or, when it
+// was asked and gave no answer (the person's request ended, the deadline
+// passed, the authority did not answer), that failure said as what it is. The
+// authority's message for a failure can carry internal error text or a
+// transport address, so the person is told the audience and the code, and the
+// message is logged here.
+func personContextRefusal(ctx context.Context, err error, audience string) (httpStatus int, code codes.Code, reason string) {
+	code, httpStatus = status.Code(err), http.StatusForbidden
+	reason = "the authority refused this person at " + audience + ": " + status.Convert(err).Message()
+	switch {
+	case code == codes.Unauthenticated:
+		httpStatus = http.StatusUnauthorized
+	case !isVerdict(code):
+		code, httpStatus = failureStatus(failureOf(ctx, err))
+		reason = "the authority gave no answer for this person at " + audience + " (" + code.String() + ")"
+		log.Printf("WARN: the authority gave no answer for a person at %s: code=%s reason=%q",
+			audience, status.Code(err), status.Convert(err).Message())
+	}
+	return httpStatus, code, reason
 }
 
 // Connect owns protocol error rendering. Require an explicit protocol signal
@@ -364,6 +370,14 @@ func (h *hopRole) workContext(ctx context.Context, bearer, module, page string) 
 	}
 	h.mu.Unlock()
 	return held.token, nil
+}
+
+// newPersonContexts is the holder of people's Work Contexts on its own: the
+// authority's Issue over accounts and nothing of the hop's (no modules, no
+// faces, no workload credential, so it names no page). The solution proxy
+// mints with it whether or not this gateway stands as a hop.
+func newPersonContexts(accounts grpc.ClientConnInterface) *hopRole {
+	return &hopRole{issuer: authorityv1.NewAuthorityServiceClient(accounts)}
 }
 
 func (h *hopRole) clock() time.Time {
