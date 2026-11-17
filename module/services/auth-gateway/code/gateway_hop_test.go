@@ -52,6 +52,8 @@ type hostAuthority struct {
 	mu         sync.Mutex
 	admission  []*authorityv1.PublicKey
 	registered int
+	// refuse makes Check refuse every call, as the authority's own decision.
+	refuse bool
 }
 
 func (a *hostAuthority) Issue(_ context.Context, in *authorityv1.IssueRequest, _ ...grpc.CallOption) (*authorityv1.IssueResponse, error) {
@@ -67,6 +69,9 @@ func (a *hostAuthority) Issue(_ context.Context, in *authorityv1.IssueRequest, _
 }
 
 func (a *hostAuthority) Check(_ context.Context, in *authorityv1.CheckRequest, _ ...grpc.CallOption) (*authorityv1.CheckResponse, error) {
+	if a.refuse {
+		return nil, status.Error(codes.PermissionDenied, "the owner holds nothing at "+in.GetAudience())
+	}
 	decoded, err := core.Decode(in.GetToken())
 	if err != nil || decoded.Context().GetAudience() != in.GetAudience() {
 		return nil, status.Error(codes.PermissionDenied, "work context: not addressed to "+in.GetAudience())
@@ -171,7 +176,7 @@ func hopHarness(t *testing.T) (*Gateway, *hostAuthority, *verifyingModule, *http
 	}}}
 	raw, err := json.Marshal(routes)
 	require.NoError(t, err)
-	role, front, err := newHopRole(t.Context(), accounts, workloadCredential, []string{"documents"}, string(raw), routes, "")
+	role, front, err := newHopRole(t.Context(), accounts, workloadCredential, []string{"documents"}, string(raw), routes, "", nil)
 	require.NoError(t, err)
 	t.Cleanup(front.Close)
 	require.Equal(t, 1, accounts.registered, "the gateway registers its admission key before it serves")
@@ -311,7 +316,7 @@ func TestHopAGRPCCallOnTheHopEndpointIsAdmitted(t *testing.T) {
 	}}}
 	raw, err := json.Marshal(routes)
 	require.NoError(t, err)
-	_, front, err := newHopRole(t.Context(), accounts, workloadCredential, []string{"records"}, string(raw), routes, "")
+	_, front, err := newHopRole(t.Context(), accounts, workloadCredential, []string{"records"}, string(raw), routes, "", nil)
 	require.NoError(t, err)
 	t.Cleanup(front.Close)
 	verifier, err = hop.NewVerifier(t.Context(), accounts, "records", hoptest.Replay())

@@ -226,3 +226,28 @@ func (s *Service) RecordAuthorityRefusal(ctx context.Context, kind authority.Dec
 	_ = s.recordAuthorityDecision(ctx, authority.Decision{Kind: kind, Outcome: authority.Refused, Code: authority.CodeDenied, Reason: reason,
 		Organization: organization, Owner: person, Actor: person, Audience: audience})
 }
+
+// DecisionHopForward names, in the journal, a refusal the hop's front door
+// made itself: beside the core's own decision kinds, which it is none of.
+const DecisionHopForward authority.DecisionKind = "hop"
+
+// HopRefusal is one call the hop's front door refused itself, as the hop
+// tells it (the hop library's forward.Refusal): the call, the refusal's code
+// and the hop's own reason, the module addressed and what identifies the work.
+// Claimed says the identity was read from a Work Context the authority did not
+// check.
+type HopRefusal struct {
+	Method, Code, Reason                      string
+	Module                                    string
+	Organization, Owner, Actor, Binding, Task string
+	Claimed                                   bool
+}
+
+// RecordHopRefusal records a refusal the hop made itself, which never reaches
+// the core, as the row a refusal of the core's is (recordAuthorityDecision):
+// in the organization of a call whose identity the authority checked, under
+// no tenant for one read from an unverified Work Context or carrying none.
+func (s *Service) RecordHopRefusal(ctx context.Context, r HopRefusal) {
+	_ = s.recordAuthorityDecision(ctx, authority.Decision{Kind: DecisionHopForward, Outcome: authority.Refused, Code: r.Code, Reason: r.Reason,
+		Organization: r.Organization, Owner: r.Owner, Actor: r.Actor, Audience: r.Module, Binding: r.Binding, Method: r.Method, Task: r.Task, Claimed: r.Claimed})
+}

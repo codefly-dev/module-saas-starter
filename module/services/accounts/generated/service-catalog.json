@@ -559,6 +559,7 @@
         "/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision",
         "/saas.accounts.v1.WorkContextService/ConsumeSingleUse",
         "/saas.accounts.v1.WorkContextService/ExchangeAudience",
+        "/saas.accounts.v1.WorkContextService/RecordHopRefusal",
         "/saas.accounts.v1.WorkContextService/RenewWorkContext",
         "/saas.accounts.v1.WorkContextService/StartChildSession",
         "/saas.accounts.v1.WorkContextService/StartInstallationTask",
@@ -16186,6 +16187,49 @@
       },
       "policy_tier": "org_member",
       "description": "Reissue one Task and Session lineage for another audience with attenuated authority.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.WorkContextService/RecordHopRefusal",
+      "service": "WorkContextService",
+      "full_service": "saas.accounts.v1.WorkContextService",
+      "method": "RecordHopRefusal",
+      "input_type": "saas.accounts.v1.RecordHopRefusalRequest",
+      "output_type": "saas.accounts.v1.RecordHopRefusalResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/work_contexts.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Record in the audit journal one call the hop's front door refused itself, for the gateway that is the hop.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

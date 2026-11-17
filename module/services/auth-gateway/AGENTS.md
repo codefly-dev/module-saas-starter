@@ -116,6 +116,20 @@ reads or solution handlers. The marker conveys no authority. The frontend
 retains it upstream and refuses noncanonical components before URL construction,
 so fetch normalization cannot remove it while carrying internal trust headers.
 
+**What the front door refuses itself is recorded.** The hop keeps no record:
+each refusal was a line of this gateway's log. `gateway_hop_refusals.go` hands
+the front door a sink (`forward.Config.Refused`) that sends every refusal the
+hop made itself to accounts' audit journal
+(`WorkContextService/RecordHopRefusal`, the internal tier, with the
+cluster-internal credential): no Work Context, a module this hop does not stand
+in front of, no published route, an authority that did not answer in time, an
+unsignable admission, no admission-key publication, a module that did not
+answer. A refusal the authority made and the hop passed on is not sent, because
+the authority told its own host. Recording is bounded (two seconds) and best
+effort: the refusal stands and the caller is answered whether or not accounts
+took the row, and a row it did not take is a log line. The request message is
+accounts' `hop_refusals.proto`, vendored byte for byte.
+
 The composition names the modules in `hop/MODULES`; Codefly generates
 `hop-routes` from their published API catalogs. Each instance generates its own
 admission key at boot (the host pins one key per hop instance, so replicas

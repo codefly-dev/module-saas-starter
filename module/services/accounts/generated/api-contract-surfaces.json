@@ -599,6 +599,7 @@
         "/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision",
         "/saas.accounts.v1.WorkContextService/ConsumeSingleUse",
         "/saas.accounts.v1.WorkContextService/ExchangeAudience",
+        "/saas.accounts.v1.WorkContextService/RecordHopRefusal",
         "/saas.accounts.v1.WorkContextService/RenewWorkContext",
         "/saas.accounts.v1.WorkContextService/StartChildSession",
         "/saas.accounts.v1.WorkContextService/StartInstallationTask",

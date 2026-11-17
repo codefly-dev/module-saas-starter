@@ -37,6 +37,13 @@ func (h *workContextConnectHandler) ConsumeSingleUse(
 	return unary(ctx, req, h.inner.ConsumeSingleUse)
 }
 
+func (h *workContextConnectHandler) RecordHopRefusal(
+	ctx context.Context,
+	req *connect.Request[gen.RecordHopRefusalRequest],
+) (*connect.Response[gen.RecordHopRefusalResponse], error) {
+	return unary(ctx, req, h.inner.RecordHopRefusal)
+}
+
 func (h *workContextConnectHandler) AdmitWorkloadOperation(
 	ctx context.Context,
 	req *connect.Request[gen.AdmitWorkloadOperationRequest],

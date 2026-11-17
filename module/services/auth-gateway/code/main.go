@@ -127,7 +127,10 @@ func main() {
 		panic(fmt.Sprintf("cannot connect to accounts' authority interface at %s: %v", authorityTarget, err))
 	}
 	defer func() { _ = authorityConn.Close() }()
-	hopRole, front, err := standHop(ctx, authorityConn)
+	// What the hop's front door refuses itself is recorded in accounts'
+	// journal, over the internal connection, with the cluster-internal
+	// credential ext_authz presents too.
+	hopRole, front, err := standHop(ctx, authorityConn, &accountsHopRefusals{conn: internalAPIConn, internalToken: workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN")})
 	if err != nil {
 		panic(fmt.Sprintf("hop: %v", err))
 	}

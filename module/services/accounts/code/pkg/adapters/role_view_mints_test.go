@@ -51,6 +51,8 @@ var personMintEntryPoints = map[string]map[string]string{
 		"StartTask": refused, "StartRootSession": refused, "ExchangeAudience": refused, "StartChildSession": refused,
 		"RenewWorkContext": derives, "StartInstallationTask": none,
 		"CheckAuthorizationRevision": none, "AuthorizeEvidenceRead": none, "ConsumeSingleUse": none, "AdmitWorkloadOperation": none,
+		// The gateway's record of a call its hop refused: it mints nothing.
+		"RecordHopRefusal": none,
 	},
 	"AuthorityService": {
 		"Issue": core, "Check": core, "ListResources": core, "Delegate": core, "RevokeDelegation": core, "GetDelegation": core,

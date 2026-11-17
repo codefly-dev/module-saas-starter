@@ -239,11 +239,19 @@ makes it a row of the journal the host already keeps:
 
 `pkg/business/authority_decisions_test.go` holds each of these.
 
-What is not recorded here: the hop's own refusals (a call with no Work Context,
-a method no route serves, an authority that did not answer in time), which
-never reach the core. The hop library hands them to a sink
-(`forward.Config.Refused`); this host's hop is the gateway, and wiring that sink
-to this journal needs a route from the gateway to it that does not exist yet.
+**The hop's own refusals are rows too.** What the hop's front door refuses
+itself never reaches the core: a call with no Work Context, a module the hop
+does not stand in front of, a method no route serves, an authority that did not
+answer in time, an admission that cannot be signed, a module that did not
+answer. The hop library hands each to a sink (`forward.Config.Refused`). In a
+cell the hop is the gateway, which keeps no journal, so its sink calls
+`WorkContextService/RecordHopRefusal` (internal tier, the cluster-internal
+credential, `pkg/adapters/hop_refusal.go`), and the refusal is the same
+`saas.authority.decision_refused` row with `decision: hop`: in the organization
+of a call whose identity the authority had checked, under no organization for
+one read from a Work Context nobody verified or carrying none. A refusal the
+authority made and the hop passed on is not sent: it is recorded above. What a
+module refuses after the hop forwarded the call is the module's own.
 
 ## A stated credential is issued its own grants at one solution
 

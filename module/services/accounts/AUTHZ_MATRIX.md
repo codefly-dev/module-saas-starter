@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **307 RPCs** across **42 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **308 RPCs** across **42 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -310,6 +310,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Revalidate every subject and scope in a signed Work Context against current authority. |
 | `/saas.accounts.v1.WorkContextService/ConsumeSingleUse` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Claim a single-use Work Context exactly once; replays of the same context id fail closed. |
 | `/saas.accounts.v1.WorkContextService/ExchangeAudience` | unary | `POST /v1/work-contexts:exchange-audience` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER; impersonation=FORBIDDEN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.work_context.audience_exchanged | FORBIDDEN / SENSITIVE | SECRET → SECRET | Reissue one Task and Session lineage for another audience with attenuated authority. |
+| `/saas.accounts.v1.WorkContextService/RecordHopRefusal` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → INTERNAL | Record in the audit journal one call the hop's front door refused itself, for the gateway that is the hop. |
 | `/saas.accounts.v1.WorkContextService/RenewWorkContext` | unary | `POST /v1/work-contexts:renew` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER; impersonation=FORBIDDEN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.work_context.renewed | FORBIDDEN / SENSITIVE | SECRET → SECRET | Let the current delegated actor extend its own Work Context past the TTL cap, attenuation-preserving. |
 | `/saas.accounts.v1.WorkContextService/StartChildSession` | unary | `POST /v1/work-contexts:child-session` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER; impersonation=FORBIDDEN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.work_context.child_session_started | FORBIDDEN / SENSITIVE | SECRET → SECRET | Exchange a current Work Context for an attenuated child-agent Session. |
 | `/saas.accounts.v1.WorkContextService/StartInstallationTask` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → SECRET | Headlessly mint a Work Context for an installation's agent principal under its owner of record. |
@@ -319,7 +320,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 ## Tier totals
 
 - `auth`: 56
-- `internal`: 55
+- `internal`: 56
 - `mfa`: 5
 - `org_admin`: 60
 - `org_member`: 69

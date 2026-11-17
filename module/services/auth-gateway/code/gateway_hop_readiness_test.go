@@ -62,7 +62,7 @@ func TestGatewayReadinessUsesTheConfiguredFrontPublication(t *testing.T) {
 			require.NoError(t, err)
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
-			role, front, err := newHopRole(ctx, authority, workloadCredential, []string{"example-module"}, string(raw), routes, "")
+			role, front, err := newHopRole(ctx, authority, workloadCredential, []string{"example-module"}, string(raw), routes, "", nil)
 			require.NoError(t, err)
 			t.Cleanup(front.Close)
 			gateway.hop = role

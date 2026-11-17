@@ -47,6 +47,9 @@ const (
 	// WorkContextServiceAdmitWorkloadOperationProcedure is the fully-qualified name of the
 	// WorkContextService's AdmitWorkloadOperation RPC.
 	WorkContextServiceAdmitWorkloadOperationProcedure = "/saas.accounts.v1.WorkContextService/AdmitWorkloadOperation"
+	// WorkContextServiceRecordHopRefusalProcedure is the fully-qualified name of the
+	// WorkContextService's RecordHopRefusal RPC.
+	WorkContextServiceRecordHopRefusalProcedure = "/saas.accounts.v1.WorkContextService/RecordHopRefusal"
 	// WorkContextServiceStartTaskProcedure is the fully-qualified name of the WorkContextService's
 	// StartTask RPC.
 	WorkContextServiceStartTaskProcedure = "/saas.accounts.v1.WorkContextService/StartTask"
@@ -99,6 +102,15 @@ type WorkContextServiceClient interface {
 	// verifies at full strength. Internal-tier: the tenant it answers about is
 	// the one the capability names.
 	AdmitWorkloadOperation(context.Context, *connect.Request[v1.AdmitWorkloadOperationRequest]) (*connect.Response[v1.AdmitWorkloadOperationResponse], error)
+	// RecordHopRefusal records one call the hop's front door refused itself in
+	// the audit journal (saas.authority.decision_refused, decision "hop"). The
+	// auth-gateway, which is the hop in a cell and keeps no journal, is its
+	// caller: the hop's own refusals reach the authority from nobody else. A
+	// refusal whose identity the authority checked is filed in its
+	// organization; one read from an unverified Work Context, or naming none,
+	// is filed under no organization. Internal-tier: the caller is trusted to
+	// say what it refused, and nothing is decided or returned.
+	RecordHopRefusal(context.Context, *connect.Request[v1.RecordHopRefusalRequest]) (*connect.Response[v1.RecordHopRefusalResponse], error)
 	StartTask(context.Context, *connect.Request[v1.StartTaskWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	// StartInstallationTask is the headless mint. Unlike StartTask it opens with a
 	// service credential rather than a bearer: it resolves the installation's owner
@@ -158,6 +170,12 @@ func NewWorkContextServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(workContextServiceMethods.ByName("AdmitWorkloadOperation")),
 			connect.WithClientOptions(opts...),
 		),
+		recordHopRefusal: connect.NewClient[v1.RecordHopRefusalRequest, v1.RecordHopRefusalResponse](
+			httpClient,
+			baseURL+WorkContextServiceRecordHopRefusalProcedure,
+			connect.WithSchema(workContextServiceMethods.ByName("RecordHopRefusal")),
+			connect.WithClientOptions(opts...),
+		),
 		startTask: connect.NewClient[v1.StartTaskWorkContextRequest, v1.IssuedWorkContext](
 			httpClient,
 			baseURL+WorkContextServiceStartTaskProcedure,
@@ -203,6 +221,7 @@ type workContextServiceClient struct {
 	authorizeEvidenceRead      *connect.Client[v1.AuthorizeEvidenceReadRequest, emptypb.Empty]
 	consumeSingleUse           *connect.Client[v1.ConsumeSingleUseWorkContextRequest, emptypb.Empty]
 	admitWorkloadOperation     *connect.Client[v1.AdmitWorkloadOperationRequest, v1.AdmitWorkloadOperationResponse]
+	recordHopRefusal           *connect.Client[v1.RecordHopRefusalRequest, v1.RecordHopRefusalResponse]
 	startTask                  *connect.Client[v1.StartTaskWorkContextRequest, v1.IssuedWorkContext]
 	startInstallationTask      *connect.Client[v1.StartInstallationTaskRequest, v1.IssuedWorkContext]
 	startRootSession           *connect.Client[v1.StartRootSessionWorkContextRequest, v1.IssuedWorkContext]
@@ -229,6 +248,11 @@ func (c *workContextServiceClient) ConsumeSingleUse(ctx context.Context, req *co
 // AdmitWorkloadOperation calls saas.accounts.v1.WorkContextService.AdmitWorkloadOperation.
 func (c *workContextServiceClient) AdmitWorkloadOperation(ctx context.Context, req *connect.Request[v1.AdmitWorkloadOperationRequest]) (*connect.Response[v1.AdmitWorkloadOperationResponse], error) {
 	return c.admitWorkloadOperation.CallUnary(ctx, req)
+}
+
+// RecordHopRefusal calls saas.accounts.v1.WorkContextService.RecordHopRefusal.
+func (c *workContextServiceClient) RecordHopRefusal(ctx context.Context, req *connect.Request[v1.RecordHopRefusalRequest]) (*connect.Response[v1.RecordHopRefusalResponse], error) {
+	return c.recordHopRefusal.CallUnary(ctx, req)
 }
 
 // StartTask calls saas.accounts.v1.WorkContextService.StartTask.
@@ -294,6 +318,15 @@ type WorkContextServiceHandler interface {
 	// verifies at full strength. Internal-tier: the tenant it answers about is
 	// the one the capability names.
 	AdmitWorkloadOperation(context.Context, *connect.Request[v1.AdmitWorkloadOperationRequest]) (*connect.Response[v1.AdmitWorkloadOperationResponse], error)
+	// RecordHopRefusal records one call the hop's front door refused itself in
+	// the audit journal (saas.authority.decision_refused, decision "hop"). The
+	// auth-gateway, which is the hop in a cell and keeps no journal, is its
+	// caller: the hop's own refusals reach the authority from nobody else. A
+	// refusal whose identity the authority checked is filed in its
+	// organization; one read from an unverified Work Context, or naming none,
+	// is filed under no organization. Internal-tier: the caller is trusted to
+	// say what it refused, and nothing is decided or returned.
+	RecordHopRefusal(context.Context, *connect.Request[v1.RecordHopRefusalRequest]) (*connect.Response[v1.RecordHopRefusalResponse], error)
 	StartTask(context.Context, *connect.Request[v1.StartTaskWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	// StartInstallationTask is the headless mint. Unlike StartTask it opens with a
 	// service credential rather than a bearer: it resolves the installation's owner
@@ -349,6 +382,12 @@ func NewWorkContextServiceHandler(svc WorkContextServiceHandler, opts ...connect
 		connect.WithSchema(workContextServiceMethods.ByName("AdmitWorkloadOperation")),
 		connect.WithHandlerOptions(opts...),
 	)
+	workContextServiceRecordHopRefusalHandler := connect.NewUnaryHandler(
+		WorkContextServiceRecordHopRefusalProcedure,
+		svc.RecordHopRefusal,
+		connect.WithSchema(workContextServiceMethods.ByName("RecordHopRefusal")),
+		connect.WithHandlerOptions(opts...),
+	)
 	workContextServiceStartTaskHandler := connect.NewUnaryHandler(
 		WorkContextServiceStartTaskProcedure,
 		svc.StartTask,
@@ -395,6 +434,8 @@ func NewWorkContextServiceHandler(svc WorkContextServiceHandler, opts ...connect
 			workContextServiceConsumeSingleUseHandler.ServeHTTP(w, r)
 		case WorkContextServiceAdmitWorkloadOperationProcedure:
 			workContextServiceAdmitWorkloadOperationHandler.ServeHTTP(w, r)
+		case WorkContextServiceRecordHopRefusalProcedure:
+			workContextServiceRecordHopRefusalHandler.ServeHTTP(w, r)
 		case WorkContextServiceStartTaskProcedure:
 			workContextServiceStartTaskHandler.ServeHTTP(w, r)
 		case WorkContextServiceStartInstallationTaskProcedure:
@@ -430,6 +471,10 @@ func (UnimplementedWorkContextServiceHandler) ConsumeSingleUse(context.Context, 
 
 func (UnimplementedWorkContextServiceHandler) AdmitWorkloadOperation(context.Context, *connect.Request[v1.AdmitWorkloadOperationRequest]) (*connect.Response[v1.AdmitWorkloadOperationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.WorkContextService.AdmitWorkloadOperation is not implemented"))
+}
+
+func (UnimplementedWorkContextServiceHandler) RecordHopRefusal(context.Context, *connect.Request[v1.RecordHopRefusalRequest]) (*connect.Response[v1.RecordHopRefusalResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.WorkContextService.RecordHopRefusal is not implemented"))
 }
 
 func (UnimplementedWorkContextServiceHandler) StartTask(context.Context, *connect.Request[v1.StartTaskWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error) {

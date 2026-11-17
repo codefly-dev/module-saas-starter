@@ -6,6 +6,7 @@ import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
+import "saas/accounts/v1/hop_refusals.proto";
 import "saas/accounts/v1/workload_operation_admission.proto";
 import "saas/policy/v1/options.proto";
 
@@ -438,6 +439,28 @@ service WorkContextService {
       rate_limit: RATE_LIMIT_CLASS_INTERNAL
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  // RecordHopRefusal records one call the hop's front door refused itself in
+  // the audit journal (saas.authority.decision_refused, decision "hop"). The
+  // auth-gateway, which is the hop in a cell and keeps no journal, is its
+  // caller: the hop's own refusals reach the authority from nobody else. A
+  // refusal whose identity the authority checked is filed in its
+  // organization; one read from an unverified Work Context, or naming none,
+  // is filed under no organization. Internal-tier: the caller is trusted to
+  // say what it refused, and nothing is decided or returned.
+  rpc RecordHopRefusal(RecordHopRefusalRequest) returns (RecordHopRefusalResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_INTERNAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
   }

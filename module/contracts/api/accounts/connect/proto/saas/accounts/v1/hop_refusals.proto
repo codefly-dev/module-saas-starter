@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+
+// A hop refusal: one call the hop's front door refused, as the hop tells the
+// host that keeps the audit journal.
+//
+// The authority tells its host each decision it makes (accounts records its
+// refusals and its issues). The hop's own refusals never reach the authority:
+// a call with no Work Context, a method no published route serves, a check the
+// authority did not answer in time, an admission that cannot be signed, a
+// module that did not answer. In a cell the hop is the auth-gateway, which
+// keeps no journal, so it hands each of those to accounts, which keeps the
+// one journal there is. WorkContextService/RecordHopRefusal takes this
+// message.
+//
+// It lives in its own file, with deliberately minimal imports, so the
+// auth-gateway can generate the same types from the same source proto, as it
+// does for workload_operation_admission.proto. The gateway's copy is this
+// file, byte for byte.
+
+// RecordHopRefusalRequest is one refusal the hop made itself. A refusal the
+// authority made and the hop passed on is never sent: the authority told its
+// host already.
+message RecordHopRefusalRequest {
+  // The call: a gRPC procedure ("/package.Service/Method") or an HTTP request
+  // ("<VERB> <path>").
+  string method = 1 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 2048
+  ];
+  // The refusal's status code, by name ("Unauthenticated", "NotFound").
+  string code = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 64
+  ];
+  // The hop's own reason. It can name what a caller is not told (a module's
+  // address in a transport error): it is for the journal, never for a caller.
+  string reason = 3 [(buf.validate.field).string.max_len = 4096];
+  // The module the call was addressed to, when its Work Context said one.
+  string module = 4 [(buf.validate.field).string.max_len = 256];
+  // What identifies the work the call is part of: the owner's organization,
+  // whose authority it runs on, the last module acting for them (the owner,
+  // when none), the operation binding that actor exercises and the task.
+  // Empty for a call that carried no Work Context the hop could read.
+  string organization_id = 5 [(buf.validate.field).string.max_len = 256];
+  string owner_principal_id = 6 [(buf.validate.field).string.max_len = 256];
+  string actor_principal_id = 7 [(buf.validate.field).string.max_len = 256];
+  string binding_id = 8 [(buf.validate.field).string.max_len = 256];
+  string task_id = 9 [(buf.validate.field).string.max_len = 256];
+  // claimed says those identifiers were read from the call's Work Context
+  // unverified: the authority did not check this call. False, they are the
+  // identity the authority checked. A claimed refusal is filed under no
+  // organization.
+  bool claimed = 10;
+}
+
+// RecordHopRefusalResponse acknowledges the row.
+message RecordHopRefusalResponse {}

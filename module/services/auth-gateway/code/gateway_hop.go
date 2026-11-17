@@ -408,10 +408,11 @@ func (h *hopRole) clock() time.Time {
 // for it (hop/MODULES), through the hop library's front door: the faces the
 // hop endpoint serves, and the browser path's in-process
 // face. accounts is the authority interface's connection (its Connect
-// listener, which serves the interface over gRPC too). No hop/MODULES is no
+// listener, which serves the interface over gRPC too), and refusals where the
+// front door's own refusals are recorded. No hop/MODULES is no
 // hop: nil, and nothing registered. A composition that names modules but whose
 // hop cannot stand is refused, by name, at boot.
-func standHop(ctx context.Context, accounts grpc.ClientConnInterface) (*hopRole, *forward.Front, error) {
+func standHop(ctx context.Context, accounts grpc.ClientConnInterface, refusals hopRefusalJournal) (*hopRole, *forward.Front, error) {
 	listed, _, err := codefly.For(ctx).WorkspaceValueIfSet("hop", "MODULES")
 	if err != nil {
 		return nil, nil, fmt.Errorf("hop/MODULES cannot be read: %w", err)
@@ -434,7 +435,7 @@ func standHop(ctx context.Context, accounts grpc.ClientConnInterface) (*hopRole,
 	}
 	// This instance registers its key as the workload the run attests
 	// (module-identity: true).
-	return newHopRole(ctx, hopAuthority{authorityv1.NewAuthorityServiceClient(accounts)}, hop.RunCredential, modules, raw, routes, enforcement)
+	return newHopRole(ctx, hopAuthority{authorityv1.NewAuthorityServiceClient(accounts)}, hop.RunCredential, modules, raw, routes, enforcement, hopRefusalSink(refusals))
 }
 
 // hopAuthorityClient is what the hop asks of the authority interface: Check
@@ -450,9 +451,10 @@ type hopAuthority struct {
 }
 
 // newHopRole builds the front door and the browser path over it, with a key
-// this instance generates.
+// this instance generates. refused receives each refusal either face makes
+// (gateway_hop_refusals.go); nil is the log line alone.
 func newHopRole(ctx context.Context, authority hopAuthorityClient, credential func() (string, error),
-	modules []string, raw string, routes *routing.Routing, enforcement string,
+	modules []string, raw string, routes *routing.Routing, enforcement string, refused forward.Sink,
 ) (*hopRole, *forward.Front, error) {
 	signer, err := newHopSigner()
 	if err != nil {
@@ -461,6 +463,7 @@ func newHopRole(ctx context.Context, authority hopAuthorityClient, credential fu
 	front, err := forward.New(ctx, forward.Config{
 		Signer: signer, Authority: authority, Credential: credential,
 		Modules: modules, Routes: raw, Enforcement: enforcement, Log: wool.Get(ctx).In("hop"),
+		Refused: refused,
 	})
 	if err != nil {
 		return nil, nil, err

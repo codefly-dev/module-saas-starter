@@ -234,3 +234,47 @@ func TestTheHostsCoreRecordsItsRefusals(t *testing.T) {
 	require.Equal(t, "nowhere", entry.Payload["audience"])
 	require.Equal(t, err.Error(), entry.Payload["reason"])
 }
+
+// The hop's own refusals never reach the core: the hop hands each to the host
+// that keeps the journal. It is the same row a refusal of the core's is, with
+// the decision named as the hop's. One whose identity the authority checked
+// is filed in its organization; one read from a Work Context nobody verified,
+// or carrying none, is filed under no tenant.
+func TestAHopsOwnRefusalIsARowOfTheJournal(t *testing.T) {
+	s, journal := decisionService(t)
+	ctx := context.Background()
+
+	// A call that carried no Work Context: nothing says whose it was.
+	s.RecordHopRefusal(ctx, HopRefusal{Method: "/records.Service/Read", Code: "Unauthenticated", Reason: "the call carries no Work Context"})
+	// A call whose identity the authority checked, refused by the hop after.
+	s.RecordHopRefusal(ctx, HopRefusal{Method: "/records.Service/Read", Code: "Unavailable", Reason: "dial tcp 10.0.0.9:8080: connection refused",
+		Module: "records", Organization: decisionOrg, Owner: decisionPerson, Actor: "pages", Binding: "records", Task: "task-1"})
+	// A call whose Work Context the authority never checked.
+	s.RecordHopRefusal(ctx, HopRefusal{Method: "POST /v1/records", Code: "DeadlineExceeded", Reason: "the authority did not answer in time",
+		Module: "records", Organization: decisionOrg, Owner: decisionPerson, Actor: decisionPerson, Task: "task-2", Claimed: true})
+
+	require.Len(t, journal.entries, 3)
+	for _, entry := range journal.entries {
+		require.Equal(t, EventAuthorityDecisionRefused, entry.EventType)
+		require.Equal(t, "hop", entry.Payload["decision"])
+		require.NoError(t, ValidatePayload(entry.EventType, entry.Payload))
+	}
+	bare, checked, claimed := journal.entries[0], journal.entries[1], journal.entries[2]
+	require.Empty(t, bare.OrgID)
+	require.Equal(t, map[string]any{"decision": "hop", "code": "Unauthenticated", "reason": "the call carries no Work Context", "method": "/records.Service/Read"}, bare.Payload)
+
+	require.Equal(t, decisionOrg, checked.OrgID, "the authority checked whose call it was")
+	require.Empty(t, checked.ActorID, "a module acting for the owner is recorded as the system, named in the payload")
+	require.Equal(t, ActorTypeSystem, checked.ActorType)
+	require.Equal(t, "records", checked.Payload["audience"])
+	require.Equal(t, "pages", checked.Payload["actor"])
+	require.Equal(t, decisionPerson, checked.Payload["owner"])
+	require.Equal(t, "records", checked.Payload["binding"])
+	require.Equal(t, "task-1", checked.Payload["task"])
+	require.Equal(t, "dial tcp 10.0.0.9:8080: connection refused", checked.Payload["reason"], "the hop's own reason, which no caller was told")
+
+	require.Empty(t, claimed.OrgID, "an unverified Work Context files nothing in the organization it names")
+	require.Empty(t, claimed.ActorID)
+	require.Equal(t, true, claimed.Payload["claimed"])
+	require.Equal(t, decisionOrg, claimed.Payload["organization"])
+}
