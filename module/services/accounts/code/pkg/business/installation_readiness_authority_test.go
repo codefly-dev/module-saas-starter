@@ -31,11 +31,13 @@ func TestReadinessSelfOperationsMatchOwnerConsent(t *testing.T) {
 	write := []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"write"}}}
 	readWrite := []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"read", "write"}}}
 	store.PutOrganization(domain.Organization{ID: "acme", Name: "Acme"})
-	store.PutOrgRole(domain.OrgRole{Organization: "acme", Name: "reader", Scopes: []domain.RoleScope{{Kind: "evidence", Actions: []string{"read"}}}})
 	store.PutPerson(domain.Person{ID: "jane", Organization: "acme", Roles: []string{"reader"}})
 	for _, name := range []string{readinessPrefix, "model"} {
+		// A module page: an organisation role reaches no module, so jane is
+		// its user, and what she holds there is that role's.
 		_, err := owner.ApplyModule(ctx, domain.Module{Name: name, Principal: name, Kind: domain.KindModule, Generation: 1,
-			ResourceKinds: readWrite,
+			ResourceKinds: readWrite, Page: true, InstallationRole: domain.NoInstallationRole,
+			Roles: map[string][]*basev0.WorkScopeV1{domain.AdminRole: readWrite, domain.UserRole: read},
 			Bindings: map[string]domain.Binding{
 				"self":         {ID: "self", Audience: name, InvokeScopes: readWrite, LookupScopes: read, HeadlessScopes: read},
 				"lookup-write": {ID: "lookup-write", Audience: name, InvokeScopes: readWrite, LookupScopes: write},
@@ -57,6 +59,10 @@ func TestReadinessSelfOperationsMatchOwnerConsent(t *testing.T) {
 			return tx.PutInstallation(domain.Installation{ID: "installation-" + name, Organization: "acme", Target: name,
 				Status: domain.Active, Revision: 1, Bindings: bindings})
 		}))
+	}
+	for _, name := range []string{readinessPrefix, "model"} {
+		_, err := owner.GrantRoleAsHost(ctx, authority.RoleRequest{Organization: "acme", InstallationID: "installation-" + name, Role: domain.UserRole, PersonID: "jane"})
+		require.NoError(t, err)
 	}
 	person := authority.Person{ID: "jane", Organization: "acme", SessionID: "session"}
 	parent, err := owner.IssueForPerson(ctx, person, authority.IssueRequest{Audience: readinessPrefix})

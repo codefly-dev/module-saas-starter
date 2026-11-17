@@ -67,6 +67,7 @@
       "full_name": "host.session.v1.SessionService",
       "procedures": [
         "/host.session.v1.SessionService/Current",
+        "/host.session.v1.SessionService/End",
         "/host.session.v1.SessionService/ListCastableTeams",
         "/host.session.v1.SessionService/ListFixturePeople",
         "/host.session.v1.SessionService/OpenRoleView",
@@ -1730,7 +1731,60 @@
         "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
-      "description": "Answer the session the caller's bearer belongs to, without the bearer.",
+      "description": "Answer the session the caller's bearer belongs to, without the bearer: who it is, when it ends on its own and the grant epoch of what it holds.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.session.v1.SessionService/End",
+      "service": "SessionService",
+      "full_service": "host.session.v1.SessionService",
+      "method": "End",
+      "input_type": "host.session.v1.EndRequest",
+      "output_type": "host.session.v1.EndResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/session/v1/session.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/session:end",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.authority.session_ended"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "auth",
+      "description": "End the caller's session and every role view and cast opened from it; each of those bearers is unauthenticated from then on.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

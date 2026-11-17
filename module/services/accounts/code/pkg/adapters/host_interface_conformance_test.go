@@ -256,29 +256,47 @@ func runHostInterfaceFixture(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
-	// The composition, delivered as the CLI delivers it. records is the
-	// audience the viewer reads at; it checks no owner, so a person's
-	// organization roles reach it on their own session. documents checks
-	// owners: an organization role reaches nothing there on a person's own
-	// session (RBAC-4a), and a solution's role or an installation reaches its
-	// own principal's data. org-directory is the page module reading records
-	// for the viewer through its one binding; model an audience the viewer's
-	// context at records is not addressed to, checking owners of its datasets
-	// with its profiles and templates shared. records and model bind to each
-	// other, so a delegate chain crosses from one to the other and back; model
-	// also binds to itself across its three kinds, and documents to the
-	// model's profiles and datasets. conformance-agent is a module whose tools binding reaches
+	// The composition, delivered as the CLI delivers it. An organisation role
+	// reaches no module, so every module a person calls on their own session
+	// is a module page declaring roles, and the person is seated on one
+	// (seat, below). records is the audience the viewer reads at: its user
+	// reads example entries and its admin writes them, and each role names
+	// what it reaches at the model through the page's binding. org-directory
+	// is the page reading records for a person through its one binding. model
+	// checks owners of its datasets with its profiles and templates shared;
+	// its admin holds the shared kinds and names the example entries it
+	// reaches at records. records and model bind to each other, so a delegate
+	// chain crosses from one to the other and back on the roles its person
+	// holds on both; model also binds to itself across its three kinds.
+	// documents declares no roles: nobody's own session holds anything there,
+	// and it is reached through the binding of an installation whose role a
+	// person holds. conformance-agent is a module whose tools binding reaches
 	// an installed solution; conformance-idle a declared workload with no
 	// active installation.
+	pageOf := func(title string) *solutionhost.Frontend {
+		return &solutionhost.Frontend{Title: title, ExposedModule: "./Page", HostContract: 1, Payload: pagePayload}
+	}
 	modules := []conformanceModule{
 		{alias: "records", ownerUnaware: true, ceilings: []*authorityv1.WorkScopeV1{wireScope("example-entries", "invoke", "read", "write")},
+			page: pageOf("Records"), installationRole: domain.NoInstallationRole,
+			roles: map[string][]*authorityv1.WorkScopeV1{
+				"admin": {wireScope("example-entries", "invoke", "read", "write"), wireScope("modelservice.profiles", "invoke", "read")},
+				"user":  {wireScope("example-entries", "read"), wireScope("modelservice.profiles", "read")}},
 			bindings: []solutionhost.AuthorityBinding{{ID: "model", Audience: "model", Operations: map[string][]string{"invoke": {"modelservice.profiles:invoke", "modelservice.profiles:read"}}}}},
 		{alias: "documents", ceilings: []*authorityv1.WorkScopeV1{wireScope("example-records", "invoke", "read", "write", "ingest")},
 			bindings: []solutionhost.AuthorityBinding{{ID: "model", Audience: "model", Operations: map[string][]string{"invoke": {"modelservice.profiles:invoke", "modelservice.profiles:read", "modelservice.datasets:read"}}}}},
 		{alias: "org-directory", ownerUnaware: true, ceilings: []*authorityv1.WorkScopeV1{wireScope("directory.entry", "read")},
+			page: pageOf("Directory"), installationRole: domain.NoInstallationRole,
+			roles: map[string][]*authorityv1.WorkScopeV1{
+				"admin": {wireScope("directory.entry", "read"), wireScope("example-entries", "invoke", "read")},
+				"user":  {wireScope("directory.entry", "read"), wireScope("example-entries", "read")}},
 			bindings: []solutionhost.AuthorityBinding{{ID: "records", Audience: "records", Operations: map[string][]string{
 				"invoke": {"example-entries:invoke", "example-entries:read"}, "lookup": {"example-entries:read"}, "headless": {"example-entries:invoke", "example-entries:read"}}}}},
 		{alias: "model", sharedKinds: []string{"modelservice.profiles", "modelservice.templates"}, ceilings: []*authorityv1.WorkScopeV1{wireScope("modelservice.profiles", "invoke", "read"), wireScope("modelservice.datasets", "read"), wireScope("modelservice.templates", "read")},
+			page: pageOf("Model"), installationRole: domain.NoInstallationRole,
+			roles: map[string][]*authorityv1.WorkScopeV1{
+				"admin": {wireScope("modelservice.profiles", "invoke", "read"), wireScope("modelservice.templates", "read"), wireScope("example-entries", "invoke", "read")},
+				"user":  {wireScope("modelservice.profiles", "read")}},
 			bindings: []solutionhost.AuthorityBinding{
 				{ID: "records", Audience: "records", Operations: map[string][]string{"invoke": {"example-entries:invoke", "example-entries:read"}, "lookup": {"example-entries:read"}}},
 				{ID: "self", Audience: "model", Operations: map[string][]string{
@@ -286,9 +304,9 @@ func runHostInterfaceFixture(t *testing.T) {
 					"headless": {"modelservice.profiles:invoke", "modelservice.profiles:read", "modelservice.datasets:read", "modelservice.templates:read"}}},
 			}},
 		// conformance-agent's tools binding carries the person's role on the
-		// proposals solution to that solution; its conversations are shared,
-		// so both people use the agent on their own session through their
-		// organization roles.
+		// proposals solution to that solution. It declares no roles: a person
+		// naming its binding is issued what their role on the solution holds
+		// through it, and nothing of the module's own.
 		{alias: "conformance-agent", sharedKinds: []string{"conformance-agent.conversation"}, ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-agent.conversation", "read")},
 			bindings: []solutionhost.AuthorityBinding{{ID: "tools", Audience: "conformance-proposals", Operations: map[string][]string{"invoke": {"conformance-proposals.item:read"}}}}},
 		{alias: "conformance-idle", ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-idle.task", "read")},
@@ -324,11 +342,16 @@ func runHostInterfaceFixture(t *testing.T) {
 	// administrator lists installations the module can never name.
 	const artifactModule = "conformance-artifact"
 	faults.blockComposition(artifactModule)
-	// It checks no owner: the artifact decision is reached through the
-	// people's organization roles on their own session, which reach no owned
-	// kind of a module that checks owners (RBAC-4a).
+	// It is a module page: its admin role holds each policy's activate and run,
+	// its user role run alone. Who approves is who holds the admin role on its
+	// installation, an organisation administrator or not; no organisation role
+	// reaches it.
 	deliverModule(t, ctx, conn, signer, conformanceModule{alias: artifactModule, ownerUnaware: true,
-		ceilings: []*authorityv1.WorkScopeV1{wireScope(artifactModule+".intent", "activate", "run"), wireScope(artifactModule+".preview", "activate", "run")}})
+		page: pageOf("Artifacts"), installationRole: domain.NoInstallationRole,
+		ceilings: []*authorityv1.WorkScopeV1{wireScope(artifactModule+".intent", "activate", "run"), wireScope(artifactModule+".preview", "activate", "run")},
+		roles: map[string][]*authorityv1.WorkScopeV1{
+			"admin": {wireScope(artifactModule+".intent", "activate", "run"), wireScope(artifactModule+".preview", "activate", "run")},
+			"user":  {wireScope(artifactModule+".intent", "run")}}})
 	require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, artifactModule))
 
 	// The solutions, delivered as the CLI delivers them, then installed by the
@@ -412,16 +435,50 @@ func runHostInterfaceFixture(t *testing.T) {
 	_, err = core.GrantRoleAsHost(ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: installed("conformance-owner-a"), Role: "user", TeamID: finance})
 	require.NoError(t, err)
 
+	// The seats: a person reaches a module page only through a role on its
+	// installation, so each person the suite calls a page as holds one there,
+	// granted by the host as an administrator's grant is. Alex and Alice
+	// administer records, and Bob, the viewer, is its user; Alex administers
+	// the directory and the model, Bob is the directory's user; the artifact
+	// module's admins approve and its user runs. Sarah (dev-admin), who
+	// administers the organisation, is seated nowhere.
+	alexPerson := authority.Person{ID: conformanceAlex, Organization: fixtureOrganization, SessionID: "conformance-harness"}
+	seat := func(target, role string, people ...string) {
+		t.Helper()
+		all, err := core.Installations(ctx, alexPerson, fixtureOrganization)
+		require.NoError(t, err)
+		i := slices.IndexFunc(all, func(inst domain.Installation) bool { return inst.Target == target && inst.Status == domain.Active })
+		require.GreaterOrEqual(t, i, 0, "%s is installed active at Acme", target)
+		for _, person := range people {
+			_, err := core.GrantRoleAsHost(ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: all[i].ID, Role: role, PersonID: person})
+			require.NoError(t, err, "seat %s as %s of %s", person, role, target)
+		}
+	}
+	const conformanceAlice, conformanceBob = "00000000-0000-7000-8000-0000000000a2", "00000000-0000-7000-8000-0000000000a3"
+	seat("records", domain.AdminRole, conformanceAlex, conformanceAlice)
+	seat("records", domain.UserRole, conformanceBob)
+	seat("org-directory", domain.AdminRole, conformanceAlex)
+	seat("org-directory", domain.UserRole, conformanceBob)
+	seat("model", domain.AdminRole, conformanceAlex)
+	seat(artifactModule, domain.AdminRole, conformanceAlex, "00000000-0000-7000-8000-0000000000e1")
+	seat(artifactModule, domain.UserRole, "00000000-0000-7000-8000-0000000000e2")
+	// The transfer case's owner administers the organisation and holds A's
+	// admin role: handing the organisation's resource to an installation is an
+	// administrator's act.
+	for _, owned := range []string{"conformance-owner-a", "conformance-owner-b"} {
+		seat(owned, domain.AdminRole, conformanceAlex)
+	}
+
 	documentsCredential, recordsCredential, modelCredential, workloadCredential := credential("documents"), credential("records"), credential("model"), credential("org-directory")
-	// A delegate chain: an administrator issued at records on his own session;
-	// records hops to model through its binding for what the first token never
-	// carried (the model's shared profiles), then model hops back to records
-	// through its own.
+	// A delegate chain: Alex, an admin of records, issued there; records hops
+	// to model through its binding for what the first token never carried (the
+	// model's shared profiles, which his role on records names), then model
+	// hops back to records through its own, on his roles on both.
 	chain := conformance.Chain{Token: "fixture-alex", Start: "records", Hops: []conformance.Hop{
 		{Credential: recordsCredential, Binding: "model", Audience: "model", AskKind: "modelservice.profiles", AskAction: "invoke"},
 		{Credential: modelCredential, Binding: "records", Audience: "records", AskKind: "example-entries", AskAction: "read"},
 	}}
-	alex := authority.Person{ID: conformanceAlex, Organization: fixtureOrganization, SessionID: "conformance-harness"}
+	alex := alexPerson
 	const adminToken = "dev-alice"
 	administrator, err := sessionv1.NewSessionServiceClient(conn).SignIn(ctx, &sessionv1.SignInRequest{FixtureToken: adminToken})
 	require.NoError(t, err)
@@ -443,6 +500,16 @@ func runHostInterfaceFixture(t *testing.T) {
 		// case compares the reviewed offer here too: a solution's roles and the
 		// permissions they carry are its declaration on either host.
 		ViewerToken: "dev-bob", AdminToken: adminToken,
+		// Sarah administers Acme and holds no role on any installation: she
+		// administers, and is refused at every role-gated audience and at
+		// documents, which declares no roles and where nobody's own session
+		// holds anything.
+		OrganisationRoles: &conformance.OrganisationRolesCase{
+			Administrator: "dev-admin",
+			RoleGated:     []string{"conformance-pages", "conformance-proposals", "org-directory", "model"},
+			NoRoles:       []string{"documents"},
+			Kinds:         map[string]conformance.Expectation{"documents": {Kind: "example-records", Action: "read"}},
+		},
 		Audience: "records", ReadKind: "example-entries",
 		WorkloadModule: "org-directory", WorkloadCredential: workloadCredential, Binding: "records", BindingAudience: "records", Elsewhere: "model",
 		// The installed proposals solution and its own workload. Its roles name
@@ -471,8 +538,9 @@ func runHostInterfaceFixture(t *testing.T) {
 			Ambiguous: conformance.WorkloadOrganizationCase{Credential: workloadCredential, Module: "org-directory", Binding: "records", Audience: "records"},
 			None:      conformance.WorkloadOrganizationCase{Credential: credential("conformance-idle"), Module: "conformance-idle", Binding: "model", Audience: "model"},
 		},
-		// Maya reads one example entry by grant, not the kind.
-		Resources: &conformance.ResourceCase{Token: "fixture-maya", Audience: "records", Kind: "example-entries", Action: "read",
+		// Bob, the user of records, reads its example entries: every one on
+		// his role, exactly those he names when he names some, and writes none.
+		Resources: &conformance.ResourceCase{Token: "dev-bob", Audience: "records", Kind: "example-entries", Action: "read",
 			Covered: []string{"conformance-record-a"}, Uncovered: []string{"conformance-record-b"}, Unheld: "write"},
 		// Alex lets the directory page invoke example entries for him; Bob, a
 		// reader, cannot delegate what he does not hold.
@@ -493,10 +561,11 @@ func runHostInterfaceFixture(t *testing.T) {
 				{Credential: credential("conformance-assistant"), Binding: "documents", Audience: "documents", AskKind: "example-records", AskAction: "read"},
 				{Credential: documentsCredential, Binding: "model", Audience: "model", AskKind: "modelservice.datasets", AskAction: "read"},
 			}},
-		// Two installed solutions, a store module and five resources; Ivy
-		// administers collection-x alone through her own organization grant.
+		// Two installed solutions, a store module and five resources; Alex,
+		// who administers Acme and holds A's admin role, hands the
+		// organisation's collections over; Maya, A's user, hands over none.
 		InstallationResources: &conformance.InstallationResourcesCase{
-			Owner: "fixture-ivy", User: "fixture-maya", Generation: 2,
+			Owner: "fixture-alex", User: "fixture-maya", Generation: 2,
 			A:     conformance.OwnedInstallation{Solution: "conformance-owner-a", Credential: credential("conformance-owner-a"), Installation: installed("conformance-owner-a")},
 			B:     conformance.OwnedInstallation{Solution: "conformance-owner-b", Credential: credential("conformance-owner-b"), Installation: installed("conformance-owner-b")},
 			Store: "conformance-store", StoreCredential: credential("conformance-store"), Kind: "conformance.collection",
@@ -536,13 +605,12 @@ func runHostInterfaceFixture(t *testing.T) {
 		// The same binding read as a lookup carries its lookup scopes alone.
 		Lookup: &conformance.LookupCase{Token: "fixture-alex", Start: "model", Credential: modelCredential, Binding: "records",
 			Audience: "records", Kind: "example-entries", Invoke: "invoke", Lookup: "read"},
-		// The permission matrix: a record viewer, Acme administrators, a member
-		// who holds no role there, and a Globex member at Acme's content. At
-		// documents, which checks owners, no organization role reaches anything
-		// on a person's own session, an administrator's every kind included
-		// (RBAC-4a); at the model only its shared kinds. The administrators hold
-		// each kind asked of them by the fixture's operator role, not by their
-		// membership role.
+		// The permission matrix: the user and the admins of records, the
+		// model's admin, a member who holds no role there, and a Globex member
+		// at Acme's content. Each allow row is a role on the audience's
+		// installation. At documents, which declares no roles, nobody's own
+		// session holds anything, an administrator's included; at the model
+		// its admin holds the shared kinds and not its datasets.
 		Matrix: []conformance.Expectation{
 			{Token: "dev-bob", Audience: "records", Kind: "example-entries", Action: "read", Allowed: true},
 			{Token: "dev-bob", Audience: "records", Kind: "example-entries", Action: "write", Allowed: false},
@@ -1017,6 +1085,115 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.NoError(t, minter.RevokeSessionAccess(ctx, sess.GetSessionId()))
 		_, err = client.Current(bearer, &sessionv1.CurrentRequest{})
 		require.Equal(t, codes.Unauthenticated, status.Code(err), "an ended session: %v", err)
+	})
+
+	// Beyond the suite: the session contract's lifetime (session 0.6.0). Every
+	// session answered says when it ends on its own and the grant epoch of what
+	// it holds; a role view or a cast ends no later than the session it was
+	// opened from; End ends the session and every session opened from it, at
+	// this host and not in the browser; an expired session is refused wherever
+	// a session is read; and the epoch moves when a role is granted or revoked.
+	t.Run("a session ends, expires and states the grant epoch of what it holds", func(t *testing.T) {
+		client := sessionv1.NewSessionServiceClient(conn)
+		issuer := authorityv1.NewAuthorityServiceClient(conn)
+		bearerOf := func(s *sessionv1.Session) context.Context {
+			return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+s.GetBearer())
+		}
+		open, err := client.SignIn(ctx, &sessionv1.SignInRequest{FixtureToken: "fixture-alex"})
+		require.NoError(t, err)
+		require.Greater(t, open.GetExpiresAtUnix(), time.Now().Unix(), "a sign-in says when the session ends on its own")
+		require.NotEmpty(t, open.GetGrantEpoch(), "and the grant epoch of what it holds")
+		current, err := client.Current(bearerOf(open), &sessionv1.CurrentRequest{})
+		require.NoError(t, err)
+		require.Equal(t, open.GetExpiresAtUnix(), current.GetExpiresAtUnix())
+		require.Equal(t, open.GetGrantEpoch(), current.GetGrantEpoch(), "nothing changed, so the epoch did not move")
+
+		// A cast and a role view end no later than the session they were opened from.
+		cast, err := client.OpenTeamCast(bearerOf(open), &sessionv1.OpenTeamCastRequest{TeamId: finance})
+		require.NoError(t, err)
+		require.Positive(t, cast.GetExpiresAtUnix())
+		require.LessOrEqual(t, cast.GetExpiresAtUnix(), open.GetExpiresAtUnix(), "a cast ends no later than the session it was opened from")
+		require.NotEmpty(t, cast.GetGrantEpoch())
+		require.NotEqual(t, open.GetGrantEpoch(), cast.GetGrantEpoch(), "a cast holds what its team holds, not what its person does")
+
+		// The epoch moves when a role is granted, and again when it is revoked.
+		maya, err := client.SignIn(ctx, &sessionv1.SignInRequest{FixtureToken: "fixture-maya"})
+		require.NoError(t, err)
+		epoch := func(s *sessionv1.Session) string {
+			t.Helper()
+			now, err := client.Current(bearerOf(s), &sessionv1.CurrentRequest{})
+			require.NoError(t, err)
+			return now.GetGrantEpoch()
+		}
+		before := epoch(maya)
+		castBefore := epoch(cast)
+		directory := installedModule(t, ctx, core, alex, "org-directory")
+		grant := authority.RoleRequest{Organization: fixtureOrganization, InstallationID: directory, Role: domain.UserRole, PersonID: conformanceMaya}
+		_, err = core.GrantRoleAsHost(ctx, grant)
+		require.NoError(t, err)
+		granted := epoch(maya)
+		require.NotEqual(t, before, granted, "a role granted to the person moves their session's grant epoch")
+		_, err = core.RevokeRole(ctx, alex, grant)
+		require.NoError(t, err)
+		require.NotEqual(t, granted, epoch(maya), "and a role revoked moves it again")
+		// A role granted to the team a cast acts as moves the cast's.
+		teamGrant := authority.RoleRequest{Organization: fixtureOrganization, InstallationID: directory, Role: domain.UserRole, TeamID: finance}
+		_, err = core.GrantRoleAsHost(ctx, teamGrant)
+		require.NoError(t, err)
+		require.NotEqual(t, castBefore, epoch(cast), "a role granted to the team a cast acts as moves the cast's grant epoch")
+		_, err = core.RevokeRole(ctx, alex, teamGrant)
+		require.NoError(t, err)
+
+		// Leaving a cast ends it at this host; the session it was opened from is untouched.
+		_, err = client.End(bearerOf(cast), &sessionv1.EndRequest{})
+		require.NoError(t, err)
+		_, err = client.Current(bearerOf(cast), &sessionv1.CurrentRequest{})
+		require.Equal(t, codes.Unauthenticated, status.Code(err), "an ended cast is no session: %v", err)
+		_, err = issuer.Issue(bearerOf(cast), &authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: "conformance-pages"})
+		require.Equal(t, codes.Unauthenticated, status.Code(err), "and is issued nothing: %v", err)
+		_, err = client.Current(bearerOf(open), &sessionv1.CurrentRequest{})
+		require.NoError(t, err, "the session the cast was opened from is untouched")
+
+		// Signing out ends the session and every role view and cast opened from it.
+		again, err := client.OpenTeamCast(bearerOf(open), &sessionv1.OpenTeamCastRequest{TeamId: finance})
+		require.NoError(t, err)
+		pages := installed("conformance-pages")
+		view, err := client.OpenRoleView(bearerOf(open), &sessionv1.OpenRoleViewRequest{InstallationId: pages, Roles: []string{"user"}})
+		require.NoError(t, err)
+		require.LessOrEqual(t, view.GetExpiresAtUnix(), open.GetExpiresAtUnix(), "a role view ends no later than the session it was opened from")
+		_, err = client.End(bearerOf(open), &sessionv1.EndRequest{})
+		require.NoError(t, err)
+		for name, ended := range map[string]*sessionv1.Session{"the session": open, "its cast": again, "its role view": view} {
+			_, err = client.Current(bearerOf(ended), &sessionv1.CurrentRequest{})
+			require.Equal(t, codes.Unauthenticated, status.Code(err), "%s is ended: %v", name, err)
+			_, err = issuer.Issue(bearerOf(ended), &authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: "conformance-pages"})
+			require.Equal(t, codes.Unauthenticated, status.Code(err), "%s is issued nothing: %v", name, err)
+			_, err = client.OpenTeamCast(bearerOf(ended), &sessionv1.OpenTeamCastRequest{TeamId: finance})
+			require.Equal(t, codes.Unauthenticated, status.Code(err), "%s opens nothing: %v", name, err)
+		}
+		_, err = client.End(bearerOf(open), &sessionv1.EndRequest{})
+		require.Equal(t, codes.Unauthenticated, status.Code(err), "ending is never undone, and an ended bearer ends nothing: %v", err)
+		var recorded int
+		require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
+			return storetx.Tx(ctx).QueryRow(ctx, `SELECT count(*) FROM public.audit_events WHERE event_type = $1 AND resource_id = $2 AND actor_id = $3`,
+				string(business.EventAuthoritySessionEnded), open.GetSessionId(), conformanceAlex).Scan(&recorded)
+		}))
+		require.Equal(t, 1, recorded, "the sign-out is one audit row, naming who ended which session")
+
+		// A session past the moment it ends on its own is refused wherever a
+		// session is read, though its bearer still verifies.
+		lapsed, err := client.SignIn(ctx, &sessionv1.SignInRequest{FixtureToken: "fixture-maya"})
+		require.NoError(t, err)
+		require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
+			_, err := storetx.Tx(ctx).Exec(ctx, `UPDATE public.sessions SET expires_at = now() - interval '1 second', idle_expires_at = now() - interval '1 second' WHERE id = $1`, lapsed.GetSessionId())
+			return err
+		}))
+		_, err = client.Current(bearerOf(lapsed), &sessionv1.CurrentRequest{})
+		require.Equal(t, codes.Unauthenticated, status.Code(err), "an expired session is no session: %v", err)
+		_, err = issuer.Issue(bearerOf(lapsed), &authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: "conformance-pages"})
+		require.Equal(t, codes.Unauthenticated, status.Code(err), "and is issued nothing: %v", err)
+		_, err = client.OpenTeamCast(bearerOf(lapsed), &sessionv1.OpenTeamCastRequest{TeamId: finance})
+		require.Equal(t, codes.Unauthenticated, status.Code(err), "and opens nothing: %v", err)
 	})
 
 	// Beyond the suite: a fresh reviewed approval supersedes an unfinished
@@ -1548,19 +1725,34 @@ installations:
 	})
 
 	// Beyond the suite: accounts' own person Work Context mints, beside the
-	// host Issue, follow the core's owner rule (RBAC-4a).
-	t.Run("a person's own Work Context mints follow the core's owner rule", func(t *testing.T) {
+	// host Issue, are held to what the core would issue: an organisation role
+	// reaches no module.
+	t.Run("a person's own Work Context mints hold what the core would issue: an organisation role reaches no module", func(t *testing.T) {
 		testOwnSessionOwnerRule(t, conn, signIn("fixture-alex"), credential, func(m conformanceModule) {
 			deliverModule(t, ctx, conn, signer, m)
 			require.NoError(t, installModule(ctx, m.alias))
-		}, &solutionhost.Frontend{Title: "Owner page", ExposedModule: "./Page", HostContract: 1, Payload: pagePayload})
+		}, &solutionhost.Frontend{Title: "Owner page", ExposedModule: "./Page", HostContract: 1, Payload: pagePayload},
+			func(target, role string) { seat(target, role, conformanceAlex) })
 	})
 
-	// The organization role "admin" or "owner" holds no scope: an administrator
-	// with no grant is refused at a module that is neither role-gated nor
-	// owner-aware, and issued the scope once granted.
-	t.Run("an administrator with no grant is issued nothing without one", func(t *testing.T) {
-		testAdministratorWithoutAGrant(t, conn, signIn("fixture-alex"), signIn("fixture-dev"), "00000000-0000-7000-8000-0000000000b4")
+	// An organisation role administers and reaches no module on this host's
+	// own mints either: an administrator is refused at a module page until a
+	// role on its installation is granted, whatever organisation role they hold.
+	t.Run("an organisation role reaches no module on this host's own mints; a role on the installation does", func(t *testing.T) {
+		const dev = "00000000-0000-7000-8000-0000000000b4"
+		records := installedModule(t, ctx, core, alex, "records")
+		grant := func(role string) authority.RoleRequest {
+			return authority.RoleRequest{Organization: fixtureOrganization, InstallationID: records, Role: role, PersonID: dev}
+		}
+		testAnOrganisationRoleReachesNoModule(t, conn, signIn("fixture-alex"), func() context.Context { return signIn("fixture-dev") }, dev,
+			func(role string) {
+				_, err := core.GrantRoleAsHost(ctx, grant(role))
+				require.NoError(t, err)
+			},
+			func(role string) {
+				_, err := core.RevokeRole(ctx, alex, grant(role))
+				require.NoError(t, err)
+			})
 	})
 
 	// The mints decided by organization RBAC are refused, by name, to a session
@@ -1647,7 +1839,7 @@ installations:
 
 	// After the envelope narrowing, for the same reason: this case writes the
 	// envelope every module's ceiling is derived from.
-	t.Run("an installed module actor's exchange of a person's own session follows the core's owner rule", func(t *testing.T) {
+	t.Run("a module with an installed actor binding and no roles holds nothing for a person's own session", func(t *testing.T) {
 		testInstalledActorOwnSession(t, installedActorHarness{
 			admin: signIn("fixture-alex"), contexts: gen.NewWorkContextServiceClient(conn), credential: credential,
 			grant: func(principals string) {
@@ -1679,6 +1871,16 @@ installations:
 			},
 		})
 	})
+}
+
+// installedModule is the id of target's active installation at Acme.
+func installedModule(t *testing.T, ctx context.Context, core *authority.Service, admin authority.Person, target string) string {
+	t.Helper()
+	all, err := core.Installations(ctx, admin, fixtureOrganization)
+	require.NoError(t, err)
+	i := slices.IndexFunc(all, func(inst domain.Installation) bool { return inst.Target == target && inst.Status == domain.Active })
+	require.GreaterOrEqual(t, i, 0, "%s is installed active at Acme", target)
+	return all[i].ID
 }
 
 // serveConnect holds its :0 listener until cleanup and reads the assigned port

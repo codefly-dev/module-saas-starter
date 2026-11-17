@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **306 RPCs** across **42 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **307 RPCs** across **42 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -33,7 +33,8 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/host.installation.v1.InstallationService/RevokeRole` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | SUCCESS: saas.authority.role_revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Revoke one role grant; its subject's capabilities through the installation end. |
 | `/host.installation.v1.OfferService/ListOffers` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List the solutions delivered to this host that one organisation's administrator may install. |
 | `/host.installation.v1.OfferService/ReviewOffer` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read one delivered solution's offer as the core holds it: each role's scopes, the operations and tools they reach, and the permission ceiling; the consent tuple for an administrator alone. |
-| `/host.session.v1.SessionService/Current` | unary | `GET /v1/session` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Answer the session the caller's bearer belongs to, without the bearer. |
+| `/host.session.v1.SessionService/Current` | unary | `GET /v1/session` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Answer the session the caller's bearer belongs to, without the bearer: who it is, when it ends on its own and the grant epoch of what it holds. |
+| `/host.session.v1.SessionService/End` | unary | `POST /v1/session:end` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | SUCCESS: saas.authority.session_ended | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | End the caller's session and every role view and cast opened from it; each of those bearers is unauthenticated from then on. |
 | `/host.session.v1.SessionService/ListCastableTeams` | unary | `GET /v1/session/castable-teams` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List the teams the caller may act as now, each with what it holds, by the rule that decides OpenTeamCast. |
 | `/host.session.v1.SessionService/ListFixturePeople` | unary | `GET /v1/session/fixture-people` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / AUTHENTICATION | PUBLIC → SECRET | List the people fixture sign-in admits, in the fixture's order; none where it is not enabled. |
 | `/host.session.v1.SessionService/OpenRoleView` | unary | `POST /v1/session:open-role-view` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | SUCCESS: saas.authority.role_view_opened | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → SECRET | Open a session that acts as some of the roles the caller holds on one installation; it only narrows. |
@@ -317,7 +318,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 
 ## Tier totals
 
-- `auth`: 55
+- `auth`: 56
 - `internal`: 55
 - `mfa`: 5
 - `org_admin`: 60

@@ -43,6 +43,12 @@ type Identity struct {
 	// UserID.
 	ActingAsUserID uuid.UUID
 
+	// NotAfter, when set on an identity being minted, is the moment its
+	// session ends on its own: no access token is signed past it, so a bearer
+	// never outlives the session it belongs to (a refresh near the absolute
+	// lifetime, a role view opened from a session about to end).
+	NotAfter time.Time
+
 	// AccessOnly marks a session that is never refreshed: its token is its
 	// whole life, capped like an impersonation window's, and its row carries no
 	// refresh token. A role view is one (MintRoleView).

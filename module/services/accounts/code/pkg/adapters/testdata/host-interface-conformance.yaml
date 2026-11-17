@@ -57,7 +57,7 @@ organizations:
       - {email: owner@acme.test, role: owner}
       - {email: no-roles@acme.test, role: member}
       - {email: ivy@acme.test, role: member}
-      - {email: store-admin@acme.test, role: member}
+      - {email: store-admin@acme.test, role: admin}
       - {email: store-reader@acme.test, role: member}
       - {email: admin-holder@acme.test, role: member}
       - {email: team-member@acme.test, role: member}

@@ -61,7 +61,7 @@ var personMintEntryPoints = map[string]map[string]string{
 		"Current": core, "Install": core, "Review": core, "GrantRole": core, "RevokeRole": core, "ListRoleGrants": core, "List": core, "ListHeld": core,
 	},
 	"OfferService":   {"ListOffers": core, "ReviewOffer": core},
-	"SessionService": {"SignIn": none, "Current": none, "OpenRoleView": core, "OpenTeamCast": core, "ListCastableTeams": core, "ListFixturePeople": none},
+	"SessionService": {"SignIn": none, "Current": none, "End": none, "OpenRoleView": core, "OpenTeamCast": core, "ListCastableTeams": core, "ListFixturePeople": none},
 }
 
 func TestEveryPersonMintEntryPointHonoursOrRefusesARoleView(t *testing.T) {
@@ -131,7 +131,6 @@ func testRoleViewRefusesOrganizationMints(t *testing.T, conn grpc.ClientConnInte
 	require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
 	require.Contains(t, status.Convert(err).Message(), "this session views as")
 
-	testRoleViewHoldsNoPlatformRole(t, conn, person, view, store)
 	testRoleViewHoldsNoOrganizationRole(t, conn, person, viewing)
 
 	// The session it was opened from mints as before, and Current says it views nothing.
@@ -146,6 +145,9 @@ func testRoleViewRefusesOrganizationMints(t *testing.T, conn grpc.ClientConnInte
 	_, err = sessionv1.NewSessionServiceClient(conn).OpenRoleView(metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer not-a-token"),
 		&sessionv1.OpenRoleViewRequest{InstallationId: one.GetInstallation().GetId(), Roles: one.GetRoles()[:1]})
 	require.Error(t, err)
+
+	// Last: it changes the person's platform role, which ends their sessions.
+	testRoleViewHoldsNoPlatformRole(t, conn, person, view, store)
 }
 
 // testTeamCastHoldsNothingOfItsPerson casts the administrator person calls as
@@ -208,14 +210,15 @@ func testTeamCastHoldsNothingOfItsPerson(t *testing.T, conn grpc.ClientConnInter
 	_, err = gen.NewInvitationServiceClient(conn).ListInvitations(casting, &gen.ListInvitationsRequest{OrgId: fixtureOrganization})
 	require.Equal(t, codes.PermissionDenied, status.Code(err), "an administrator cast onto a team lists no invitation: %v", err)
 	require.Contains(t, status.Convert(err).Message(), "acts as team")
-	testRoleViewHoldsNoPlatformRole(t, conn, person, cast, store)
-
 	// A cast is never recast, and the session it was opened from is untouched.
 	_, err = sessions.OpenTeamCast(casting, &sessionv1.OpenTeamCastRequest{TeamId: team})
 	require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
 	require.Contains(t, status.Convert(err).Message(), "already cast")
 	_, err = gen.NewInvitationServiceClient(conn).ListInvitations(person, &gen.ListInvitationsRequest{OrgId: fixtureOrganization})
 	require.NoError(t, err, "the session the cast was opened from administers as before")
+
+	// Last: it changes the person's platform role, which ends their sessions.
+	testRoleViewHoldsNoPlatformRole(t, conn, person, cast, store)
 }
 
 // The closed list of what a view may do must stay true to the descriptors: every
@@ -257,6 +260,13 @@ func testRoleViewHoldsNoPlatformRole(t *testing.T, conn grpc.ClientConnInterface
 	t.Helper()
 	ctx := context.Background()
 	personID := view.GetPersonId()
+	// The session the view was opened from is read before the role changes: a
+	// platform role granted or revoked ends the person's sessions (the
+	// invalidation trigger revokes their rows), and an ended session is
+	// unauthenticated wherever one is read. The lookups below are made as the
+	// two sessions' verified identities, which is what every platform gate reads.
+	parent, err := sessionv1.NewSessionServiceClient(conn).Current(person, &sessionv1.CurrentRequest{})
+	require.NoError(t, err)
 	require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
 		return store.GrantPlatformRole(ctx, personID, "super_admin", personID)
 	}))
@@ -264,8 +274,6 @@ func testRoleViewHoldsNoPlatformRole(t *testing.T, conn grpc.ClientConnInterface
 		_ = store.WithControlPlane(context.Background(), func(ctx context.Context) error { return store.RevokePlatformRole(ctx, personID) })
 	})
 
-	parent, err := sessionv1.NewSessionServiceClient(conn).Current(person, &sessionv1.CurrentRequest{})
-	require.NoError(t, err)
 	identityOf := func(base context.Context, session string) context.Context {
 		sessionID, err := uuid.Parse(session)
 		require.NoError(t, err)

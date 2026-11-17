@@ -21,16 +21,18 @@ import (
 )
 
 // testOwnSessionOwnerRule drives accounts' own person Work Context mints in
-// the conformance harness's composition: documents checks owners of
-// example-records; model checks owners of its datasets and shares its
-// profiles; records and org-directory check no owner. The administrator holds every kind asked here
-// by a role the fixture grants, so whatever is refused here is refused
-// by the core's owner rule (RBAC-4a), named as the core names it.
+// the conformance harness's composition: documents and conformance-agent
+// declare no roles; records, org-directory and model are module pages
+// declaring roles, and the administrator holds the admin role on each. The
+// administrator also holds every kind asked here by an organisation role the
+// fixture grants, so whatever is refused here is refused by the core's rule
+// that an organisation role reaches no module, named as the core names it.
 //
 // credential is a module workload's projected credential; deliver delivers a
 // module and installs it at both organizations; page is a module page's
-// frontend.
-func testOwnSessionOwnerRule(t *testing.T, conn grpc.ClientConnInterface, admin context.Context, credential func(string) string, deliver func(conformanceModule), page *solutionhost.Frontend) {
+// frontend; seat grants the administrator a role on a module page's
+// installation.
+func testOwnSessionOwnerRule(t *testing.T, conn grpc.ClientConnInterface, admin context.Context, credential func(string) string, deliver func(conformanceModule), page *solutionhost.Frontend, seat func(target, role string)) {
 	contexts := gen.NewWorkContextServiceClient(conn)
 	scope := func(kind string, actions ...string) *gen.WorkContextScope {
 		return &gen.WorkContextScope{ResourceKind: kind, Actions: actions}
@@ -38,12 +40,13 @@ func testOwnSessionOwnerRule(t *testing.T, conn grpc.ClientConnInterface, admin 
 	start := func(audience string, scopes ...*gen.WorkContextScope) (*gen.IssuedWorkContext, error) {
 		return contexts.StartTask(admin, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(), Audience: audience, AuthorityScopes: scopes})
 	}
-	carried, refusedByRule := carriedKinds, refusedByOwnerRule
+	carried, refusedByRule := carriedKinds, refusedAtNoRoles
 	exchangeAs := func(module, binding, parent string) (*gen.IssuedWorkContext, error) {
 		return moduleExchange(t, credential, module, binding, parent)
 	}
-	// A parent at records, which checks no owner, carrying an owned kind of
-	// each module that checks owners and the model's shared profiles.
+	// A parent at records, a module page the administrator holds the admin
+	// role on, carrying its own kind and kinds of other modules, which are
+	// inert at records.
 	parent, err := start("records", scope("example-entries", "read"), scope("example-records", "read"),
 		scope("modelservice.datasets", "read"), scope("modelservice.profiles", "read"))
 	require.NoError(t, err)
@@ -51,25 +54,25 @@ func testOwnSessionOwnerRule(t *testing.T, conn grpc.ClientConnInterface, admin 
 	t.Run("StartTask", func(t *testing.T) {
 		_, err := start("documents", scope("example-records", "read"))
 		refusedByRule(t, err, "documents")
-		_, err = start("model", scope("modelservice.profiles", "read"), scope("modelservice.datasets", "read"))
-		refusedByRule(t, err, "model")
+		_, err = start("conformance-agent", scope("conformance-agent.conversation", "read"))
+		refusedByRule(t, err, "conformance-agent")
 
+		held, err := start("records", scope("example-entries", "read", "write"))
+		require.NoError(t, err, "a module page, on the role held on its installation")
+		require.Equal(t, []string{"example-entries"}, carried(t, held))
 		shared, err := start("model", scope("modelservice.profiles", "invoke", "read"))
-		require.NoError(t, err, "a kind the module declares shared")
+		require.NoError(t, err, "what the model's admin role holds")
 		require.Equal(t, []string{"modelservice.profiles"}, carried(t, shared))
-		blind, err := start("records", scope("example-entries", "read", "write"))
-		require.NoError(t, err, "a module that checks no owner")
-		require.Equal(t, []string{"example-entries"}, carried(t, blind))
+		_, err = start("model", scope("modelservice.profiles", "read"), scope("modelservice.datasets", "read"))
+		require.Equal(t, codes.PermissionDenied, status.Code(err), "the model's admin role names no dataset, whatever the organisation role does: %v", err)
 	})
 
 	t.Run("StartTask through an operation binding", func(t *testing.T) {
-		// documents' model binding invokes the profiles and reads the datasets;
-		// through a module with no roles the person holds at the model only
-		// what their own session holds there.
-		issued, err := contexts.StartTask(admin, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(),
+		// documents declares no roles: a person's own session holds nothing
+		// there, so nothing is projected through its binding either.
+		_, err := contexts.StartTask(admin, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(),
 			Audience: "documents", OperationBindings: []string{"model"}})
-		require.NoError(t, err)
-		require.Equal(t, []string{"modelservice.profiles"}, carried(t, issued))
+		require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
 	})
 
 	t.Run("StartRootSession", func(t *testing.T) {
@@ -80,14 +83,14 @@ func testOwnSessionOwnerRule(t *testing.T, conn grpc.ClientConnInterface, admin 
 		_, err := root(parent.GetToken(), "documents")
 		refusedByRule(t, err, "documents")
 		_, err = root(parent.GetToken(), "model")
-		refusedByRule(t, err, "model")
+		require.Equal(t, codes.PermissionDenied, status.Code(err), "the parent carries the model's datasets, which the admin role there does not hold: %v", err)
 
 		profiles, err := start("records", scope("modelservice.profiles", "read"))
 		require.NoError(t, err)
 		_, err = root(profiles.GetToken(), "model")
-		require.NoError(t, err, "a kind the module declares shared")
+		require.NoError(t, err, "what the role on the model's installation holds")
 		_, err = root(parent.GetToken(), "org-directory")
-		require.NoError(t, err, "a module that checks no owner")
+		require.NoError(t, err, "a module page the person holds a role on; the kinds it does not serve are inert there")
 	})
 
 	t.Run("ExchangeAudience", func(t *testing.T) {
@@ -98,56 +101,43 @@ func testOwnSessionOwnerRule(t *testing.T, conn grpc.ClientConnInterface, admin 
 		_, err := exchange("documents", scope("example-records", "read"))
 		refusedByRule(t, err, "documents")
 		_, err = exchange("model", scope("modelservice.datasets", "read"))
-		refusedByRule(t, err, "model")
+		require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
 
 		shared, err := exchange("model", scope("modelservice.profiles", "read"))
-		require.NoError(t, err, "a kind the module declares shared")
+		require.NoError(t, err, "what the role on the model's installation holds")
 		require.Equal(t, []string{"modelservice.profiles"}, carried(t, shared))
-		blind, err := exchange("org-directory", scope("example-entries", "read"), scope("example-records", "read"),
-			scope("modelservice.datasets", "read"), scope("modelservice.profiles", "read"))
-		require.NoError(t, err, "a module that checks no owner")
-		require.ElementsMatch(t, []string{"example-entries", "example-records", "modelservice.datasets", "modelservice.profiles"}, carried(t, blind))
 	})
 
-	// A module exchanging the person's own session through its binding: the
-	// module declares no roles, so the child carries at the binding's audience
-	// only what the person's own session holds there.
+	// A module that declares no roles exchanging a person's own session
+	// through its binding carries nothing of the person's own to a module
+	// that declares no roles either.
 	t.Run("a module's binding exchange of a person's own session", func(t *testing.T) {
-		// documents' model binding invokes the profiles and reads the datasets.
-		projected, err := contexts.StartTask(admin, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(),
-			Audience: "documents", OperationBindings: []string{"model"}})
-		require.NoError(t, err)
-		child, err := exchangeAs("documents", "model", projected.GetToken())
-		require.NoError(t, err, "the binding a projection was made for is still usable")
-		require.Equal(t, []string{"modelservice.profiles"}, carried(t, child))
-
-		named, err := start("documents", scope("modelservice.profiles", "invoke", "read"), scope("modelservice.datasets", "read"))
-		require.NoError(t, err)
-		child, err = exchangeAs("documents", "model", named.GetToken())
-		require.NoError(t, err)
-		require.Equal(t, []string{"modelservice.profiles"}, carried(t, child), "a kind named at an audience that does not serve it reaches no owner's data")
-
-		// A module whose one binding reads only an owned kind of the model.
-		deliver(conformanceModule{alias: "conformance-dataset-reader", ownerUnaware: true,
-			ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-dataset-reader.task", "read")},
-			bindings: []solutionhost.AuthorityBinding{{ID: "model", Audience: "model", Operations: map[string][]string{"invoke": {"modelservice.datasets:read"}}}}})
-		datasets, err := start("conformance-dataset-reader", scope("modelservice.datasets", "read"))
-		require.NoError(t, err)
-		_, err = exchangeAs("conformance-dataset-reader", "model", datasets.GetToken())
-		refusedByRule(t, err, "model")
+		// A module whose one binding reads a kind documents serves; both
+		// declare no roles. The person's own session is not minted at it.
+		deliver(conformanceModule{alias: "conformance-record-reader", ownerUnaware: true,
+			ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-record-reader.task", "read")},
+			bindings: []solutionhost.AuthorityBinding{{ID: "documents", Audience: "documents", Operations: map[string][]string{"invoke": {"example-records:read"}}}}})
+		_, err := start("conformance-record-reader", scope("example-records", "read"))
+		refusedByRule(t, err, "conformance-record-reader")
 	})
 
-	// A role-gated audience is decided by its roles, so the rule leaves it as
-	// it was: a module page declaring roles, checking owners of its notes, and
-	// reading example records at documents through its binding.
-	t.Run("a role-gated audience is exempt", func(t *testing.T) {
+	// A role-gated audience is decided by its roles: a module page declaring
+	// roles, checking owners of its notes, and reading example records at
+	// documents through its binding. Without a role on its installation the
+	// administrator is refused there; with one, issued what the role holds.
+	t.Run("a role-gated audience is decided by the role held on its installation", func(t *testing.T) {
 		const module = "conformance-owner-page"
 		note := wireScope(module+".note", "read")
 		deliver(conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{note}, page: page, installationRole: domain.NoInstallationRole,
-			roles:    map[string][]*authorityv1.WorkScopeV1{"admin": {note}, "user": {note}},
+			roles:    map[string][]*authorityv1.WorkScopeV1{"admin": {note, wireScope("example-records", "read")}, "user": {note}},
 			bindings: []solutionhost.AuthorityBinding{{ID: "documents", Audience: "documents", Operations: map[string][]string{"invoke": {"example-records:read"}}}}})
+		_, err := start(module, scope(module+".note", "read"))
+		require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
+		require.Contains(t, status.Convert(err).Message(), "holds no role on "+module, "an organisation role, an administrator's included, reaches no module page")
+
+		seat(module, domain.AdminRole)
 		own, err := start(module, scope(module+".note", "read"))
-		require.NoError(t, err, "its own owned kind on a person's own session")
+		require.NoError(t, err, "its own kind, on the role held on its installation")
 		require.Equal(t, []string{module + ".note"}, carried(t, own))
 
 		through, err := contexts.StartTask(admin, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(),
@@ -178,12 +168,13 @@ func carriedKinds(t *testing.T, issued *gen.IssuedWorkContext) []string {
 	return kinds
 }
 
-// refusedByOwnerRule: err is the core's owner-rule refusal at audience.
-func refusedByOwnerRule(t *testing.T, err error, audience string) {
+// refusedAtNoRoles: err is the core's refusal of a person's own session at
+// audience, a module that declares no roles.
+func refusedAtNoRoles(t *testing.T, err error, audience string) {
 	t.Helper()
 	require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
 	require.Contains(t, status.Convert(err).Message(),
-		audience+" checks owners, so an organization role reaches none of its owned data on a person's own session")
+		audience+" declares no roles, so a person's own session holds nothing there")
 }
 
 // moduleExchange is module exchanging parent through its binding, presenting
@@ -223,10 +214,13 @@ var installedActorModule = conformanceModule{alias: "conformance-dataset-actor",
 		{ID: "datasets", Audience: "model", Operations: map[string][]string{"invoke": {"modelservice.datasets:read"}}},
 	}}
 
-// testInstalledActorOwnSession: an installed module_actor binding of a module
-// that checks no owner, exchanging a person's own session, is a hop held at
-// its audience as the ordinary arm's is. The case writes an envelope, which
-// becomes every module's ceiling, so the harness runs it last.
+// testInstalledActorOwnSession: a module that declares no roles, with an
+// installed module_actor binding, holds nothing for a person's own session,
+// so no person's capability exists there for its binding to exchange; and a
+// module this host serves that the core no longer composes refuses a person's
+// own mint as unknown rather than reading as one the rule leaves alone. The
+// case writes an envelope, which becomes every module's ceiling, so the
+// harness runs it last.
 func testInstalledActorOwnSession(t *testing.T, h installedActorHarness) {
 	module := installedActorModule.alias
 	actor := func(kinds ...string) string {
@@ -240,18 +234,13 @@ func testInstalledActorOwnSession(t *testing.T, h installedActorHarness) {
 		`"model":{"grant":{"tenant":%q,"resources":["modelservice.profiles","modelservice.datasets","modelservice.templates"]}}`,
 		module, fixtureOrganization, module+".task", actor("modelservice.datasets", "modelservice.profiles"), actor("modelservice.datasets"), fixtureOrganization))
 
-	// The module serves neither kind, so the person's own session carries both there.
-	parent, err := h.contexts.StartTask(h.admin, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(), Audience: module,
+	// The module declares no roles: a person's own session holds nothing there.
+	_, err := h.contexts.StartTask(h.admin, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(), Audience: module,
 		AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "modelservice.profiles", Actions: []string{"read"}}, {ResourceKind: "modelservice.datasets", Actions: []string{"read"}}}})
-	require.NoError(t, err)
-	child, err := moduleExchange(t, h.credential, module, "model", parent.GetToken())
-	require.NoError(t, err, "the shared kind is issued through the installed binding")
-	require.Equal(t, []string{"modelservice.profiles"}, carriedKinds(t, child))
-	_, err = moduleExchange(t, h.credential, module, "datasets", parent.GetToken())
-	refusedByOwnerRule(t, err, "model")
+	refusedAtNoRoles(t, err, module)
 
 	// The core no longer composes the module the host still serves: what it
-	// checks is unknown, so a person's own mint there is refused.
+	// declares is unknown, so a person's own mint there is refused.
 	require.NoError(t, h.withdraw(module))
 	_, err = h.contexts.StartTask(h.admin, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(), Audience: module,
 		AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: module + ".task", Actions: []string{"read"}}}})
@@ -264,7 +253,7 @@ func testInstalledActorOwnSession(t *testing.T, h installedActorHarness) {
 	require.False(t, h.registered("documents"), "the last envelope omits documents from the registry")
 	_, err = h.contexts.StartTask(h.admin, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(), Audience: "documents",
 		AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "example-records", Actions: []string{"read"}}}})
-	refusedByOwnerRule(t, err, "documents")
+	refusedAtNoRoles(t, err, "documents")
 	require.NoError(t, h.withdraw("documents"))
 	_, err = h.contexts.StartTask(h.admin, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(), Audience: "documents",
 		AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "example-records", Actions: []string{"read"}}}})

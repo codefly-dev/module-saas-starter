@@ -97,3 +97,27 @@ func TestARoleViewOpenedAgainIsCappedAndReadsAsTheSameViewer(t *testing.T) {
 	require.NotNil(t, firstViewer["auth_time"])
 	require.Equal(t, firstViewer, againViewer, "the view opened again reads as the same viewer")
 }
+
+// A session says when it ends on its own, and no bearer of it is accepted
+// after that: an access token is never signed past its session's absolute
+// expiry, whether a refresh rotates it or a role view (or a cast) is opened
+// from it. So a view ends no later than the session it was opened from.
+func TestNoAccessTokenOutlivesTheSessionItBelongsTo(t *testing.T) {
+	ctx := context.Background()
+	m, store := newMinter(t)
+	host := mintHostSession(t, m, store)
+	// The host session ends in one minute; an access token otherwise lasts three.
+	ends := time.Now().Add(time.Minute)
+	store.records[0].ExpiresAt, store.records[0].IdleExpiresAt = ends, ends
+
+	view, err := m.MintRoleView(ctx, host.UserID, host.ID, uuid.Must(uuid.NewV7()))
+	require.NoError(t, err)
+	require.False(t, view.AccessTokenExpiresAt.After(ends), "a role view ends no later than the session it was opened from: %s after %s", view.AccessTokenExpiresAt, ends)
+	row := store.records[len(store.records)-1]
+	require.False(t, row.ExpiresAt.After(ends.Add(time.Minute)), "and its row ends with its token, within the verifier's leeway")
+
+	_, switched, err := m.SwitchOrganization(ctx, host.UserID, host.ID, host.OrgID)
+	if err == nil {
+		require.False(t, switched.After(ends), "an organisation switch signs no token past the session's end")
+	}
+}

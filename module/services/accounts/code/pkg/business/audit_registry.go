@@ -400,6 +400,7 @@ const (
 	EventAuthorityRoleGranted                  EventType = "saas.authority.role_granted"
 	EventAuthorityRoleViewOpened               EventType = "saas.authority.role_view_opened"
 	EventAuthorityRoleRevoked                  EventType = "saas.authority.role_revoked"
+	EventAuthoritySessionEnded                 EventType = "saas.authority.session_ended"
 	EventAuthorityResourceAttached             EventType = "saas.authority.resource_attached"
 	EventAuthorityResourceDetached             EventType = "saas.authority.resource_detached"
 	EventAuthorityResourceTransferred          EventType = "saas.authority.resource_transferred"
@@ -730,6 +731,7 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventAuthorityInstallationReachUnreached, CategoryAccess, "A delivery left what an installation's target names through a binding unreached; the delivery stands and it grants nothing there until a delivery reaches it again.", authorityChangeFields()...),
 	mutation(EventAuthorityInstallationReachRestored, CategoryAccess, "A delivery reached again everything an installation's target names through a binding.", authorityChangeFields()...),
 	mutation(EventAuthorityRoleViewOpened, CategoryAccess, "A person fixed a session to act as some of the roles they hold on an installation; the session only narrows and is never widened.", authorityChangeFields()...),
+	mutation(EventAuthoritySessionEnded, CategoryAccess, "A person ended a session (a sign-out, or leaving a role view or a cast), and with it every session opened from it.", authorityChangeFields()...),
 	mutation(EventAuthorityRoleGranted, CategoryAccess, "A solution role was granted on an installation to a person or a team.", authorityChangeFields()...),
 	mutation(EventAuthorityRoleRevoked, CategoryAccess, "A solution role grant was revoked; its subject's capabilities through the installation ended.", authorityChangeFields()...),
 	mutation(EventAuthorityResourceAttached, CategoryAccess, "A resource created through an installation was attached to it by the kind's serving module.", authorityChangeFields()...),
@@ -1424,5 +1426,5 @@ func authorityChangeFields() []PayloadField {
 	return optionalFields([]PayloadField{str("organization"), str("actor"), str("subject"), str("target"), str("role"), str("person"), str("team"),
 		str("principal"), str("installed_by"), str("revision"), str("operation"), str("module"), str("purpose"), str("kind"), str("resource"),
 		str("from"), str("to"), str("store"), str("generation"), str("approved_generation"), str("widened"), str("agent_role_undeclared"),
-		str("delivered"), str("reach"), str("reach_unadopted"), str("unreached"), str("roles"), str("session"), str("cast_team"), str("held_by")})
+		str("delivered"), str("reach"), str("reach_unadopted"), str("unreached"), str("roles"), str("session"), str("cast_team"), str("held_by"), str("ended")})
 }

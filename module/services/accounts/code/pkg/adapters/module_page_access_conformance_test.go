@@ -744,12 +744,12 @@ func testModulePageRoleReachesThroughItsBinding(t *testing.T, h reviewedClosureH
 		_, err = through(authority.Person{ID: conformanceAlice, Organization: fixtureOrganization})
 		require.ErrorContains(t, err, "holds no role on "+page, "an administrator holding no role is refused like any member")
 		_, err = h.core.IssueForPerson(h.ctx, maya, authority.IssueRequest{Audience: store})
-		require.ErrorContains(t, err, "holds nothing at this audience", "on her own session, her own grants at the store decide")
+		require.ErrorContains(t, err, store+" declares no roles", "on her own session she holds nothing at the store: it is reached through the page's binding")
 	})
 
 	// The host's module edge names the page a call comes from, and the
 	// authority interface issues through the page's target's binding.
-	t.Run("a page's call on the module edge goes through its target's binding; an unbound module on the person's own access", func(t *testing.T) {
+	t.Run("a page's call on the module edge goes through its target's binding; a module it declares no binding to is refused", func(t *testing.T) {
 		const other = "conformance-reach-page-unbound"
 		deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: other, ceilings: []*authorityv1.WorkScopeV1{wireScope(other+".row", "read")}})
 		sess, err := sessionv1.NewSessionServiceClient(h.conn).SignIn(h.ctx, &sessionv1.SignInRequest{FixtureToken: "fixture-maya"})
@@ -778,7 +778,7 @@ func testModulePageRoleReachesThroughItsBinding(t *testing.T, h reviewedClosureH
 		_, err = issue(store, wireScope(row, "write"))
 		require.ErrorContains(t, err, `widens what its owner holds through binding "rows"`, "refused what the role lacks")
 		_, err = issue(other)
-		require.ErrorContains(t, err, "holds nothing at this audience", "a module the target declares no binding to is on the person's own access")
+		require.ErrorContains(t, err, "declares no binding to "+other, "a module the target declares no binding to is not reached from its page")
 		// Only the module edge names a page: a solution backend holding her
 		// bearer, or a module, cannot mint the page hop.
 		for _, actor := range []string{"", h.moduleCredential} {

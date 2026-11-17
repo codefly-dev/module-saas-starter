@@ -3,7 +3,7 @@
 accounts implements the host interfaces published by `codefly-dev/authority`:
 `codefly.dev/artifact@0.1.0`, `codefly.dev/authority@0.3.6`,
 `codefly.dev/composition@0.2.1`, `codefly.dev/installation@0.5.0` and
-`codefly.dev/session@0.5.0`, as `module/module.codefly.yaml` declares them. The
+`codefly.dev/session@0.6.0`, as `module/module.codefly.yaml` declares them. The
 local authority implements the same five on a laptop. The shared conformance
 suite (`libraries/conformance/go`) proves that the two agree, and the
 declaration gate (`module-package verify-host-interfaces`, under Proof below)
@@ -27,7 +27,7 @@ What accounts adds, and where:
 |---|---|
 | The core's records: modules, tombstones, the installations of every solution (a module's is accounts' own record), each consent's approved declaration per generation and offer digest (migrations 68, 78), role grants, delegations, epochs, owner-aware revisions, consumed nonces | migration 56 (`authority_core_*`, control-plane relations), migrations 68 and 78 (`authority_core_approved_modules`) and `pkg/infra/postgres_authority_core.go` |
 | A module declaring no roles is installed by this host's own consent and its installation is accounts' own record (`installations`, kind `module`): an administrator's install, or a closure's, within the module envelope, retired by an uninstall or by a ceiling that no longer allows the organization. The core is configured with `HostInstallsModules`, so it installs no such module itself and reads those records live, with what each consent allows: an installation whose consent allows no capability is not active for the core, and the bindings it allows (the module's grant within the envelope, intersected with the consent, as the native mint reads it) bound every issue through them (`Installation.Bindings`). The revision the core seals to is accounts' own revision, plus the core's raise when a redelivery narrows the module or a detachment ends a grant (`authority_core_module_revisions`, which also keeps what the core attached to the installation, migration 71), plus the committed envelope revision, so a narrowed consent and an envelope write each end what was issued before them | `pkg/infra/postgres_authority_core.go` (`moduleInstallations`), `pkg/business/authority_core_consent.go` |
-| Identity, read only: organizations, memberships, teams, and the organization roles a member holds, from accounts' RBAC (role assignments and live scope grants, directly or through a team, and the membership's administrator role) | `pkg/infra/postgres_authority_core.go` (`Member`, `OrgRole`) |
+| Identity, read only: organizations, memberships, teams, and the name of the organisation role a member administers by (`admin`, `owner`) and nothing else. An organisation role decides administration only and reaches no module, so accounts' RBAC (role assignments, scope grants) is never handed to the core: a person reaches a module only through a role on an installation | `pkg/infra/postgres_authority_core.go` (`Member`, `memberRoles`) |
 | Revocation levers shared with the product: the organization's authorization revision is accounts' own, and a person's epoch includes their principal revisions | same file |
 | Who the caller is: the session the perimeter verified (`signedInPerson`), or a workload credential the execution reviewer reviewed (`workload`), bound to the organization the module envelope pins the module to | `pkg/adapters/host_interface.go` |
 | The signing key the core signs with, the Work Context key `Keys` publishes | `pkg/business/authority_core.go` (`ConfigureAuthorityCore`) |
@@ -161,12 +161,46 @@ behavior-preserving rollback.
   (migration 61). The same content can have independent approvals under two
   policies; neither approval authorizes or revokes the other. An omitted
   artifact identity is rejected by the core as malformed.
-- **session**: `SignIn` (fixture sign-in), `Current`, `ListFixturePeople`:
+- **session** (0.6.0): `SignIn` (fixture sign-in), `Current`, `End`,
+  `OpenRoleView`, `OpenTeamCast`, `ListCastableTeams`, `ListFixturePeople`:
   accounts' own sessions. Fixture listing names the selected organization from
   its current stored record through the same scoped read as sign-in. It opens
   no session; disabled fixture authentication reads and lists nobody, and an
   organization read failure refuses the listing rather than returning a partial
   list or an empty display name.
+  - **Expiry.** Every `Session` answered states `expires_at_unix`: the
+    absolute expiry of the session's row (`sessions.expires_at`), which a
+    refresh never slides; a role view's or a cast's is its own row's, which is
+    its token's. No access token is signed past it (`auth.Identity.NotAfter`),
+    so a role view or a cast ends no later than the session it was opened
+    from, and a refresh near the absolute lifetime signs a shorter token.
+  - **An ended or expired session is refused wherever a session is read.**
+    `Current`, a person's `Issue` and every other call that acts as the
+    signed-in person read the session from this host's own record
+    (`requireOpenSession`, `business.Service.SessionEndsAt`), not from the
+    bearer alone, so a revoked row or one past its expiry is `Unauthenticated`
+    whatever the perimeter's revocation markers still say. One revocation is
+    not an end: a member's role change in the organisation revokes the row
+    (`organization_membership_changed`, so it is never refreshed) and leaves
+    the session standing, answered by the membership read live, as the shared
+    suite requires of a host (`Lifecycle.SetAdministrator`). A removal from
+    the organisation, a platform-role or factor change, a suspension and a
+    sign-out end it.
+  - **End** revokes every standing row of the session's family and of every
+    session opened from it, transitively (the core's role-view records name
+    each view's parent), records `saas.authority.session_ended` in the same
+    transaction, then writes the access-revocation markers. A marker that
+    cannot be written is answered `Unavailable`, never as an ended session.
+    The callers `OpenRoleView` refuses (an API key, an impersonated session,
+    a resource-confined credential) are refused here.
+  - **Grant epoch.** `grant_epoch` is a digest of what the core answers the
+    session holds now, the derivation the local authority states: the person
+    (organisation role, teams, cast), each installation the session holds a
+    role on with its revision, its target's generation and the roles held, and
+    each installation by composition of a module declaring no roles. It is
+    read in one snapshot on every `Session` answered; this host keeps no
+    counter that moves on every one of those changes (a role grant moves no
+    revision).
 
 ## Proof
 
