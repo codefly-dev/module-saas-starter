@@ -143,7 +143,7 @@ func TestRedeliveryKeepsSolutionEntitled(t *testing.T) {
 		approved(2)
 	})
 	t.Run("a redelivery asking more leaves the installation healthy on its consent, offering an upgrade", func(t *testing.T) {
-		deliver(3, map[string][]*basev0.WorkScopeV1{domain.UserRole: read(page, draft), "author": {{ResourceKind: page, Actions: []string{"read", "write"}}}})
+		deliver(3, map[string][]*basev0.WorkScopeV1{domain.UserRole: read(page, draft)})
 		stands(2, true)
 		require.Equal(t, 1, grants(inst.ID))
 	})
