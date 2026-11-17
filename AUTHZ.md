@@ -119,7 +119,9 @@ one made from the host's own session.
   survive the window and the target's own password reset; durable credentials
   and delivery channels (API keys, agent principals, webhook subscriptions and
   secrets, work-context tokens); grants of authority (roles, scopes, shares,
-  org and team membership, invitations); and destruction or reconfiguration of
+  org and team membership, invitations, installations and the roles and teams
+  set up with them, delegations to a module, a provider group bound onto a
+  team, a new organization); and destruction or reconfiguration of
   the principal itself (`DeleteUser`, `RequestDeletion`, SSO setup and disable).
 
   Reading tenant *content* is what impersonation is for, so ordinary content

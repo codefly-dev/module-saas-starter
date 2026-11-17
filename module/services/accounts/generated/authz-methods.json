@@ -2955,7 +2955,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -2963,7 +2963,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/datasource.proto",
-      "policy_sha256": "c65d0586be3b01d1d6efa9752f58dfcaab8df415d43ec218dffb04c389e0fe93",
+      "policy_sha256": "68fc6fa3e32086516676f82bfe42aeace9d2f402c1b69d34d90851b5ad700358",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -3181,7 +3181,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_member",
       "owner": {
@@ -3189,7 +3189,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/datasource.proto",
-      "policy_sha256": "4cf3787df140003cba96fd0a1ced1babaed19f94cd5691f74fb43312c9fc1bc5",
+      "policy_sha256": "ea5d10dc4f6344f2b3287f785f3fae45ef428c54464897bbb94ac3212b39e7b0",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -4079,7 +4079,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -4087,7 +4087,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/datasource.proto",
-      "policy_sha256": "133e20f5ca467f6eea5a31285fd6fb7fc3328e833f41f5caaa152f607f7b7f74",
+      "policy_sha256": "785f8a46570a09b6bb9efd7e9da73df01961283f23ed798c52c848d0dbcbb488",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -4169,7 +4169,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -4177,7 +4177,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/datasource.proto",
-      "policy_sha256": "d658d313d1ed64a0e5493f089c8c2339c8e4c4bc714e3a10c4cd2ee963c2d3e7",
+      "policy_sha256": "7fc642b52eb61ae9206437d03bbd57dac3911213b474298f283a96fbaee58b81",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -4305,7 +4305,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -4313,7 +4313,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/delegations.proto",
-      "policy_sha256": "09931634771ddd7607ac12157e0f55b08894234bf81b188659590ba202f4d486",
+      "policy_sha256": "7655e7c62c66c822d1962458b0f3a7f26baf5b90cb4fd3f303f8b4a5d696d58f",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -4394,7 +4394,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_member",
       "owner": {
@@ -4402,7 +4402,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/delegations.proto",
-      "policy_sha256": "9f9023065c47c9a66cfe1d5893b78e28d36a08f377b078451d51eda61910d199",
+      "policy_sha256": "b0641800e24c38d99028a8c99d8dad99d6055fd2dcf2f8c996641108b95b4da6",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -4886,7 +4886,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_member",
       "owner": {
@@ -4894,7 +4894,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/installations.proto",
-      "policy_sha256": "f61231f943aab7161fd618dcb3f2a657ceed07720d2d6075431580e3fb0198ab",
+      "policy_sha256": "45f5c0c40dcb27e5fda20577cf8be89c138220412c0874d96c9170b56be95414",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -4931,7 +4931,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -4939,7 +4939,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/installations.proto",
-      "policy_sha256": "f44d4ffd9edf43aa97546d85433b347bfcaa1d5d3d870b0a6dbc2a65431b638e",
+      "policy_sha256": "6a2156e27eb8cd274eb2732b6777bf6cd358df27adf8a28976cffcad8145c081",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -5099,7 +5099,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -5107,7 +5107,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/installations.proto",
-      "policy_sha256": "e259b72e4c614317294f349748195b97379b956f162fdb7a4e2d6f603db27478",
+      "policy_sha256": "800a8fd2bff9b353338fe4c5e9dd50fe7ede5152cc23e0a7a34c18bb3ea0bf9b",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -5144,7 +5144,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -5152,7 +5152,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/installations.proto",
-      "policy_sha256": "9d2f469757039b1c657d8f26aa3882f120633ec7426eabc127bb7cbc7d4126fb",
+      "policy_sha256": "a8cb014d3aa33c019c65f387b895de72d1ec6c5d9ff5b481b2fdd25a373f55cd",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -5279,7 +5279,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -5287,7 +5287,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/installations.proto",
-      "policy_sha256": "4bf00644e5c97beff4095fc8bfff08c7f61f766118906438df4cbf58d81ba432",
+      "policy_sha256": "d062a75935cef40fcc82bc594ecdb7de1318ebc804d3a513fb094343f972776c",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -5324,7 +5324,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -5332,7 +5332,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/installations.proto",
-      "policy_sha256": "8c63edb387aca3cf7afbd955dcbb58520aab0845ab47f031b512a3b784b037de",
+      "policy_sha256": "3f14fea16eca65661d07599dd2fee917b70a268f55bdad967b3b1786f7df7550",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -5369,7 +5369,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -5377,7 +5377,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/installations.proto",
-      "policy_sha256": "6ba619197f162c34b6166baecc383ebad32232ed83d3f19b2d89f3e4bd2f046f",
+      "policy_sha256": "0a8f31d923f1990115862ef3e39ee4e650edf6b68bd3f73ecb7173ed9c57d092",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -5713,7 +5713,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -5721,7 +5721,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/invitations.proto",
-      "policy_sha256": "1491cf487becef06c647096306625727592ab8a86d97b7a20f5f503e04cc1c44",
+      "policy_sha256": "6d3eab64021c1526c312a3c3ad1d37091a0354dac025cc6fba06d90317cebbb2",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -7711,7 +7711,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "owner": {
@@ -7719,7 +7719,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/organizations.proto",
-      "policy_sha256": "8ca9237b86bf7846f70fa8356e8fbfca4b84db5755b0840bb04d7c1e61bf1ac1",
+      "policy_sha256": "705c491848352abdd1d586261ac7a635254c3d23c61224affd3c171f01a907f0",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {

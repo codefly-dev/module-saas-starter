@@ -1115,7 +1115,7 @@ const file_saas_accounts_v1_invitations_proto_rawDesc = "" +
 	"\x1fINVITATION_DELIVERY_STATUS_SENT\x10\x03\x12(\n" +
 	"$INVITATION_DELIVERY_STATUS_DELIVERED\x10\x04\x12&\n" +
 	"\"INVITATION_DELIVERY_STATUS_BOUNCED\x10\x05\x12)\n" +
-	"%INVITATION_DELIVERY_STATUS_COMPLAINED\x10\x062\x81\r\n" +
+	"%INVITATION_DELIVERY_STATUS_COMPLAINED\x10\x062\x83\r\n" +
 	"\x11InvitationService\x12\xed\x01\n" +
 	"\x10CreateInvitation\x12).saas.accounts.v1.CreateInvitationRequest\x1a*.saas.accounts.v1.CreateInvitationResponse\"\x81\x01\xc2\xf3\x18c\b\x02\x10\x04\x1a\x11invitations:write\"\x11invitations:write*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x1b\n" +
@@ -1125,10 +1125,10 @@ const file_saas_accounts_v1_invitations_proto_rawDesc = "" +
 	"\x10AcceptInvitation\x12).saas.accounts.v1.AcceptInvitationRequest\x1a*.saas.accounts.v1.AcceptInvitationResponse\"U\xc2\xf3\x180\b\x02\x10\x020\x01:\x1c\n" +
 	"\x18saas.invitation.accepted\x10\x02@\x01H\x04P\x04X\x03`\x01x\x02\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/invitations:accept\x12\xc9\x01\n" +
 	"\x0fListInvitations\x12(.saas.accounts.v1.ListInvitationsRequest\x1a).saas.accounts.v1.ListInvitationsResponse\"a\xc2\xf3\x18F\b\x02\x10\x04\x1a\x10invitations:read\"\x10invitations:read*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/invitations\x12\xe4\x01\n" +
-	"\x10ResendInvitation\x12).saas.accounts.v1.ResendInvitationRequest\x1a\x1c.saas.accounts.v1.Invitation\"\x86\x01\xc2\xf3\x18\\\b\x02\x10\x04\x1a\x11invitations:write\"\x11invitations:write*\b\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/invitations\x12\xe6\x01\n" +
+	"\x10ResendInvitation\x12).saas.accounts.v1.ResendInvitationRequest\x1a\x1c.saas.accounts.v1.Invitation\"\x88\x01\xc2\xf3\x18^\b\x02\x10\x04\x1a\x11invitations:write\"\x11invitations:write*\b\n" +
 	"\x02id\x10\x04\x18\x030\x01:\x1a\n" +
-	"\x16saas.invitation.resent\x10\x02@\x03H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02 :\x01*\"\x1b/v1/invitations/{id}:resend\x12\xdb\x01\n" +
+	"\x16saas.invitation.resent\x10\x02@\x03H\x04P\x03X\x03`\x01x\x02\x82\xd3\xe4\x93\x02 :\x01*\"\x1b/v1/invitations/{id}:resend\x12\xdb\x01\n" +
 	"\x13IssueInvitationLink\x12,.saas.accounts.v1.IssueInvitationLinkRequest\x1a-.saas.accounts.v1.IssueInvitationLinkResponse\"g\xc2\xf3\x18c\b\x02\x10\x04\x1a\x11invitations:write\"\x11invitations:write*\b\n" +
 	"\x02id\x10\x04\x18\x030\x01:\x1f\n" +
 	"\x1bsaas.invitation.link_issued\x10\x02@\x01H\x04P\x03X\x04`\x01x\x02\x12\xd6\x01\n" +

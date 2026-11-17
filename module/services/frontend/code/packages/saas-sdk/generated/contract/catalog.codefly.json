@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "",
       "path": "contract.binpb",
-      "digest": "sha256:e685551a02730cf3c79a67ea0e4cacf3eb26cb37baefbe8abea77676e7b80c5c",
+      "digest": "sha256:3d94c67d7d697acb77993e0fc2215fbd81c370b1efafc691f21619e985be89e1",
       "services": [
         {
           "name": "AccessibleScopeService",

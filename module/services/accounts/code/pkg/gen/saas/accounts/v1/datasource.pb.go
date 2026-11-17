@@ -8311,7 +8311,7 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"+SOURCE_DELEGATION_REVOCATION_MEMBER_REMOVED\x10\x04\x120\n" +
 	",SOURCE_DELEGATION_REVOCATION_PERMISSION_LOST\x10\x05\x12.\n" +
 	"*SOURCE_DELEGATION_REVOCATION_USER_INACTIVE\x10\x06\x120\n" +
-	",SOURCE_DELEGATION_REVOCATION_BINDING_CHANGED\x10\a2\xb19\n" +
+	",SOURCE_DELEGATION_REVOCATION_BINDING_CHANGED\x10\a2\xb99\n" +
 	"\x11DatasourceService\x12\xb9\x03\n" +
 	"\x1cPruneSourceOperationReceipts\x125.saas.accounts.v1.PruneSourceOperationReceiptsRequest\x1a6.saas.accounts.v1.PruneSourceOperationReceiptsResponse\"\xa9\x02\xc2\xf3\x18l\b\x02\x10\x03\x1a\x11datasource:invoke\"\x11datasource:invoke*\x0f\n" +
 	"\tsource_id\x10\x04\x18\x030\x01:#\n" +
@@ -8376,13 +8376,13 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x06org_id\x10\x02\x18\x010\x01:$\n" +
 	" saas.datasource.account_unlinked\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\xa3\x01\n" +
 	"\x16GetDatasourceDirectory\x12/.saas.accounts.v1.GetDatasourceDirectoryRequest\x1a0.saas.accounts.v1.GetDatasourceDirectoryResponse\"&\xc2\xf3\x18\"\b\x02\x10\x04*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x02X\x03`\x01\x12\xb7\x01\n" +
-	"\x13BindDatasourceGroup\x12,.saas.accounts.v1.BindDatasourceGroupRequest\x1a-.saas.accounts.v1.BindDatasourceGroupResponse\"C\xc2\xf3\x18?\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x02X\x03`\x01\x12\xb9\x01\n" +
+	"\x13BindDatasourceGroup\x12,.saas.accounts.v1.BindDatasourceGroupRequest\x1a-.saas.accounts.v1.BindDatasourceGroupResponse\"E\xc2\xf3\x18A\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x1f\n" +
-	"\x1bsaas.datasource.group_bound\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\xbf\x01\n" +
-	"\x15UnbindDatasourceGroup\x12..saas.accounts.v1.UnbindDatasourceGroupRequest\x1a/.saas.accounts.v1.UnbindDatasourceGroupResponse\"E\xc2\xf3\x18A\b\x02\x10\x04*\f\n" +
+	"\x1bsaas.datasource.group_bound\x10\x02@\x01H\x04P\x02X\x03`\x01x\x02\x12\xc1\x01\n" +
+	"\x15UnbindDatasourceGroup\x12..saas.accounts.v1.UnbindDatasourceGroupRequest\x1a/.saas.accounts.v1.UnbindDatasourceGroupResponse\"G\xc2\xf3\x18C\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:!\n" +
-	"\x1dsaas.datasource.group_unbound\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\xc0\x01\n" +
+	"\x1dsaas.datasource.group_unbound\x10\x02@\x01H\x04P\x02X\x03`\x01x\x02\x12\xc0\x01\n" +
 	"\x15ClaimDatasourceDomain\x12..saas.accounts.v1.ClaimDatasourceDomainRequest\x1a/.saas.accounts.v1.ClaimDatasourceDomainResponse\"F\xc2\xf3\x18B\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\"\n" +
 	"\x1esaas.datasource.domain_claimed\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\xc4\x01\n" +
@@ -8393,14 +8393,14 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x06org_id\x10\x02\x18\x010\x01:\"\n" +
 	"\x1esaas.datasource.domain_removed\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\xa0\x01\n" +
 	"\x15ListSourceDelegations\x12..saas.accounts.v1.ListSourceDelegationsRequest\x1a/.saas.accounts.v1.ListSourceDelegationsResponse\"&\xc2\xf3\x18\"\b\x02\x10\x04*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x02X\x03`\x01\x12\xc7\x01\n" +
-	"\x16RevokeSourceDelegation\x12/.saas.accounts.v1.RevokeSourceDelegationRequest\x1a0.saas.accounts.v1.RevokeSourceDelegationResponse\"J\xc2\xf3\x18F\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x02X\x03`\x01\x12\xc9\x01\n" +
+	"\x16RevokeSourceDelegation\x12/.saas.accounts.v1.RevokeSourceDelegationRequest\x1a0.saas.accounts.v1.RevokeSourceDelegationResponse\"L\xc2\xf3\x18H\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:&\n" +
-	"\"saas.datasource.delegation.revoked\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\xeb\x01\n" +
-	"\x16DelegateSourceTriggers\x12/.saas.accounts.v1.DelegateSourceTriggersRequest\x1a0.saas.accounts.v1.DelegateSourceTriggersResponse\"n\xc2\xf3\x18j\b\x02\x10\x03*\f\n" +
+	"\"saas.datasource.delegation.revoked\x10\x02@\x01H\x04P\x02X\x03`\x01x\x02\x12\xed\x01\n" +
+	"\x16DelegateSourceTriggers\x12/.saas.accounts.v1.DelegateSourceTriggersRequest\x1a0.saas.accounts.v1.DelegateSourceTriggersResponse\"p\xc2\xf3\x18l\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:J\n" +
 	"\"saas.datasource.delegation.created\n" +
-	"\"saas.datasource.delegation.revoked\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\xb2\x01\n" +
+	"\"saas.datasource.delegation.revoked\x10\x02@\x01H\x04P\x02X\x03`\x01x\x02\x12\xb2\x01\n" +
 	"\x1bGetSourceTriggerDeclaration\x124.saas.accounts.v1.GetSourceTriggerDeclarationRequest\x1a5.saas.accounts.v1.GetSourceTriggerDeclarationResponse\"&\xc2\xf3\x18\"\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x02X\x03`\x01\x12\x83\x03\n" +
 	"\x0fReconcileSource\x12(.saas.accounts.v1.ReconcileSourceRequest\x1a).saas.accounts.v1.ReconcileSourceResponse\"\x9a\x02\xc2\xf3\x18j\b\x02\x10\x03\x1a\x11datasource:invoke\"\x11datasource:invoke*\x0f\n" +

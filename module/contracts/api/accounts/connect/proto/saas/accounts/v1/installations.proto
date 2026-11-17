@@ -423,6 +423,7 @@ service InstallationService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {post: "/v1/solution-installations" body: "*"};
   }
@@ -446,6 +447,7 @@ service InstallationService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {post: "/v1/solution-installations/module-pages/setup" body: "*"};
   }
@@ -472,6 +474,7 @@ service InstallationService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/installations"
@@ -502,6 +505,7 @@ service InstallationService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/installations/{installation_id}:uninstall"
@@ -530,6 +534,7 @@ service InstallationService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/installations/{installation_id}:narrow"
@@ -558,6 +563,7 @@ service InstallationService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/installations/{installation_id}:retry"
@@ -588,6 +594,7 @@ service InstallationService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/installations/{installation_id}:transferOwnership"

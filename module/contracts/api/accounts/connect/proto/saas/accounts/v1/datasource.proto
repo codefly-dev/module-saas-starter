@@ -2220,6 +2220,7 @@ service DatasourceService {
       request_sensitivity: SENSITIVITY_INTERNAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
   }
   // UnbindDatasourceGroup removes a group binding; the group then grants nothing.
@@ -2242,6 +2243,7 @@ service DatasourceService {
       request_sensitivity: SENSITIVITY_INTERNAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
   }
   // ClaimDatasourceDomain records a domain as pending and returns the DNS TXT record
@@ -2357,6 +2359,7 @@ service DatasourceService {
       request_sensitivity: SENSITIVITY_INTERNAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
   }
   // DelegateSourceTriggers records the delegation a declared release's
@@ -2401,6 +2404,7 @@ service DatasourceService {
       request_sensitivity: SENSITIVITY_INTERNAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
   }
   // GetSourceTriggerDeclaration reads the reconcile schedule this host declares

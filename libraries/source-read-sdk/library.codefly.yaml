@@ -12,10 +12,9 @@ sources:
       module: saas-starter
       service: accounts
       endpoint: authority
-      contract-digest: sha256:018929a853b2a4521087a782fc23df62bd08593d9e4575a26f67a9a20d9430d6
+      contract-digest: sha256:ac893f6bc205c891dd274ee0c3f4311041efca9f6137f2439770d705d4d8c59a
       services:
         - ModuleCapabilitiesService
 generated-by:
-    codefly: 0.1.221
-    companion: ghcr.io/codefly-dev/proto:0.0.18
+    companion: ghcr.io/codefly-dev/proto:0.0.30@sha256:2734bc42db9d76eb17e4125306964ba493a053a470705ac351920ff4194a665a
     facade: true
