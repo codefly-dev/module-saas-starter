@@ -98,6 +98,18 @@ func TestEveryDeclaredPermissionIsEnforcedOrNamesItsRule(t *testing.T) {
 			require.Equal(t, declared, enforced)
 			installEnforceService(t, permissionMemberStore(gen.OrgRole_ORG_ROLE_MEMBER))
 			err := enforceCentralPolicy(enforceActorCtx(), policy.FullMethod)
+			// A member holding no role holds the default member role and
+			// nothing more: a method all of whose permissions that role
+			// carries admits them, and every other one refuses them.
+			memberHoldsAll := true
+			for _, permission := range declared {
+				resource, action, _ := strings.Cut(permission, ":")
+				memberHoldsAll = memberHoldsAll && business.IsMemberPermission(resource, action)
+			}
+			if memberHoldsAll {
+				require.NoErrorf(t, err, "%s refused a member the default member role carries %v for", policy.FullMethod, declared)
+				return
+			}
 			require.Equalf(t, codes.PermissionDenied, status.Code(err),
 				"%s admitted a member who holds none of %v", policy.FullMethod, declared)
 		})
@@ -168,4 +180,44 @@ func callRecovering(call func(context.Context) error, ctx context.Context) (err 
 		}
 	}()
 	return call(ctx)
+}
+
+// An invited plain member holds no role assignment, and still opens "My
+// dashboards": the default member role, which every current member of an
+// organization holds through membership alone (business.IsMemberPermission),
+// carries dashboards:read. It carries nothing else of this service's: creating
+// or editing a dashboard, and sharing one, still take a role.
+func TestAPlainMemberReadsTheirDashboardsAndNothingElse(t *testing.T) {
+	for _, method := range []string{
+		"/saas.accounts.v1.DashboardService/ListDashboards",
+		"/saas.accounts.v1.DashboardService/GetDashboard",
+	} {
+		t.Run(strings.TrimPrefix(method, "/saas.accounts.v1."), func(t *testing.T) {
+			t.Run("a member holding no role is admitted", func(t *testing.T) {
+				installEnforceService(t, permissionMemberStore(gen.OrgRole_ORG_ROLE_MEMBER))
+				require.NoError(t, enforceCentralPolicy(enforceActorCtx(), method))
+			})
+			t.Run("someone outside the organization is refused", func(t *testing.T) {
+				installEnforceService(t, &permissionStore{enforceStore: &enforceStore{}, granted: map[string]bool{}})
+				require.Equal(t, codes.PermissionDenied, status.Code(enforceCentralPolicy(enforceActorCtx(), method)))
+			})
+		})
+	}
+	for method, permission := range map[string]string{
+		"/saas.accounts.v1.DashboardService/CreateDashboard": "dashboards:write",
+		"/saas.accounts.v1.DashboardService/UpdateDashboard": "dashboards:write",
+		"/saas.accounts.v1.DashboardService/DeleteDashboard": "dashboards:write",
+		"/saas.accounts.v1.DashboardService/ShareDashboard":  "dashboards:share",
+	} {
+		t.Run(strings.TrimPrefix(method, "/saas.accounts.v1.")+" still takes a role", func(t *testing.T) {
+			installEnforceService(t, permissionMemberStore(gen.OrgRole_ORG_ROLE_MEMBER))
+			err := enforceCentralPolicy(enforceActorCtx(), method)
+			require.Equal(t, codes.PermissionDenied, status.Code(err))
+			require.Contains(t, status.Convert(err).Message(), permission)
+		})
+	}
+	require.True(t, business.IsMemberPermission("dashboards", "read"))
+	for _, held := range [][2]string{{"dashboards", "write"}, {"dashboards", "share"}, {"audit", "read"}, {"api_keys", "read"}, {"*", "*"}} {
+		require.Falsef(t, business.IsMemberPermission(held[0], held[1]), "the default member role carries %s:%s", held[0], held[1])
+	}
 }

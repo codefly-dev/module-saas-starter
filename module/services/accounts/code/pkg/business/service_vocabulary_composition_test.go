@@ -34,7 +34,7 @@ func TestComposedPermissionVocabularyRejectsMalformedOrCollidingContributions(t 
 }
 
 func TestMemberPermissionIndexHoldsOnlyDeclaredContributedPairs(t *testing.T) {
-	index := memberPermissionIndex([]permissioncatalog.Permission{
+	index := memberPermissionIndex(nil, []permissioncatalog.Permission{
 		{Name: "example.jobs:list", Resource: "example.jobs", Action: "list", Members: true},
 		{Name: "example.jobs:inspect", Resource: "example.jobs", Action: "inspect"},
 	})
@@ -52,7 +52,10 @@ func TestComposedPermissionVocabularyNamesTheMemberGrant(t *testing.T) {
 	require.Equal(t, []string{"admin (via membership)", "member (via membership)"}, definitions[1].BuiltInRoles)
 }
 
-func TestTheBaseCatalogGrantsNothingToMembers(t *testing.T) {
+// The service's own vocabulary gives the default member role exactly the
+// permissions it names the member on: dashboards:read, and nothing else.
+func TestTheBaseCatalogGrantsMembersOnlyWhatItNamesThemOn(t *testing.T) {
 	require.False(t, IsMemberPermission("*", "*"))
 	require.False(t, IsMemberPermission("users", "read"))
+	require.Equal(t, map[string]struct{}{"dashboards:read": {}}, memberPermissionIndex(servicePermissionVocabulary, nil))
 }

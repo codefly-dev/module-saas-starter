@@ -207,6 +207,14 @@ role is refused the audit trail, the API-key inventory and the webhook
 deliveries. The tenant, MFA and resource requirements declared beside the
 permission stay with the handler.
 
+**The default member role is the one thing membership carries.** A permission a
+catalog names the member on (`business.IsMemberPermission`) is held by every
+current member with no role assignment: a contributed permission that declares
+`members: true`, and of this service's own vocabulary `dashboards:read` alone,
+so an invited plain member still lists and opens their own and the shared
+dashboards. Creating, editing and sharing one still take a role
+(`TestAPlainMemberReadsTheirDashboardsAndNothingElse`).
+
 The methods whose permission admission does not resolve are named, each with
 the handler rule that decides it, in `business.PermissionDecidedByHandler`: the
 audit reads (an organization, or the platform-wide read a platform role makes —

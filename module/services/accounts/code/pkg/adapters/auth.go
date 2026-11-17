@@ -197,10 +197,12 @@ func requireOrgMember(ctx context.Context, actorID, orgID string) error {
 // requireOrgPermission is the one rule for "holds resource:action in this
 // organization": the caller must be a current member, and either an
 // administrator or owner of it (the vocabulary gives every permission to the
-// administrator) or hold the permission through a role assigned to them or to
-// one of their teams. Admission calls it for every permission a method
-// declares (enforceCentralPolicy), and the handlers that decide a permission
-// themselves call it too. API-key scopes remain a separate ceiling.
+// administrator), or hold the permission through the default member role
+// (business.IsMemberPermission: what membership alone carries) or through a
+// role assigned to them or to one of their teams. Admission calls it for every
+// permission a method declares (enforceCentralPolicy), and the handlers that
+// decide a permission themselves call it too. API-key scopes remain a separate
+// ceiling.
 func requireOrgPermission(ctx context.Context, actorID, orgID, resource, action string) error {
 	if err := refuseInRoleView(ctx); err != nil {
 		return err
@@ -216,6 +218,9 @@ func requireOrgPermission(ctx context.Context, actorID, orgID, resource, action 
 		return status.Error(codes.PermissionDenied, "not a member of this organization")
 	}
 	if role == gen.OrgRole_ORG_ROLE_ADMIN.String() || role == gen.OrgRole_ORG_ROLE_OWNER.String() {
+		return nil
+	}
+	if business.IsMemberPermission(resource, action) {
 		return nil
 	}
 	decision, err := service.CheckPermission(ctx, &gen.CheckPermissionRequest{

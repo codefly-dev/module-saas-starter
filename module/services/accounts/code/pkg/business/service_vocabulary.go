@@ -2,6 +2,7 @@ package business
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -46,7 +47,9 @@ var servicePermissionVocabulary = []servicePermissionDefinition{
 	{Permission: "audit:read", Description: "Read and export audit events.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
 	{Permission: "billing:read", Description: "View billing state and invoices.", BuiltInRoles: []string{"admin (via *:*)", "editor"}, APIKeyScope: true},
 	{Permission: "billing:write", Description: "Open checkout and billing portal sessions.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
-	{Permission: "dashboards:read", Description: "List and open own and org-shared dashboards.", BuiltInRoles: []string{"admin (via *:*)", "editor", "viewer"}},
+	// The default member role carries it: an invited member with no role
+	// assignment still lists and opens their own and the shared dashboards.
+	{Permission: "dashboards:read", Description: "List and open own and org-shared dashboards.", BuiltInRoles: []string{"admin (via *:*)", "editor", memberByMembership, "viewer"}},
 	{Permission: "dashboards:share", Description: "Promote a dashboard to org-shared visibility.", BuiltInRoles: []string{"admin (via *:*)"}},
 	{Permission: "dashboards:write", Description: "Create, rename, edit, and delete own dashboards.", BuiltInRoles: []string{"admin (via *:*)", "editor", "viewer"}},
 	{Permission: "datasource:read", Description: "Read declared operations on a source boundary.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
@@ -67,6 +70,13 @@ var servicePermissionVocabulary = []servicePermissionDefinition{
 	{Permission: "webhooks:read", Description: "List webhook subscriptions and deliveries.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
 	{Permission: "webhooks:write", Description: "Manage, replay, and rotate webhook subscriptions.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
 }
+
+// memberByMembership names, among a permission's holders, the default member
+// role: what every current member of an organization holds there through
+// membership alone, with no role assignment. A contributed permission declares
+// it (`members: true`); in this service's own vocabulary it is named on the
+// permission, and dashboards:read is the only one.
+const memberByMembership = "member (via membership)"
 
 func composedPermissionVocabulary(
 	base []servicePermissionDefinition,
@@ -90,7 +100,7 @@ func composedPermissionVocabulary(
 			Description: "Contributed permission " + permission.Name + ".",
 		}
 		if permission.Members {
-			definition.BuiltInRoles = []string{"admin (via membership)", "member (via membership)"}
+			definition.BuiltInRoles = []string{"admin (via membership)", memberByMembership}
 		}
 		out = append(out, definition)
 	}
@@ -98,15 +108,22 @@ func composedPermissionVocabulary(
 	return out, nil
 }
 
-// memberPermissions indexes the contributed permissions every current member
-// of an organization holds as a person (a contribution's `members: true`),
-// keyed "resource:action". It is fixed at build time: the composed catalog is
-// generated code, so changing it is a deploy, and a Work Context minted under
-// a default that a later build drops fails its next revision recheck.
-var memberPermissions = memberPermissionIndex(permissioncatalog.Permissions())
+// memberPermissions indexes the default member role: the permissions every
+// current member of an organization holds as a person, keyed
+// "resource:action". They are the contributed permissions that declare it (a
+// contribution's `members: true`) and the ones this service's own vocabulary
+// names the member on. It is fixed at build time: both catalogs are code, so
+// changing it is a deploy, and a Work Context minted under a default that a
+// later build drops fails its next revision recheck.
+var memberPermissions = memberPermissionIndex(servicePermissionVocabulary, permissioncatalog.Permissions())
 
-func memberPermissionIndex(contributed []permissioncatalog.Permission) map[string]struct{} {
+func memberPermissionIndex(base []servicePermissionDefinition, contributed []permissioncatalog.Permission) map[string]struct{} {
 	index := make(map[string]struct{})
+	for _, definition := range base {
+		if slices.Contains(definition.BuiltInRoles, memberByMembership) {
+			index[definition.Permission] = struct{}{}
+		}
+	}
 	for _, permission := range contributed {
 		if permission.Members {
 			index[permission.Resource+":"+permission.Action] = struct{}{}
@@ -116,9 +133,8 @@ func memberPermissionIndex(contributed []permissioncatalog.Permission) map[strin
 }
 
 // IsMemberPermission reports whether every current member of an organization
-// holds resource:action there without a role assignment. Only an exact
-// contributed pair qualifies: no wildcard, and nothing in the service's own
-// vocabulary, is ever granted this way.
+// holds resource:action there without a role assignment: the default member
+// role. Only an exact pair a catalog names qualifies, never a wildcard.
 func IsMemberPermission(resource, action string) bool {
 	_, ok := memberPermissions[resource+":"+action]
 	return ok

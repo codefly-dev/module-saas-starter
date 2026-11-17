@@ -16541,6 +16541,7 @@
       "built_in_roles": [
         "admin (via *:*)",
         "editor",
+        "member (via membership)",
         "viewer"
       ],
       "api_key_scope": false
