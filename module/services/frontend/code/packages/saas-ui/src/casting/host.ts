@@ -11,6 +11,29 @@ export interface CastSession {
 	castTeamId: string;
 	/** The roles a role view acts as, by installation; empty when it is not one. */
 	roleView: { installationId: string; roles: string[] }[];
+	/**
+	 * When the session ends on its own, in Unix seconds (`expires_at_unix`):
+	 * from then on the host refuses it, and nothing here presents it. Absent or
+	 * 0: the host states none.
+	 */
+	expiresAtUnix?: number;
+}
+
+/**
+ * Calls `ended` once the moment a session ends on its own (`expires_at_unix`,
+ * Unix seconds) has passed on this tab's clock, never before it and never
+ * synchronously. 0 states no end: nothing is ever called. Returns the cancel.
+ */
+export function atSessionEnd(expiresAtUnix: number, ended: () => void): () => void {
+	if (!(expiresAtUnix > 0)) return () => {};
+	let timer: ReturnType<typeof setTimeout>;
+	const arm = () => {
+		const left = expiresAtUnix * 1000 - Date.now();
+		// A timer waits no longer than 2^31-1 ms: a farther end is armed again.
+		timer = setTimeout(left <= 0 ? ended : arm, Math.max(0, Math.min(left, 2 ** 31 - 1)));
+	};
+	arm();
+	return () => clearTimeout(timer);
 }
 
 /** One role a team holds on one installation, named as a menu names it. */
@@ -52,6 +75,7 @@ const castSession = (s: HostSession): CastSession => ({
 	organizationId: s.organizationId,
 	castTeamId: s.castTeamId,
 	roleView: s.roleView.map((v) => ({ installationId: v.installationId, roles: [...v.roles] })),
+	expiresAtUnix: Number(s.expiresAtUnix ?? 0),
 });
 
 export interface SessionCastHostOptions {

@@ -15,6 +15,7 @@ export {
 	ViewAsTeamButton,
 } from "./casting.js";
 export {
+	atSessionEnd,
 	type CastHost,
 	type CastSession,
 	type CastTeam,

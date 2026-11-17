@@ -1,6 +1,6 @@
 "use client";
 
-import { forgetCastTeams } from "@codefly-dev/saas-ui/casting";
+import { atSessionEnd, forgetCastTeams } from "@codefly-dev/saas-ui/casting";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { startAuthentication } from "@simplewebauthn/browser";
@@ -37,6 +37,7 @@ import {
 	getToken as getConnectToken,
 	isNarrowed,
 	markNarrowed,
+	refreshToken as refreshConnectToken,
 	setNarrowedRequestRefusedHandler,
 	setToken as setConnectToken,
 	setRefreshHandler,
@@ -65,6 +66,29 @@ async function hostRefusesBearer(bearer: string): Promise<boolean> {
 		return false;
 	} catch (error) {
 		return ConnectError.from(error).code === Code.Unauthenticated;
+	}
+}
+
+/**
+ * Ends the session `bearer` belongs to, and every session opened from it (its
+ * role views and casts), on the host (SessionService.End), as that bearer.
+ *   - ended: the host ended it.
+ *   - gone: the host no longer reads the bearer as a session (Unauthenticated):
+ *     it lapsed, or the session was already ended.
+ *   - refused: this caller is one the host ends no session for (an
+ *     impersonated one): it opened none either, so there is nothing of End's
+ *     to do.
+ *   - failed: the host could not end it, or did not answer. The session, and
+ *     what was opened from it, may still be live.
+ * Bounded, so a host that hangs never holds a sign-out or a way back.
+ */
+async function endSession(bearer: string): Promise<"ended" | "gone" | "refused" | "failed"> {
+	try {
+		await bearerSessionClient.end({}, { headers: { Authorization: `Bearer ${bearer}` }, timeoutMs: 5000 });
+		return "ended";
+	} catch (error) {
+		const code = ConnectError.from(error).code;
+		return code === Code.Unauthenticated ? "gone" : code === Code.PermissionDenied ? "refused" : "failed";
 	}
 }
 
@@ -348,6 +372,11 @@ export async function deriveOAuthNonce(state: string): Promise<string> {
  * — or that nothing answered at all. The refresh family is only revoked when the
  * server returns success, and the refresh cookie is kept in the incomplete case
  * so a retry still has the credential it needs.
+ *
+ * It is also `false` when the host could not end the session itself
+ * (SessionService.End): the logout revokes the refresh family and the presented
+ * session's access tokens, never the role views and casts opened from the
+ * session, which only End ends.
  */
 export interface SignOutResult {
 	complete: boolean;
@@ -431,6 +460,8 @@ interface KeptNarrowedSession {
 	as: string;
 	/** When this tab installed the bearer, on its own wall clock (Date.now()): what times its renewal across a reload. */
 	since?: number;
+	/** When the host said the session ends on its own (`expires_at_unix`, Unix seconds), once it said: the bearer is not booted into past it. */
+	expiresAt?: number;
 }
 
 function keepNarrowedSession(kept: KeptNarrowedSession) {
@@ -450,7 +481,7 @@ function forgetNarrowedSession() {
  * the session the way any expiry does (the token store reports it).
  */
 export function readKeptNarrowedSession(): {
-	live?: { bearer: string; as: string; since?: number };
+	live?: { bearer: string; as: string; since?: number; expiresAt?: number };
 	lapsed?: string;
 } {
 	const raw = sessionStorage.getItem(NARROWED_SESSION_KEY);
@@ -468,8 +499,11 @@ export function readKeptNarrowedSession(): {
 	if (!kept.bearer) return { lapsed: kept.as };
 	const exp = decodeJWTPayload(kept.bearer).exp;
 	if (typeof exp !== "number" || exp * 1000 <= Date.now()) return { lapsed: kept.as };
+	// The end the host stated, which the token's own window may outlast.
+	const expiresAt = typeof kept.expiresAt === "number" && kept.expiresAt > 0 ? { expiresAt: kept.expiresAt } : {};
+	if (expiresAt.expiresAt && expiresAt.expiresAt * 1000 <= Date.now()) return { lapsed: kept.as };
 	const since = typeof kept.since === "number" ? { since: kept.since } : {};
-	return { live: { bearer: kept.bearer, as: kept.as, ...since } };
+	return { live: { bearer: kept.bearer, as: kept.as, ...since, ...expiresAt } };
 }
 
 interface AuthState {
@@ -623,7 +657,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	// (see sessionRead below).
 	const [read, setRead] = useState<
 		| { token: string; failed: true }
-		| { token: string; failed?: false; castTeamId: string; roleView: RoleViewEntry[] }
+		| {
+				token: string;
+				failed?: false;
+				castTeamId: string;
+				roleView: RoleViewEntry[];
+				/** When the session ends on its own (`expires_at_unix`, Unix seconds); 0 when the host states none. */
+				expiresAt: number;
+		  }
 	>({ token: "", failed: true });
 
 	const applyAccessToken = useCallback(
@@ -1030,6 +1071,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		// product asserting something the server had just refused to assert. A
 		// network failure counts as incomplete for the same reason: nothing
 		// confirmed the session ended.
+		//
+		// The session itself is ended first, on the host (SessionService.End),
+		// which is what ends the role views and casts opened from it: the logout
+		// below revokes the refresh family and the presented session's access
+		// tokens, and a cast is a family of its own. End comes first because the
+		// logout leaves no bearer End would accept. It is the person's OWN
+		// session that is ended: inside a narrowed one, or when the installed
+		// bearer lapsed, its bearer is read from the refresh cookie for that one
+		// ask and never installed. An End the host could not perform is an
+		// incomplete sign-out, as a failed logout is: something may still be live.
+		let ended = true;
+		// The bearer the logout is presented with: none once End ended it, since
+		// an ended bearer is unauthenticated everywhere and End already revoked
+		// what the logout would revoke for it.
+		let present = state.accessToken;
+		if (present) {
+			const installed = present;
+			let own: string | null = isNarrowed(installed) ? null : installed;
+			let outcome = own ? await endSession(own) : "gone";
+			if (outcome === "gone") {
+				const fresh = await exchangeRefreshCookie();
+				if (fresh.status === "ok") {
+					own = fresh.accessToken;
+					outcome = await endSession(own);
+				} else if (fresh.status === "unavailable") {
+					outcome = "failed";
+				}
+			}
+			if (outcome === "ended") {
+				present = null;
+			} else {
+				if (own) present = own;
+				// The person's own session was not ended, so the narrowed one this
+				// tab holds did not end with it: it is ended as itself.
+				if (isNarrowed(installed) && (await endSession(installed)) === "failed") outcome = "failed";
+			}
+			ended = outcome !== "failed";
+		}
 		let complete = false;
 		try {
 			const response = await fetch("/v1/auth/logout", {
@@ -1037,13 +1116,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				credentials: "include",
 				headers: {
 					"Content-Type": "application/json",
-					...(state.accessToken
-						? { Authorization: `Bearer ${state.accessToken}` }
-						: {}),
+					...(present ? { Authorization: `Bearer ${present}` } : {}),
 				},
 				body: JSON.stringify({}),
 			});
-			complete = response.ok;
+			complete = response.ok && ended;
 		} catch {
 			complete = false;
 		}
@@ -1120,7 +1197,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			if (own.status === "expired") return sayEnding();
 			if (own.status !== "ok") throw new Error("your own session could not be read");
 			const headers = { Authorization: `Bearer ${own.accessToken}` };
-			let session: { bearer: string };
+			let session: { bearer: string; expiresAtUnix?: bigint };
 			try {
 				session =
 					"teamId" in reopen
@@ -1139,7 +1216,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			markNarrowed(session.bearer, bearer);
 			// The same session, opened again: what the host said it is carries to
 			// the new bearer until the host's own reading of it lands.
-			setRead((prev) => (prev.token === bearer && !prev.failed ? { ...prev, token: session.bearer } : prev));
+			// Its end is the new session's own, as the host just stated it.
+			setRead((prev) =>
+				prev.token === bearer && !prev.failed
+					? { ...prev, token: session.bearer, expiresAt: Number(session.expiresAtUnix ?? 0) }
+					: prev,
+			);
 			const since = Date.now();
 			installedRef.current = { bearer: session.bearer, at: performance.now(), since };
 			applyAccessToken(session.bearer);
@@ -1152,6 +1234,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		const outcome = await exchangeRefreshCookie();
 		if (outcome.status !== "ok") {
 			throw new Error("Could not restore your session — please try again.");
+		}
+		// The narrowed session being left is ended on the host, as itself
+		// (SessionService.End: the way back from a cast), rather than dropped
+		// and left live until it lapses; the session it was opened from is
+		// untouched. One the host no longer reads is already over. One the host
+		// could not end is not left: the person stays in it and asks again,
+		// rather than being told they are back while it is still live.
+		const left = getConnectToken();
+		if (left && isNarrowed(left) && (await endSession(left)) === "failed") {
+			throw new Error("This view could not be ended on the server, so you are still in it — please try again.");
 		}
 		narrowedAsRef.current = "";
 		forgetNarrowedSession();
@@ -1234,6 +1326,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			);
 		}
 	}, [logout, setTokens]);
+
+	// Lands this tab signed out, at the sign-in page, because the session is
+	// over without the person asking: local credentials are torn down rather
+	// than left behind a page that answers a bare `HTTP 401`.
+	const landSignedOut = useCallback(() => {
+		clearRefreshToken();
+		setConnectToken(null);
+		if (typeof document !== "undefined") {
+			document.cookie = "codefly_session=; path=/; SameSite=Lax; Max-Age=0";
+		}
+		setState({
+			user: null,
+			accessToken: null,
+			impersonation: { isImpersonating: false },
+			narrowedSessionEnd: null,
+			isLoading: false,
+			isAuthenticated: false,
+		});
+		if (typeof window !== "undefined") {
+			const target = expiredSessionLoginTarget(window.location);
+			if (target) window.location.replace(target);
+		}
+	}, []);
+
+	// The installed narrowed session `bearer` is over (the host refused it, or
+	// the end the host stated has passed): said by name, never renewed, and not
+	// booted into again. The person's own session is not installed for them.
+	const sayNarrowedEnded = useCallback((bearer: string) => {
+		if (bearer !== getConnectToken()) return;
+		const as = narrowedAsRef.current;
+		endedRef.current.add(bearer);
+		// A lapsed bearer is not booted into again; what it acted as is kept
+		// so a reload still says, by name, that it ended.
+		keepNarrowedSession({ as });
+		setState((s) => (s.narrowedSessionEnd ? s : { ...s, narrowedSessionEnd: { reason: "expired", as } }));
+	}, []);
 
 	// The 401 handler below must know whether the session it is repairing is an
 	// impersonated one. A ref keeps that current without re-registering the
@@ -1353,13 +1481,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				probing.set(bearer, refused);
 			}
 			void refused.then((ended) => {
-				if (!ended || bearer !== getConnectToken()) return;
-				const as = narrowedAsRef.current;
-				endedRef.current.add(bearer);
-				// A lapsed bearer is not booted into again; what it acted as is kept
-				// so a reload still says, by name, that it ended.
-				keepNarrowedSession({ as });
-				setState((s) => (s.narrowedSessionEnd ? s : { ...s, narrowedSessionEnd: { reason: "expired", as } }));
+				if (ended) sayNarrowedEnded(bearer);
 			});
 		});
 		setRefreshHandler(async () => {
@@ -1376,7 +1498,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 					setRead((prev) =>
 						prev.failed || prev.castTeamId || prev.roleView.length
 							? prev
-							: { ...prev, token: next },
+							: // Its end is not carried: the host states it for the new
+								// token, and one already past would end what it just opened.
+								{ ...prev, token: next, expiresAt: 0 },
 					);
 				}
 				setTokens(outcome.accessToken, outcome.refreshToken);
@@ -1402,30 +1526,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			// status === "expired": the backend actively rejected the session
 			// (revoked/expired). Tear down local credentials and bounce to login
 			// rather than leave a broken page showing a bare `HTTP 401`.
-			clearRefreshToken();
-			setConnectToken(null);
-			if (typeof document !== "undefined") {
-				document.cookie = "codefly_session=; path=/; SameSite=Lax; Max-Age=0";
-			}
-			setState({
-				user: null,
-				accessToken: null,
-				impersonation: { isImpersonating: false },
-				narrowedSessionEnd: null,
-				isLoading: false,
-				isAuthenticated: false,
-			});
-			if (typeof window !== "undefined") {
-				const target = expiredSessionLoginTarget(window.location);
-				if (target) window.location.replace(target);
-			}
+			landSignedOut();
 			return null;
 		});
 		return () => {
 			setRefreshHandler(null);
 			setNarrowedRequestRefusedHandler(null);
 		};
-	}, [setTokens]);
+	}, [setTokens, landSignedOut, sayNarrowedEnded]);
 
 	// What the host says this session is, keyed by the token it was read for
 	// so a token swap never shows the previous token's answer. Until the read
@@ -1441,7 +1549,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			.then(
 				(s) =>
 					current &&
-					setRead({ token, castTeamId: s.castTeamId, roleView: s.roleView }),
+					setRead({
+						token,
+						castTeamId: s.castTeamId,
+						roleView: s.roleView,
+						expiresAt: Number(s.expiresAtUnix ?? 0),
+					}),
 			)
 			.catch(() => current && setRead({ token, failed: true }));
 		return () => {
@@ -1458,6 +1571,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				: "confirmed";
 	const castTeamId = answered && !answered.failed ? answered.castTeamId : "";
 	const roleView = answered && !answered.failed ? answered.roleView : NO_VIEW;
+
+	// A bearer is held no longer than the end the host stated for its session
+	// (`expires_at_unix`); a host that states none (0) changes nothing here.
+	//   - A narrowed session past its end is over, and is said so by name as
+	//     when the host refuses its bearer: the person's own session is not
+	//     installed for them. Its end is kept beside the bearer this tab keeps,
+	//     so a reload does not boot into it past that either.
+	//   - The person's own session past its end is asked of the host again,
+	//     through the one refresh every lapsed token takes: the host opens the
+	//     session that continues it, or refuses and the tab lands signed out.
+	//     If the host could not be asked, the bearer is still not kept.
+	const expiresAt = answered && !answered.failed ? answered.expiresAt : 0;
+	useEffect(() => {
+		const token = state.accessToken;
+		if (!token || !expiresAt) return;
+		if (isNarrowed(token)) {
+			const kept = readKeptNarrowedSession().live;
+			if (kept?.bearer === token && kept.expiresAt !== expiresAt) keepNarrowedSession({ ...kept, expiresAt });
+			return atSessionEnd(expiresAt, () => sayNarrowedEnded(token));
+		}
+		return atSessionEnd(expiresAt, () => {
+			if (getConnectToken() !== token) return;
+			void refreshConnectToken(token).then(() => {
+				if (getConnectToken() === token) landSignedOut();
+			});
+		});
+	}, [state.accessToken, expiresAt, sayNarrowedEnded, landSignedOut]);
 
 	// A narrowed session the host confirmed, and that has not ended, is opened
 	// again while the person uses it (narrowed-renewal); an idle one lapses.

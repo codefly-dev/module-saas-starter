@@ -53,6 +53,8 @@ function refreshAnswers(queue: string[]) {
 		// The host's reading of the session, which the provider asks for every
 		// installed token; what it says is not under test here.
 		http.post("http://localhost:3000/host.session.v1.SessionService/Current", () => HttpResponse.json({})),
+		// The way back ends the cast on the host, which ends it.
+		http.post("http://localhost:3000/host.session.v1.SessionService/End", () => HttpResponse.json({})),
 		http.post("/v1/auth/refresh", () => {
 			exchanges += 1;
 			return HttpResponse.json({ accessToken: queue.shift(), refreshToken: "r" });

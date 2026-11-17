@@ -78,6 +78,15 @@ function hostSession() {
 			}
 			return HttpResponse.json({});
 		}),
+		// The way back ends the narrowed session on the host: it ends one it
+		// still reads, and one it refuses is unauthenticated here as anywhere.
+		http.post("http://localhost:3000/host.session.v1.SessionService/End", ({ request }) => {
+			const bearer = (request.headers.get("authorization") ?? "").replace(/^Bearer /, "");
+			if (refusedByHost.has(bearer)) {
+				return HttpResponse.json({ code: "unauthenticated", message: "session expired" }, { status: 401 });
+			}
+			return HttpResponse.json({});
+		}),
 	);
 }
 

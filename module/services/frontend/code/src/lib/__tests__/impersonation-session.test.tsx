@@ -79,6 +79,15 @@ async function renderAsAdmin() {
 			logoutCalls += 1;
 			return logoutResponse();
 		}),
+		// The host ends no session for an impersonated one (SessionService.End
+		// refuses it, as it refuses it a role view): stopping the window is
+		// what ends it, and the logout what signs the operator out.
+		http.post("http://localhost:3000/host.session.v1.SessionService/End", () =>
+			HttpResponse.json(
+				{ code: "permission_denied", message: "an impersonated session cannot end a session" },
+				{ status: 403 },
+			),
+		),
 		// The bearer is recorded, not just the call: the stop has to be made by
 		// the impersonation session itself for the server to derive which window
 		// to close.

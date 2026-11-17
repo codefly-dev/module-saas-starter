@@ -259,4 +259,65 @@ describe("team casting", () => {
 			),
 		);
 	});
+
+	it("asks the host again once a cast is past the end it stated, and shows what it then answers", async () => {
+		const { host, cast } = fakeHost();
+		await readOwnView(host);
+		const ending = {
+			...cast("dir-admin"),
+			expiresAtUnix: Math.floor(Date.now() / 1000) + 1,
+		};
+		let asked = 0;
+		// The host answers the cast until its end, and the person's own after.
+		host.current = async () =>
+			++asked === 1
+				? ending
+				: { ...own, expiresAtUnix: Math.floor(Date.now() / 1000) + 3600 };
+		renderCasting(host);
+		await waitFor(() =>
+			expect(screen.getByRole("status").textContent).toContain(
+				"Directory admins",
+			),
+		);
+		await waitFor(() => expect(screen.queryByRole("status")).toBeNull(), {
+			timeout: 3000,
+		});
+		expect(asked).toBe(2);
+	});
+
+	it("does not present a session past the end the host stated, though the host answers it again", async () => {
+		const { host, cast } = fakeHost();
+		await readOwnView(host);
+		const ended = {
+			...cast("dir-admin"),
+			expiresAtUnix: Math.floor(Date.now() / 1000) - 1,
+		};
+		let asked = 0;
+		host.current = async () => {
+			asked++;
+			return ended;
+		};
+		renderCasting(host);
+		await waitFor(() => expect(asked).toBe(2));
+		await act(() => new Promise<void>((resolve) => setTimeout(resolve, 100)));
+		expect(screen.queryByRole("status")).toBeNull();
+		// Asked once more at its end, never in a loop.
+		expect(asked).toBe(2);
+	});
+
+	it("keeps a session whose host states no end", async () => {
+		const { host, cast } = fakeHost();
+		await readOwnView(host);
+		cast("dir-admin");
+		const current = vi.fn(host.current);
+		host.current = current;
+		renderCasting(host);
+		await waitFor(() =>
+			expect(screen.getByRole("status").textContent).toContain(
+				"Directory admins",
+			),
+		);
+		await act(() => new Promise<void>((resolve) => setTimeout(resolve, 100)));
+		expect(current).toHaveBeenCalledTimes(1);
+	});
 });
