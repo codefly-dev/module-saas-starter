@@ -483,6 +483,24 @@ func (m *Minter) rotateRefresh(
 		return next, err
 	})
 	if err != nil {
+		// A replayed refresh token revoked every session of the user. That
+		// ends refreshing; the access tokens those sessions issued — the
+		// thief's among them — are refused only from a marker, so one is
+		// written per revoked session and family. Best-effort, like every
+		// other access-marker write: the committed revocation is the
+		// authority, and a store outage bounds exposure to the access TTL.
+		var reuse *auth.RefreshReuseError
+		if errors.As(err, &reuse) {
+			seen := make(map[string]bool, len(reuse.RevokedSessionKeys))
+			for _, key := range reuse.RevokedSessionKeys {
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				_ = m.RevokeSessionAccess(ctx, key)
+			}
+			return nil, auth.ErrRefreshReuse
+		}
 		if errors.Is(err, auth.ErrRefreshRevoked) || errors.Is(err, auth.ErrRefreshReuse) ||
 			errors.Is(err, auth.ErrRefreshResourceMismatch) {
 			return nil, err

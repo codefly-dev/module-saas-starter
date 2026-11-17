@@ -116,3 +116,17 @@ func RefreshRejectionReason(err error) (string, bool) {
 	}
 	return rejection.reason, true
 }
+
+// RefreshReuseError is ErrRefreshReuse together with what the replay revoked:
+// the id and the family of every session of the user that was still live. A
+// store returns it so the minter can end the access tokens those sessions
+// issued — revoking the rows ends refreshing, and an access token already
+// issued is refused only from its revocation marker. errors.Is reports it as
+// ErrRefreshReuse, so a caller that only needs the verdict reads it unchanged.
+type RefreshReuseError struct {
+	RevokedSessionKeys []string
+}
+
+func (e *RefreshReuseError) Error() string { return ErrRefreshReuse.Error() }
+
+func (e *RefreshReuseError) Is(target error) bool { return target == ErrRefreshReuse }

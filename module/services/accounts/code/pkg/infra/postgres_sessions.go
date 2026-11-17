@@ -167,6 +167,34 @@ func (s *PostgresStore) RevokeAllUserSessions(ctx context.Context, userID string
 	return revoked, rows.Err()
 }
 
+// InvalidatedUserSessions returns the revoked sessions of one user whose access
+// tokens may still be unexpired. A row a refresh rotated is left out: its
+// successor carries the same family, and the family's marker reaches the token
+// minted before the rotation.
+func (s *PostgresStore) InvalidatedUserSessions(ctx context.Context, userID string) ([]business.RevokedSession, error) {
+	q := s.getQueryExecutor(ctx)
+	rows, err := q.Query(ctx,
+		`SELECT id, family_id FROM sessions
+		  WHERE user_id = $1
+		    AND revoked_at IS NOT NULL
+		    AND revoked_reason IS DISTINCT FROM 'rotated'
+		    AND expires_at > NOW()`,
+		userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var revoked []business.RevokedSession
+	for rows.Next() {
+		var session business.RevokedSession
+		if err := rows.Scan(&session.ID, &session.FamilyID); err != nil {
+			return nil, err
+		}
+		revoked = append(revoked, session)
+	}
+	return revoked, rows.Err()
+}
+
 func (s *PostgresStore) UpdateSessionActivity(ctx context.Context, sessionID string) error {
 	q := s.getQueryExecutor(ctx)
 	_, err := q.Exec(ctx,

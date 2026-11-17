@@ -1246,5 +1246,10 @@ func (s *Service) AssignRole(ctx context.Context, req *gen.AssignRoleRequest) (*
 	if err != nil {
 		return nil, err
 	}
+	// A scoped role on a person revokes their sessions in the organization
+	// (invalidate_scoped_role_sessions); their issued access tokens end too.
+	if req.Scope != "" {
+		s.revokeInvalidatedSessionAccess(ctx, subjectID)
+	}
 	return &gen.AssignRoleResponse{Assignment: assignment}, nil
 }

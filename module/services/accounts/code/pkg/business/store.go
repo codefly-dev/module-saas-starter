@@ -697,6 +697,14 @@ type Store interface {
 	// revocation markers (Service.revokeSessionAccess) once the revocation has
 	// committed.
 	RevokeAllUserSessions(ctx context.Context, userID string, reason string) ([]RevokedSession, error)
+	// InvalidatedUserSessions returns the sessions of one user that were
+	// revoked and whose access tokens may still be unexpired — every revoked
+	// row inside its absolute lifetime, other than one a refresh rotated. It
+	// is how a caller learns what the database's invalidation triggers revoked
+	// (a membership, platform-role, second-factor or scoped-role change),
+	// which report nothing: Service.revokeInvalidatedSessionAccess reads it
+	// once the change has committed and writes the access markers.
+	InvalidatedUserSessions(ctx context.Context, userID string) ([]RevokedSession, error)
 	UpdateSessionActivity(ctx context.Context, sessionID string) error
 
 	// Webhooks

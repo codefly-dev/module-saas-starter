@@ -490,6 +490,8 @@ func (s *Service) GrantPlatformRole(ctx context.Context, actorID string, req *ge
 	}); err != nil {
 		return w.Wrapf(err, "cannot grant platform role")
 	}
+	// A token minted before the grant states the old platform role.
+	s.revokeInvalidatedSessionAccess(ctx, req.UserId)
 
 	// Notify the user about their new platform role
 	_ = s.NotifyUser(
@@ -530,6 +532,9 @@ func (s *Service) RevokePlatformRole(ctx context.Context, actorID string, req *g
 	}); err != nil {
 		return w.Wrapf(err, "cannot revoke platform role")
 	}
+	// The revocation that matters most to end now: an issued access token
+	// still states the platform role until its marker is written.
+	s.revokeInvalidatedSessionAccess(ctx, req.UserId)
 	return nil
 }
 

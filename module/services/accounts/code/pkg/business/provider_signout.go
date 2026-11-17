@@ -201,3 +201,34 @@ func (s *Service) revokeSessionAccess(ctx context.Context, keys []string) {
 		}
 	}
 }
+
+// revokeInvalidatedSessionAccess ends the access tokens of the sessions a
+// committed change of authority revoked for each user. The database revokes
+// those rows itself, from the invalidation triggers on memberships, platform
+// roles, second factors and scoped roles, and reports none of them, so this
+// reads them back once the change has committed and hands them to the one
+// marker write (revokeSessionAccess). Call it after the transaction, never
+// inside it: a marker for a change that rolled back would sign out somebody
+// whose authority did not move.
+//
+// Best-effort like the marker write itself. The revoked rows are the durable
+// authority and already end refreshing; a failed read bounds the residual
+// exposure to the access-token lifetime rather than failing a change that has
+// already happened.
+func (s *Service) revokeInvalidatedSessionAccess(ctx context.Context, userIDs ...string) {
+	if s.minter == nil {
+		return
+	}
+	w := wool.Get(ctx).In("revokeInvalidatedSessionAccess")
+	var revoked []RevokedSession
+	for _, userID := range userIDs {
+		if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+			sessions, err := s.store.InvalidatedUserSessions(ctx, userID)
+			revoked = append(revoked, sessions...)
+			return err
+		}); err != nil {
+			w.Warn("cannot read the sessions an authority change revoked (best-effort)", wool.ErrField(err))
+		}
+	}
+	s.revokeSessionAccess(ctx, accessRevocationKeys(revoked))
+}
