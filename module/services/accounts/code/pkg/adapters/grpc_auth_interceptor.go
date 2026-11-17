@@ -277,14 +277,19 @@ var centralEnforcement = true
 // interceptors.
 func SetCentralEnforcementMode(enforce bool) { centralEnforcement = enforce }
 
-// enforceCentralPolicy denies a call whose declared org-member/admin tenant the
-// authenticated caller does not satisfy, reusing the same membership helpers the
-// handlers do against the caller's verified organization. It enforces only the
-// subset business.CentralTenantEnforcement admits — the tenant floor on methods
+// enforceCentralPolicy denies a call whose declared permission the caller does
+// not hold, or whose declared org-member/admin tenant they do not satisfy,
+// reusing the same helpers the handlers do against the caller's verified
+// organization.
+//
+// Every permission a method declares is enforced here
+// (business.CentralPermissionEnforcement), save the few whose handler rule is
+// named in business.PermissionDecidedByHandler. The tenant floor is enforced
+// only on the subset business.CentralTenantEnforcement admits — methods
 // declaring no finer permission, platform-role, MFA, team binding, or
-// owned-resource binding — so it is never stricter than the handler require*
-// site that still runs after it. Everything it does not resolve stays with those
-// handler sites. A no-op unless enforce mode is on. Returns a gRPC status error;
+// owned-resource binding — so on that dimension it is never stricter than the
+// handler require* site that still runs after it. Everything it does not
+// resolve stays with those handler sites. A no-op unless enforce mode is on. Returns a gRPC status error;
 // the Connect path translates it.
 //
 // The equivalence is load-bearing on an invariant enforced elsewhere: this
@@ -303,8 +308,9 @@ func enforceCentralPolicy(ctx context.Context, fullMethod string) error {
 	if !ok {
 		return nil
 	}
-	tenant, enforce := business.CentralTenantEnforcement(policy)
-	if !enforce {
+	tenant, enforceTenant := business.CentralTenantEnforcement(policy)
+	permissions, enforcePermissions := business.CentralPermissionEnforcement(policy)
+	if !enforceTenant && !enforcePermissions {
 		return nil
 	}
 	actorID, err := requireAuth(ctx)
@@ -318,6 +324,21 @@ func enforceCentralPolicy(ctx context.Context, fullMethod string) error {
 		// → ErrVerifiedDatabaseIdentityRequired → Unauthenticated) so enforce mode
 		// never returns a different code than the handler would for the same call.
 		return membershipLookupStatus("verify central org scope", auth.ErrVerifiedDatabaseIdentityRequired)
+	}
+	// A declared permission is held in the caller's verified organization or
+	// the call is refused: membership alone never stands in for it. The
+	// method's tenant, MFA and resource requirements stay with its handler.
+	for _, permission := range permissions {
+		resource, action, ok := strings.Cut(permission, ":")
+		if !ok {
+			return status.Errorf(codes.PermissionDenied, "declared permission %q is not resource:action", permission)
+		}
+		if err := requireOrgPermission(ctx, actorID, orgID, resource, action); err != nil {
+			return err
+		}
+	}
+	if !enforceTenant {
+		return nil
 	}
 	if tenant == policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN {
 		return requireOrgAdmin(ctx, actorID, orgID)

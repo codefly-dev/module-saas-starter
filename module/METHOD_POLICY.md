@@ -22,7 +22,9 @@ public access.
   into public gateway catalogs.
 - `tenant` is the minimum relationship required after identity validation.
   Resource bindings then prove that request identifiers refer to that tenant.
-- `permissions` use canonical `resource:action` values. `scopes` are the API-key
+- `permissions` use canonical `resource:action` values, and accounts enforces
+  every one a method declares before its handler runs: the caller holds it in
+  their verified organization or is refused. `scopes` are the API-key
   ceilings accepted for the same method: accounts admits a key whose scopes
   cover one of them, and a method that declares none refuses API keys
   altogether. Unknown vocabulary fails generation.

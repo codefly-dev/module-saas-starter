@@ -19,11 +19,13 @@ const (
 	// row-scoping is the RLS/handler floor's job, not the interceptor's.
 	CoverageOK CentralCoverage = "ok"
 
-	// CoverageGap means the policy declares a permission, platform-role, MFA,
-	// team, or org-owner requirement the interceptor does not resolve at
-	// admission. These are the requirements hand-written require* handler sites
-	// still cover; the org-member/admin tenant is no longer among them, because
-	// the interceptor now resolves it against the caller's verified organization.
+	// CoverageGap means the policy declares a requirement the interceptor does
+	// not resolve in full at admission: a platform role, MFA, a team or
+	// org-owner tenant, or the tenant beside a declared permission. These are
+	// the requirements hand-written require* handler sites still cover. The
+	// declared permission itself is not among them: admission enforces it
+	// (CentralPermissionEnforcement), as it does the org-member/admin tenant of
+	// a method that declares nothing finer.
 	CoverageGap CentralCoverage = "gap"
 
 	// CoverageUnsupported means the policy binds an owned resource whose
@@ -96,8 +98,10 @@ func GlobalScopeEscapeHatchMethods() []string {
 // (tenant NONE or USER) — is fully covered. A shape-authenticated method is a
 // gap: its caller may be a credential in the request body, so there is no
 // verified organization at admission to resolve the tenant against, and the
-// adapter resolves it from the credential itself. A declared permission (which may
-// admit a non-admin who holds it), a platform-role, an MFA requirement, an
+// adapter resolves it from the credential itself. A declared permission is
+// enforced at admission (CentralPermissionEnforcement), but the tenant declared
+// beside it is not, since the permission may admit a non-admin who holds it;
+// that tenant, a platform-role, an MFA requirement, an
 // org-owner or team tenant, a bound team resource, or a global-scope escape
 // method (globalScopeEscapeMethods) is a gap the require* handler sites still
 // cover. An owned-resource binding is unsupported unless an
@@ -224,4 +228,71 @@ func CentralTenantEnforcement(policy RPCPolicy) (policyv1.TenantRequirement, boo
 		return tenant, true
 	}
 	return policyv1.TenantRequirement_TENANT_REQUIREMENT_UNSPECIFIED, false
+}
+
+// permissionDecidedByHandler names, for each method whose declared permission
+// admission does not resolve, the one handler rule that decides it. Admission
+// (CentralPermissionEnforcement) enforces every other declared permission
+// against the caller's verified organization, so a method is here only when
+// that question is the wrong one to ask of it:
+//
+//   - the audit reads take an organization or, with none named, are the
+//     platform-wide read a platform role makes. Admission never reads the
+//     request and cannot tell the two apart, so the handlers ask
+//     requireAuditRead, which resolves audit:read through the same helper
+//     admission uses. The export is an administrator's, and the administrator
+//     holds every permission;
+//   - listing every user is a platform role's read: it names no organization
+//     to hold users:read in, and the platform role is the authority;
+//   - a source operation's datasource:read / datasource:invoke is an action on
+//     one source, decided by that source's own access (its owner, its grants, or
+//     a delegated capability bound to it), never by an organization-wide role.
+//
+// TestEveryDeclaredPermissionIsEnforcedOrNamesItsRule holds every method that
+// declares a permission to one side or the other, and
+// TestTheAuditTrailNeedsAuditRead proves the audit rule on the handlers.
+var permissionDecidedByHandler = map[string]string{
+	"/saas.accounts.v1.AuditService/QueryAuditLog":       "requireAuditRead",
+	"/saas.accounts.v1.AuditService/AggregateAuditLog":   "requireAuditRead",
+	"/saas.accounts.v1.AuditService/ExportAuditLog":      "requireOrgAdmin",
+	"/saas.accounts.v1.AuditService/ListAuditEventTypes": "requireAuditRead",
+
+	"/saas.accounts.v1.UserService/ListUsers": "requirePlatformAdmin",
+
+	"/saas.accounts.v1.DatasourceService/InvokeSourceOperation":              "SourceOperationAuthority",
+	"/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperation":        "SourceOperationAuthority",
+	"/saas.accounts.v1.DatasourceService/ListSourceOperations":               "sourceOperationAccess",
+	"/saas.accounts.v1.DatasourceService/PruneSourceOperationReceipts":       "SourceReceiptRetentionAuthority",
+	"/saas.accounts.v1.DatasourceService/LookupPruneSourceOperationReceipts": "SourceReceiptRetentionAuthority",
+	"/saas.accounts.v1.DatasourceService/ReconcileSource":                    "ReconcileSourceAuthority",
+	"/saas.accounts.v1.DatasourceService/LookupReconcileSource":              "ReconcileSourceAuthority",
+}
+
+// PermissionDecidedByHandler returns the handler rule that decides fullMethod's
+// declared permission, empty when admission enforces it.
+func PermissionDecidedByHandler(fullMethod string) string {
+	return permissionDecidedByHandler[fullMethod]
+}
+
+// CentralPermissionEnforcement reports the declared permissions the
+// interceptor enforces at admission for policy, and whether it enforces any.
+// A host enforces every permission it declares: an authenticated method that
+// declares one admits a caller only when they hold it in their verified
+// organization, whatever else the handler checks afterwards.
+//
+// Two shapes are not resolved here. A shape-authenticated method carries its
+// caller in the request body. And the methods in permissionDecidedByHandler
+// name the handler rule that decides instead.
+func CentralPermissionEnforcement(policy RPCPolicy) ([]string, bool) {
+	p := policy.MethodPolicy
+	if p == nil || len(p.GetPermissions()) == 0 {
+		return nil, false
+	}
+	if p.GetExposure() != policyv1.Exposure_EXPOSURE_AUTHENTICATED {
+		return nil, false
+	}
+	if ShapeAuthenticated(policy.FullMethod) || PermissionDecidedByHandler(policy.FullMethod) != "" {
+		return nil, false
+	}
+	return cloneStrings(p.GetPermissions()), true
 }

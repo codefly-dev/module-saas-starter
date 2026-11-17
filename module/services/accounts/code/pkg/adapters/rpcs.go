@@ -1418,26 +1418,17 @@ func (s *AuditServer) QueryAuditLog(ctx context.Context, req *gen.QueryAuditLogR
 	if err != nil {
 		return nil, err
 	}
-	// Audit log is read-through-membership: org members see their own org's
-	// audit trail and nobody else's — a platform role reads no organization's
-	// trail without being a member of it. No org_id means a platform-wide
-	// read, which requires platform admin — UNLESS the caller carries a verified
-	// active org: default the read to that org rather than denying, so an org
-	// member (including a solution acting on the user's behalf, e.g. a composed solution)
-	// sees their own org's audit trail without a platform grant.
-	if req.OrgId == "" {
-		if err := requirePlatformAdmin(ctx, actorID); err != nil {
-			callerOrg, ok := wool.Get(ctx).OrgID()
-			if !ok || callerOrg == "" {
-				return nil, err
-			}
-			req.OrgId = callerOrg
-		}
-	} else {
-		if err := requireOrgMember(ctx, actorID, req.OrgId); err != nil {
-			return nil, err
-		}
+	// The audit trail is read with audit:read in the organization, and by
+	// nobody else — a platform role reads no organization's trail without
+	// holding the permission in it. No org_id means the platform-wide read,
+	// which a platform role makes; a caller without one reads their own
+	// verified organization instead (a solution acting for a person included),
+	// under the same permission as if they had named it.
+	orgID, err := requireAuditRead(ctx, actorID, req.OrgId, true)
+	if err != nil {
+		return nil, err
 	}
+	req.OrgId = orgID
 
 	q := business.AuditQuery{
 		OrgID:      req.OrgId,
@@ -1500,15 +1491,10 @@ func (s *AuditServer) AggregateAuditLog(ctx context.Context, req *gen.AggregateA
 	if err != nil {
 		return nil, err
 	}
-	// Same read-through-membership authorization as QueryAuditLog.
-	if req.OrgId == "" {
-		if err := requirePlatformAdmin(ctx, actorID); err != nil {
-			return nil, err
-		}
-	} else {
-		if err := requireOrgMember(ctx, actorID, req.OrgId); err != nil {
-			return nil, err
-		}
+	// audit:read in the organization, or a platform role for the platform-wide
+	// aggregate.
+	if _, err := requireAuditRead(ctx, actorID, req.OrgId, false); err != nil {
+		return nil, err
 	}
 
 	q := business.AuditQuery{
@@ -1585,7 +1571,13 @@ func (s *AuditServer) AggregateAuditLog(ctx context.Context, req *gen.AggregateA
 }
 
 func (s *AuditServer) ListAuditEventTypes(ctx context.Context, req *gen.ListAuditEventTypesRequest) (*gen.ListAuditEventTypesResponse, error) {
-	if _, err := requireAuth(ctx); err != nil {
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// The catalog names no organization: whoever may read a trail may read what
+	// it can contain — audit:read in their own organization, or a platform role.
+	if _, err := requireAuditRead(ctx, actorID, "", true); err != nil {
 		return nil, err
 	}
 	// The code-owned catalog plus every type a registered solution declared,

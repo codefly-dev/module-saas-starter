@@ -194,16 +194,29 @@ func requireOrgMember(ctx context.Context, actorID, orgID string) error {
 	return nil
 }
 
-// requireOrgPermission enforces the descriptor's two-part tenant contract:
-// the caller must be a current member and must hold the named RBAC permission
-// in that organization. API-key scopes remain a separate ceiling enforced by
-// requireScope before this helper is called.
+// requireOrgPermission is the one rule for "holds resource:action in this
+// organization": the caller must be a current member, and either an
+// administrator or owner of it (the vocabulary gives every permission to the
+// administrator) or hold the permission through a role assigned to them or to
+// one of their teams. Admission calls it for every permission a method
+// declares (enforceCentralPolicy), and the handlers that decide a permission
+// themselves call it too. API-key scopes remain a separate ceiling.
 func requireOrgPermission(ctx context.Context, actorID, orgID, resource, action string) error {
 	if err := refuseInRoleView(ctx); err != nil {
 		return err
 	}
-	if err := requireOrgMember(ctx, actorID, orgID); err != nil {
-		return err
+	if orgID == "" {
+		return status.Error(codes.InvalidArgument, "org_id required")
+	}
+	role, err := lookupMembership(ctx, orgID, actorID)
+	if err != nil {
+		return membershipLookupStatus("cannot verify membership", err)
+	}
+	if role == "" {
+		return status.Error(codes.PermissionDenied, "not a member of this organization")
+	}
+	if role == gen.OrgRole_ORG_ROLE_ADMIN.String() || role == gen.OrgRole_ORG_ROLE_OWNER.String() {
+		return nil
 	}
 	decision, err := service.CheckPermission(ctx, &gen.CheckPermissionRequest{
 		SubjectId:   actorID,
@@ -1017,4 +1030,34 @@ func IsPermissionDenied(err error) bool {
 		return s.Code() == codes.PermissionDenied
 	}
 	return false
+}
+
+// requireAuditRead decides audit:read for the audit reads, which admission
+// leaves to their handlers (business.PermissionDecidedByHandler): with an
+// organization named, the caller holds audit:read there; with none, the read
+// is platform-wide and a platform role's. It returns the organization the read
+// is scoped to, empty for the platform-wide one.
+//
+// ownOrganizationByDefault is the query's convenience: a caller who names no
+// organization and holds no platform role reads their own verified
+// organization, under the same permission as if they had named it.
+func requireAuditRead(ctx context.Context, actorID, orgID string, ownOrganizationByDefault bool) (string, error) {
+	if orgID == "" {
+		platformErr := requirePlatformAdmin(ctx, actorID)
+		if platformErr == nil {
+			return "", nil
+		}
+		if !ownOrganizationByDefault {
+			return "", platformErr
+		}
+		own, ok := wool.Get(ctx).OrgID()
+		if !ok || own == "" {
+			return "", platformErr
+		}
+		orgID = own
+	}
+	if err := requireOrgPermission(ctx, actorID, orgID, "audit", "read"); err != nil {
+		return "", err
+	}
+	return orgID, nil
 }

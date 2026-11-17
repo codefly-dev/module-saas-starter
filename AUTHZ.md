@@ -195,6 +195,24 @@ uninstalled"**. The exemption's *extent* — exactly `Issue` and `GetDelegation`
 never a third method — is pinned by
 `TestTheCentralFloorExemptsExactlyTheShapeAuthenticatedMethods`.
 
+**A declared permission is enforced there too, and is not redundant.** A method
+that declares `permissions` admits a caller only when they hold each one in
+their verified organization (`business.CentralPermissionEnforcement`,
+`requireOrgPermission`): an administrator or owner of it, or a member holding
+the permission through a role assigned to them or to one of their teams.
+Membership alone never stands in for a declared permission, so a member with no
+role is refused the audit trail, the API-key inventory and the webhook
+deliveries. The tenant, MFA and resource requirements declared beside the
+permission stay with the handler.
+
+The methods whose permission admission does not resolve are named, each with
+the handler rule that decides it, in `business.PermissionDecidedByHandler`: the
+audit reads (an organization, or the platform-wide read a platform role makes —
+`requireAuditRead`), the platform's user listing, and the source operations,
+whose `datasource:read` / `datasource:invoke` is an action on one source decided
+by that source's own access. `TestEveryDeclaredPermissionIsEnforcedOrNamesItsRule`
+holds every declaring method to one side or the other.
+
 **It enforces by default.** `RBAC_CENTRAL_ENFORCEMENT` unset means enforce;
 `shadow` is an explicit opt-out that classifies only, and the boot warns naming
 it on every start; any other value refuses to boot. The coverage classification
