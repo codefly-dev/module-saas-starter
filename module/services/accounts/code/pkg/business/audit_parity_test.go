@@ -14,6 +14,12 @@ import (
 // nothing can reach.
 var eventsEmittedOutsideRPC = []EventType{
 	EventActivationAchieved,
+	// A refusal of the authority core, written by its decision hook
+	// (recordAuthorityDecision) on whichever question the core refused: an
+	// Issue, a Check or a ListResources of the host interface. It is no
+	// method's own event: a method policy declares what a call records when it
+	// succeeds, and this is what the core records when it says no.
+	EventAuthorityDecisionRefused,
 	// The daily audit archive's receipt: written by a leased job the host's own
 	// sweep enqueues, with no request behind it. There is deliberately no RPC
 	// that archives a day — a scheduled, idempotent export is not something a

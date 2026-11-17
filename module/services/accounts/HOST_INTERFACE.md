@@ -32,7 +32,7 @@ What accounts adds, and where:
 | Who the caller is: the session the perimeter verified (`signedInPerson`), or a workload credential the execution reviewer reviewed (`workload`), bound to the organization the module envelope pins the module to | `pkg/adapters/host_interface.go` |
 | The signing key the core signs with, the Work Context key `Keys` publishes | `pkg/business/authority_core.go` (`ConfigureAuthorityCore`) |
 | Delivery: the signed carrier and the authority document are verified and recorded by accounts' delivery owner, then composed in the core through the core's `delivered` package; every applied delivery is composed again when the core is configured | `pkg/business/authority_delivery.go`, `pkg/business/authority_core_delivery.go` |
-| Audit: each change the core journals is recorded in the core's own transaction (`saas.authority.*`, `saas.module_delegation.*`); each issue is recorded before it is handed out | `pkg/business/authority_core_audit.go` |
+| Audit: each change the core journals is recorded in the core's own transaction (`saas.authority.*`, `saas.module_delegation.*`); each decision the core makes for a caller is told to this host before the caller is answered (`authority.Config.Decisions`), which records issues and refusals and nothing else ([the authority's decisions](#the-authoritys-decisions-are-rows-of-the-audit-journal)) | `pkg/business/authority_core_audit.go` |
 | The hop's admission keys: leased rows judged by the database's clock, published apart from the Work Context key; each registration proves its key once (its nonce is kept in `hop_admission_proofs`), and one key is pinned per hop instance (its pod) while its registration holds | migrations 55 and 58, `pkg/business/hop_admission_keys.go`, `pkg/adapters/host_interface_admission.go` |
 | Tenancy at the perimeter: a member or an administrator of the organization a call names, before the core decides | `pkg/adapters/host_interface.go` (`requireOrgMember`, `requireOrgAdmin`) |
 
@@ -201,6 +201,47 @@ behavior-preserving rollback.
     read in one snapshot on every `Session` answered; this host keeps no
     counter that moves on every one of those changes (a role grant moves no
     revision).
+
+## The authority's decisions are rows of the audit journal
+
+The core keeps no record of what it decides. It tells this host each decision
+it makes for a caller (`authority.Config.Decisions`, wired in
+`newAuthorityCore`), once per call, after the decision and before the caller is
+answered, and `recordAuthorityDecision` (`pkg/business/authority_core_audit.go`)
+makes it a row of the journal the host already keeps:
+
+- **An admitted check or resource listing is not recorded.** Every served call
+  makes one.
+- **An admitted issue** is the record it always was: `saas.work_context.task_started`,
+  or `saas.work_context.child_session_started` for one more hop on a presented
+  capability and for a page's call through its target's binding, written in the
+  organization it was issued in. It is written before the capability is handed
+  out: an issue the journal does not take answers `Unavailable` and hands out
+  nothing. The adapter no longer records it a second time.
+- **A refusal** (of an issue, a check or a resource listing) is
+  `saas.authority.decision_refused` in the organization it was decided in, as
+  the person who asked when a person did, with the decision's kind, its code and
+  reason, and whatever of owner, actor, audience, binding, operation, method,
+  installation, task and delegation was known. It is an observation: the
+  refusal stands whether or not its row could be written.
+- **A capability that did not verify proves nothing it says.** A refusal the
+  core marks `Claimed` (an expired, revoked or misaddressed capability) is filed
+  under no organization, recorded as nobody's, with the organization and actor
+  it claims in the payload beside `claimed: true`. So is a refusal naming no
+  organization of this host. No tenant reads a row filed on a claim.
+- **A probe is no decision.** Where this host asks the core a question whose
+  answer it discards (a legacy mint held to what the core would issue, a
+  source's governing scope), the context is
+  marked `business.AuthorityProbe` and nothing is recorded: the operation that
+  asked records what it did.
+
+`pkg/business/authority_decisions_test.go` holds each of these.
+
+What is not recorded here: the hop's own refusals (a call with no Work Context,
+a method no route serves, an authority that did not answer in time), which
+never reach the core. The hop library hands them to a sink
+(`forward.Config.Refused`); this host's hop is the gateway, and wiring that sink
+to this journal needs a route from the gateway to it that does not exist yet.
 
 ## Proof
 

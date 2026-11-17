@@ -60,6 +60,11 @@ func coreStatus(err error) error {
 	if err == nil {
 		return nil
 	}
+	if errors.Is(err, business.ErrAuthorityDecisionUnrecorded) {
+		// An admitted issue the journal did not take: nothing was handed
+		// out, and the caller asks again.
+		return status.Error(codes.Unavailable, business.ErrAuthorityDecisionUnrecorded.Error())
+	}
 	if _, ok := status.FromError(err); ok {
 		return err
 	}
@@ -234,8 +239,10 @@ func (s *HostAuthorityServer) Check(ctx context.Context, req *authorityv1.CheckR
 }
 
 // Issue signs a capability for one owner shape. Each shape is authenticated
-// first (the session, the workload credential, the actor's credential), and
-// its issue is recorded before the capability is handed out.
+// first (the session, the workload credential, the actor's credential). The
+// core tells this host's journal what it decided before it answers
+// (business's decision hook): an admitted issue is recorded before the
+// capability is handed out, and a refused one with what was asked and why.
 func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueRequest) (*authorityv1.IssueResponse, error) {
 	core, err := authorityCore()
 	if err != nil {
@@ -247,7 +254,6 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 	r := authority.IssueRequest{Audience: req.GetAudience(), Binding: req.GetOperationBindingId(), Operation: req.GetOperation(),
 		Organization: req.GetOrganizationId(), Scopes: scopesFromWire(req.GetScopes()), TTL: time.Duration(req.GetTtlSeconds()) * time.Second}
 	var out authority.Issued
-	child := false
 	switch as := req.GetAs().(type) {
 	case *authorityv1.IssueRequest_Person:
 		person, perr := signedInPerson(ctx, "be issued a capability")
@@ -266,9 +272,9 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 				}
 				return nil, credentialRefusal(ctx, err, "the actor", req.GetActor().GetCredential())
 			}
+			// Through a binding it is the target's hop, which the journal
+			// records as a child.
 			err = oneRead(ctx, func(ctx context.Context) (err error) { out, err = core.IssueForPage(ctx, person, page, r); return err })
-			// Through a binding it is the target's hop, recorded as a child.
-			child = err == nil && len(out.Context.GetActorChain()) > 0
 		} else {
 			err = oneRead(ctx, func(ctx context.Context) (err error) { out, err = core.IssueForPerson(ctx, person, r); return err })
 		}
@@ -296,7 +302,6 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 			out, err = core.IssueChild(ctx, as.ParentToken, w, r)
 			return err
 		})
-		child = true
 	case *authorityv1.IssueRequest_Delegation:
 		w, werr := workload(ctx, req.GetActor().GetCredential(), "actor")
 		if werr != nil {
@@ -312,19 +317,14 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 	if err != nil {
 		return nil, coreStatus(err)
 	}
-	return s.issued(ctx, out, child)
+	return s.issued(out)
 }
 
-// issued records the issue in the organization it was issued in and answers it.
-func (s *HostAuthorityServer) issued(ctx context.Context, out authority.Issued, child bool) (*authorityv1.IssueResponse, error) {
+// issued answers an issue the core admitted. It is recorded already: the core
+// told this host's journal before it answered (business's decision hook), and
+// an issue the journal did not take never reaches here.
+func (s *HostAuthorityServer) issued(out authority.Issued) (*authorityv1.IssueResponse, error) {
 	wc := out.Context
-	actor := wc.GetOwnerPrincipalId()
-	if chain := wc.GetActorChain(); len(chain) > 0 {
-		actor = chain[len(chain)-1].GetPrincipalId()
-	}
-	if err := service.RecordAuthorityIssue(ctx, wc.GetTenantId(), actor, child, wc.GetTaskId()); err != nil {
-		return nil, status.Errorf(codes.Unavailable, "the issue could not be recorded, so it is not handed out: %v", err)
-	}
 	wire, err := workContextToWire(wc)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())

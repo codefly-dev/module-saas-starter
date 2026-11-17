@@ -404,6 +404,10 @@ const (
 	EventAuthorityResourceAttached             EventType = "saas.authority.resource_attached"
 	EventAuthorityResourceDetached             EventType = "saas.authority.resource_detached"
 	EventAuthorityResourceTransferred          EventType = "saas.authority.resource_transferred"
+	// A decision the authority core refused (authority_core_audit.go,
+	// recordAuthorityDecision), in the organization it was decided in; under
+	// no tenant when the capability asked about did not verify.
+	EventAuthorityDecisionRefused EventType = "saas.authority.decision_refused"
 
 	EventWorkContextTaskStarted  EventType = "saas.work_context.task_started"
 	EventWorkContextRootSession  EventType = "saas.work_context.root_session_started"
@@ -737,6 +741,10 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventAuthorityResourceAttached, CategoryAccess, "A resource created through an installation was attached to it by the kind's serving module.", authorityChangeFields()...),
 	mutation(EventAuthorityResourceDetached, CategoryAccess, "A deleted resource was released from the installation that owned it.", authorityChangeFields()...),
 	mutation(EventAuthorityResourceTransferred, CategoryAccess, "An existing resource joined an installed solution's principal, authorized by a person administering it.", authorityChangeFields()...),
+	observation(EventAuthorityDecisionRefused, CategoryAccess, "The authority refused an issue, a check or a resource listing: what was asked, by whom, and why. Filed under no organization when the capability asked about did not verify, with what it claims marked as a claim.",
+		append([]PayloadField{{Name: "decision", Kind: FieldString, Required: true}, {Name: "code", Kind: FieldString, Required: true}, {Name: "reason", Kind: FieldString, Required: true}},
+			optionalFields([]PayloadField{str("organization"), str("owner"), str("actor"), str("audience"), str("binding"), str("operation"), str("method"),
+				str("installation"), str("task"), str("delegation"), boolean("advisory"), boolean("claimed")})...)...),
 	mutation(EventWorkContextTaskStarted, CategoryAccess, "A signed Work Context was issued for a new agent task and root session."),
 	mutation(EventWorkContextRootSession, CategoryAccess, "A new root agent session was started under an existing task."),
 	mutation(EventWorkContextChildSession, CategoryAccess, "An attenuated child agent session was started."),

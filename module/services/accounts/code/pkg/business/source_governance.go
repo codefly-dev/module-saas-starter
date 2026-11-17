@@ -108,7 +108,9 @@ func (s *Service) issuedGovernance(ctx context.Context, who authority.Person, in
 		// A solution's roles grant only on the data its installation owns.
 		asked.ResourceOwnerId = inst.PrincipalID
 	}
-	_, err = core.IssueForPerson(ctx, who, authority.IssueRequest{
+	// The capability is discarded: this asks whether the role holds the
+	// scope, and the operation on the source records what it did.
+	_, err = core.IssueForPerson(AuthorityProbe(ctx), who, authority.IssueRequest{
 		Audience: target.Principal, Organization: who.Organization,
 		Scopes: decide.Scopes{asked}, TTL: sourceGovernanceProbeTTL,
 	})

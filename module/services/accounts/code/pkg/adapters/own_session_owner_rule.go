@@ -115,6 +115,10 @@ func holdOwnSession(ctx context.Context, org, person, audience string, scopes []
 		}
 	}
 	who := authority.Person{ID: person, Organization: org}
+	// What the core signs here is discarded, and its refusal is this mint's
+	// own, which the mint answers and records: neither is a decision of the
+	// journal's (business.AuthorityProbe).
+	ctx = business.AuthorityProbe(ctx)
 	_, err = core.IssueForPerson(ctx, who, authority.IssueRequest{Audience: m.Principal, Scopes: served})
 	if err == nil || len(served) == 0 {
 		return coreStatus(err)
