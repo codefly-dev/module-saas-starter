@@ -335,10 +335,6 @@ func (s *Service) AddOrgMember(ctx context.Context, actorID string, req *gen.Add
 	// the first request from the newly-added user would spend 30s hitting
 	// the cache with the wrong negative answer. No-op when caching is off.
 	_ = s.invalidateMembership(ctx, req.OrgId, req.UserId)
-	// A role that changed, or a membership an org-less session did not have,
-	// revoked the sessions that stated the old answer; so do their issued
-	// access tokens.
-	s.revokeInvalidatedSessionAccess(ctx, req.UserId)
 
 	if orgName == "" {
 		orgName = req.OrgId

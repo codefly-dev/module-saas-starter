@@ -652,11 +652,12 @@ func runHostInterfaceFixture(t *testing.T) {
 			require.Equal(t, 1, removals(string(business.EventOrgMemberRemoved), fixtureOrganization, person), "organization removal of %s", person)
 		}
 		// And the session the organization leaver signed in with while a member
-		// is issued nothing there any more.
+		// is over: the removal ends its issued access token, so it is refused
+		// as a credential before anything is asked of the membership it lost.
 		leaver := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+leaverSession.GetBearer())
 		_, err := authorityv1.NewAuthorityServiceClient(conn).Issue(leaver, &authorityv1.IssueRequest{
 			As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: "records", Scopes: entries("read")})
-		requireCode(t, err, codes.PermissionDenied, "not a member of this organization")
+		requireCode(t, err, codes.Unauthenticated, "invalid or expired access token")
 	})
 
 	// Beyond the suite: OfferService answers from the core's view of the

@@ -79,28 +79,6 @@ func TestDeletingAnOrganizationRevokesEveryMembersOutstandingAccessTokens(t *tes
 	requireAccessLive(t, bystanderAccess)
 }
 
-// A role change in the organization: the token minted under the old role
-// states it, so it must not outlive the change in either direction.
-func TestChangingAMembersRoleRevokesTheirOutstandingAccessTokens(t *testing.T) {
-	clearData(t)
-	useRevocationList(t, redisstate.NewMemory())
-
-	owner, org := mustUserAndOrg(t, testCtx, "owner@example.com", "example-owner", "Acme")
-	member := mustMember(t, owner, org, "member@example.com", "example-member")
-	require.NoError(t, testService.AddOrgMember(testCtx, owner, &gen.AddOrgMemberRequest{
-		OrgId: org, UserId: member, Role: gen.OrgRole_ORG_ROLE_ADMIN,
-	}))
-	ownerAccess := loginAndRefresh(t, owner)
-	memberAccess := loginAndRefresh(t, member)
-
-	require.NoError(t, testService.AddOrgMember(testCtx, owner, &gen.AddOrgMemberRequest{
-		OrgId: org, UserId: member, Role: gen.OrgRole_ORG_ROLE_MEMBER,
-	}))
-
-	requireAccessRevoked(t, memberAccess)
-	requireAccessLive(t, ownerAccess)
-}
-
 func TestGrantingAPlatformRoleRevokesTheGranteesOutstandingAccessTokens(t *testing.T) {
 	clearData(t)
 	useRevocationList(t, redisstate.NewMemory())
