@@ -36,13 +36,15 @@ expect() { # description email expected-basis
   if [[ "$got" == "$3" ]]; then echo "pass  $1"; else echo "FAIL  $1: got '${got:-nothing}', want '${3:-nothing}'"; fails=1; fi
 }
 
-expect "explicit reader (bob, a plain member) reads the collection by grant" bob@acme.com   ACCESS_BASIS_GRANT
-expect "member without a grant (carol) reads nothing"                    carol@acme.com ""
+expect "explicit reader (maya, a plain member) reads the collection by grant" maya@acme.test ACCESS_BASIS_GRANT
+expect "member without a grant (bob, the no-role seat) reads nothing"    bob@acme.com   ""
 expect "organization admin (alice) holds no grant: reads nothing"        alice@acme.com ""
 expect "organization admin (alex) holds no grant: reads nothing"         alex@acme.test ""
 
-# Explicit grant: the collection's owner gives carol the role at the collection,
+# Explicit grant: the collection's owner gives remi the role at the collection,
 # access appears; the grant is revoked, access goes. Nothing else changes it.
+# Remi is outside the four seats (Alice, Bob, Carol, Dana), whose holdings the
+# fixture fixes: a grant that could not be revoked must not land on one of them.
 api() { # email service/method json
   curl -fsS -X POST "$base/saas.accounts.v1.$2" -H "Authorization: Bearer $(token "$1")" \
     -H 'content-type: application/json' -d "$3"
@@ -53,20 +55,20 @@ field() { python3 -c "import sys,json;d=json.load(sys.stdin);print($1)"; }
 owner=admin@acme.com
 role=$(api $owner PermissionService/ListRoles "{\"orgId\":\"$org\"}" | field "[r['id'] for r in d['roles'] if r['name']=='Collection reader'][0]")
 scopepath=$(api $owner PermissionService/ListCollectionAccess "{\"orgId\":\"$org\"}" | field "d['collections'][0]['node']['scopePath']")
-carol=$(awk '$1=="-"&&$2=="id:"{id=$3} $1=="email:"&&$2=="carol@acme.com"{print id; exit}' "$fixture")
-grant="{\"orgId\":\"$org\",\"subjectId\":\"$carol\",\"subjectKind\":\"SUBJECT_KIND_PRINCIPAL\",\"scopePath\":\"$scopepath\",\"roleId\":\"$role\"}"
+remi=$(awk '$1=="-"&&$2=="id:"{id=$3} $1=="email:"&&$2=="remi@acme.test"{print id; exit}' "$fixture")
+grant="{\"orgId\":\"$org\",\"subjectId\":\"$remi\",\"subjectKind\":\"SUBJECT_KIND_PRINCIPAL\",\"scopePath\":\"$scopepath\",\"roleId\":\"$role\"}"
 granted=
 revoke() {
   [[ -n "$granted" ]] || return 0
   if api $owner PermissionService/RevokeScope "$grant" >/dev/null; then granted=
-  else echo "FAIL  the grant to carol could not be revoked: revoke it by hand (RevokeScope)" >&2; fails=1; fi
+  else echo "FAIL  the grant to remi could not be revoked: revoke it by hand (RevokeScope)" >&2; fails=1; fi
 }
 trap revoke EXIT
 granted=1 # set first: a grant that lands while the reply is lost must still be revoked
 api $owner PermissionService/GrantScope "$grant" >/dev/null
-expect "after an explicit grant, carol reads the collection"            carol@acme.com ACCESS_BASIS_GRANT
+expect "after an explicit grant, remi reads the collection"             remi@acme.test ACCESS_BASIS_GRANT
 revoke
-expect "after the grant is revoked, carol reads nothing again"          carol@acme.com ""
+expect "after the grant is revoked, remi reads nothing again"           remi@acme.test ""
 trap - EXIT
 
 # The platform super_admin is also the collection's owner here. With her own grant

@@ -186,9 +186,11 @@ collections:
   - org: Acme Corp
     label: Example Collection
     role: Collection reader
+    # The reader is a person outside the four seats: Bob is the no-role seat a
+    # refusal is proven with, so he holds no grant here either.
     readers:
       - admin@acme.com
-      - bob@acme.com
+      - maya@acme.test
 
 # The same people on every target: a row whose target is "*" stands for every
 # role-gated target the composition delivers to this host, whatever the
