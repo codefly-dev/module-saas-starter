@@ -7,10 +7,13 @@ description: |
 agent:
     kind: codefly:service
     name: nextjs
-    # 0.0.167 is the security floor: the agent pinned next 16.3.6 exactly through
-    # 0.0.166, and no service it builds can resolve past its pin. See frontend's
-    # manifest for the three advisories that pin cleared (service-nextjs#177).
-    version: 0.0.167
+    # 0.0.167 is the security floor for a NEW service: through 0.0.166 the agent
+    # scaffolded next 16.3.6. The agent's pin only sets what a new service is
+    # scaffolded with; this service's framework version is the one its own
+    # `code/package.json` declares and its lockfile resolves, moved with
+    # `codefly upgrade service`. See frontend's manifest for the three
+    # advisories 16.3.6 carries (service-nextjs#177) and for why 0.0.171.
+    version: 0.0.171
     publisher: codefly.dev
 endpoints:
     - name: http
