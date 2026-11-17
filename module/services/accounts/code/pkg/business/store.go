@@ -692,7 +692,11 @@ type Store interface {
 	// session-revocation marker per id and kill the access half immediately.
 	RevokeSession(ctx context.Context, deviceSessionID string, reason string) ([]string, error)
 	RevokeSessionFamily(ctx context.Context, familyID string, reason string) error
-	RevokeAllUserSessions(ctx context.Context, userID string, reason string) ([]string, error)
+	// RevokeAllUserSessions revokes every live session row of one user and
+	// returns each with its family, so the caller can write the access
+	// revocation markers (Service.revokeSessionAccess) once the revocation has
+	// committed.
+	RevokeAllUserSessions(ctx context.Context, userID string, reason string) ([]RevokedSession, error)
 	UpdateSessionActivity(ctx context.Context, sessionID string) error
 
 	// Webhooks
@@ -1019,6 +1023,14 @@ type RetentionPolicy struct {
 	ResourceType  string
 	RetentionDays int
 	CreatedAt     time.Time
+}
+
+// RevokedSession names one session row a revocation ended, by the two ids its
+// access tokens carry: the row's own, which is their `sid` and changes on every
+// refresh, and the family's, which does not.
+type RevokedSession struct {
+	ID       string
+	FamilyID string
 }
 
 // Session represents a refresh token session.

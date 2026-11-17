@@ -136,31 +136,35 @@ func (s *PostgresStore) RevokeSessionFamily(ctx context.Context, familyID string
 	return err
 }
 
-// RevokeAllUserSessions revokes every live session of one user and returns the
-// ids it revoked. The ids are what lets a caller kill the access half as well:
+// RevokeAllUserSessions revokes every live session of one user and returns
+// what it revoked. The ids are what lets a caller kill the access half as well:
 // revoking the rows ends refreshing, but an already-minted access token stays
-// valid until its natural TTL unless a per-session revocation marker is
-// written, exactly as RevokeSession's caller does. Returning nothing was the
-// shape that made a whole-user sign-out quietly weaker than a single-family
-// one.
-func (s *PostgresStore) RevokeAllUserSessions(ctx context.Context, userID string, reason string) ([]string, error) {
+// valid until its natural TTL unless a revocation marker is written, exactly as
+// RevokeSession's caller does. Returning nothing was the shape that made a
+// whole-user sign-out quietly weaker than a single-family one.
+//
+// Each row is returned with its family, because an access token carries both
+// and they cover different tokens: the row id is the current session's and
+// changes on every refresh, so the token minted before the last refresh matches
+// only the family.
+func (s *PostgresStore) RevokeAllUserSessions(ctx context.Context, userID string, reason string) ([]business.RevokedSession, error) {
 	q := s.getQueryExecutor(ctx)
 	rows, err := q.Query(ctx,
-		`UPDATE sessions SET revoked_at = NOW(), revoked_reason = $2 WHERE user_id = $1 AND revoked_at IS NULL RETURNING id`,
+		`UPDATE sessions SET revoked_at = NOW(), revoked_reason = $2 WHERE user_id = $1 AND revoked_at IS NULL RETURNING id, family_id`,
 		userID, reason)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var ids []string
+	var revoked []business.RevokedSession
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var session business.RevokedSession
+		if err := rows.Scan(&session.ID, &session.FamilyID); err != nil {
 			return nil, err
 		}
-		ids = append(ids, id)
+		revoked = append(revoked, session)
 	}
-	return ids, rows.Err()
+	return revoked, rows.Err()
 }
 
 func (s *PostgresStore) UpdateSessionActivity(ctx context.Context, sessionID string) error {

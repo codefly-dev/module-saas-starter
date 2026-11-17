@@ -190,6 +190,7 @@ func (s *Service) DeleteUser(ctx context.Context, actorID string, access Identit
 	if targetID == "" {
 		return w.NewError("uuid required for delete")
 	}
+	var revoked []RevokedSession
 	if err := s.store.As(access).Within(ctx, func(ctx context.Context) error {
 		stranded, err := s.organizationsStrandedByDeactivation(ctx, targetID)
 		if err != nil {
@@ -197,6 +198,13 @@ func (s *Service) DeleteUser(ctx context.Context, actorID string, access Identit
 		}
 		if len(stranded) > 0 {
 			return &IdentityAdminContinuityError{Organizations: stranded}
+		}
+		// Before the status write, whose trigger revokes the same rows and
+		// reports none of them. After the refusal above, so a deletion that is
+		// refused signs nobody out.
+		revoked, err = s.store.RevokeAllUserSessions(ctx, targetID, SessionRevokedUserNotActive)
+		if err != nil {
+			return err
 		}
 		if err := s.store.DeleteUser(ctx, targetID); err != nil {
 			return err
@@ -208,6 +216,9 @@ func (s *Service) DeleteUser(ctx context.Context, actorID string, access Identit
 	}); err != nil {
 		return w.Wrapf(err, "cannot delete user")
 	}
+	// The access half: a deleted identity's already-issued access tokens are
+	// admitted from the revocation list alone until they expire.
+	s.revokeSessionAccess(ctx, accessRevocationKeys(revoked))
 	return nil
 }
 

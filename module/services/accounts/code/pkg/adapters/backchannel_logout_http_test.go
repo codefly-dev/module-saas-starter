@@ -22,7 +22,7 @@ type backchannelStore struct {
 	business.Store
 	user      *gen.User
 	notFound  bool
-	revoked   []string
+	revoked   []business.RevokedSession
 	revokedAs string
 }
 
@@ -37,7 +37,7 @@ func (s *backchannelStore) FindUserByIdentity(context.Context, string, string) (
 	return s.user, nil
 }
 
-func (s *backchannelStore) RevokeAllUserSessions(_ context.Context, userID, reason string) ([]string, error) {
+func (s *backchannelStore) RevokeAllUserSessions(_ context.Context, userID, reason string) ([]business.RevokedSession, error) {
 	s.revokedAs = reason
 	return s.revoked, nil
 }
@@ -91,7 +91,7 @@ func subjectToken() *auth.LogoutToken {
 func TestBackchannelLogoutRevokesAndAnswers200(t *testing.T) {
 	store := &backchannelStore{
 		user:    &gen.User{Uuid: "00000000-0000-7000-8000-00000000000a"},
-		revoked: []string{"session-1", "session-2"},
+		revoked: []business.RevokedSession{{ID: "session-1", FamilyID: "family-1"}, {ID: "session-2", FamilyID: "family-2"}},
 	}
 	handler := backchannelHandler(t, store, business.ProviderSignOut{
 		LogoutTokens: logoutTokenVerifier{token: subjectToken()},

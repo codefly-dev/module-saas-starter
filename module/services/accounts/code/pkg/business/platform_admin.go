@@ -104,6 +104,7 @@ func (s *Service) SuspendUser(ctx context.Context, actorID string, req *gen.Susp
 	}
 
 	var stranded []string
+	var revoked []RevokedSession
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		var err error
 		// Taken even though nothing here is refused: holding each organization's
@@ -111,6 +112,13 @@ func (s *Service) SuspendUser(ctx context.Context, actorID string, req *gen.Susp
 		// removal from counting this identity as an administrator it no longer
 		// is, and what makes the recorded list the one that actually committed.
 		stranded, err = s.organizationsStrandedByDeactivation(ctx, req.UserId)
+		if err != nil {
+			return err
+		}
+		// Before the status write, whose trigger revokes the same rows and
+		// reports none of them: the rows named here are what the access
+		// markers below are written for.
+		revoked, err = s.store.RevokeAllUserSessions(ctx, req.UserId, SessionRevokedUserNotActive)
 		if err != nil {
 			return err
 		}
@@ -125,6 +133,10 @@ func (s *Service) SuspendUser(ctx context.Context, actorID string, req *gen.Susp
 	}); err != nil {
 		return w.Wrapf(err, "cannot suspend user")
 	}
+	// Suspension contains a compromised account, and the gateway admits an
+	// already-issued access token from the revocation list alone: without the
+	// markers the credential being contained stays usable for its whole lifetime.
+	s.revokeSessionAccess(ctx, accessRevocationKeys(revoked))
 
 	message := fmt.Sprintf("Security: user %s suspended by %s (reason: %s)", req.UserId, actorID, req.Reason)
 	if len(stranded) > 0 {
@@ -451,18 +463,13 @@ func (s *Service) RevokeSession(ctx context.Context, actorID string, req *gen.Re
 		return w.Wrapf(err, "cannot revoke session")
 	}
 
-	// Killing the refresh family leaves the victim's outstanding access token
-	// valid until its natural TTL on every path. Write a session-revocation
-	// marker per revoked row so the access half dies now. Best-effort: the DB
-	// revocation above is the durable authority, and a store outage bounds the
-	// residual exposure to AccessTokenTTL rather than failing the kill.
-	if s.minter != nil {
-		for _, sessionID := range revokedSessionIDs {
-			if err := s.minter.RevokeSessionAccess(ctx, sessionID); err != nil {
-				w.Warn("RevokeSessionAccess failed (best-effort)", wool.ErrField(err))
-			}
-		}
-	}
+	// Killing the refresh family leaves the victim's outstanding access tokens
+	// valid until their natural TTL on every path, so the access half is ended
+	// by markers: one per revoked row, and one for the family itself. The row
+	// ids alone reached only the family's current session — every refresh mints
+	// a new one — so the access token minted before the last refresh survived
+	// the kill.
+	s.revokeSessionAccess(ctx, append(revokedSessionIDs, req.SessionId))
 
 	return nil
 }
