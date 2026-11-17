@@ -18,7 +18,7 @@ import (
 	"strings"
 
 	"github.com/codefly-dev/core/composition"
-	"github.com/codefly-dev/core/solutionhost"
+	"github.com/codefly-dev/authority/libraries/solutionhost/go"
 )
 
 const MaxBundleBytes = 64 << 20
