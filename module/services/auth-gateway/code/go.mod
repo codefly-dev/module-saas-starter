@@ -5,11 +5,11 @@ go 1.27.4
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2
 	connectrpc.com/connect v1.21.1
-	github.com/codefly-dev/authority/libraries/authority-client/go v0.2.1-0.20261117201131-2af7fafa1d81
-	github.com/codefly-dev/authority/libraries/authority-core/go v0.1.2-0.20261117201131-2af7fafa1d81
-	github.com/codefly-dev/authority/libraries/hop/go v0.2.1-0.20261117201131-2af7fafa1d81
-	github.com/codefly-dev/authority/libraries/solutionhost/go v0.0.0-20261117201131-2af7fafa1d81
-	github.com/codefly-dev/core v0.19.34-0.20261116201543-b919b702e8cf
+	github.com/codefly-dev/authority/libraries/authority-client/go v0.2.1-0.20261117230331-f1724b073a69
+	github.com/codefly-dev/authority/libraries/authority-core/go v0.1.2-0.20261117230331-f1724b073a69
+	github.com/codefly-dev/authority/libraries/hop/go v0.2.1-0.20261117230331-f1724b073a69
+	github.com/codefly-dev/authority/libraries/solutionhost/go v0.0.0-20261117230331-f1724b073a69
+	github.com/codefly-dev/core v0.19.34-0.20261117211945-b67415c6891b
 	github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261117094433-02cb6483b246
 	github.com/codefly-dev/sdk-go v0.4.1
 	github.com/codefly-dev/sdk-go/workcontext v0.1.1-0.20261018052022-70dc7a546458
@@ -48,8 +48,8 @@ require (
 	github.com/cheggaaa/pb/v3 v3.2.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
-	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261117201131-2af7fafa1d81 // indirect
-	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261117201131-2af7fafa1d81 // indirect
+	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261117230331-f1724b073a69 // indirect
+	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261117230331-f1724b073a69 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.3 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect

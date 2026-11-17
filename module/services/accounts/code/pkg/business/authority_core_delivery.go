@@ -60,7 +60,11 @@ func documentOf(in *compositionv1.AuthorityManifestV1) *coredelivered.Document {
 	}
 	doc.SharedKinds = append(doc.SharedKinds, in.GetSharedKinds()...)
 	for _, m := range in.GetMethods() {
-		doc.Methods = append(doc.Methods, coredelivered.Method{Method: m.GetMethod(), Requires: wireScopes(m.GetRequires()), AnyCheckedCaller: m.GetAnyCheckedCaller()})
+		doc.Methods = append(doc.Methods, coredelivered.Method{Method: m.GetMethod(), Requires: wireScopes(m.GetRequires()), AnyCheckedCaller: m.GetAnyCheckedCaller(),
+			// What a method carries is the core's to hold to what the module
+			// serves: dropped here, a delivery carrying a permission no
+			// handler will ever be handed is composed as if it carried none.
+			Carries: wireScopes(m.GetCarries())})
 	}
 	for _, r := range in.GetRoles() {
 		role := coredelivered.Role{Name: r.GetName(), Scopes: wireScopes(r.GetScopes()), InstallationOwned: wireScopes(r.GetInstallationOwnedScopes())}

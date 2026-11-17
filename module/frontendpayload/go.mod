@@ -3,8 +3,8 @@ module github.com/codefly-dev/module-saas-starter/module/frontendpayload
 go 1.27.4
 
 require (
-	github.com/codefly-dev/authority/libraries/solutionhost/go v0.0.0-20261117201131-2af7fafa1d81
-	github.com/codefly-dev/core v0.19.34-0.20261116201543-b919b702e8cf
+	github.com/codefly-dev/authority/libraries/solutionhost/go v0.0.0-20261117230331-f1724b073a69
+	github.com/codefly-dev/core v0.19.34-0.20261117211945-b67415c6891b
 	github.com/stretchr/testify v1.12.1
 	oras.land/oras-go/v2 v2.6.2
 )
