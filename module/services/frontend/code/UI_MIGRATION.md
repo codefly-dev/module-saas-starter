@@ -145,3 +145,19 @@ Permissions and team-member lists use DataTable. Access checks show declared act
 Role removal from user details, role holders, team roles, and the member-roles dialog composes the kit AlertDialog through the role feature. Confirmation names the subject and role, preserves the assignment restriction, and disables controls while submitting. Read-only role viewers have no delete control. Session rows summarize browsers and operating systems, and denied reads explain who can grant access without offering retry. The checkout-return page offers billing verification without claiming a completed payment.
 
 This is an incremental migration: remaining route/dialog coverage and live-fixture limitations are recorded in the workspace UI inventory. A successful source migration is not evidence that every route has passed a visual audit.
+
+### Administration forms and access review (2026-11-18)
+
+Source connection uses the kit Select for collections, repositories and directory
+team matching. Sharing composes kit Checkbox and Label; source removal, saved-token
+removal and collection-access removal use AlertDialog with named consequences,
+cancellation and pending guards. GitHub setup groups related fields on wider
+screens and disables editing during submission. The source package owns these
+changes; published consumers need a package update, not copied components.
+
+Waitlist uses the kit DataTable and confirms rejection. Role creation and editing
+use described activities instead of free-form resource/action tokens. Role holders
+use DataTable and resolved person names. A failed activity catalogue prevents a
+save, and existing undescribed grants remain intact. Legacy role names and missing
+activity descriptions returned by the service still need owner-side cleanup;
+frontend presentation does not rename stored roles or change authorization.

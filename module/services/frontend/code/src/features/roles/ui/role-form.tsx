@@ -1,12 +1,16 @@
 "use client";
 
-import { Plus, X } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { activityLabel } from "@/features/permissions/model/activity-label";
+import { permissionLabel } from "@/features/permissions/model/effective";
+import { permissionQueries } from "@/features/permissions/service/queries";
 import { failureText } from "@/shared/lib/failure-text";
 import {
-	Badge,
 	Button,
+	Checkbox,
 	Dialog,
 	DialogContent,
 	DialogDescription,
@@ -14,8 +18,10 @@ import {
 	DialogHeader,
 	DialogTitle,
 	DialogTrigger,
+	ErrorState,
 	Input,
 	Label,
+	Spinner,
 } from "@/shared/ui";
 import { useCreateRole } from "../service/mutations";
 
@@ -24,36 +30,29 @@ export function RoleForm({ orgId }: { orgId: string }) {
 	const [open, setOpen] = useState(false);
 	const [name, setName] = useState("");
 	const [description, setDescription] = useState("");
-	const [permResource, setPermResource] = useState("");
-	const [permAction, setPermAction] = useState("");
 	const [permissions, setPermissions] = useState<
 		{ resource: string; action: string }[]
 	>([]);
-
 	const createRole = useCreateRole();
-
-	function addPermission() {
-		if (!permResource.trim() || !permAction.trim()) return;
-		if (
-			permissions.some(
-				(p) =>
-					p.resource === permResource.trim() && p.action === permAction.trim(),
-			)
-		) {
-			setError("This permission has already been added.");
-			return;
-		}
-		setError(null);
-		setPermissions((prev) => [
-			...prev,
-			{ resource: permResource.trim(), action: permAction.trim() },
-		]);
-		setPermResource("");
-		setPermAction("");
-	}
-
-	function removePermission(index: number) {
-		setPermissions((prev) => prev.filter((_, i) => i !== index));
+	const catalogue = useQuery({
+		...permissionQueries.serviceInfo(),
+		enabled: open,
+	});
+	const activities = catalogue.data?.capabilities?.permissions ?? [];
+	function togglePermission(
+		permission: { resource: string; action: string },
+		checked: boolean,
+	) {
+		setPermissions((current) =>
+			checked
+				? [
+						...current,
+						{ resource: permission.resource, action: permission.action },
+					]
+				: current.filter(
+						(entry) => permissionLabel(entry) !== permissionLabel(permission),
+					),
+		);
 	}
 
 	function reset() {
@@ -61,8 +60,6 @@ export function RoleForm({ orgId }: { orgId: string }) {
 		setName("");
 		setDescription("");
 		setPermissions([]);
-		setPermResource("");
-		setPermAction("");
 	}
 
 	function handleSubmit() {
@@ -105,7 +102,7 @@ export function RoleForm({ orgId }: { orgId: string }) {
 					<DialogDescription>
 						{orgId
 							? "Define a role for the selected organization."
-							: "Define a global role with custom permissions."}
+							: "Define a role that can be assigned across organizations."}
 					</DialogDescription>
 				</DialogHeader>
 				{error && (
@@ -114,12 +111,12 @@ export function RoleForm({ orgId }: { orgId: string }) {
 					</p>
 				)}
 
-				<div className="space-y-4 py-4">
+				<fieldset disabled={createRole.isPending} className="space-y-4 py-4">
 					<div className="space-y-2">
 						<Label htmlFor="role-name">Name</Label>
 						<Input
 							id="role-name"
-							placeholder="e.g. billing-admin"
+							placeholder="e.g. Billing manager"
 							value={name}
 							onChange={(e) => setName(e.target.value)}
 						/>
@@ -135,54 +132,50 @@ export function RoleForm({ orgId }: { orgId: string }) {
 						/>
 					</div>
 
-					<div className="space-y-2">
-						<Label>Permissions</Label>
-						{permissions.length > 0 && (
-							<div className="flex flex-wrap gap-1">
-								{permissions.map((p, i) => (
-									<Badge
-										key={`${p.resource}:${p.action}`}
-										variant="secondary"
-										className="font-mono text-xs gap-1"
-									>
-										{p.resource}:{p.action}
-										<button
-											type="button"
-											onClick={() => removePermission(i)}
-											className="ml-1 hover:text-destructive"
-										>
-											<X className="h-3 w-3" />
-										</button>
-									</Badge>
-								))}
+					<div className="space-y-3">
+						<p className="type-label">What people with this role can do</p>
+						{catalogue.isError ? (
+							<ErrorState
+								title="Activities unavailable"
+								detail="Couldn’t load the available activities. Ask your organization administrator to check your access."
+							/>
+						) : catalogue.isPending ? (
+							<Spinner label="Loading available activities" />
+						) : activities.length === 0 ? (
+							<p className="type-body text-muted-foreground">
+								No activities are available to add. You can create the role and
+								add access later.
+							</p>
+						) : (
+							<div className="max-h-64 space-y-3 overflow-y-auto rounded-lg border p-3">
+								{activities.map((activity) => {
+									const key = permissionLabel(activity);
+									return (
+										<div key={key} className="flex items-start gap-2">
+											<Checkbox
+												id={`new-role-${key}`}
+												checked={permissions.some(
+													(entry) => permissionLabel(entry) === key,
+												)}
+												onCheckedChange={(checked) =>
+													togglePermission(activity, !!checked)
+												}
+												disabled={!activityLabel(activity)}
+											/>
+											<Label
+												htmlFor={`new-role-${key}`}
+												className="leading-relaxed"
+											>
+												{activityLabel(activity) ||
+													"This activity has no description. Ask your administrator to update it."}
+											</Label>
+										</div>
+									);
+								})}
 							</div>
 						)}
-						<div className="flex items-center gap-2">
-							<Input
-								placeholder="Resource"
-								value={permResource}
-								onChange={(e) => setPermResource(e.target.value)}
-								className="flex-1"
-							/>
-							<Input
-								placeholder="Action"
-								value={permAction}
-								onChange={(e) => setPermAction(e.target.value)}
-								onKeyDown={(e) => e.key === "Enter" && addPermission()}
-								className="flex-1"
-							/>
-							<Button
-								type="button"
-								variant="outline"
-								size="sm"
-								onClick={addPermission}
-								disabled={!permResource.trim() || !permAction.trim()}
-							>
-								Add
-							</Button>
-						</div>
 					</div>
-				</div>
+				</fieldset>
 
 				<DialogFooter>
 					<Button
@@ -197,7 +190,12 @@ export function RoleForm({ orgId }: { orgId: string }) {
 					</Button>
 					<Button
 						onClick={handleSubmit}
-						disabled={createRole.isPending || !name.trim()}
+						disabled={
+							createRole.isPending ||
+							catalogue.isPending ||
+							catalogue.isError ||
+							!name.trim()
+						}
 					>
 						{createRole.isPending ? "Creating..." : "Create"}
 					</Button>

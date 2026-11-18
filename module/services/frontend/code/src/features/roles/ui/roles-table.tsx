@@ -63,24 +63,30 @@ export function RolesTable({
 				),
 			}),
 			col.accessor("permissions", {
-				header: "Permissions",
+				header: "Access",
 				cell: (info) => {
 					const perms = info.getValue();
 					if (!perms || perms.length === 0) {
 						return <span className="text-muted-foreground">None</span>;
 					}
+					if (
+						perms.some(
+							(permission) =>
+								permission.resource === "*" && permission.action === "*",
+						)
+					)
+						return <span>All activities</span>;
+					if (
+						perms.some(
+							(permission) =>
+								permission.resource === "*" || permission.action === "*",
+						)
+					)
+						return <span>Multiple activities</span>;
 					return (
-						<div className="flex flex-wrap gap-1">
-							{perms.map((p) => (
-								<Badge
-									key={`${p.resource}:${p.action}`}
-									variant="secondary"
-									className="font-mono text-xs"
-								>
-									{p.resource}:{p.action}
-								</Badge>
-							))}
-						</div>
+						<span className="type-body">
+							{perms.length} {perms.length === 1 ? "activity" : "activities"}
+						</span>
 					);
 				},
 			}),

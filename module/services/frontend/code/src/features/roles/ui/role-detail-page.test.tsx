@@ -53,6 +53,11 @@ beforeEach(() => {
 	session.organizationId = "org-1";
 	session.orgRole = "owner";
 	session.platformRole = undefined;
+	server.use(
+		http.post(rpc("IntrospectionService", "GetServiceInfo"), () =>
+			HttpResponse.json({ capabilities: { permissions: [] } }),
+		),
+	);
 });
 
 afterEach(cleanup);
@@ -74,7 +79,9 @@ describe("RoleDetailPage", () => {
 		renderInApp(<RoleDetailPage roleId="role-1" />);
 
 		await screen.findByRole("heading", { name: "Editor" });
-		fireEvent.click(await screen.findByLabelText("users:read"));
+		fireEvent.click(
+			await screen.findByRole("checkbox", { name: "View people" }),
+		);
 		fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
 
 		await waitFor(() => expect(updates).toHaveLength(1));
@@ -224,4 +231,51 @@ describe("RoleDetailPage", () => {
 		);
 		expect(screen.queryByText("Person")).toBeNull();
 	});
+});
+
+it("keeps saved access intact when an activity is no longer described", async () => {
+	serveRole({
+		...editor,
+		permissions: [{ resource: "legacy", action: "read" }],
+	});
+	const updates: unknown[] = [];
+	server.use(
+		http.post(rpc("PermissionService", "UpdateRole"), async ({ request }) => {
+			updates.push(await request.json());
+			return HttpResponse.json({ role: editor });
+		}),
+	);
+	renderInApp(<RoleDetailPage roleId="role-1" />);
+	const saved = await screen.findByRole("checkbox", {
+		name: /Saved access without a description/,
+	});
+	expect(saved.getAttribute("aria-checked")).toBe("true");
+	expect(saved.getAttribute("aria-disabled")).toBe("true");
+	fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+	await waitFor(() =>
+		expect(updates).toContainEqual(
+			expect.objectContaining({
+				permissions: [{ resource: "legacy", action: "read" }],
+			}),
+		),
+	);
+});
+it("prevents saving when available activities cannot be read", async () => {
+	serveRole();
+	server.use(
+		http.post(rpc("IntrospectionService", "GetServiceInfo"), () =>
+			HttpResponse.json(
+				{ code: "permission_denied", message: "secret implementation" },
+				{ status: 403 },
+			),
+		),
+	);
+	renderInApp(<RoleDetailPage roleId="role-1" />);
+	expect(await screen.findByText("Activities unavailable")).toBeTruthy();
+	expect(screen.queryByText("secret implementation")).toBeNull();
+	expect(
+		screen
+			.getByRole("button", { name: /Save changes/ })
+			.hasAttribute("disabled"),
+	).toBe(true);
 });
