@@ -125,26 +125,33 @@ func signedInPerson(ctx context.Context, what string) (authority.Person, error) 
 	// alone: one that was ended (End, a sign-out, a revocation) or is past the
 	// moment it ends on its own is unauthenticated here, whatever the
 	// perimeter's revocation markers still say.
-	if err := requireOpenSession(ctx, person.SessionID); err != nil {
+	end, err := openSessionDeadline(ctx, person.SessionID)
+	if err != nil {
 		return authority.Person{}, err
 	}
+	person.ExpiresAt = end
 	return person, nil
 }
 
 // requireOpenSession refuses, Unauthenticated, a session id that names no open
 // session of this host.
 func requireOpenSession(ctx context.Context, sessionID string) error {
+	_, err := openSessionDeadline(ctx, sessionID)
+	return err
+}
+
+func openSessionDeadline(ctx context.Context, sessionID string) (time.Time, error) {
 	if service == nil {
-		return status.Error(codes.Unavailable, "this host reads no sessions")
+		return time.Time{}, status.Error(codes.Unavailable, "this host reads no sessions")
 	}
-	_, err := service.SessionEndsAt(ctx, sessionID)
+	end, err := service.SessionEndsAt(ctx, sessionID)
 	if errors.Is(err, business.ErrNoOpenSession) {
-		return status.Error(codes.Unauthenticated, err.Error())
+		return time.Time{}, status.Error(codes.Unauthenticated, err.Error())
 	}
 	if err != nil {
-		return status.Errorf(codes.Unavailable, "cannot read whether the session is open: %v", err)
+		return time.Time{}, status.Errorf(codes.Unavailable, "cannot read whether the session is open: %v", err)
 	}
-	return nil
+	return end, nil
 }
 
 // workload is the composed module a workload credential proves, reviewed by

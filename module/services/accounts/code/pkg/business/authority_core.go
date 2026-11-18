@@ -207,6 +207,7 @@ func (s *Service) newAuthorityCore(issuer, keyID string, key ed25519.PrivateKey)
 		Issuer: issuer, KeyID: keyID, Signer: key, Keys: staticKeys{keyID: public},
 		Replay: store.AuthorityCoreReplay(), MaxTTL: WorkContextMaxTTL, Journal: s.journalAuthority,
 		Decisions:           s.recordAuthorityDecision,
+		CheckSession:        s.CheckCapabilitySession,
 		HostInstallsModules: true,
 	})
 }

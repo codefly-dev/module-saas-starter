@@ -96,9 +96,11 @@ func issueForStatedCredential(ctx context.Context, core *authority.Service, req 
 			return refuse(codes.FailedPrecondition, "a confined credential reached this issue without the installation it was admitted under, so no consent to it was resolved")
 		}
 		person.SessionID = identity.SessionID.String()
-		if err := requireOpenSession(ctx, person.SessionID); err != nil {
+		end, err := openSessionDeadline(ctx, person.SessionID)
+		if err != nil {
 			return true, out, err
 		}
+		person.ExpiresAt = end
 	} else if m, merr := service.ComposedAudience(ctx, r.Audience); merr == nil && m.Kind != domain.KindSolution {
 		// An audience the core does not compose is refused by the core below,
 		// by its own name for it.

@@ -95,6 +95,12 @@ func (s *Service) EndSession(ctx context.Context, person, organization, sessionI
 	}); err != nil {
 		return err
 	}
+	return s.publishSessionRevocations(ctx, revoked)
+}
+
+// publishSessionRevocations reports incomplete containment after the durable
+// revocation committed, and attempts every marker even when one fails.
+func (s *Service) publishSessionRevocations(ctx context.Context, revoked []RevokedSession) error {
 	if s.minter == nil {
 		return nil
 	}
@@ -108,4 +114,31 @@ func (s *Service) EndSession(ctx context.Context, person, organization, sessionI
 		return fmt.Errorf("%w: %v", ErrSessionEndIncomplete, failed)
 	}
 	return nil
+}
+
+// CheckCapabilitySession refuses ended interactive roots at the authority.
+func (s *Service) CheckCapabilitySession(ctx context.Context, id string) error {
+	store, ok := s.store.(interface {
+		CheckCapabilitySession(context.Context, string) error
+	})
+	if !ok {
+		return fmt.Errorf("host store cannot check capability sessions")
+	}
+	return s.store.WithControlPlane(ctx, func(ctx context.Context) error { return store.CheckCapabilitySession(ctx, id) })
+}
+
+// ReconcileSessionRevocations retries marker publication from durable session
+// rows. A failed pass is retried on the next sweep, also after a restart.
+func (s *Service) ReconcileSessionRevocations(ctx context.Context) error {
+	store, ok := s.store.(interface {
+		RevokedSessionMarkers(context.Context) ([]RevokedSession, error)
+	})
+	if !ok {
+		return fmt.Errorf("host store cannot replay session revocations")
+	}
+	var rows []RevokedSession
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) (err error) { rows, err = store.RevokedSessionMarkers(ctx); return err }); err != nil {
+		return err
+	}
+	return s.publishSessionRevocations(ctx, rows)
 }
