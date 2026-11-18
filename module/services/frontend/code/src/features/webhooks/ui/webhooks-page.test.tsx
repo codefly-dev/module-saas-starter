@@ -1,4 +1,4 @@
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
@@ -41,4 +41,32 @@ describe("WebhooksPage admin container", () => {
 			await screen.findByText("https://example.com/hooks/orders"),
 		).toBeTruthy();
 	});
+});
+
+it.each([
+  ["Delete", "Delete webhook", "DeleteSubscription"],
+  ["Rotate secret", "Rotate secret", "RotateSecret"],
+])("confirms %s for the named webhook, with cancellation", async (menu, action, procedure) => {
+  const mutate = vi.fn(() => HttpResponse.json({}));
+  const url = "https://example.com/hooks/orders";
+  server.use(
+    http.post(rpc("WebhookService", "ListSubscriptions"), () => HttpResponse.json({ subscriptions: [{ id: "wh-1", orgId: "org-1", url, events: [], active: true }] })),
+    http.post(rpc("WebhookService", procedure), mutate),
+  );
+  renderInApp(<WebhooksPage />);
+  const open = async () => {
+    fireEvent.click(await screen.findByRole("button", { name: `Actions for ${url}` }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: menu }));
+    return screen.findByRole("alertdialog");
+  };
+  let dialog = await open();
+  expect(within(dialog).getByText(url)).toBeTruthy();
+  expect(mutate).not.toHaveBeenCalled();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  expect(mutate).not.toHaveBeenCalled();
+  dialog = await open();
+  fireEvent.click(within(dialog).getByRole("button", { name: action }));
+  await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
 });
