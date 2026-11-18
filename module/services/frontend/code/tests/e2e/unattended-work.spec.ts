@@ -24,8 +24,8 @@ test.describe("unattended work", () => {
 	test("the page states what runs unattended and whose access it would use", async ({
 		page,
 	}) => {
-		await page.goto("/admin/unattended-work");
-		await page.waitForURL((url) => url.pathname === "/admin/unattended-work", {
+		await page.goto("/admin/platform/unattended-work");
+		await page.waitForURL((url) => url.pathname === "/admin/platform/unattended-work", {
 			timeout: 15000,
 		});
 		expect(page.url()).not.toContain("/auth/login");
@@ -77,72 +77,39 @@ test.describe("unattended work", () => {
 		).toBeVisible();
 	});
 
-	test("a source's settings show the reconcile schedule as the trigger it declares", async ({
-		page,
-	}) => {
+	test("a source's advanced settings explain its sync schedule", async ({ page }) => {
 		await page.goto("/admin/datasources");
-		await page.waitForURL((url) => url.pathname === "/admin/datasources", {
-			timeout: 15000,
-		});
-		await expect(
-			page.getByRole("heading", { name: "Reconcile schedules" }),
-		).toBeVisible({ timeout: 20000 });
-		// The panel states the host's position on this schedule outright, and
-		// since #1112 that position is "declared here, and for now fired here
-		// too": nothing consumes the declaration, so the host runs the schedule
-		// as a labelled stopgap. A page still claiming it fires nothing would be
-		// the most misleading thing a schedule panel can say.
-		await expect(
-			page.getByText(
-				/this host still fires the schedule itself, as a\s+stopgap/i,
-			),
-		).toBeVisible();
-		// And it says that a person's "Sync now" is the same admission, which is
-		// why the two sit in one table rather than in two lists.
-		await expect(
-			page.getByText(/admits the same operation with an effect identity/),
-		).toBeVisible();
+		await page.getByRole("button", { name: "Advanced" }).click();
+		await expect(page.getByRole("heading", { name: "Sync schedule" })).toBeVisible();
+		const schedule = page.getByRole("list", { name: "Sync schedule" });
+		const empty = page.getByText("No source is connected yet.", { exact: true });
+		await expect(schedule.or(empty)).toBeVisible();
+		if (await schedule.isVisible()) {
+			await expect(schedule.getByRole("listitem").first()).toContainText(/Syncs every|Syncs when you press Sync now/);
+		}
 	});
 
-	test("a person's pass is listed beside the scheduled occurrences, with its effect identity", async ({
-		page,
-	}) => {
-		await page.goto("/admin/datasources");
-		await page.waitForURL((url) => url.pathname === "/admin/datasources", {
-			timeout: 15000,
-		});
-		await expect(
-			page.getByRole("heading", { name: "Reconcile schedules" }),
-		).toBeVisible({ timeout: 20000 });
-
-		// Either this organization has a connected source or it does not; both
-		// are real answers and the panel gives one of them.
-		const row = page.locator('[data-slot="source-trigger"]').first();
-		const empty = page.getByText("No connected source declares a schedule");
-		await expect(row.or(empty).first()).toBeVisible({ timeout: 20000 });
-		if (await empty.isVisible()) return;
-
-		// The admissions table, with the declared schedule's two occurrences in
-		// it before anything is pressed.
-		const admissions = row.locator('[data-slot="admissions"]');
-		await expect(admissions).toBeVisible();
-		await expect(
-			admissions.locator('[data-slot="scheduled-occurrence"]'),
-		).toHaveCount(2);
-		await expect(admissions.locator('[data-slot="manual-pass"]')).toHaveCount(
-			0,
+	test("a manual run requires a connected source with active access", async ({ page }) => {
+		await page.goto("/admin/platform/unattended-work");
+		const empty = page.getByRole("heading", { name: "No data source is connected" });
+		const run = page.getByRole("button", { name: "Run now" });
+		await expect(empty.or(run)).toBeVisible();
+		if (await empty.isVisible()) {
+			await expect(run).toHaveCount(0);
+			return;
+		}
+		await expect(page.getByRole("heading", { name: "Whose access it runs with" })).toBeVisible();
+		if (await run.isDisabled()) {
+			await expect(run).toHaveAttribute("title", /Set up someone's access first/);
+			return;
+		}
+		const admission = page.waitForResponse(response =>
+			response.request().method() === "POST" && response.url().endsWith("/ReconcileSource")
 		);
-
-		// "Sync now" is the kit panel's control, above this one. Pressing it
-		// admits the host's reconcile operation, and the pass lands in THIS
-		// table — the same table as the occurrences, which is the whole claim.
-		const sync = page.getByRole("button", { name: /^Sync$/ }).first();
-		if ((await sync.count()) === 0) return;
-		await sync.click();
-		const manual = admissions.locator('[data-slot="manual-pass"]').first();
-		await expect(manual).toBeVisible({ timeout: 20000 });
-		// Not blank: the effect identity is what makes it the same object a
-		// scheduled occurrence is, so the row would be meaningless without it.
-		await expect(manual).toContainText(/[0-9a-f-]{8,}/);
+		await run.click();
+		const response = await admission;
+		expect(response.ok(), await response.text()).toBe(true);
+		expect((await response.json()).effectId).toBeTruthy();
+		await expect(page.getByText(/Run started for/)).toBeVisible();
 	});
 });
