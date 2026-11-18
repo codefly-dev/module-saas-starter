@@ -33,12 +33,16 @@ export function writeRefusal(error: unknown): string {
 			if (refused.rawMessage === "mfa_required") {
 				return "Writing the envelope needs your passkey confirmed within the last 15 minutes. Confirm it (the sign-in page brings you back here), then write it again.";
 			}
-			return refused.rawMessage;
+			return "The current configuration cannot be applied. Refresh the page and review the latest revision.";
 		case Code.Aborted:
 			return "Another administrator wrote a revision after you started this draft. Nothing was written: discard the draft, review their revision, and decide again.";
 		case Code.PermissionDenied:
-			return "Only a platform super administrator can write the module envelope.";
+			return "You don’t have access to change this configuration. Ask a platform administrator for access.";
+		case Code.InvalidArgument:
+			return "The configuration is invalid. Check the document before saving it.";
+		case Code.Unauthenticated:
+			return "Sign in again before saving this configuration.";
 		default:
-			return refused.rawMessage || refused.message;
+			return "Couldn’t save this configuration. Try again; if this keeps happening, contact your platform administrator.";
 	}
 }

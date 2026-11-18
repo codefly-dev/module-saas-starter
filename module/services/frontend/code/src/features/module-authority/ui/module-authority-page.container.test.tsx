@@ -71,20 +71,20 @@ describe("ModuleAuthorityPage", () => {
 		renderInApp(<ModuleAuthorityPage />);
 
 		expect(
-			await screen.findByText("No module envelope has been written"),
+			await screen.findByText("Module access hasn’t been configured"),
 		).toBeTruthy();
 		expect(
 			screen.getByText(
-				/^2 of 2 asked for have no ceiling in the envelope, and are denied every Work Context\./,
+				/^2 of 2 requests are outside the configured access limits\./,
 			),
 		).toBeTruthy();
 		const table = screen.getByRole("table", {
-			name: "Authority the applied manifests ask for",
+			name: "Requested module access",
 		});
 		expect(within(table).getByText("documents")).toBeTruthy();
-		expect(within(table).getAllByText("No ceiling")).toHaveLength(2);
+		expect(within(table).getAllByText("Not configured")).toHaveLength(2);
 		const draft = screen.getByLabelText(
-			"Envelope document",
+			"Configuration document",
 		) as HTMLTextAreaElement;
 		expect(JSON.parse(draft.value)).toEqual({ revision: 1, principals: {} });
 	});
@@ -102,11 +102,11 @@ describe("ModuleAuthorityPage", () => {
 		expect(await screen.findByText(revision3.writtenBy)).toBeTruthy();
 		expect(
 			screen.getByText(
-				/^1 of 2 asked for has no ceiling in the envelope, and is denied every Work Context\./,
+				/^1 of 2 requests are outside the configured access limits\./,
 			),
 		).toBeTruthy();
 		const draft = screen.getByLabelText(
-			"Envelope document",
+			"Configuration document",
 		) as HTMLTextAreaElement;
 		expect(JSON.parse(draft.value).revision).toBe(4);
 		fireEvent.change(draft, {
@@ -136,7 +136,7 @@ describe("ModuleAuthorityPage", () => {
 		);
 		const { client } = renderInApp(<ModuleAuthorityPage />);
 		const draft = (await screen.findByLabelText(
-			"Envelope document",
+			"Configuration document",
 		)) as HTMLTextAreaElement;
 		fireEvent.change(draft, {
 			target: { value: JSON.stringify({ revision: 4, principals: {} }) },
@@ -172,7 +172,7 @@ describe("ModuleAuthorityPage", () => {
 		});
 		renderInApp(<ModuleAuthorityPage />);
 
-		expect(await screen.findAllByText("Asked for by 2 bindings")).toHaveLength(
+		expect(await screen.findAllByText("2 conflicting requests")).toHaveLength(
 			2,
 		);
 		expect(screen.getByText("{not json")).toBeTruthy();
@@ -198,7 +198,7 @@ describe("ModuleAuthorityPage", () => {
 				message: "module envelope is invalid: unknown field workload",
 			},
 			400,
-			"module envelope is invalid: unknown field workload",
+			"The configuration is invalid. Check the document before saving it.",
 		],
 	])(
 		"names the reason a write was refused: %s",

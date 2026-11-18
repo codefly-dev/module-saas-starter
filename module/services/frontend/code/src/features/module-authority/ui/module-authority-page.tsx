@@ -1,9 +1,14 @@
 "use client";
 
 import { timestampDate } from "@bufbuild/protobuf/wkt";
-import { isMFARequired, stepUpToast } from "@/features/auth/model/step-up";
+import {
+	createColumnHelper,
+	getCoreRowModel,
+	useReactTable,
+} from "@tanstack/react-table";
 import { useState } from "react";
 import { toast } from "sonner";
+import { isMFARequired, stepUpToast } from "@/features/auth/model/step-up";
 import type { ModuleAuthorityRequest } from "@/gen/saas/accounts/v1/platform_admin_pb";
 import { failureText } from "@/shared/lib/failure-text";
 import { readOutcome } from "@/shared/lib/read-outcome";
@@ -31,15 +36,10 @@ import {
 	PageHeader,
 	Panel,
 	Spinner,
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
 	Textarea,
 	useLoadingPhase,
 } from "@/shared/ui";
+import { DataTable } from "@/shared/ui/data-table";
 import { nextRevisionDraft, writeRefusal } from "../model/draft";
 import { usePutModuleEnvelope } from "../service/mutations";
 import { useModuleEnvelope } from "../service/queries";
@@ -57,8 +57,8 @@ type Draft = { base: bigint; text: string };
  */
 const header = (
 	<PageHeader
-		title="Module authority"
-		description="The ceiling every module's authority is derived inside. A module holds what its applied manifest asks for and this envelope allows — never more than either."
+		title="Module access"
+		description="Review the access requested by installed modules and manage the limits they must stay within."
 	/>
 );
 
@@ -75,7 +75,7 @@ export function ModuleAuthorityPage() {
 		return (
 			<PageBody>
 				{header}
-				{indicator && <Spinner label="Loading the module envelope" />}
+				{indicator && <Spinner label="Loading module access" />}
 			</PageBody>
 		);
 	}
@@ -85,11 +85,11 @@ export function ModuleAuthorityPage() {
 				{header}
 				<Panel>
 					<ErrorState
-						title="The module envelope can't be shown"
+						title="Module access can’t be shown"
 						detail={
 							readOutcome(true, read.error) === "forbidden"
-								? "Only a platform super administrator can see the module envelope."
-								: failureText("load the module envelope", read.error)
+								? "You don’t have access to this configuration. Ask a platform administrator for access."
+								: failureText("load module access", read.error)
 						}
 					/>
 				</Panel>
@@ -129,7 +129,7 @@ export function ModuleAuthorityPage() {
 
 			<Card>
 				<CardHeader>
-					<CardTitle className="text-base">Current envelope</CardTitle>
+					<CardTitle className="text-base">Current configuration</CardTitle>
 				</CardHeader>
 				<CardContent>
 					{envelope ? (
@@ -148,9 +148,9 @@ export function ModuleAuthorityPage() {
 							</dd>
 						</dl>
 					) : (
-						<Banner tone="danger" title="No module envelope has been written">
-							Every module on this host is denied a Work Context until a
-							platform super administrator writes one.
+						<Banner tone="danger" title="Module access hasn’t been configured">
+							Modules cannot run until a platform administrator saves their
+							access configuration.
 						</Banner>
 					)}
 				</CardContent>
@@ -158,22 +158,20 @@ export function ModuleAuthorityPage() {
 
 			<Card>
 				<CardHeader>
-					<CardTitle className="text-base">
-						What the applied manifests ask for
-					</CardTitle>
+					<CardTitle className="text-base">Requested access</CardTitle>
 					<CardDescription>
-						{denied.length === 0
-							? "The envelope declares a ceiling for every principal asked for."
-							: `${denied.length} of ${requested.length} asked for ${denied.length === 1 ? "has" : "have"} no ceiling in the envelope, and ${denied.length === 1 ? "is" : "are"} denied every Work Context.`}{" "}
-						A declared ceiling is necessary, not sufficient: the reconcile pass
-						still omits a principal two bindings ask for, or whose manifest no
-						longer verifies, and names each in the accounts log.
+						{requested.length === 0
+							? "Installed modules will appear here when they request access."
+							: denied.length === 0
+								? "Every request is within the configured access limits."
+								: `${denied.length} of ${requested.length} requests are outside the configured access limits.`}{" "}
+						Duplicate or unverified requests cannot be activated.
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
 					{requested.length === 0 ? (
 						<p className="text-sm text-muted-foreground">
-							No applied module manifest asks for authority.
+							No modules have requested access.
 						</p>
 					) : (
 						<RequestsTable requested={requested} />
@@ -187,11 +185,9 @@ export function ModuleAuthorityPage() {
 						Write revision {(base + ONE).toString()}
 					</CardTitle>
 					<CardDescription>
-						The whole ceiling, as JSON: <code>revision</code> and{" "}
-						<code>principals</code>, each principal holding only its{" "}
-						<code>grant</code>. It replaces revision {base.toString()} and takes
-						effect at the next check, with no restart. Writing it needs a second
-						factor completed recently.
+						Review the complete configuration before saving. This replaces
+						revision {base.toString()} and applies without a restart. Confirm
+						your passkey before saving.
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-3">
@@ -211,7 +207,7 @@ export function ModuleAuthorityPage() {
 							{refusal}
 						</Banner>
 					)}
-					<Label htmlFor="module-envelope-draft">Envelope document</Label>
+					<Label htmlFor="module-envelope-draft">Configuration document</Label>
 					<Textarea
 						id="module-envelope-draft"
 						className="min-h-72 font-mono text-xs"
@@ -240,21 +236,32 @@ export function ModuleAuthorityPage() {
 				</CardContent>
 			</Card>
 
-			<AlertDialog open={confirming} onOpenChange={setConfirming}>
+			<AlertDialog
+				open={confirming}
+				onOpenChange={(open) => !write.isPending && setConfirming(open)}
+			>
 				<AlertDialogContent>
 					<AlertDialogHeader>
 						<AlertDialogTitle>
 							Write revision {(base + ONE).toString()}?
 						</AlertDialogTitle>
 						<AlertDialogDescription>
-							It replaces the authority ceiling of every module on this host. A
-							principal it no longer allows loses its authority at the next
-							check, and an installation it no longer admits is removed.
+							This replaces the access limits for every installed module.
+							Modules that no longer qualify lose access, and installations
+							excluded by the new configuration are removed.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
-						<AlertDialogAction disabled={write.isPending} onClick={submit}>
+						<AlertDialogCancel disabled={write.isPending}>
+							Cancel
+						</AlertDialogCancel>
+						<AlertDialogAction
+							disabled={write.isPending}
+							onClick={(event) => {
+								event.preventDefault();
+								submit();
+							}}
+						>
 							{write.isPending ? "Writing…" : "Write"}
 						</AlertDialogAction>
 					</AlertDialogFooter>
@@ -280,52 +287,52 @@ function RequestsTable({ requested }: { requested: ModuleAuthorityRequest[] }) {
 	for (const request of requested) {
 		askers.set(request.principal, (askers.get(request.principal) ?? 0) + 1);
 	}
-	return (
-		<Table aria-label="Authority the applied manifests ask for">
-			<TableHeader>
-				<TableRow>
-					<TableHead>Principal</TableHead>
-					<TableHead>Binding</TableHead>
-					<TableHead>Envelope</TableHead>
-					<TableHead>Asks for</TableHead>
-				</TableRow>
-			</TableHeader>
-			<TableBody>
-				{requested.map((request) => (
-					<TableRow key={`${request.principal}:${request.binding}`}>
-						<TableCell className="font-medium">{request.principal}</TableCell>
-						<TableCell className="font-mono text-xs">
-							{request.binding} · generation {request.generation.toString()}
-						</TableCell>
-						<TableCell>
-							{request.allowed ? (
-								<Badge tone="success" dot>
-									Ceiling declared
-								</Badge>
-							) : (
-								<Badge tone="danger" dot>
-									No ceiling
-								</Badge>
-							)}
-							{(askers.get(request.principal) ?? 0) > 1 && (
-								<Badge tone="danger" dot>
-									Asked for by {askers.get(request.principal)} bindings
-								</Badge>
-							)}
-						</TableCell>
-						<TableCell>
-							<details>
-								<summary className="cursor-pointer text-sm">
-									Authority request
-								</summary>
-								<pre className="mt-2 max-w-xl overflow-x-auto text-xs">
-									{indented(request.authority)}
-								</pre>
-							</details>
-						</TableCell>
-					</TableRow>
-				))}
-			</TableBody>
-		</Table>
-	);
+	const col = createColumnHelper<ModuleAuthorityRequest>();
+	const table = useReactTable({
+		data: requested,
+		getCoreRowModel: getCoreRowModel(),
+		columns: [
+			col.accessor("principal", {
+				header: "Module",
+				cell: ({ row }) => (
+					<span className="font-medium">
+						{row.original.alias || row.original.principal}
+					</span>
+				),
+			}),
+			col.accessor("generation", {
+				header: "Version",
+				cell: ({ getValue }) => getValue().toString(),
+			}),
+			col.accessor("allowed", {
+				header: "Access",
+				cell: ({ row }) => (
+					<div className="flex flex-wrap gap-2">
+						<Badge tone={row.original.allowed ? "success" : "danger"} dot>
+							{row.original.allowed ? "Within limits" : "Not configured"}
+						</Badge>
+						{(askers.get(row.original.principal) ?? 0) > 1 && (
+							<Badge tone="danger" dot>
+								{askers.get(row.original.principal)} conflicting requests
+							</Badge>
+						)}
+					</div>
+				),
+			}),
+			col.accessor("authority", {
+				header: "Configuration",
+				cell: ({ getValue }) => (
+					<details>
+						<summary className="cursor-pointer rounded-sm text-sm focus-visible:outline-2 focus-visible:outline-ring">
+							Configuration details
+						</summary>
+						<pre className="mt-2 max-w-xl overflow-x-auto text-xs">
+							{indented(getValue())}
+						</pre>
+					</details>
+				),
+			}),
+		],
+	});
+	return <DataTable table={table} ariaLabel="Requested module access" />;
 }

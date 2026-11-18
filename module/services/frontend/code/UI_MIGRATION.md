@@ -161,3 +161,24 @@ use DataTable and resolved person names. A failed activity catalogue prevents a
 save, and existing undescribed grants remain intact. Legacy role names and missing
 activity descriptions returned by the service still need owner-side cleanup;
 frontend presentation does not rename stored roles or change authorization.
+
+### November 18: remaining admin controls and read states
+
+Jobs, event delivery, invoices, catalogue installations, background-work access,
+user access, roles and waitlist lists now use the shared DataTable. Destructive
+and ownership changes use named kit confirmations. API-key choices and install
+approvals use kit radios/checkboxes, and notifications use the kit popover.
+Progress indicators use theme tokens. Source and module-access failures redact
+server diagnostics; failed reads remain distinct from empty collections.
+
+Onboarding waits for the organization's creation policy instead of offering
+creation on loading or failure. Organization switching preserves read failures,
+and passkey registration keeps safe inline failure feedback in its dialog.
+The shared DataTable supports accessible names, keyboard sorting and keyboard
+row activation with visible focus; these improvements apply to its consumers.
+
+Module access still edits a complete configuration document. A fully described,
+structured editor needs the owner to expose the editable configuration schema;
+this pass does not guess grants or change that contract. Generated navigation
+labels also remain owned by their catalogue generator. Browser coverage is
+recorded in the workspace inventory rather than inferred from passing unit tests.

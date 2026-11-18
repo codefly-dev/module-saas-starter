@@ -8,8 +8,9 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Fingerprint, Loader2, ShieldCheck } from "lucide-react";
 import { useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
-
+import { failureText } from "@/shared/lib/failure-text";
 import {
+	Banner,
 	Button,
 	Dialog,
 	DialogContent,
@@ -31,7 +32,7 @@ function registrationError(error: unknown): string {
 	if (error instanceof DOMException && error.name === "NotAllowedError") {
 		return "Passkey setup was cancelled or timed out. Try again when you're ready.";
 	}
-	return error instanceof Error ? error.message : "Passkey setup failed.";
+	return failureText("set up your passkey", error);
 }
 
 function subscribeToBrowserCapability() {
@@ -75,7 +76,10 @@ export function PasskeySetup({ open, onClose }: PasskeySetupProps) {
 	});
 
 	return (
-		<Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+		<Dialog
+			open={open}
+			onOpenChange={(next) => !next && !registration.isPending && onClose()}
+		>
 			<DialogContent className="overflow-hidden p-0 sm:max-w-md">
 				<div className="bg-primary px-6 py-7 text-primary-foreground">
 					<div className="mb-4 flex size-11 items-center justify-center rounded-2xl bg-primary-foreground/15 ring-1 ring-primary-foreground/25">
@@ -93,6 +97,11 @@ export function PasskeySetup({ open, onClose }: PasskeySetupProps) {
 				</div>
 
 				<div className="space-y-5 px-6 py-6">
+					{registration.isError && (
+						<Banner tone="danger" title="Passkey wasn’t added">
+							{registrationError(registration.error)}
+						</Banner>
+					)}
 					<div className="space-y-2">
 						<Label htmlFor="passkey-name">Passkey name</Label>
 						<Input
@@ -117,10 +126,10 @@ export function PasskeySetup({ open, onClose }: PasskeySetupProps) {
 					</div>
 
 					{!supported && (
-						<p className="rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+						<Banner tone="warning">
 							Passkeys are not available in this browser. You can still add an
 							authenticator app.
-						</p>
+						</Banner>
 					)}
 				</div>
 
