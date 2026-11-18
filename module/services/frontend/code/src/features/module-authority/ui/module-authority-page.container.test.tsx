@@ -229,7 +229,7 @@ describe("ModuleAuthorityPage", () => {
 		renderInApp(<ModuleAuthorityPage />);
 
 		expect((await screen.findByRole("alert")).textContent).toContain(
-			"this host has no module envelope store",
+			"The current state doesn't allow this change.",
 		);
 	});
 });

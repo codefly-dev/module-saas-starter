@@ -4,6 +4,7 @@ import { Plus, X } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
+import { failureText } from "@/shared/lib/failure-text";
 import {
 	mayKeepRetainedRows,
 	readOutcome,
@@ -101,7 +102,7 @@ export function ManageMemberRolesDialog({
 					setPicked("");
 				},
 				onError: (e) =>
-					toast.error(`Failed to assign role: ${(e as Error).message}`),
+					toast.error(failureText("assign this role", e)),
 			},
 		);
 	}
@@ -112,7 +113,7 @@ export function ManageMemberRolesDialog({
 			{
 				onSuccess: () => toast.success("Role revoked"),
 				onError: (e) =>
-					toast.error(`Failed to revoke role: ${(e as Error).message}`),
+					toast.error(failureText("revoke this role", e)),
 			},
 		);
 	}

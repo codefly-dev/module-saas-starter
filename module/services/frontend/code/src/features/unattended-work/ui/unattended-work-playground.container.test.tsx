@@ -194,7 +194,7 @@ describe("UnattendedWorkPlayground", () => {
 		await waitFor(() => expect(calls.reconcile).toBe(1));
 		await waitFor(() => expect(toast.error).toHaveBeenCalled());
 		expect(String(vi.mocked(toast.error).mock.calls[0][0])).toContain(
-			"revoked",
+			"Ask your organization administrator for access.",
 		);
 	});
 

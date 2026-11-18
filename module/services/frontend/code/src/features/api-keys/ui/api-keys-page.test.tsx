@@ -137,7 +137,7 @@ describe("APIKeysPage admin container", () => {
 			within(dialog).getByRole("form", { name: "Create API key" }),
 		);
 		expect((await within(dialog).findByRole("alert")).textContent).toContain(
-			"You need organization admin access.",
+			"Ask your organization administrator for access.",
 		);
 		server.use(
 			http.post(rpc("APIKeyService", "CreateAPIKey"), () =>
