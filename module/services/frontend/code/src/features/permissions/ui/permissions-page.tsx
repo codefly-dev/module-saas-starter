@@ -1,15 +1,15 @@
-"use client";
+import { activityLabel } from "../model/activity-label";
 
-import { ShieldCheck } from "lucide-react";
+("use client");
+
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
 import {
 	createColumnHelper,
 	getCoreRowModel,
 	useReactTable,
 } from "@tanstack/react-table";
-import { DataTable } from "@/shared/ui/data-table";
-import { failureText } from "@/shared/lib/failure-text";
+import { ShieldCheck } from "lucide-react";
+import { useMemo, useState } from "react";
 import { EmptyState } from "@/components/empty-state";
 import { OrgSelector } from "@/components/org-selector";
 import { UserPicker } from "@/components/user-picker";
@@ -17,12 +17,13 @@ import { useEffectivePermissions } from "@/features/permissions/service/effectiv
 import { useExplainPermission } from "@/features/permissions/service/explain";
 import { useRoles } from "@/features/roles/service/queries";
 import { useAuth } from "@/lib/auth";
+import { failureText } from "@/shared/lib/failure-text";
 import { readOutcome, readOutcomeMessage } from "@/shared/lib/read-outcome";
 import {
 	Badge,
-	Input,
-	Field,
 	ErrorState,
+	Field,
+	Input,
 	Page as PageBody,
 	PageHeader,
 	Panel,
@@ -36,6 +37,7 @@ import {
 	Stack,
 	useLoadingPhase,
 } from "@/shared/ui";
+import { DataTable } from "@/shared/ui/data-table";
 import {
 	type GrantSource,
 	groupByResource,
@@ -79,7 +81,10 @@ function PermissionsBrowser({ orgId }: { orgId: string }) {
 	const descriptions = new Map(
 		declared.map(
 			(permission) =>
-				[permissionLabel(permission), permission.description] as const,
+				[
+					permissionLabel(permission),
+					activityLabel(permission) ?? "Description unavailable",
+				] as const,
 		),
 	);
 	const groups = groupByResource(declared.map(permissionLabel));
@@ -119,11 +124,20 @@ function PermissionsBrowser({ orgId }: { orgId: string }) {
 					<Section
 						key={group.resource}
 						title={
-							group.resource === "*"
-								? "All areas"
-								: group.resource
-										.replace(/[-_]/g, " ")
-										.replace(/^./, (c) => c.toUpperCase())
+							(
+								{
+									"*": "All areas",
+									api_keys: "API keys",
+									orgs: "Organizations",
+									datasource: "Data sources",
+									module_envelope: "Module access limits",
+									entitlements: "Plan limits",
+									knowledge: "Shared content",
+								} as Record<string, string>
+							)[group.resource] ??
+							group.resource
+								.replace(/[-_]/g, " ")
+								.replace(/^./, (c) => c.toUpperCase())
 						}
 					>
 						<PermissionTable
@@ -270,7 +284,7 @@ function CheckAGrant({ orgId }: { orgId: string }) {
 									items={(info?.capabilities?.permissions ?? []).map(
 										(entry) => ({
 											value: permissionLabel(entry),
-											label: entry.description || "Description unavailable",
+											label: activityLabel(entry) || "Description unavailable",
 										}),
 									)}
 									onValueChange={(value) => setPermission(value ?? "")}
@@ -284,7 +298,7 @@ function CheckAGrant({ orgId }: { orgId: string }) {
 												key={permissionLabel(entry)}
 												value={permissionLabel(entry)}
 											>
-												{entry.description || "Description unavailable"}
+												{activityLabel(entry) || "Description unavailable"}
 											</SelectItem>
 										))}
 									</SelectContent>

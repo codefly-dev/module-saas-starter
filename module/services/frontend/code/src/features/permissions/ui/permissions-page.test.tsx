@@ -21,11 +21,11 @@ function serveVocabulary() {
 			HttpResponse.json({
 				capabilities: {
 					permissions: [
-						{ resource: "users", action: "read", description: "List users." },
+						{ resource: "users", action: "read", description: "View people" },
 						{
 							resource: "audit",
 							action: "read",
-							description: "Read audit events.",
+							description: "View and export the activity log",
 						},
 					],
 				},
@@ -78,7 +78,7 @@ describe("PermissionsPage", () => {
 
 		expect(await screen.findByRole("heading", { name: "Audit" })).toBeTruthy();
 		expect(screen.getByRole("heading", { name: "Users" })).toBeTruthy();
-		expect(screen.getByText("Read audit events.")).toBeTruthy();
+		expect(screen.getByText("View and export the activity log")).toBeTruthy();
 	});
 
 	// "Who can do X" has to count the wildcard role, or an administrator reads
@@ -88,13 +88,13 @@ describe("PermissionsPage", () => {
 
 		renderInApp(<PermissionsPage />);
 
-		const auditRow = (await screen.findByText("Read audit events.")).closest(
-			"tr",
-		);
+		const auditRow = (
+			await screen.findByText("View and export the activity log")
+		).closest("tr");
 		expect(auditRow?.textContent).toContain("admin");
 		expect(auditRow?.textContent).toContain("auditor");
 
-		const usersRow = screen.getByText("List users.").closest("tr");
+		const usersRow = screen.getByText("View people").closest("tr");
 		expect(usersRow?.textContent).toContain("admin");
 		expect(usersRow?.textContent).not.toContain("auditor");
 	});
@@ -152,7 +152,7 @@ describe("PermissionsPage — check a grant", () => {
 
 	async function ask(scope?: string) {
 		await pickMember(MEMBER_EMAIL);
-		await pick("Choose an activity…", "Read audit events.");
+		await pick("Choose an activity…", "View and export the activity log");
 		if (scope !== undefined) {
 			const box = screen.getByLabelText("Limit to (optional)");
 			fireEvent.change(box, { target: { value: scope } });
@@ -298,7 +298,7 @@ describe("PermissionsPage — the scope a question carries", () => {
 			target: { value: MEMBER_EMAIL },
 		});
 		fireEvent.click(await screen.findByRole("option", { name: MEMBER_EMAIL }));
-		await open("Choose an activity…", "Read audit events.");
+		await open("Choose an activity…", "View and export the activity log");
 	}
 
 	// Without this, the scope box could be wired to nothing at all: the badge
@@ -400,7 +400,7 @@ describe("PermissionsPage — the scope a question carries", () => {
 
 		renderInApp(<PermissionsPage />);
 
-		expect(await screen.findByText("List users.")).toBeTruthy();
+		expect(await screen.findByText("View people")).toBeTruthy();
 		expect(screen.queryByText("No role")).toBeNull();
 		expect(screen.getAllByText("Not visible to you").length).toBeGreaterThan(0);
 	});
