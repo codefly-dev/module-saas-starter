@@ -8,12 +8,12 @@ import {
 	ShieldCheck,
 } from "lucide-react";
 import Link from "next/link";
+import { SolutionsHomeSection } from "@/solutions/SolutionsMenu";
 import { ActivityFeed } from "@/components/activity-feed";
 import { RoleGate } from "@/components/auth/role-gate";
 import { Slot } from "@/components/slot";
 import { useAuth } from "@/lib/auth";
 import {
-	Badge,
 	Card,
 	CardDescription,
 	CardHeader,
@@ -31,13 +31,13 @@ import {
  * user is admin-tier.
  *
  * Layout:
- *   - The page header greets the person and names the roles they hold.
+ *   - The page header greets the person, followed by their available workspaces.
  *   - Three personal-account cards (Security / Notifications / Data &
  *     privacy) — visible to every authenticated user.
  *   - Admin card gated by <RoleGate require="admin">.
  */
 export default function DashboardClient() {
-	const { user, platformRole, orgRole } = useAuth();
+	const { user } = useAuth();
 	const greetingName = greetingNameOf(user);
 
 	return (
@@ -57,21 +57,11 @@ export default function DashboardClient() {
 					</>
 				}
 			>
-				{(platformRole || orgRole) && (
-					<div className="flex flex-wrap items-center gap-2 pt-2">
-						{platformRole && (
-							<Badge variant="secondary">
-								<Shield />
-								{platformRole}
-							</Badge>
-						)}
-						{orgRole && (
-							<Badge variant="secondary">Organization {orgRole}</Badge>
-						)}
-					</div>
-				)}
 			</PageHeader>
 
+			<SolutionsHomeSection />
+
+			<Section title="Your account" description="Keep your account secure and choose how you stay informed.">
 			<Grid cols={3}>
 				<DashboardCard
 					href="/settings/mfa"
@@ -92,6 +82,7 @@ export default function DashboardClient() {
 					description="Export your data or delete your account"
 				/>
 			</Grid>
+			</Section>
 
 			{/* Read-only view of recent audit events scoped to the user's
 			    primary org. Hides itself when there are no events so a
@@ -149,13 +140,13 @@ function DashboardCard({
 	description,
 }: DashboardCardProps) {
 	return (
-		<Link href={href} className="group rounded-xl">
+		<Link href={href} className="group rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
 			<Card className="h-full transition-colors group-hover:bg-muted/50">
 				<CardHeader>
 					<div className="flex items-center gap-2">
 						<Icon className="size-4 shrink-0 text-muted-foreground" />
 						<CardTitle className="flex-1">{title}</CardTitle>
-						<ArrowUpRight className="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+						<ArrowUpRight className="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
 					</div>
 					<CardDescription>{description}</CardDescription>
 				</CardHeader>
