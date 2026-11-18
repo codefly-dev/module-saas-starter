@@ -1,10 +1,21 @@
 "use client";
 
+import {
+	createColumnHelper,
+	getCoreRowModel,
+	getPaginationRowModel,
+	useReactTable,
+} from "@tanstack/react-table";
 import { KeyRound, RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
 import { OrgSelector } from "@/components/org-selector";
+import { UserLabel } from "@/components/user-label";
+import type {
+	TriggerChildContext,
+	TriggerDelegationReference,
+} from "@/gen/saas/accounts/v1/datasource_pb";
 import { useAuth } from "@/lib/auth";
 import { failureText } from "@/shared/lib/failure-text";
 import {
@@ -14,6 +25,14 @@ import {
 	staleReadNotice,
 } from "@/shared/lib/read-outcome";
 import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
 	Badge,
 	Button,
 	Card,
@@ -22,6 +41,7 @@ import {
 	CardHeader,
 	CardTitle,
 	DelayedLoading,
+	ErrorState,
 	Page as PageBody,
 	PageHeader,
 	Select,
@@ -29,13 +49,8 @@ import {
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
 } from "@/shared/ui";
+import { DataTable } from "@/shared/ui/data-table";
 import { sourceLabel } from "../model/source-label";
 import {
 	useDelegateSourceTriggers,
@@ -139,7 +154,10 @@ export function UnattendedWorkPlayground() {
 								value={sourceId}
 								onValueChange={(value) => setSelected(value ?? "")}
 							>
-								<SelectTrigger aria-label="Data source" className="w-96">
+								<SelectTrigger
+									aria-label="Data source"
+									className="w-full max-w-96"
+								>
 									{/* The label is supplied here rather than left to the
 									    popup: a trigger that read its own value would show a
 									    raw source id until the popup mounted. */}
@@ -176,6 +194,8 @@ function TriggerIdentityPanel({
 	const read = useSourceTriggerDeclaration(orgId, sourceId);
 	const delegate = useDelegateSourceTriggers(orgId);
 	const revoke = useRevokeTriggerDelegation(orgId);
+	const [revokeTarget, setRevokeTarget] =
+		useState<TriggerDelegationReference | null>(null);
 	const reconcile = useReconcileSource(orgId);
 
 	const outcome = readOutcome(read.isError, read.error);
@@ -247,7 +267,7 @@ function TriggerIdentityPanel({
 			</Card>
 
 			<Card>
-				<CardHeader className="flex flex-row items-start justify-between gap-3">
+				<CardHeader className="flex flex-col items-start justify-between gap-3 sm:flex-row">
 					<div>
 						<CardTitle>Delegation references</CardTitle>
 						<CardDescription>
@@ -269,7 +289,7 @@ function TriggerIdentityPanel({
 									toast.error(failureText("mint a reference", error)),
 							})
 						}
-						disabled={delegate.isPending}
+						disabled={delegate.isPending || read.isPending || read.isError}
 						data-slot="mint-reference"
 					>
 						<KeyRound className="h-4 w-4" />
@@ -277,7 +297,18 @@ function TriggerIdentityPanel({
 					</Button>
 				</CardHeader>
 				<CardContent>
-					{references.length === 0 ? (
+					{read.isPending ? (
+						<DelayedLoading active label="Reading background access" />
+					) : read.isError ? (
+						<ErrorState
+							title="Couldn’t load background access"
+							detail={readOutcomeMessage(
+								outcome,
+								"this source’s background access",
+								"",
+							)}
+						/>
+					) : references.length === 0 ? (
 						<p
 							role={outcome === "empty" ? "status" : "alert"}
 							className="py-6 text-center text-sm text-muted-foreground"
@@ -287,73 +318,17 @@ function TriggerIdentityPanel({
 								: readOutcomeMessage(outcome, "this source's delegations", "")}
 						</p>
 					) : (
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>Module and binding</TableHead>
-									<TableHead>Owner</TableHead>
-									<TableHead>Scopes</TableHead>
-									<TableHead>State</TableHead>
-									<TableHead />
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{references.map((reference) => (
-									<TableRow key={reference.delegationId} data-slot="reference">
-										<TableCell className="font-mono text-xs">
-											{reference.module}/{reference.binding}
-										</TableCell>
-										<TableCell className="font-mono text-xs">
-											{reference.ownerPrincipalId}
-										</TableCell>
-										<TableCell className="font-mono text-xs">
-											{reference.scopes.join(", ") || "—"}
-										</TableCell>
-										<TableCell>
-											{reference.active ? (
-												<Badge tone="success" dot>
-													Live
-												</Badge>
-											) : (
-												<Badge tone="neutral">Revoked</Badge>
-											)}
-										</TableCell>
-										<TableCell className="text-right">
-											{reference.active && (
-												<Button
-													variant="outline"
-													size="sm"
-													data-slot="revoke-reference"
-													onClick={() =>
-														revoke.mutate(
-															{
-																sourceId,
-																delegationId: reference.delegationId,
-															},
-															{
-																onSuccess: () =>
-																	toast.success("Reference revoked"),
-																onError: (error) =>
-																	toast.error(failureText("revoke the reference", error)),
-															},
-														)
-													}
-													disabled={revoke.isPending}
-												>
-													Revoke
-												</Button>
-											)}
-										</TableCell>
-									</TableRow>
-								))}
-							</TableBody>
-						</Table>
+						<ReferencesTable
+							rows={references}
+							onRevoke={setRevokeTarget}
+							busy={revoke.isPending}
+						/>
 					)}
 				</CardContent>
 			</Card>
 
 			<Card>
-				<CardHeader className="flex flex-row items-start justify-between gap-3">
+				<CardHeader className="flex flex-col items-start justify-between gap-3 sm:flex-row">
 					<div>
 						<CardTitle>Occurrences and the children they minted</CardTitle>
 						<CardDescription>
@@ -387,7 +362,18 @@ function TriggerIdentityPanel({
 					</Button>
 				</CardHeader>
 				<CardContent>
-					{children.length === 0 ? (
+					{read.isPending ? (
+						<DelayedLoading active label="Reading background runs" />
+					) : read.isError ? (
+						<ErrorState
+							title="Couldn’t load background runs"
+							detail={readOutcomeMessage(
+								outcome,
+								"this source’s background runs",
+								"",
+							)}
+						/>
+					) : children.length === 0 ? (
 						<p
 							role={outcome === "empty" ? "status" : "alert"}
 							className="py-6 text-center text-sm text-muted-foreground"
@@ -399,41 +385,146 @@ function TriggerIdentityPanel({
 							)}
 						</p>
 					) : (
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>Minted</TableHead>
-									<TableHead>Audience</TableHead>
-									<TableHead>Scopes</TableHead>
-									<TableHead>Reach</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{children.map((child) => (
-									<TableRow key={child.record} data-slot="child-context">
-										<TableCell className="text-sm">
-											{instant(child.mintedAt)}
-										</TableCell>
-										<TableCell className="font-mono text-xs">
-											{child.audience}
-										</TableCell>
-										<TableCell className="font-mono text-xs">
-											{child.scopes.join(", ") || "—"}
-										</TableCell>
-										<TableCell className="text-sm">
-											{child.lookup
-												? "Receipt lookup only"
-												: "Produces the effect"}
-										</TableCell>
-									</TableRow>
-								))}
-							</TableBody>
-						</Table>
+						<ChildrenTable rows={children} />
 					)}
 				</CardContent>
 			</Card>
+			<AlertDialog
+				open={revokeTarget !== null}
+				onOpenChange={(open) => {
+					if (!open && !revoke.isPending) setRevokeTarget(null);
+				}}
+			>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Remove background access?</AlertDialogTitle>
+						<AlertDialogDescription>
+							Remove the access used by {revokeTarget?.module} for this data
+							source? Future work using this access will be refused. Work
+							already running is not stopped. Reconnecting the source can grant
+							access again.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel disabled={revoke.isPending}>
+							Keep access
+						</AlertDialogCancel>
+						<AlertDialogAction
+							disabled={revoke.isPending}
+							onClick={(event) => {
+								event.preventDefault();
+								if (!revokeTarget) return;
+								revoke.mutate(
+									{ sourceId, delegationId: revokeTarget.delegationId },
+									{
+										onSuccess: () => {
+											toast.success("Background access removed");
+											setRevokeTarget(null);
+										},
+										onError: (error) =>
+											toast.error(
+												failureText("remove background access", error),
+											),
+									},
+								);
+							}}
+						>
+							{revoke.isPending ? "Removing…" : "Remove access"}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 		</div>
 	);
+}
+
+function ReferencesTable({
+	rows,
+	onRevoke,
+	busy,
+}: {
+	rows: TriggerDelegationReference[];
+	onRevoke: (row: TriggerDelegationReference) => void;
+	busy: boolean;
+}) {
+	const columns = useMemo(() => {
+		const col = createColumnHelper<TriggerDelegationReference>();
+		return [
+			col.accessor("module", { header: "Application" }),
+			col.accessor("ownerPrincipalId", {
+				header: "Person",
+				cell: ({ getValue }) => <UserLabel userId={getValue()} />,
+			}),
+			col.accessor("scopes", {
+				header: "Access",
+				cell: ({ getValue }) =>
+					`${getValue().length} allowed ${getValue().length === 1 ? "activity" : "activities"}`,
+			}),
+			col.accessor("active", {
+				header: "State",
+				cell: ({ getValue }) =>
+					getValue() ? (
+						<Badge tone="success" dot>
+							Live
+						</Badge>
+					) : (
+						<Badge tone="neutral">Revoked</Badge>
+					),
+			}),
+			col.display({
+				id: "actions",
+				header: "Actions",
+				cell: ({ row }) =>
+					row.original.active ? (
+						<Button
+							variant="outline"
+							size="sm"
+							disabled={busy}
+							onClick={() => onRevoke(row.original)}
+						>
+							Revoke
+						</Button>
+					) : null,
+			}),
+		];
+	}, [onRevoke, busy]);
+	const table = useReactTable({
+		data: rows,
+		columns,
+		getCoreRowModel: getCoreRowModel(),
+		getPaginationRowModel: getPaginationRowModel(),
+	});
+	return <DataTable table={table} />;
+}
+
+function ChildrenTable({ rows }: { rows: TriggerChildContext[] }) {
+	const columns = useMemo(() => {
+		const col = createColumnHelper<TriggerChildContext>();
+		return [
+			col.accessor("mintedAt", {
+				header: "Started",
+				cell: ({ getValue }) => instant(getValue()),
+			}),
+			col.accessor("audience", { header: "Application" }),
+			col.accessor("scopes", {
+				header: "Access",
+				cell: ({ getValue }) =>
+					`${getValue().length} allowed ${getValue().length === 1 ? "activity" : "activities"}`,
+			}),
+			col.accessor("lookup", {
+				header: "Purpose",
+				cell: ({ getValue }) =>
+					getValue() ? "Receipt lookup only" : "Produces the effect",
+			}),
+		];
+	}, []);
+	const table = useReactTable({
+		data: rows,
+		columns,
+		getCoreRowModel: getCoreRowModel(),
+		getPaginationRowModel: getPaginationRowModel(),
+	});
+	return <DataTable table={table} />;
 }
 
 /**

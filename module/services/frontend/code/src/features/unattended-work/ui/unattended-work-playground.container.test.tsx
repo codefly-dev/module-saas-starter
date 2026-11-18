@@ -157,9 +157,9 @@ describe("UnattendedWorkPlayground", () => {
 
 		// The reference an operator bound, with whose authority it carries and
 		// exactly what it allows — never the module's own authority.
-		const [row] = screen.getAllByText("docstore/occurrences");
+		const [row] = screen.getAllByText("docstore");
 		expect(row).toBeTruthy();
-		expect(screen.getAllByText("collections:write").length).toBeGreaterThan(0);
+		expect(screen.getAllByText("1 allowed activity").length).toBeGreaterThan(0);
 		expect(screen.getByText("Live")).toBeTruthy();
 
 		// And one child minted against it. This is the only record of a
@@ -175,15 +175,24 @@ describe("UnattendedWorkPlayground", () => {
 		});
 		renderInApp(<Page />);
 
-		fireEvent.click(
-			await screen.findByRole("button", { name: /Mint a reference/ }),
+		const mint = await screen.findByRole("button", {
+			name: /Mint a reference/,
+		});
+		await waitFor(() =>
+			expect((mint as HTMLButtonElement).disabled).toBe(false),
 		);
+		fireEvent.click(mint);
 		await waitFor(() => expect(calls.delegate).toBe(1));
 		expect(toast.success).toHaveBeenCalledWith("Delegation reference minted");
 
 		// Revoking takes the authority away. Nothing has to be stopped for that
 		// to take effect: the host re-checks the delegation on every mint.
 		fireEvent.click(await screen.findByRole("button", { name: "Revoke" }));
+		expect(calls.revoke).toBe(0);
+		fireEvent.click(screen.getByRole("button", { name: "Keep access" }));
+		expect(calls.revoke).toBe(0);
+		fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+		fireEvent.click(screen.getByRole("button", { name: "Remove access" }));
 		await waitFor(() => expect(calls.revoke).toBe(1));
 
 		// The next occurrence is refused, and the page reports the host's own

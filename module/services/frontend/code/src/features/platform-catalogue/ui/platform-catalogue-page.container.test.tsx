@@ -262,7 +262,7 @@ describe("PlatformCataloguePage admin container", () => {
 				name: "Show installations of drifted-solution",
 			}),
 		);
-		const installations = screen.getByRole("table", {
+		const installations = screen.getByRole("dialog", {
 			name: "Installations of drifted-solution",
 		});
 		expect(within(installations).getByText("Acme")).toBeTruthy();

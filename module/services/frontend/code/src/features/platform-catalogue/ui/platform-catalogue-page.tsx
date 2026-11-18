@@ -1,8 +1,15 @@
 "use client";
 
 import { timestampDate } from "@bufbuild/protobuf/wkt";
-import { ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
-import { Fragment, useState } from "react";
+import { EmptyState } from "@codefly-dev/ui/layout";
+import {
+	createColumnHelper,
+	getCoreRowModel,
+	getPaginationRowModel,
+	useReactTable,
+} from "@tanstack/react-table";
+import { RefreshCw } from "lucide-react";
+import { useMemo, useState } from "react";
 import type { CollectionReadGrant } from "@/gen/saas/accounts/v1/authorization_pb";
 import type {
 	CatalogueEntry,
@@ -24,18 +31,19 @@ import {
 	CardDescription,
 	CardHeader,
 	CardTitle,
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+	ErrorState,
 	Label,
 	Page as PageBody,
 	PageHeader,
 	Skeleton,
 	Switch,
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
 } from "@/shared/ui";
+import { DataTable } from "@/shared/ui/data-table";
 import { groupSolutionNavigation } from "@/solutions/solution-groups";
 import {
 	agentReleaseView,
@@ -50,9 +58,6 @@ import {
 	unbuiltFacts,
 } from "../model/facts";
 import { usePlatformCatalogue } from "../service/queries";
-
-// The expander, the entry, one column per state, and installations.
-const COLUMNS = 2 + CATALOGUE_STATES.length + 1;
 
 /**
  * One cell. A gap reads as its reason in muted italics with the detail on
@@ -189,7 +194,7 @@ function entryKey(entry: CatalogueEntry): string {
  */
 export function PlatformCataloguePage() {
 	const [includeTombstoned, setIncludeTombstoned] = useState(false);
-	const [expanded, setExpanded] = useState<Set<string>>(new Set());
+	const [selectedKey, setSelectedKey] = useState<string | null>(null);
 	const catalogue = usePlatformCatalogue(includeTombstoned);
 
 	const outcome = readOutcome(catalogue.isError, catalogue.error);
@@ -209,13 +214,7 @@ export function PlatformCataloguePage() {
 	);
 	const hasGroups = sections.some((section) => section.key !== "ungrouped");
 
-	const toggle = (key: string) =>
-		setExpanded((current) => {
-			const next = new Set(current);
-			if (next.has(key)) next.delete(key);
-			else next.add(key);
-			return next;
-		});
+	const selected = entries.find((entry) => entryKey(entry) === selectedKey);
 
 	return (
 		<PageBody>
@@ -254,106 +253,35 @@ export function PlatformCataloguePage() {
 					{catalogue.isLoading ? (
 						<Skeleton className="h-48 w-full" />
 					) : entries.length === 0 ? (
-						<p
-							className="py-10 text-center text-sm text-muted-foreground"
-							{...(catalogue.isError ? { role: "alert" as const } : {})}
-						>
-							{readOutcomeMessage(
-								outcome,
-								"the catalogue",
-								"No module or solution has been delivered to this platform. A platform operator must deploy one before an organization can install it.",
-							)}
-						</p>
+						catalogue.isError ? (
+							<ErrorState
+								title="Couldn’t load the catalogue"
+								detail={readOutcomeMessage(outcome, "the catalogue", "")}
+							/>
+						) : (
+							<EmptyState
+								heading="No applications deployed"
+								description="No module or solution has been delivered to this platform. A platform operator must deploy one before an organization can install it."
+							/>
+						)
 					) : (
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead className="w-8" />
-									<TableHead>Entry</TableHead>
-									{CATALOGUE_STATES.map((state) => (
-										<TableHead key={state}>{state}</TableHead>
-									))}
-									<TableHead>Installations</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{sections.map((section) => (
-									<Fragment key={section.key}>
-										{hasGroups && (
-											<TableRow>
-												<TableHead colSpan={COLUMNS} scope="rowgroup">
-													{section.key === "ungrouped"
-														? "Modules and other solutions"
-														: section.title}
-												</TableHead>
-											</TableRow>
-										)}
-										{section.items.map(({ entry }) => {
-											const key = entryKey(entry);
-											const open = expanded.has(key);
-											return (
-												<Fragment key={key}>
-													<TableRow>
-														<TableCell>
-															{entry.installations.length > 0 && (
-																<Button
-																	variant="ghost"
-																	size="icon"
-																	aria-expanded={open}
-																	aria-label={`${open ? "Hide" : "Show"} installations of ${entry.name}`}
-																	onClick={() => toggle(key)}
-																>
-																	{open ? (
-																		<ChevronDown className="h-4 w-4" />
-																	) : (
-																		<ChevronRight className="h-4 w-4" />
-																	)}
-																</Button>
-															)}
-														</TableCell>
-														<TableCell>
-															<div className="flex items-center gap-2">
-																<span className="font-medium">
-																	{entry.name}
-																</span>
-																<Badge variant="outline">
-																	{kindLabel(entry.kind)}
-																</Badge>
-															</div>
-															<div className="mt-1">
-																<Fact view={publisherView(entry)} />
-															</div>
-														</TableCell>
-														{CATALOGUE_STATES.map((state) => (
-															<TableCell key={state} className="align-top">
-																<StateFacts
-																	state={state}
-																	facts={catalogueStates(entry)[state]}
-																/>
-															</TableCell>
-														))}
-														<TableCell className="text-sm">
-															{entry.installations.length}
-														</TableCell>
-													</TableRow>
-													{open && (
-														<TableRow>
-															<TableCell />
-															<TableCell colSpan={COLUMNS - 1}>
-																<InstallationsTable
-																	name={entry.name}
-																	installations={entry.installations}
-																/>
-															</TableCell>
-														</TableRow>
-													)}
-												</Fragment>
-											);
-										})}
-									</Fragment>
-								))}
-							</TableBody>
-						</Table>
+						<div className="space-y-6">
+							{sections.map((section) => (
+								<section key={section.key}>
+									{hasGroups && (
+										<h2 className="mb-3 font-medium">
+											{section.key === "ungrouped"
+												? "Modules and other solutions"
+												: section.title}
+										</h2>
+									)}
+									<CatalogueTable
+										entries={section.items.map((item) => item.entry)}
+										onSelect={setSelectedKey}
+									/>
+								</section>
+							))}
+						</div>
 					)}
 				</CardContent>
 			</Card>
@@ -373,8 +301,91 @@ export function PlatformCataloguePage() {
 				description="Facts no component reports yet, so the Catalogue carries no column for them. Nothing is misconfigured."
 				notes={unbuilt}
 			/>
+			<Dialog
+				open={!!selected}
+				onOpenChange={(open) => {
+					if (!open) setSelectedKey(null);
+				}}
+			>
+				<DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
+					<DialogHeader>
+						<DialogTitle>Installations of {selected?.name}</DialogTitle>
+						<DialogDescription>
+							Organizations using this application and the teams with access.
+						</DialogDescription>
+					</DialogHeader>
+					{selected && (
+						<InstallationsTable
+							name={selected.name}
+							installations={selected.installations}
+						/>
+					)}
+				</DialogContent>
+			</Dialog>
 		</PageBody>
 	);
+}
+
+function CatalogueTable({
+	entries,
+	onSelect,
+}: {
+	entries: CatalogueEntry[];
+	onSelect: (key: string) => void;
+}) {
+	const columns = useMemo(() => {
+		const col = createColumnHelper<CatalogueEntry>();
+		return [
+			col.accessor("name", {
+				header: "Application",
+				cell: ({ row }) => (
+					<div>
+						<div className="flex items-center gap-2">
+							<span className="font-medium">{row.original.name}</span>
+							<Badge variant="outline">{kindLabel(row.original.kind)}</Badge>
+						</div>
+						<Fact view={publisherView(row.original)} />
+					</div>
+				),
+			}),
+			...CATALOGUE_STATES.map((state) =>
+				col.display({
+					id: state,
+					header: state,
+					cell: ({ row }) => (
+						<StateFacts
+							state={state}
+							facts={catalogueStates(row.original)[state]}
+						/>
+					),
+				}),
+			),
+			col.display({
+				id: "installations",
+				header: "Installations",
+				cell: ({ row }) =>
+					row.original.installations.length ? (
+						<Button
+							variant="outline"
+							size="sm"
+							aria-label={`Show installations of ${row.original.name}`}
+							onClick={() => onSelect(entryKey(row.original))}
+						>
+							{row.original.installations.length} organizations
+						</Button>
+					) : (
+						"None"
+					),
+			}),
+		];
+	}, [onSelect]);
+	const table = useReactTable({
+		data: entries,
+		columns,
+		getCoreRowModel: getCoreRowModel(),
+		getPaginationRowModel: getPaginationRowModel(),
+	});
+	return <DataTable table={table} />;
 }
 
 function InstallationsTable({
@@ -384,39 +395,46 @@ function InstallationsTable({
 	name: string;
 	installations: CatalogueInstallation[];
 }) {
+	const columns = useMemo(() => {
+		const col = createColumnHelper<CatalogueInstallation>();
+		return [
+			col.accessor("orgName", { header: "Organization" }),
+			col.display({
+				id: "release",
+				header: "Release",
+				cell: ({ row }) => <Fact view={agentReleaseView(row.original)} />,
+			}),
+			col.display({
+				id: "teams",
+				header: "Teams with access",
+				cell: ({ row }) => (
+					<TeamGrants
+						granted={row.original.grantedTeams}
+						inherited={row.original.inheritedTeams}
+					/>
+				),
+			}),
+			col.display({
+				id: "installed",
+				header: "Installed",
+				cell: ({ row }) =>
+					formatDate(
+						row.original.installation?.createdAt
+							? timestampDate(row.original.installation.createdAt).toISOString()
+							: undefined,
+					),
+			}),
+		];
+	}, []);
+	const table = useReactTable({
+		data: installations,
+		columns,
+		getCoreRowModel: getCoreRowModel(),
+		getPaginationRowModel: getPaginationRowModel(),
+	});
 	return (
-		<Table aria-label={`Installations of ${name}`}>
-			<TableHeader>
-				<TableRow>
-					<TableHead>Organization</TableHead>
-					<TableHead>Agent release</TableHead>
-					<TableHead>Teams exposed</TableHead>
-					<TableHead>Installed</TableHead>
-				</TableRow>
-			</TableHeader>
-			<TableBody>
-				{installations.map((item) => (
-					<TableRow key={item.installation?.id}>
-						<TableCell className="font-medium">{item.orgName}</TableCell>
-						<TableCell>
-							<Fact view={agentReleaseView(item)} />
-						</TableCell>
-						<TableCell>
-							<TeamGrants
-								granted={item.grantedTeams}
-								inherited={item.inheritedTeams}
-							/>
-						</TableCell>
-						<TableCell className="text-sm text-muted-foreground">
-							{formatDate(
-								item.installation?.createdAt
-									? timestampDate(item.installation.createdAt).toISOString()
-									: undefined,
-							)}
-						</TableCell>
-					</TableRow>
-				))}
-			</TableBody>
-		</Table>
+		<section aria-label={`Installations of ${name}`}>
+			<DataTable table={table} />
+		</section>
 	);
 }
