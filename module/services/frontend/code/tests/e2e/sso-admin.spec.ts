@@ -54,7 +54,7 @@ test.describe("SSO admin page", () => {
 
 	test("the authenticated organization shows its SSO state", async ({ page }) => {
 		await expect(
-			page.getByText(/not configured|setup pending|active|disabled/i).first(),
+			page.getByText(/^(not set up|setup pending|active|disabled)$/i).first(),
 		).toBeVisible();
 	});
 

@@ -44,7 +44,7 @@ test.describe("RBAC administration", () => {
 
 		// 3. Grant it to a person from their own page.
 		await page.goto("/admin/users");
-		const userLink = page.getByRole("link", { name: /@/ }).first();
+		const userLink = page.getByRole("link", { name: "carol@acme.com", exact: true });
 		await userLink.click();
 		await page.waitForURL(/\/admin\/users\/[^/]+$/, { timeout: 15000 });
 		await page.getByRole("button", { name: /manage roles/i }).click();
@@ -75,7 +75,7 @@ test.describe("RBAC administration", () => {
 		// 5. Revoke from the user page, and watch the permission leave with it.
 		await page.goBack();
 		await page.waitForURL(/\/admin\/users\/[^/]+$/, { timeout: 15000 });
-		await page.getByRole("button", { name: "Revoke" }).first().click();
+		await page.locator('[data-slot="badge"]').filter({ has: page.getByRole("link", { name: ROLE_NAME, exact: true }) }).getByRole("button", { name: "Revoke" }).click();
 		await expect(page.getByText(/role revoked/i)).toBeVisible({
 			timeout: 15000,
 		});

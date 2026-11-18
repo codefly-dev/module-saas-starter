@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { signOutAndLeave } from "@/lib/sign-out-journey";
 import {
@@ -128,6 +128,7 @@ export function InvitationAcceptance() {
 		invitationId && UUID.test(invitationId) ? invitationId : undefined;
 	const router = useRouter();
 	const {
+		user,
 		isAuthenticated,
 		isLoading: authLoading,
 		getToken,
@@ -142,10 +143,13 @@ export function InvitationAcceptance() {
 	// account whose primary email matches the invitation's.
 	const [inspectedId, setInspectedId] = useState<string>();
 
+	// A workspace switch rotates the bearer after acceptance. Inspect again only
+	// when the invitation or signed-in person changes.
+	const inspectionToken = useEffectEvent(() => getToken());
 	useEffect(() => {
 		if (authLoading) return;
 		let cancelled = false;
-		const token = isAuthenticated ? getToken() : null;
+		const token = isAuthenticated ? inspectionToken() : null;
 		fetch("/invitations/accept/api", {
 			method: "POST",
 			cache: "no-store",
@@ -186,7 +190,7 @@ export function InvitationAcceptance() {
 		return () => {
 			cancelled = true;
 		};
-	}, [authLoading, getToken, isAuthenticated, safeInvitationId]);
+	}, [authLoading, isAuthenticated, user?.id, safeInvitationId]);
 
 	async function accept() {
 		setState({ kind: "loading" });
@@ -217,18 +221,6 @@ export function InvitationAcceptance() {
 			}
 			const organizationId = result.organization.id;
 			const organizationName = result.organization.name ?? "your organization";
-			try {
-				await switchOrganization(organizationId);
-			} catch {
-				setState({
-					kind: "switch-error",
-					message:
-						"The invitation was accepted, but this browser could not switch workspaces. Retry the workspace switch; accepting again is not required.",
-					organizationId,
-					organizationName,
-				});
-				return;
-			}
 			setState({
 				kind: "success",
 				organizationId,
@@ -236,6 +228,21 @@ export function InvitationAcceptance() {
 			});
 		} catch {
 			setState({ kind: "error", ...failureMessage(500) });
+		}
+	}
+
+	async function enterWorkspace(organizationId: string, organizationName: string) {
+		setState({ kind: "loading" });
+		try {
+			await switchOrganization(organizationId);
+			router.replace("/onboarding");
+		} catch {
+			setState({
+				kind: "switch-error",
+				message: "The invitation was accepted, but this browser could not switch workspaces. Retry the workspace switch; accepting again is not required.",
+				organizationId,
+				organizationName,
+			});
 		}
 	}
 
@@ -272,7 +279,7 @@ export function InvitationAcceptance() {
 						</CardDescription>
 					</CardHeader>
 					<CardFooter className="justify-center">
-						<Button onClick={() => router.replace("/onboarding")}>
+						<Button onClick={() => void enterWorkspace(state.organizationId, state.organizationName)}>
 							Continue to workspace
 						</Button>
 					</CardFooter>
@@ -309,18 +316,7 @@ export function InvitationAcceptance() {
 					{state.kind === "switch-error" ? (
 						<Button
 							className="w-full"
-							onClick={async () => {
-								try {
-									await switchOrganization(state.organizationId);
-									setState({
-										kind: "success",
-										organizationId: state.organizationId,
-										organizationName: state.organizationName,
-									});
-								} catch {
-									setState({ ...state });
-								}
-							}}
+							onClick={() => void enterWorkspace(state.organizationId, state.organizationName)}
 						>
 							Retry workspace switch
 						</Button>

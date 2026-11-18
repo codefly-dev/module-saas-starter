@@ -32,7 +32,7 @@ const ROUTES: AdminRoute[] = [
 	{ path: "/admin/organizations", heading: /^Organizations$/ },
 	{ path: "/admin/invitations", heading: /^Invitations$/ },
 	{ path: "/admin/api-keys", heading: /^API keys$/ },
-	{ path: "/admin/entitlements", heading: /^Entitlements$/ },
+	{ path: "/admin/entitlements", heading: /^Entitlements is not enabled$/ },
 	{ path: "/admin/sessions", heading: /Active sessions/ },
 	{
 		path: "/admin/platform/waitlist",

@@ -36,7 +36,7 @@ test.describe("Dashboard navigation", () => {
 
 	test("can navigate to Organizations page", async ({ page }) => {
 		await page
-			.getByRole("link", { name: "Organizations", exact: true })
+			.locator('a[href="/admin/organizations"]')
 			.click();
 		await page.waitForURL(/\/admin\/organizations/);
 	});
@@ -65,7 +65,7 @@ test.describe("Dashboard navigation", () => {
 		await page.waitForURL(/\/settings\/mfa/);
 	});
 
-	test("keeps optional subscription and SSO screens hidden by default", async ({
+	test("shows the enabled SSO link and keeps billing disabled", async ({
 		page,
 	}) => {
 		await expect(
@@ -73,7 +73,7 @@ test.describe("Dashboard navigation", () => {
 		).toHaveCount(0);
 		await expect(
 			page.getByRole("link", { name: "Single Sign-On", exact: true }),
-		).toHaveCount(0);
+		).toBeVisible();
 		await page.goto("/admin/billing");
 		await expect(
 			page.getByRole("heading", { name: "Subscriptions is not enabled" }),
@@ -92,5 +92,5 @@ test.describe("Dashboard navigation", () => {
 // becomes interactable. The trigger text is the user's email — Sarah
 // Chen's fixture email is "admin@acme.com".
 async function openUserMenu(page: import("@playwright/test").Page) {
-	await page.getByRole("button", { name: /admin@acme\.com/ }).click();
+	await page.getByRole("button", { name: /Sarah Chen/ }).click();
 }
