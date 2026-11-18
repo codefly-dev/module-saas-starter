@@ -20,6 +20,11 @@ describe("EmptyState", () => {
 		expect(screen.getByRole("button", { name: "Add document" })).toBeTruthy();
 	});
 
+	it("uses the heading level supplied by the page", () => {
+		render(<EmptyState heading="Page not found" headingAs="h1" />);
+		expect(screen.getByRole("heading", { name: "Page not found", level: 1 })).toBeTruthy();
+	});
+
 	it("paints a default icon so the block always has one", () => {
 		const { container } = render(<EmptyState heading="Empty" />);
 		expect(

@@ -18,6 +18,7 @@ export interface EmptyStateProps {
 	/** Leading glyph; defaults to a generic inbox so the block always has one. */
 	icon?: ReactNode;
 	heading: ReactNode;
+	headingAs?: "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
 	/** The line under the heading: why there is nothing here. */
 	description?: ReactNode;
 	/**
@@ -37,6 +38,7 @@ export interface EmptyStateProps {
 export function EmptyState({
 	icon = <InboxIcon />,
 	heading,
+	headingAs: Heading = "h3",
 	description,
 	reference,
 	children,
@@ -69,14 +71,14 @@ export function EmptyState({
 				)}
 				{icon}
 			</div>
-			<h3
+			<Heading
 				className={cn(
 					"type-empty-state-title text-foreground",
 					variant === "illustrated" && "type-empty-state-title-illustrated",
 				)}
 			>
 				{heading}
-			</h3>
+			</Heading>
 			{description && (
 				<p
 					data-slot="empty-state-description"

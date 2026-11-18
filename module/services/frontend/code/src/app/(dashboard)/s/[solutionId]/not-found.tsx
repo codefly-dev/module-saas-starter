@@ -17,6 +17,7 @@ export default function SolutionNotFound() {
 		<Page>
 			<PageHeader title="Page not found" />
 			<EmptyState
+				headingAs="h2"
 				icon={PackageX}
 				title="No page at this address"
 				description="No solution or module page is served at this address."
