@@ -12,6 +12,7 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
+	ErrorState,
 } from "@/shared/ui";
 import { hostRefusal } from "../model/installations";
 import {
@@ -106,7 +107,7 @@ export function SetUpModulePageDialog({
 						})
 					}
 				/>
-				{error && <p role="alert">{error}</p>}
+				{error && <ErrorState title="Access was not set up" detail={error} />}
 				<DialogFooter>
 					<Button variant="outline" onClick={onClose}>
 						Cancel

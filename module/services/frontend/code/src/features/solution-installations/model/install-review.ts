@@ -5,6 +5,21 @@ import type {
 } from "@/gen/host/installation/v1/installation_pb";
 import type { ReviewedSolutionInstall } from "@/gen/saas/accounts/v1/installations_pb";
 
+/**
+ * A review this page will not let anyone approve, in words written here for
+ * the person reading it: the two reads disagree, or a consent cannot be read.
+ * Told apart from a failed request, whose text is never shown.
+ */
+export class ReviewUnusable extends Error {}
+
+/** Why a review could not be prepared: this page's own words, or the host's. */
+export function reviewFailure(
+	error: unknown,
+	hostWords: (error: unknown) => string,
+): string {
+	return error instanceof ReviewUnusable ? error.message : hostWords(error);
+}
+
 /** Presentation must describe the same signed offer as the combined consent. */
 export function assertMatchingOffer(
 	review: ReviewedSolutionInstall,
@@ -22,7 +37,7 @@ export function assertMatchingOffer(
 		a.digest !== b.digest ||
 		a.expectedRevision !== b.expectedRevision
 	) {
-		throw new Error(
+		throw new ReviewUnusable(
 			"The solution changed while preparing this review. Review the current access again.",
 		);
 	}
@@ -30,7 +45,7 @@ export function assertMatchingOffer(
 		review.installationRole !== "none" &&
 		!offer.roles.some((role) => role.name === review.installationRole)
 	) {
-		throw new Error(
+		throw new ReviewUnusable(
 			"The solution's declared installation access is unavailable. Its owner must correct the declaration.",
 		);
 	}
@@ -89,7 +104,7 @@ const operationLabels = {
 export function moduleConsentText(raw: string): string[] {
 	const parsed = consent.safeParse(JSON.parse(raw));
 	if (!parsed.success)
-		throw new Error(
+		throw new ReviewUnusable(
 			"Supporting module access cannot be displayed safely. Ask its owner to update the access declaration.",
 		);
 	const value = parsed.data;

@@ -156,8 +156,21 @@ describe("solution installation facts", () => {
 		expect(
 			hostRefusal(new ConnectError("no transport", Code.FailedPrecondition)),
 		).toBe("no transport");
-		expect(hostRefusal(new ConnectError("", Code.Internal))).toBe(
+		expect(hostRefusal(new ConnectError("", Code.PermissionDenied))).toBe(
 			"The host refused without giving a reason.",
+		);
+	});
+
+	// A transport failure, a timeout or a defect is not the host refusing:
+	// its text names internals, so the page says it plainly instead.
+	it.each([
+		new ConnectError("upstream connect error", Code.Unavailable),
+		new ConnectError("pq: relation missing", Code.Internal),
+		new ConnectError("", Code.Internal),
+		new Error("fetch failed"),
+	])("never shows the text of a failure that is not a refusal", (error) => {
+		expect(hostRefusal(error)).toBe(
+			"The request did not complete. Try again; if it keeps failing, tell your administrator.",
 		);
 	});
 });

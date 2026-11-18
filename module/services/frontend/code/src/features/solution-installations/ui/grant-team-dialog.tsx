@@ -1,6 +1,5 @@
 "use client";
 
-import { Field } from "@codefly-dev/ui/layout";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
 import { Controller, useForm } from "react-hook-form";
@@ -20,6 +19,8 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
+	ErrorState,
+	Field,
 	Select,
 	SelectContent,
 	SelectItem,
@@ -226,9 +227,10 @@ export function GrantTeamDialog({
 						)}
 					/>
 					{error && (
-						<p role="alert" className="text-sm text-destructive">
-							The host refused the grant: {error}
-						</p>
+						<ErrorState
+							title="The team was not granted access"
+							detail={error}
+						/>
 					)}
 					<DialogFooter>
 						<Button type="button" variant="outline" onClick={onClose}>

@@ -1,331 +1,275 @@
 "use client";
 
 import { timestampDate } from "@bufbuild/protobuf/wkt";
-import { isMFARequired, stepUpToast } from "@/features/auth/model/step-up";
-import { useState } from "react";
+import { DescriptionList, Disclosure } from "@codefly-dev/ui/layout";
+import { ShieldCheck } from "lucide-react";
+import { useCallback, useState } from "react";
 import { toast } from "sonner";
+import { UserLabel } from "@/components/user-label";
+import { isMFARequired, stepUpToast } from "@/features/auth/model/step-up";
 import type { ModuleAuthorityRequest } from "@/gen/saas/accounts/v1/platform_admin_pb";
-import { failureText } from "@/shared/lib/failure-text";
 import { readOutcome } from "@/shared/lib/read-outcome";
 import { formatDate } from "@/shared/lib/utils";
 import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogTitle,
-	Badge,
 	Banner,
 	Button,
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
+	ConfirmDialog,
+	EmptyState,
 	ErrorState,
-	Label,
 	Page as PageBody,
 	PageHeader,
 	Panel,
-	Spinner,
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-	Textarea,
-	useLoadingPhase,
+	Section,
+	Stack,
 } from "@/shared/ui";
-import { nextRevisionDraft, writeRefusal } from "../model/draft";
+import {
+	draftChanges,
+	draftProblem,
+	nextRevisionDraft,
+	withoutModule,
+	writeRefusal,
+} from "../model/draft";
+import { saveConsequences, saveQuestion } from "../model/save-question";
 import { usePutModuleEnvelope } from "../service/mutations";
 import { useModuleEnvelope } from "../service/queries";
+import { PermissionsEditor } from "./permissions-editor";
+import { RequestDetails, RequestsTable } from "./requests-table";
 
-const ONE = BigInt(1);
+// The rows when there is no answer yet: one array for every render.
+const NO_REQUESTS: ModuleAuthorityRequest[] = [];
 
-/** A draft remembers the revision it was started from: the write's fence. */
+/** Edits remember the version they were started from: the save's fence. */
 type Draft = { base: bigint; text: string };
 
-/**
- * Module authority: the envelope a platform super administrator writes — the
- * ceiling every module's authority is derived inside — beside what the applied
- * module manifests ask for, so the principals it does not allow are named
- * here instead of surfacing only as denied mints.
- */
+/** Where a refused save is reported: beside the act that was refused. */
+type Refusal = { from: "revoke" | "save"; text: string };
+
 const header = (
 	<PageHeader
-		title="Module authority"
-		description="The ceiling every module's authority is derived inside. A module holds what its applied manifest asks for and this envelope allows — never more than either."
+		title="Module permissions"
+		description="Approve what each installed module is allowed to do on this platform. A module can do only what it asks for and a platform operator has approved, never more than either."
 	/>
 );
 
+/**
+ * Module permissions: what each installed module asks to be allowed to do,
+ * whether a platform operator approved it, and the document those approvals
+ * are kept in. A module that asks and was never approved is named here rather
+ * than surfacing only as work that silently never runs.
+ */
 export function ModuleAuthorityPage() {
 	const read = useModuleEnvelope();
 	const write = usePutModuleEnvelope();
 	const [draft, setDraft] = useState<Draft | null>(null);
-	const [confirming, setConfirming] = useState(false);
-	const [refusal, setRefusal] = useState<string | null>(null);
+	const [confirmingSave, setConfirmingSave] = useState(false);
+	const [revoking, setRevoking] = useState<string | null>(null);
+	const [refusal, setRefusal] = useState<Refusal | null>(null);
 
-	const { indicator } = useLoadingPhase(read.isPending);
+	const envelope = read.data?.envelope;
+	const document = envelope?.document;
+	const current = envelope?.revision ?? BigInt(0);
+	const canRevoke = useCallback(
+		(module: string) => withoutModule(document, current, module) !== null,
+		[document, current],
+	);
 
-	if (read.isPending) {
-		return (
-			<PageBody>
-				{header}
-				{indicator && <Spinner label="Loading the module envelope" />}
-			</PageBody>
-		);
-	}
 	if (read.isError) {
+		const forbidden = readOutcome(true, read.error) === "forbidden";
 		return (
 			<PageBody>
 				{header}
 				<Panel>
-					<ErrorState
-						title="The module envelope can't be shown"
-						detail={
-							readOutcome(true, read.error) === "forbidden"
-								? "Only a platform super administrator can see the module envelope."
-								: failureText("load the module envelope", read.error)
-						}
-					/>
+					{forbidden ? (
+						<ErrorState
+							title="You don't have access to module permissions"
+							detail="Only a platform super administrator can see or change them. Ask one to give you that role."
+						/>
+					) : (
+						<Stack direction="row" gap={4} align="center" justify="between">
+							<ErrorState
+								title="Module permissions couldn't be loaded"
+								detail="Nothing was changed. If it keeps failing, tell the team that runs this platform."
+							/>
+							<Button variant="outline" onClick={() => void read.refetch()}>
+								Retry
+							</Button>
+						</Stack>
+					)}
 				</Panel>
 			</PageBody>
 		);
 	}
 
-	const envelope = read.data.envelope;
-	const current = envelope?.revision ?? BigInt(0);
-	const requested = read.data.requested;
-	const denied = requested.filter((request) => !request.allowed);
+	const loading = read.isPending;
+	const requested = read.data?.requested ?? NO_REQUESTS;
+	const waiting = requested.filter((request) => !request.allowed);
 	const base = draft?.base ?? current;
-	const text = draft?.text ?? nextRevisionDraft(envelope?.document, current);
+	const text = draft?.text ?? nextRevisionDraft(document, current);
+	const changes = draftChanges(document, text);
 
-	const submit = () =>
-		write.mutate(
-			{ expectedRevision: base, document: text },
-			{
-				onSuccess: (response) => {
-					toast.success(
-						`Revision ${response.envelope?.revision ?? base + ONE} written`,
-					);
-					setDraft(null);
-					setRefusal(null);
-				},
-				onError: (error) => {
-					if (isMFARequired(error)) stepUpToast();
-					setRefusal(writeRefusal(error));
-				},
-				onSettled: () => setConfirming(false),
+	const save = (
+		from: Refusal["from"],
+		input: { expectedRevision: bigint; document: string },
+		saved: string,
+	) =>
+		write.mutate(input, {
+			onSuccess: () => {
+				toast.success(saved);
+				if (from === "save") setDraft(null);
+				setRefusal(null);
 			},
-		);
+			onError: (error) => {
+				if (isMFARequired(error)) stepUpToast();
+				setRefusal({ from, text: writeRefusal(error) });
+			},
+			onSettled: () => {
+				setConfirmingSave(false);
+				setRevoking(null);
+			},
+		});
 
 	return (
 		<PageBody>
 			{header}
 
-			<Card>
-				<CardHeader>
-					<CardTitle className="text-base">Current envelope</CardTitle>
-				</CardHeader>
-				<CardContent>
-					{envelope ? (
-						<dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">
-							<dt className="text-muted-foreground">Revision</dt>
-							<dd className="font-mono">{envelope.revision.toString()}</dd>
-							<dt className="text-muted-foreground">Written by</dt>
-							<dd className="font-mono">{envelope.writtenBy}</dd>
-							<dt className="text-muted-foreground">Written at</dt>
-							<dd>
-								{formatDate(
-									envelope.writtenAt
-										? timestampDate(envelope.writtenAt).toISOString()
-										: undefined,
-								)}
-							</dd>
-						</dl>
-					) : (
-						<Banner tone="danger" title="No module envelope has been written">
-							Every module on this host is denied a Work Context until a
-							platform super administrator writes one.
-						</Banner>
-					)}
-				</CardContent>
-			</Card>
+			{!loading && !envelope && (
+				<Banner tone="danger" title="No module has been approved yet">
+					Every installed module is blocked from doing any work for
+					organizations until a platform operator approves its permissions
+					below.
+				</Banner>
+			)}
 
-			<Card>
-				<CardHeader>
-					<CardTitle className="text-base">
-						What the applied manifests ask for
-					</CardTitle>
-					<CardDescription>
-						{denied.length === 0
-							? "The envelope declares a ceiling for every principal asked for."
-							: `${denied.length} of ${requested.length} asked for ${denied.length === 1 ? "has" : "have"} no ceiling in the envelope, and ${denied.length === 1 ? "is" : "are"} denied every Work Context.`}{" "}
-						A declared ceiling is necessary, not sufficient: the reconcile pass
-						still omits a principal two bindings ask for, or whose manifest no
-						longer verifies, and names each in the accounts log.
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
-					{requested.length === 0 ? (
-						<p className="text-sm text-muted-foreground">
-							No applied module manifest asks for authority.
-						</p>
-					) : (
-						<RequestsTable requested={requested} />
-					)}
-				</CardContent>
-			</Card>
-
-			<Card>
-				<CardHeader>
-					<CardTitle className="text-base">
-						Write revision {(base + ONE).toString()}
-					</CardTitle>
-					<CardDescription>
-						The whole ceiling, as JSON: <code>revision</code> and{" "}
-						<code>principals</code>, each principal holding only its{" "}
-						<code>grant</code>. It replaces revision {base.toString()} and takes
-						effect at the next check, with no restart. Writing it needs a second
-						factor completed recently.
-					</CardDescription>
-				</CardHeader>
-				<CardContent className="space-y-3">
-					{base !== current && (
-						<Banner tone="warning">
-							Revision {current.toString()} was written after this draft was
-							started from revision {base.toString()}, so writing it will be
-							refused. Discard the draft to start from the current revision.
-						</Banner>
-					)}
-					{refusal && (
-						<Banner
-							tone="danger"
-							title="Not written"
-							onDismiss={() => setRefusal(null)}
-						>
-							{refusal}
-						</Banner>
-					)}
-					<Label htmlFor="module-envelope-draft">Envelope document</Label>
-					<Textarea
-						id="module-envelope-draft"
-						className="min-h-72 font-mono text-xs"
-						spellCheck={false}
-						value={text}
-						onChange={(event) => setDraft({ base, text: event.target.value })}
+			<Section
+				title="What modules are asking for"
+				description={
+					loading || requested.length === 0
+						? undefined
+						: `${
+								waiting.length === 0
+									? "Every module asking for permissions is approved."
+									: `${waiting.length} of ${requested.length} ${waiting.length === 1 ? "is" : "are"} waiting for approval and can't do any work for organizations until approved.`
+							} An approved module is still blocked if it is installed twice under one name or its installation can no longer be verified.`
+				}
+			>
+				{refusal?.from === "revoke" && (
+					<Banner
+						tone="danger"
+						title="Not saved"
+						onDismiss={() => setRefusal(null)}
+					>
+						{refusal.text}
+					</Banner>
+				)}
+				{!loading && requested.length === 0 ? (
+					<EmptyState
+						icon={<ShieldCheck />}
+						heading="No module is asking for permissions"
+						description="When a module that needs permissions is installed on this platform, what it asks for appears here for a platform operator to approve."
 					/>
-					<div className="flex gap-2">
-						<Button
-							onClick={() => setConfirming(true)}
-							disabled={write.isPending}
-						>
-							Write revision {(base + ONE).toString()}
-						</Button>
-						<Button
-							variant="outline"
-							onClick={() => {
-								setDraft(null);
-								setRefusal(null);
-							}}
-							disabled={draft === null}
-						>
-							Discard draft
-						</Button>
-					</div>
-				</CardContent>
-			</Card>
+				) : (
+					<>
+						<RequestsTable
+							requested={requested}
+							isLoading={loading}
+							canRevoke={canRevoke}
+							onRevoke={setRevoking}
+						/>
+						{!loading && <RequestDetails requested={requested} />}
+					</>
+				)}
+			</Section>
 
-			<AlertDialog open={confirming} onOpenChange={setConfirming}>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogTitle>
-							Write revision {(base + ONE).toString()}?
-						</AlertDialogTitle>
-						<AlertDialogDescription>
-							It replaces the authority ceiling of every module on this host. A
-							principal it no longer allows loses its authority at the next
-							check, and an installation it no longer admits is removed.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
-						<AlertDialogAction disabled={write.isPending} onClick={submit}>
-							{write.isPending ? "Writing…" : "Write"}
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+			{!loading && (
+				<>
+					{envelope && (
+						<Section title="Permissions in force">
+							<DescriptionList
+								items={[
+									{ term: "Version", value: envelope.revision.toString() },
+									{
+										term: "Last changed",
+										value: formatDate(
+											envelope.writtenAt
+												? timestampDate(envelope.writtenAt).toISOString()
+												: undefined,
+										),
+									},
+									{
+										term: "Changed by",
+										value: (
+											<UserLabel
+												userId={envelope.writtenBy}
+												fallback="A platform operator"
+											/>
+										),
+									},
+								]}
+							/>
+							<Disclosure title="Technical details">
+								Module envelope revision {envelope.revision.toString()}, written
+								by {envelope.writtenBy}.
+							</Disclosure>
+						</Section>
+					)}
+
+					<PermissionsEditor
+						text={text}
+						problem={draftProblem(text)}
+						current={current}
+						base={base}
+						edited={draft !== null}
+						saving={write.isPending}
+						refusal={refusal?.from === "save" ? refusal.text : null}
+						onDismissRefusal={() => setRefusal(null)}
+						onChange={(next) => setDraft({ base, text: next })}
+						onSave={() => setConfirmingSave(true)}
+						onDiscard={() => {
+							setDraft(null);
+							setRefusal(null);
+						}}
+					/>
+				</>
+			)}
+
+			<ConfirmDialog
+				open={confirmingSave}
+				onOpenChange={setConfirmingSave}
+				title={saveQuestion(changes)}
+				description={saveConsequences(changes)}
+				confirmLabel="Save changes"
+				pendingLabel="Saving…"
+				destructive={changes.revoked.length > 0}
+				isPending={write.isPending}
+				onConfirm={() =>
+					save(
+						"save",
+						{ expectedRevision: base, document: text },
+						"Module permissions saved",
+					)
+				}
+			/>
+
+			{revoking && (
+				<ConfirmDialog
+					open
+					onOpenChange={(open) => !open && setRevoking(null)}
+					title={`Revoke approval for the module ${revoking}?`}
+					description={`${revoking} will stop working for every organization on this platform within moments, and installations of it that are no longer permitted are removed. Work it has already finished is not undone. You can approve it again later.`}
+					confirmLabel="Revoke approval"
+					pendingLabel="Revoking…"
+					isPending={write.isPending}
+					onConfirm={() => {
+						const next = withoutModule(document, current, revoking);
+						if (next === null) return setRevoking(null);
+						save(
+							"revoke",
+							{ expectedRevision: current, document: next },
+							`Approval revoked for ${revoking}`,
+						);
+					}}
+				/>
+			)}
 		</PageBody>
-	);
-}
-
-/** The authority request, indented; shown as sent when it is not JSON. */
-function indented(authority: string): string {
-	try {
-		return JSON.stringify(JSON.parse(authority), null, 2);
-	} catch {
-		return authority;
-	}
-}
-
-function RequestsTable({ requested }: { requested: ModuleAuthorityRequest[] }) {
-	// Two bindings asking for one principal leave it with no single answer, so
-	// the pass omits it whatever the envelope says.
-	const askers = new Map<string, number>();
-	for (const request of requested) {
-		askers.set(request.principal, (askers.get(request.principal) ?? 0) + 1);
-	}
-	return (
-		<Table aria-label="Authority the applied manifests ask for">
-			<TableHeader>
-				<TableRow>
-					<TableHead>Principal</TableHead>
-					<TableHead>Binding</TableHead>
-					<TableHead>Envelope</TableHead>
-					<TableHead>Asks for</TableHead>
-				</TableRow>
-			</TableHeader>
-			<TableBody>
-				{requested.map((request) => (
-					<TableRow key={`${request.principal}:${request.binding}`}>
-						<TableCell className="font-medium">{request.principal}</TableCell>
-						<TableCell className="font-mono text-xs">
-							{request.binding} · generation {request.generation.toString()}
-						</TableCell>
-						<TableCell>
-							{request.allowed ? (
-								<Badge tone="success" dot>
-									Ceiling declared
-								</Badge>
-							) : (
-								<Badge tone="danger" dot>
-									No ceiling
-								</Badge>
-							)}
-							{(askers.get(request.principal) ?? 0) > 1 && (
-								<Badge tone="danger" dot>
-									Asked for by {askers.get(request.principal)} bindings
-								</Badge>
-							)}
-						</TableCell>
-						<TableCell>
-							<details>
-								<summary className="cursor-pointer text-sm">
-									Authority request
-								</summary>
-								<pre className="mt-2 max-w-xl overflow-x-auto text-xs">
-									{indented(request.authority)}
-								</pre>
-							</details>
-						</TableCell>
-					</TableRow>
-				))}
-			</TableBody>
-		</Table>
 	);
 }

@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { RoleGrant } from "@/gen/host/installation/v1/installation_pb";
 import {
 	type AccessView,
+	installedName,
 	uninstallLosers,
-} from "./solution-installations-page";
+	uninstallQuestion,
+} from "./access";
 
 const NAMES = new Map([
 	["team-1", "expenses-admin"],
@@ -21,9 +23,10 @@ function view(grants: Partial<RoleGrant>[] | undefined): AccessView {
 	};
 }
 
-const row = { installationId: "inst-1" } as Parameters<
-	typeof uninstallLosers
->[0];
+const row = {
+	installationId: "inst-1",
+	solution: { kind: "value" as const, text: "expenses" },
+};
 
 describe("uninstallLosers", () => {
 	// The uninstall confirmation said "Access through this installation is
@@ -65,5 +68,37 @@ describe("uninstallLosers", () => {
 	it("says nothing when the holders are unknown or there are none", () => {
 		expect(uninstallLosers(row, view(undefined))).toBe("");
 		expect(uninstallLosers(row, view([]))).toBe("");
+	});
+});
+
+describe("the question asked before an uninstall", () => {
+	it("names the act and the solution, who loses access, and what is kept", () => {
+		expect(
+			uninstallQuestion(
+				row,
+				view([{ role: "admin", teamId: "team-1", personId: "" }]),
+			),
+		).toEqual({
+			title: "Uninstall expenses?",
+			description:
+				"expenses-admin loses access to expenses at once. Its record and audit trail remain. Shared supporting module installations are kept.",
+		});
+	});
+
+	it("says everyone when the holders cannot be named", () => {
+		expect(uninstallQuestion(row, view(undefined)).description).toBe(
+			"Everyone who holds one of its roles loses access at once. Its record and audit trail remain. Shared supporting module installations are kept.",
+		);
+	});
+
+	it("names a row the host no longer offers without an identifier", () => {
+		const gap = {
+			installationId: "inst-1",
+			solution: { kind: "gap" as const, label: "Not offered", detail: "" },
+		};
+		expect(installedName(gap)).toBe("this installation");
+		expect(uninstallQuestion(gap, view([])).title).toBe(
+			"Uninstall this installation?",
+		);
 	});
 });

@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
+import { ErrorState } from "@/shared/ui";
 import { hostRefusal, isModulePage } from "../model/installations";
 import { useAvailableSolutions } from "../service/queries";
 
@@ -65,10 +66,10 @@ export function WhenRolesDeclared({
 	const { declared, error } = useRolesDeclaredReview(target, kind);
 	if (error)
 		return (
-			<p role="alert" className="text-sm text-muted-foreground">
-				Could not read whether this page has roles to set up:{" "}
-				{hostRefusal(error)}
-			</p>
+			<ErrorState
+				title="Could not read whether this page has roles to set up"
+				detail={hostRefusal(error)}
+			/>
 		);
 	return declared ? children : null;
 }

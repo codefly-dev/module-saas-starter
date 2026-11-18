@@ -5,43 +5,27 @@ import { ArrowLeft, Layers, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
-import { EmptyState } from "@/components/empty-state";
-import type {
-	GrantInstallationToTeamResponse,
-	OrganizationInstallation,
-} from "@/gen/saas/accounts/v1/installations_pb";
-import { InstallationStatus } from "@/gen/saas/accounts/v1/installations_pb";
+import type { OrganizationInstallation } from "@/gen/saas/accounts/v1/installations_pb";
 import { useAuth } from "@/lib/auth";
+import { readOutcome } from "@/shared/lib/read-outcome";
 import {
-	Badge,
-	Banner,
 	Button,
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
+	buttonVariants,
+	EmptyState,
 	Page as PageBody,
 	PageHeader,
 	Spinner,
 	useLoadingPhase,
 } from "@/shared/ui";
 import { healthFacts } from "../model/access";
-import {
-	hostRefusal,
-	installedRows,
-	isModulePage,
-} from "../model/installations";
+import { hostRefusal, isModulePage } from "../model/installations";
 import {
 	affordance,
 	clearedByText,
 	conditionHeading,
 	entryKindText,
-	reachOffers,
-	readinessSummary,
 } from "../model/readiness";
 import {
-	useGrantInstallationToTeam,
 	useInstallReviewedSolution,
 	useRetryInstallation,
 } from "../service/mutations";
@@ -50,9 +34,9 @@ import {
 	useInstallations,
 	useUpdateAsks,
 } from "../service/queries";
-import { GrantTeamDialog } from "./grant-team-dialog";
+import { HostTeamAccessCard } from "./host-team-access-card";
 import { InstallSolutionDialog } from "./install-solution-dialog";
-import { Fact } from "./solution-installations-page";
+import { ListReadFailure } from "./list-read-state";
 import { SolutionSetupPanel } from "./solution-setup-panel";
 import { TargetName, useTargetTitles } from "./target-name";
 
@@ -106,6 +90,7 @@ export function InstallationSetupPage({
 	return (
 		<PageBody>
 			<PageHeader
+				className="flex-wrap"
 				title={
 					row?.target?.routeAlias ? (
 						<TargetName alias={row.target.routeAlias} titles={titles} />
@@ -145,16 +130,35 @@ export function InstallationSetupPage({
 
 			{quiet ? null : indicator ? (
 				<Spinner label="Loading this installation" />
-			) : query.isError ? (
-				<Banner tone="danger" title="This installation could not be read">
-					{hostRefusal(query.error)}
-				</Banner>
-			) : !row ? (
+			) : !orgId ? (
 				<EmptyState
-					icon={Layers}
-					title="This organization has no such installation"
-					description="It may have been uninstalled, or it belongs to another organization. Go back to Solutions."
+					variant="illustrated"
+					icon={<Layers />}
+					heading="Select an organization to see this installation"
+					description="An installation belongs to one organization. Choose yours, then open it from Solutions."
 				/>
+			) : query.isError && !row ? (
+				<ListReadFailure
+					outcome={readOutcome(true, query.error) as "forbidden" | "failed"}
+					subject="this installation"
+					error={query.error}
+					retrying={query.isFetching}
+					onRetry={() => void query.refetch()}
+				/>
+			) : query.isPending ? null : !row ? (
+				<EmptyState
+					variant="illustrated"
+					icon={<Layers />}
+					heading="This organization has no such installation"
+					description="It may have been uninstalled, or it belongs to another organization."
+				>
+					<Link
+						href="/admin/solutions"
+						className={buttonVariants({ variant: "outline" })}
+					>
+						Back to Solutions
+					</Link>
+				</EmptyState>
 			) : (
 				<InstallationSetup
 					orgId={orgId}
@@ -177,11 +181,7 @@ function InstallationSetup({
 	rolesDeclared: boolean | undefined;
 }) {
 	const installationId = row.installation?.id ?? "";
-	const fact = installedRows([row])[0];
-	const summary = readinessSummary(row.readiness);
-	const offers = reachOffers(row.reachedModules);
 	const retry = useRetryInstallation(orgId);
-	const grant = useGrantInstallationToTeam(orgId);
 	// An update the authority offers, on a solution or on a module page (held
 	// at its approved reach the same way): what it asks, and its review here.
 	const upgradeAvailable =
@@ -193,14 +193,6 @@ function InstallationSetup({
 	);
 	const update = useInstallReviewedSolution(orgId);
 	const [updating, setUpdating] = useState(false);
-	const [granting, setGranting] = useState(false);
-	const [refusal, setRefusal] = useState<string | null>(null);
-	// What the last grant carried, as the host reported it in the grant's own
-	// response. Kept rather than re-read: a module that holds nothing is the one
-	// thing a person used to learn by hitting a Forbidden later, so it is shown
-	// here, now, in the host's own words.
-	const [carried, setCarried] =
-		useState<GrantInstallationToTeamResponse | null>(null);
 	const name = row.target?.routeAlias || "this installation";
 	const target = row.target?.routeAlias ?? "";
 	// This host's own team access card is for a record carrying a host scope
@@ -242,16 +234,6 @@ function InstallationSetup({
 
 	return (
 		<div className="space-y-6">
-			{refusal && (
-				<Banner
-					tone="danger"
-					title={`The host refused: ${name}`}
-					onDismiss={() => setRefusal(null)}
-				>
-					{refusal}
-				</Banner>
-			)}
-
 			<SolutionSetupPanel
 				target={target}
 				conditions={conditions}
@@ -266,6 +248,7 @@ function InstallationSetup({
 								action: (
 									<div>
 										<Button
+											variant="outline"
 											size="sm"
 											disabled={update.isPending}
 											onClick={() => {
@@ -304,180 +287,17 @@ function InstallationSetup({
 			)}
 
 			{hasHostScopeRoot ? (
-				<Card>
-					<CardHeader>
-						<CardTitle className="text-base">
-							Team access on this host
-						</CardTitle>
-						<CardDescription>
-							This host&apos;s own installation record and the teams it admits
-							to the solution, at which role. A team granted here holds
-							everything that role permits beneath this installation&apos;s
-							authority root; a team reaching it from a grant above is real
-							reach that was not granted here. The solution&apos;s own roles are
-							granted above.
-						</CardDescription>
-					</CardHeader>
-					<CardContent className="space-y-3">
-						<dl className="grid gap-3 sm:grid-cols-4">
-							<div>
-								<dt className="text-xs uppercase text-muted-foreground">
-									Release
-								</dt>
-								<dd className="mt-1">
-									{fact ? <Fact view={fact.revision} /> : null}
-								</dd>
-							</div>
-							<div>
-								<dt className="text-xs uppercase text-muted-foreground">
-									Lifecycle
-								</dt>
-								<dd className="mt-1">
-									{fact ? <Fact view={fact.lifecycle} /> : null}
-								</dd>
-							</div>
-							<div>
-								<dt className="text-xs uppercase text-muted-foreground">
-									Record health
-								</dt>
-								<dd className="mt-1">
-									{fact ? <Fact view={fact.health} /> : null}
-								</dd>
-							</div>
-							<div>
-								<dt className="text-xs uppercase text-muted-foreground">
-									Readiness
-								</dt>
-								<dd className="mt-1">
-									<Badge tone={summary.tone} dot aria-label="Readiness">
-										{summary.text}
-									</Badge>
-								</dd>
-							</div>
-						</dl>
-						{fact && fact.grantedTeams.length === 0 && (
-							<p className="text-sm text-muted-foreground">
-								No team is granted here, so no member reaches it through this
-								installation.
-							</p>
-						)}
-						{fact && fact.grantedTeams.length > 0 && (
-							<ul className="space-y-1" aria-label="Teams granted here">
-								{fact.grantedTeams.map((team) => (
-									<li key={team.key} className="text-sm">
-										<span className="font-medium">{team.team}</span>
-										<span className="text-muted-foreground">
-											{" "}
-											· {team.role}
-										</span>
-										<span className="ml-2 font-mono text-xs text-muted-foreground">
-											{team.scopePath}
-										</span>
-									</li>
-								))}
-							</ul>
-						)}
-						{fact && fact.inheritedTeams.length > 0 && (
-							<p className="text-sm text-muted-foreground">
-								Inherited from above:{" "}
-								{fact.inheritedTeams.map((team) => team.team).join(", ")}
-							</p>
-						)}
-						{offers.length > 0 && (
-							<Banner
-								tone="info"
-								title="A grant here also carries the modules this reaches"
-							>
-								{entryKindText(row, rolesDeclared)} {name} reaches{" "}
-								{offers.map((offer) => offer.label).join(", ")} on the asking
-								person&apos;s own session, from its own applied declaration. A
-								grant carries each of them: what {name} declares it consumes
-								there, intersected with the role you choose — never the whole
-								role — written at that module&apos;s own authority root and
-								revoked with this grant. There is no per-module step to perform.
-							</Banner>
-						)}
-						{carried && (
-							<Banner
-								tone={carried.unmet.length > 0 ? "warning" : "success"}
-								title="What that grant carried"
-								onDismiss={() => setCarried(null)}
-							>
-								<div className="space-y-2">
-									{carried.carried.length > 0 ? (
-										<ul className="list-disc space-y-1 pl-4">
-											{carried.carried.map((entry) => (
-												<li key={entry.audience}>
-													{entry.audience}: {entry.scopes.join(", ")}
-												</li>
-											))}
-										</ul>
-									) : (
-										<p>It carried no module access.</p>
-									)}
-									{carried.unmet.map((condition) => (
-										<p key={`${condition.kind}-${condition.subject}`}>
-											<span className="font-medium">
-												{conditionHeading(condition.kind)}
-												{condition.subject ? ` — ${condition.subject}` : ""}:
-											</span>{" "}
-											{condition.detail} {clearedByText(condition.clearedBy)}
-										</p>
-									))}
-								</div>
-							</Banner>
-						)}
-						<Button
-							variant="outline"
-							size="sm"
-							disabled={
-								grant.isPending ||
-								row.installation?.status !== InstallationStatus.ACTIVE
-							}
-							onClick={() => {
-								grant.reset();
-								setGranting(true);
-							}}
-						>
-							Grant a team
-						</Button>
-						{row.installation?.status !== InstallationStatus.ACTIVE && (
-							<p className="text-sm text-muted-foreground">
-								A grant is available once the installation is active.
-							</p>
-						)}
-					</CardContent>
-				</Card>
+				<HostTeamAccessCard
+					orgId={orgId}
+					row={row}
+					rolesDeclared={rolesDeclared}
+				/>
 			) : (
 				<p className="text-sm text-muted-foreground">
 					To give someone a role, add them to a team that has it, or give the
 					role to them or their team above. What they already hold in other
 					modules does not change.
 				</p>
-			)}
-
-			{hasHostScopeRoot && granting && (
-				<GrantTeamDialog
-					orgId={orgId}
-					solution={name}
-					isPending={grant.isPending}
-					error={grant.isError ? hostRefusal(grant.error) : undefined}
-					onSubmit={({ teamId, roleId }) => {
-						setRefusal(null);
-						grant.mutate(
-							{ installationId, teamId, roleId },
-							{
-								onSuccess: (response) => {
-									toast.success(`Team grant recorded for ${name}`);
-									setCarried(response);
-									setGranting(false);
-								},
-								onError: (error) => setRefusal(hostRefusal(error)),
-							},
-						);
-					}}
-					onClose={() => setGranting(false)}
-				/>
 			)}
 		</div>
 	);

@@ -47,6 +47,20 @@ function SolutionsPage() {
 vi.mock("@/lib/auth", () => ({ useAuth: () => session }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
+// The kit's DataTable takes no accessible name, so each list is a named
+// region around its table; a list still being read is marked busy.
+async function findTable(name: string) {
+	const region = await screen.findByRole("region", { name });
+	await waitFor(() => expect(region.getAttribute("aria-busy")).toBeNull());
+	return within(region).getByRole("table");
+}
+function getTable(name: string) {
+	return within(screen.getByRole("region", { name })).getByRole("table");
+}
+function queryTable(name: string) {
+	return screen.queryByRole("region", { name });
+}
+
 const checkedRequests: { actual: unknown; expected: unknown }[] = [];
 async function assertBody(request: Request, expected: unknown) {
 	const actual = await request.json();
@@ -286,6 +300,28 @@ async function openGrant() {
 	return dialog;
 }
 
+// Removing a team's grant is asked first, naming the team and the solution.
+async function removeFinance() {
+	fireEvent.click(
+		await screen.findByRole("button", {
+			name: "Remove Finance from expenses",
+		}),
+	);
+	const question = await screen.findByRole("alertdialog");
+	expect(
+		within(question).getByText("Remove Finance from expenses?"),
+	).toBeTruthy();
+	expect(
+		within(question).getByText(
+			/Everyone in Finance loses the Solution user access/,
+		),
+	).toBeTruthy();
+	fireEvent.click(
+		within(question).getByRole("button", { name: "Remove team" }),
+	);
+	await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+}
+
 function expectFieldError(control: HTMLElement, message: string) {
 	expect(control.getAttribute("aria-invalid")).toBe("true");
 	const descriptions = (control.getAttribute("aria-describedby") ?? "")
@@ -309,9 +345,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		serve();
 		renderInApp(<Page />);
 
-		const availableTable = await screen.findByRole("table", {
-			name: "Available modules and solutions",
-		});
+		const availableTable = await findTable("Available modules and solutions");
 		const ledger = within(availableTable).getByText("ledger").closest("tr");
 		const expenses = within(availableTable).getByText("expenses").closest("tr");
 		if (!ledger || !expenses) throw new Error("catalogue rows missing");
@@ -331,9 +365,7 @@ describe("SolutionInstallationsPage admin container", () => {
 			within(ledger).queryByRole("button", { name: /^Install/ }),
 		).toBeNull();
 
-		const installedTable = await screen.findByRole("table", {
-			name: "Installed modules and solutions",
-		});
+		const installedTable = await findTable("Installed modules and solutions");
 		// The route and the release are the catalogue row the host joined to the
 		// installation's target.
 		const row = within(installedTable).getByText("expenses").closest("tr");
@@ -379,9 +411,7 @@ describe("SolutionInstallationsPage admin container", () => {
 			),
 		);
 		renderInApp(<Page />);
-		await screen.findByRole("table", {
-			name: "Installed modules and solutions",
-		});
+		await findTable("Installed modules and solutions");
 		expect(asked).toEqual({ orgId: "org-1", pageSize: 500 });
 	});
 
@@ -415,9 +445,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		const refusal = await screen.findByText(
 			"cannot uninstall solution: installation 0190a7c2 is still being installed",
 		);
-		expect(
-			screen.getByText("The host refused to uninstall expenses"),
-		).toBeTruthy();
+		expect(screen.getByText("Couldn't uninstall expenses")).toBeTruthy();
 		expect(refusal).toBeTruthy();
 		expect(toast.success).not.toHaveBeenCalled();
 		expect(uninstalled).toEqual({
@@ -427,11 +455,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		// Still listed: the host did not uninstall it.
 		await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
 		expect(
-			within(
-				await screen.findByRole("table", {
-					name: "Installed solutions",
-				}),
-			).getByText("expenses"),
+			within(await findTable("Installed solutions")).getByText("expenses"),
 		).toBeTruthy();
 	});
 
@@ -487,7 +511,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		expect(reads.installed).toBe(2);
 		// The Solutions page names a version, the release behind its title.
 		expect(
-			within(screen.getByRole("table", { name: "Available solutions" }))
+			within(getTable("Available solutions"))
 				.getByText("1.4.0")
 				.getAttribute("title"),
 		).toBe("acme/expenses@1.4.0");
@@ -497,9 +521,7 @@ describe("SolutionInstallationsPage admin container", () => {
 			).getByText("Support"),
 		).toBeTruthy();
 		expect(
-			within(
-				screen.getByRole("table", { name: "Installed solutions" }),
-			).getByText("Agent disabled"),
+			within(getTable("Installed solutions")).getByText("Agent disabled"),
 		).toBeTruthy();
 		expect(toast.success).toHaveBeenCalledExactlyOnceWith(
 			"Team grant recorded for expenses",
@@ -558,16 +580,10 @@ describe("SolutionInstallationsPage admin container", () => {
 		);
 		renderInApp(<Page />);
 
-		fireEvent.click(
-			await screen.findByRole("button", {
-				name: "Remove Finance from expenses",
-			}),
-		);
+		await removeFinance();
 
 		expect(
-			await screen.findByText(
-				"The host refused to remove Finance from expenses",
-			),
+			await screen.findByText("Couldn't remove Finance from expenses"),
 		).toBeTruthy();
 		expect(
 			screen.getByText(
@@ -617,11 +633,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		);
 		expect(toast.success).not.toHaveBeenCalled();
 		expect(screen.queryByText(/Nothing is installed/)).toBeNull();
-		expect(
-			await screen.findByRole("table", {
-				name: "Available modules and solutions",
-			}),
-		).toBeTruthy();
+		expect(await findTable("Available modules and solutions")).toBeTruthy();
 	});
 
 	it("says an organization with nothing available has nothing available", async () => {
@@ -670,9 +682,7 @@ describe("organization administration boundary", () => {
 			expect(canPresent(navigation, session)).toBe(allowed);
 			const { client } = renderInApp(<Page />);
 			if (allowed) {
-				await screen.findByRole("table", {
-					name: "Installed modules and solutions",
-				});
+				await findTable("Installed modules and solutions");
 				expect(reads.available).toBe(1);
 				expect(reads.installed).toBe(1);
 			} else {
@@ -698,7 +708,7 @@ describe("organization administration boundary", () => {
 		// A read that never starts is never shown as one in progress.
 		await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
 		expect(
-			screen.queryByText("Reading which targets declare roles"),
+			screen.queryByText("Reading what this organization can install"),
 		).toBeNull();
 	});
 
@@ -756,7 +766,7 @@ describe("organization administration boundary", () => {
 			"Available modules and solutions",
 			"Installed modules and solutions",
 		]) {
-			const table = await screen.findByRole("table", { name });
+			const table = await findTable(name);
 			expect(within(table).getByText("expenses")).toBeTruthy();
 			expect(within(table).getByText("ledger")).toBeTruthy();
 		}
@@ -823,11 +833,7 @@ describe("organization administration boundary", () => {
 			await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 			expect(screen.queryByLabelText("Show supporting modules")).toBeNull();
 			expect(
-				within(
-					await screen.findByRole("table", {
-						name: "Installed solutions",
-					}),
-				).queryByText("expenses"),
+				within(await findTable("Installed solutions")).queryByText("expenses"),
 			).toBeNull();
 			fireEvent.click(
 				await screen.findByRole("button", {
@@ -849,6 +855,80 @@ describe("organization administration boundary", () => {
 });
 
 describe("host read refusals and retained data", () => {
+	it("tells a refused list read from one that did not complete: who can grant it, or a retry", async () => {
+		serve();
+		let fail = true;
+		server.use(
+			http.post(
+				rpc("InstallationService", "ListOrganizationInstallations"),
+				() =>
+					fail
+						? refusal("upstream reset before headers", "unavailable")
+						: HttpResponse.json(installations),
+			),
+			http.post(rpc("InstallationService", "ListAvailableSolutions"), () =>
+				refusal("requires organization admin"),
+			),
+		);
+		renderInApp(<Page />);
+		// Not allowed: the host's words, who can grant it, and no retry.
+		const refused = await screen.findByText(
+			/You don't have permission to see the available modules and solutions/,
+		);
+		const refusedAlert = refused.closest('[role="alert"]');
+		expect(refusedAlert?.textContent).toContain("requires organization admin");
+		expect(refusedAlert?.textContent).toContain(
+			"Ask an organization administrator to give you access.",
+		);
+		// Did not complete: plain words, never the transport's, and a retry.
+		const failed = await screen.findByText(
+			/Couldn't load the installed modules and solutions/,
+		);
+		expect(failed.closest('[role="alert"]')?.textContent).not.toContain(
+			"upstream reset",
+		);
+		expect(screen.queryByText(/Nothing is installed/)).toBeNull();
+		const retries = screen.getAllByRole("button", { name: "Retry" });
+		expect(retries).toHaveLength(1);
+		fail = false;
+		fireEvent.click(retries[0]);
+		const table = await findTable("Installed modules and solutions");
+		expect(await within(table).findByText("expenses")).toBeTruthy();
+		expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+	});
+
+	it("keeps the question open and cancellable, and uninstalls nothing on Cancel", async () => {
+		serve(solutionBodies());
+		const uninstall = vi.fn();
+		server.use(
+			http.post(rpc("InstallationService", "UninstallSolution"), () => {
+				uninstall();
+				return HttpResponse.json({});
+			}),
+		);
+		renderInApp(<SolutionsPage />);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Uninstall expenses" }),
+		);
+		const question = await screen.findByRole("alertdialog");
+		fireEvent.click(within(question).getByRole("button", { name: "Cancel" }));
+		await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+		expect(uninstall).not.toHaveBeenCalled();
+		expect(toast.success).not.toHaveBeenCalled();
+		// Removing a team is asked the same way, and Cancel removes nothing.
+		fireEvent.click(
+			screen.getByRole("button", { name: "Remove Finance from expenses" }),
+		);
+		const removal = await screen.findByRole("alertdialog");
+		fireEvent.click(within(removal).getByRole("button", { name: "Cancel" }));
+		await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+		expect(
+			within(
+				screen.getByRole("list", { name: "Teams granted expenses" }),
+			).getByText("Finance"),
+		).toBeTruthy();
+	});
+
 	it.each([
 		["ListAvailableSolutions", "Available modules and solutions"],
 		["ListOrganizationInstallations", "Installed modules and solutions"],
@@ -865,22 +945,18 @@ describe("host read refusals and retained data", () => {
 			);
 			renderInApp(<Page />);
 			expect((await screen.findByRole("alert")).textContent).toContain(reason);
-			expect(screen.queryByRole("table", { name: table })).toBeNull();
+			expect(queryTable(table)).toBeNull();
 			expect(toast.success).not.toHaveBeenCalled();
 		},
 	);
 
 	it.each(["permission_denied", "unavailable"])(
-		"handles both table refreshes ending in %s with the host's reason",
+		"handles both table refreshes ending in %s, with the host's reason for a refusal only",
 		async (code) => {
 			serve();
 			renderInApp(<Page />);
-			await screen.findByRole("table", {
-				name: "Available modules and solutions",
-			});
-			await screen.findByRole("table", {
-				name: "Installed modules and solutions",
-			});
+			await findTable("Available modules and solutions");
+			await findTable("Installed modules and solutions");
 			for (const method of [
 				"ListAvailableSolutions",
 				"ListOrganizationInstallations",
@@ -893,41 +969,40 @@ describe("host read refusals and retained data", () => {
 				);
 			}
 			fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-			for (const method of [
-				"ListAvailableSolutions",
-				"ListOrganizationInstallations",
-			]) {
-				expect(
-					await screen.findByText(new RegExp(`${method} host explanation`)),
-				).toBeTruthy();
+			// A refusal is said as the host words it. A read that did not
+			// complete is not a refusal: its text is the transport's, never shown.
+			if (code === "permission_denied")
+				for (const method of [
+					"ListAvailableSolutions",
+					"ListOrganizationInstallations",
+				]) {
+					expect(
+						await screen.findByText(new RegExp(`${method} host explanation`)),
+					).toBeTruthy();
+				}
+			else {
+				await waitFor(() =>
+					expect(
+						screen
+							.getAllByRole("status")
+							.filter((element) =>
+								element.textContent?.includes("out of date"),
+							),
+					).toHaveLength(2),
+				);
+				expect(screen.queryByText(/host explanation/)).toBeNull();
 			}
 			if (code === "permission_denied") {
-				expect(
-					screen.queryByRole("table", {
-						name: "Available modules and solutions",
-					}),
-				).toBeNull();
-				expect(
-					screen.queryByRole("table", {
-						name: "Installed modules and solutions",
-					}),
-				).toBeNull();
+				expect(queryTable("Available modules and solutions")).toBeNull();
+				expect(queryTable("Installed modules and solutions")).toBeNull();
 			} else {
 				expect(
 					screen
 						.getAllByRole("status")
 						.filter((element) => element.textContent?.includes("out of date")),
 				).toHaveLength(2);
-				expect(
-					screen.getByRole("table", {
-						name: "Available modules and solutions",
-					}),
-				).toBeTruthy();
-				expect(
-					screen.getByRole("table", {
-						name: "Installed modules and solutions",
-					}),
-				).toBeTruthy();
+				expect(getTable("Available modules and solutions")).toBeTruthy();
+				expect(getTable("Installed modules and solutions")).toBeTruthy();
 			}
 			expect(toast.success).not.toHaveBeenCalled();
 		},
@@ -1061,9 +1136,9 @@ describe("host read refusals and retained data", () => {
 			});
 			const notice = await within(dialog).findByRole("status");
 			expect(notice.textContent).toContain("out of date");
-			expect(notice.textContent).toContain(
-				`${method}: host temporarily unavailable`,
-			);
+			// The transport's own text is for an engineer, never the page.
+			expect(notice.textContent).not.toContain("temporarily unavailable");
+			expect(notice.textContent).toContain("The request did not complete");
 			await choose(dialog, label, selected);
 		},
 	);
@@ -1123,7 +1198,7 @@ describe("mutation results belong to the page", () => {
 			}
 			await waitFor(() =>
 				expect(toast.error).toHaveBeenCalledExactlyOnceWith(
-					`The host refused the ${kind}: ${message}`,
+					`Couldn't ${kind} the team access to expenses: ${message}`,
 				),
 			);
 			expect(toast.success).not.toHaveBeenCalled();
@@ -1161,11 +1236,7 @@ describe("mutation results belong to the page", () => {
 			),
 		);
 		renderInApp(<Page />);
-		fireEvent.click(
-			await screen.findByRole("button", {
-				name: "Remove Finance from expenses",
-			}),
-		);
+		await removeFinance();
 		await waitFor(() =>
 			expect(toast.success).toHaveBeenCalledExactlyOnceWith(
 				"Finance's Solution user grant removed from expenses",
@@ -1174,9 +1245,9 @@ describe("mutation results belong to the page", () => {
 		expect(reads.available).toBe(2);
 		expect(reads.installed).toBe(2);
 		expect(
-			within(
-				screen.getByRole("table", { name: "Available modules and solutions" }),
-			).getByText("Generation 4 (opened at 2)"),
+			within(getTable("Available modules and solutions")).getByText(
+				"Generation 4 (opened at 2)",
+			),
 		).toBeTruthy();
 		expect(
 			screen.queryByRole("button", { name: "Remove Finance from expenses" }),
@@ -1207,6 +1278,13 @@ describe("mutation results belong to the page", () => {
 			await screen.findByRole("button", { name: "Uninstall expenses" }),
 		);
 		const dialog = await screen.findByRole("alertdialog");
+		// The question names the act and the solution, and says what is lost.
+		expect(within(dialog).getByText("Uninstall expenses?")).toBeTruthy();
+		expect(
+			within(dialog).getByText(
+				/Everyone who holds one of its roles loses access at once\. Its record and audit trail remain/,
+			),
+		).toBeTruthy();
 		fireEvent.click(within(dialog).getByRole("button", { name: "Uninstall" }));
 		await waitFor(() =>
 			expect(toast.success).toHaveBeenCalledExactlyOnceWith(
@@ -1291,18 +1369,14 @@ describe("accessible validation and host text", () => {
 		});
 		renderInApp(<Page />);
 		expect(
-			within(
-				await screen.findByRole("table", {
-					name: "Available modules and solutions",
-				}),
-			).getByText(hostile),
+			within(await findTable("Available modules and solutions")).getByText(
+				hostile,
+			),
 		).toBeTruthy();
 		expect(
-			within(
-				await screen.findByRole("table", {
-					name: "Installed modules and solutions",
-				}),
-			).getByText(hostile),
+			within(await findTable("Installed modules and solutions")).getByText(
+				hostile,
+			),
 		).toBeTruthy();
 		expect(document.querySelector("img, script")).toBeNull();
 		expect(toast.success).not.toHaveBeenCalled();
@@ -1454,14 +1528,10 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 		const reads = serveSolutions({ failsTimes: 1 });
 		renderInApp(<SolutionsPage />);
 
-		const availableTable = await screen.findByRole("table", {
-			name: "Available solutions",
-		});
+		const availableTable = await findTable("Available solutions");
 		// A module page needs no offer: it is set up, never installed, and it
 		// is listed apart from the solutions.
-		const pagesTable = await screen.findByRole("table", {
-			name: "Available module pages",
-		});
+		const pagesTable = await findTable("Available module pages");
 		for (const alias of ["ledger", "directory", "archive"]) {
 			await within(pagesTable).findByText(alias);
 			expect(within(availableTable).queryByText(alias)).toBeNull();
@@ -1482,15 +1552,15 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 			within(availableTable).getByRole("button", { name: "Install payroll" }),
 		).toBeTruthy();
 		const banner = await screen.findByText(
-			"The targets this organization may choose could not be read",
+			"Couldn't read what this organization can install",
 		);
-		expect(screen.getByText(/authority restarting/)).toBeTruthy();
-		fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+		// The read did not complete; the transport's text is not the page's.
+		expect(screen.queryByText(/authority restarting/)).toBeNull();
+		expect(screen.getByText(/The request did not complete/)).toBeTruthy();
+		fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 		await waitFor(() => expect(banner.isConnected).toBe(false));
 
-		const installedTable = await screen.findByRole("table", {
-			name: "Installed solutions",
-		});
+		const installedTable = await findTable("Installed solutions");
 		await within(installedTable).findByText("directory");
 		expect(within(installedTable).queryByText("expenses")).toBeNull();
 		expect(reads.offers).toBe(2);
@@ -1509,9 +1579,10 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 				within(dialog).getByRole("region", { name: `Role ${role}` }),
 			).getByRole("checkbox", {
 				name: "Add me to this team",
-			}) as HTMLInputElement;
+			});
 		// Every role ticked for the administrator; nothing must be picked.
-		for (const role of ["admin", "user"]) expect(me(role).checked).toBe(true);
+		for (const role of ["admin", "user"])
+			expect(me(role).getAttribute("aria-checked")).toBe("true");
 		fireEvent.click(me("admin"));
 		fireEvent.click(
 			within(dialog).getByRole("button", { name: "Set up access" }),
@@ -1590,9 +1661,7 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 			),
 		);
 		renderInApp(<SolutionsPage />);
-		const availableTable = await screen.findByRole("table", {
-			name: "Available solutions",
-		});
+		const availableTable = await findTable("Available solutions");
 		const row = (await within(availableTable).findByText("payroll")).closest(
 			"tr",
 		) as HTMLElement;
@@ -1651,9 +1720,7 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 			),
 		);
 		renderInApp(<SolutionsPage />);
-		const pagesTable = await screen.findByRole("table", {
-			name: "Available module pages",
-		});
+		const pagesTable = await findTable("Available module pages");
 		const directory = (
 			await within(pagesTable).findByText("directory")
 		).closest("tr") as HTMLElement;
@@ -1688,7 +1755,7 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 		).toBeTruthy();
 	});
 
-	it("offers no module on supporting module administration until the offers are read, and says a failed read as the host words it", async () => {
+	it("offers no module on supporting module administration until the offers are read, and says a failed read plainly", async () => {
 		const reads = serve({
 			availableBody: catalogue,
 			installationsBody: installed,
@@ -1718,29 +1785,21 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 			expect(reads.available).toBe(1);
 			expect(reads.installed).toBe(1);
 		});
-		expect(
-			screen.queryByRole("table", { name: "Available modules and solutions" }),
-		).toBeNull();
+		expect(queryTable("Available modules and solutions")).toBeNull();
 		const installedModules = async () => {
-			const table = await screen.findByRole("table", {
-				name: "Installed modules and solutions",
-			});
+			const table = await findTable("Installed modules and solutions");
 			await within(table).findByText("expenses");
 			await within(table).findByText("directory");
 		};
 		await installedModules();
 
 		release();
-		expect(await screen.findByText(/authority restarting/)).toBeTruthy();
-		expect(screen.getByText(/so no module is listed yet/)).toBeTruthy();
-		expect(
-			screen.queryByRole("table", { name: "Available modules and solutions" }),
-		).toBeNull();
+		expect(await screen.findByText(/so no module is listed yet/)).toBeTruthy();
+		expect(screen.queryByText(/authority restarting/)).toBeNull();
+		expect(queryTable("Available modules and solutions")).toBeNull();
 
-		fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-		const availableTable = await screen.findByRole("table", {
-			name: "Available modules and solutions",
-		});
+		fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+		const availableTable = await findTable("Available modules and solutions");
 		// Every module, module pages included, is installed by composition.
 		for (const alias of ["expenses", "ledger", "directory", "archive"])
 			await within(availableTable).findByText(alias);
@@ -1863,9 +1922,7 @@ describe("an installation survives delivery: the host offers an update, and the 
 			),
 		);
 		renderInApp(<SolutionsPage />);
-		const installedTable = await screen.findByRole("table", {
-			name: "Installed solutions",
-		});
+		const installedTable = await findTable("Installed solutions");
 		await within(installedTable).findByText("Update available");
 		expect(within(installedTable).getByText("Healthy")).toBeTruthy();
 		fireEvent.click(
@@ -1990,9 +2047,7 @@ describe("an installation survives delivery: the host offers an update, and the 
 			),
 		);
 		renderInApp(<SolutionsPage />);
-		const installedTable = await screen.findByRole("table", {
-			name: "Installed solutions",
-		});
+		const installedTable = await findTable("Installed solutions");
 		await within(installedTable).findByText("Update available");
 		// Beside its access, never an uninstall: composition retires it.
 		expect(
@@ -2033,9 +2088,7 @@ describe("an installation survives delivery: the host offers an update, and the 
 			installationsBody: installedPayroll(false),
 		});
 		renderInApp(<SolutionsPage />);
-		const installedTable = await screen.findByRole("table", {
-			name: "Installed solutions",
-		});
+		const installedTable = await findTable("Installed solutions");
 		await within(installedTable).findByText("payroll");
 		expect(within(installedTable).queryByText("Update available")).toBeNull();
 		expect(

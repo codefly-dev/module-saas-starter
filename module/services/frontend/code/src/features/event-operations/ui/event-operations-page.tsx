@@ -1,84 +1,53 @@
 "use client";
 
-import type { Timestamp } from "@bufbuild/protobuf/wkt";
-import { timestampDate } from "@bufbuild/protobuf/wkt";
-import { Radio, RefreshCw, Workflow } from "lucide-react";
-import { useMemo } from "react";
-import type {
-	EventSubscriptionSummary,
-	EventTypeSnapshot,
-} from "@/gen/saas/events/v1/operations_pb";
+import { RefreshCw } from "lucide-react";
 import { readOutcome } from "@/shared/lib/read-outcome";
-import { formatDate, truncateUUID } from "@/shared/lib/utils";
+import { formatDate } from "@/shared/lib/utils";
 import {
-	Badge,
+	Banner,
 	Button,
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-	ErrorState,
+	KPIRow,
+	type Metric,
 	Page as PageBody,
 	PageHeader,
-	Skeleton,
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
+	Section,
+	useLoadingPhase,
 } from "@/shared/ui";
+import { backlogNotice, relayTiles } from "../model/event-labels";
 import { useEventOperations, useEventSubscriptions } from "../service/queries";
-
-// Catalog visibility is a free-form string carried from the declared event
-// catalog (internal | tenant | external). Undeclared runtime types arrive with
-// an empty visibility.
-export function eventVisibilityLabel(visibility: string): string {
-	return (
-		{
-			internal: "Internal",
-			tenant: "Tenant",
-			external: "External",
-			"": "Undeclared",
-		}[visibility] ?? visibility
-	);
-}
-
-function visibilityBadgeVariant(visibility: string) {
-	if (visibility === "external") return "default" as const;
-	if (visibility === "tenant") return "secondary" as const;
-	if (visibility === "") return "destructive" as const;
-	return "outline" as const;
-}
-
-function optionalDate(value?: Timestamp): string {
-	return formatDate(value ? timestampDate(value).toISOString() : undefined);
-}
-
-// What a person can do about a read that did not come back: nothing but ask,
-// when it was refused; otherwise the Refresh button is right there.
-function loadFailureDetail(error: unknown): string {
-	return readOutcome(true, error) === "forbidden"
-		? "Your account doesn't have the platform role this page needs."
-		: "Use Refresh to try again. If it keeps failing, tell your administrator.";
-}
+import { EventTypesTable } from "./event-types-table";
+import { SubscriptionsTable } from "./subscriptions-table";
+import { UndeliveredTable } from "./undelivered-table";
 
 export function EventOperationsPage() {
 	const operations = useEventOperations();
 	const subscriptions = useEventSubscriptions();
 
-	const relay = operations.data?.relay;
-	const eventTypes = useMemo(
-		() => operations.data?.eventTypes ?? [],
-		[operations.data?.eventTypes],
-	);
-	const deadLetters = useMemo(
-		() => operations.data?.deadLetters ?? [],
-		[operations.data?.deadLetters],
-	);
+	// A refused read takes what an earlier read left on screen with it.
+	const operationsRefused =
+		readOutcome(operations.isError, operations.error) === "forbidden";
+	const answer = operationsRefused ? undefined : operations.data;
+	const subscriptionsRefused =
+		readOutcome(subscriptions.isError, subscriptions.error) === "forbidden";
 
-	const backlog = relay?.backlog ?? BigInt(0);
+	const { indicator } = useLoadingPhase(operations.isLoading);
+	const metrics: Metric[] = relayTiles(answer?.relay).map((tile) => ({
+		...tile,
+		...(indicator
+			? { state: "loading" as const }
+			: operationsRefused
+				? { state: "forbidden" as const }
+				: {}),
+	}));
+	const behind = answer?.relay
+		? backlogNotice(
+				Number(answer.relay.backlog),
+				answer.relay.oldestUnpublishedAt
+					? formatDate(answer.relay.oldestUnpublishedAt)
+					: null,
+			)
+		: null;
+	const refreshing = operations.isFetching || subscriptions.isFetching;
 
 	return (
 		<PageBody>
@@ -91,249 +60,53 @@ export function EventOperationsPage() {
 						onClick={() =>
 							Promise.all([operations.refetch(), subscriptions.refetch()])
 						}
-						disabled={operations.isFetching || subscriptions.isFetching}
+						disabled={refreshing}
 					>
-						<RefreshCw className="h-4 w-4" />
+						<RefreshCw />
 						Refresh
 					</Button>
 				}
 			/>
 
-			<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-				<MetricCard
-					title="Total events"
-					value={relay ? relay.totalEvents.toLocaleString() : "—"}
-					description="Recorded for delivery"
-				/>
-				<MetricCard
-					title="Published"
-					value={relay ? relay.publishedEvents.toLocaleString() : "—"}
-					description="Sent on to subscribers"
-				/>
-				<MetricCard
-					title="Backlog"
-					value={relay ? backlog.toLocaleString() : "—"}
-					description="Waiting to be sent"
-					warning={backlog !== BigInt(0)}
-				/>
-				<MetricCard
-					title="Oldest waiting event"
-					value={optionalDate(relay?.oldestUnpublishedAt)}
-					description="When the oldest unsent event was recorded"
-					warning={Boolean(relay?.oldestUnpublishedAt)}
-				/>
-			</div>
+			<KPIRow metrics={metrics} className="lg:grid-cols-3" />
+			{behind && <Banner tone="warning">{behind}</Banner>}
 
-			<Card>
-				<CardHeader>
-					<CardTitle className="text-base">Event types</CardTitle>
-					<CardDescription>
-						Every declared event type with its counts. Types that were
-						published without being declared are listed too.
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
-					{operations.isLoading ? (
-						<Skeleton className="h-48 w-full" />
-					) : operations.isError ? (
-						<ErrorState
-							title="Couldn't load the event types"
-							detail={loadFailureDetail(operations.error)}
-						/>
-					) : eventTypes.length === 0 ? (
-						<div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
-							<Workflow className="h-8 w-8" />
-							<p className="text-sm">No event types found.</p>
-						</div>
-					) : (
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>Type</TableHead>
-									<TableHead>Visibility</TableHead>
-									<TableHead>Publisher</TableHead>
-									<TableHead>Version</TableHead>
-									<TableHead>Subscribers</TableHead>
-									<TableHead>Total</TableHead>
-									<TableHead>Waiting</TableHead>
-									<TableHead>Last event</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{eventTypes.map((snapshot) => (
-									<EventTypeRow key={snapshot.type} snapshot={snapshot} />
-								))}
-							</TableBody>
-						</Table>
-					)}
-				</CardContent>
-			</Card>
+			<Section
+				title="Event types"
+				description="Every declared event type with its counts. Types that were published without being declared are listed too."
+			>
+				<EventTypesTable
+					eventTypes={answer?.eventTypes}
+					isLoading={operations.isLoading}
+					isError={operations.isError}
+					error={operations.error}
+					onRetry={() => void operations.refetch()}
+				/>
+			</Section>
 
-			<Card>
-				<CardHeader>
-					<CardTitle className="text-base">Subscriptions</CardTitle>
-					<CardDescription>
-						Every active subscription on the platform, with the number of
-						events its queue could not deliver.
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
-					{subscriptions.isLoading ? (
-						<Skeleton className="h-48 w-full" />
-					) : subscriptions.isError ? (
-						<ErrorState
-							title="Couldn't load the subscriptions"
-							detail={loadFailureDetail(subscriptions.error)}
-						/>
-					) : subscriptions.data?.subscriptions.length === 0 ? (
-						<div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
-							<Radio className="h-8 w-8" />
-							<p className="text-sm">No active subscriptions.</p>
-						</div>
-					) : (
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>Subscriber</TableHead>
-									<TableHead>Pattern</TableHead>
-									<TableHead>Queue</TableHead>
-									<TableHead>Delivery</TableHead>
-									<TableHead>Undelivered</TableHead>
-									<TableHead>Created</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{subscriptions.data?.subscriptions.map((sub) => (
-									<SubscriptionRow key={sub.id} subscription={sub} />
-								))}
-							</TableBody>
-						</Table>
-					)}
-				</CardContent>
-			</Card>
+			<Section
+				title="Subscriptions"
+				description="Every active subscription on the platform, with the number of events its queue could not deliver."
+			>
+				<SubscriptionsTable
+					subscriptions={
+						subscriptionsRefused ? undefined : subscriptions.data?.subscriptions
+					}
+					isLoading={subscriptions.isLoading}
+					isError={subscriptions.isError}
+					error={subscriptions.error}
+					onRetry={() => void subscriptions.refetch()}
+				/>
+			</Section>
 
-			{deadLetters.length > 0 && (
-				<Card>
-					<CardHeader>
-						<CardTitle className="text-base">Undelivered events by queue</CardTitle>
-						<CardDescription>
-							Events set aside after every delivery attempt failed.
-						</CardDescription>
-					</CardHeader>
-					<CardContent>
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>Queue</TableHead>
-									<TableHead>Undelivered</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{deadLetters.map((entry) => (
-									<TableRow key={entry.queue}>
-										<TableCell className="font-mono text-xs">
-											{entry.queue}
-										</TableCell>
-										<TableCell
-											className={
-												entry.deadLetter !== BigInt(0)
-													? "text-destructive"
-													: undefined
-											}
-										>
-											{entry.deadLetter.toLocaleString()}
-										</TableCell>
-									</TableRow>
-								))}
-							</TableBody>
-						</Table>
-					</CardContent>
-				</Card>
+			{answer && answer.deadLetters.length > 0 && (
+				<Section
+					title="Undelivered events by queue"
+					description="Events set aside after every delivery attempt failed."
+				>
+					<UndeliveredTable queues={answer.deadLetters} />
+				</Section>
 			)}
 		</PageBody>
-	);
-}
-
-function EventTypeRow({ snapshot }: { snapshot: EventTypeSnapshot }) {
-	return (
-		<TableRow>
-			<TableCell className="font-mono text-xs">{snapshot.type}</TableCell>
-			<TableCell>
-				<Badge variant={visibilityBadgeVariant(snapshot.visibility)}>
-					{eventVisibilityLabel(snapshot.visibility)}
-				</Badge>
-			</TableCell>
-			<TableCell className="font-mono text-xs">
-				{snapshot.publisher || "-"}
-			</TableCell>
-			<TableCell>{snapshot.major ? `v${snapshot.major}` : "-"}</TableCell>
-			<TableCell>{snapshot.subscribers.toLocaleString()}</TableCell>
-			<TableCell>{snapshot.totalEvents.toLocaleString()}</TableCell>
-			<TableCell
-				className={
-					snapshot.unpublished !== BigInt(0) ? "text-destructive" : undefined
-				}
-			>
-				{snapshot.unpublished.toLocaleString()}
-			</TableCell>
-			<TableCell>{optionalDate(snapshot.lastEventAt)}</TableCell>
-		</TableRow>
-	);
-}
-
-function SubscriptionRow({
-	subscription,
-}: {
-	subscription: EventSubscriptionSummary;
-}) {
-	return (
-		<TableRow>
-			<TableCell className="font-mono text-xs">
-				{truncateUUID(subscription.subscriberPrincipalId)}
-			</TableCell>
-			<TableCell className="font-mono text-xs">
-				{subscription.typePattern}
-			</TableCell>
-			<TableCell className="font-mono text-xs">{subscription.queue}</TableCell>
-			<TableCell>
-				<Badge variant="outline">{subscription.delivery}</Badge>
-			</TableCell>
-			<TableCell
-				className={
-					subscription.queueDeadLetter !== BigInt(0)
-						? "text-destructive"
-						: undefined
-				}
-			>
-				{subscription.queueDeadLetter.toLocaleString()}
-			</TableCell>
-			<TableCell>{optionalDate(subscription.createdAt)}</TableCell>
-		</TableRow>
-	);
-}
-
-function MetricCard({
-	title,
-	value,
-	description,
-	warning = false,
-}: {
-	title: string;
-	value: string;
-	description: string;
-	warning?: boolean;
-}) {
-	return (
-		<Card>
-			<CardHeader className="pb-2">
-				<CardDescription>{title}</CardDescription>
-				<CardTitle className={warning ? "text-destructive" : undefined}>
-					{value}
-				</CardTitle>
-			</CardHeader>
-			<CardContent className="text-xs text-muted-foreground">
-				{description}
-			</CardContent>
-		</Card>
 	);
 }
