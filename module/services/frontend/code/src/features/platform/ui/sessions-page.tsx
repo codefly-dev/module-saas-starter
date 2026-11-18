@@ -8,7 +8,7 @@ import {
 	useReactTable,
 } from "@tanstack/react-table";
 import { LogOut, MoreHorizontal } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { UserLabel } from "@/components/user-label";
 import { failureText } from "@/shared/lib/failure-text";
@@ -61,6 +61,7 @@ export function SessionsPage() {
 	} = useActiveSessions();
 	const [revokeTarget, setRevokeTarget] = useState<SessionInfo | null>(null);
 	const revoke = useRevokeSession();
+	const pending = useRef(false);
 
 	const columns = useMemo(
 		() => [
@@ -138,7 +139,10 @@ export function SessionsPage() {
 								<DropdownMenuLabel>Actions</DropdownMenuLabel>
 								<DropdownMenuSeparator />
 								<DropdownMenuItem
-									onClick={() => setRevokeTarget(row.original)}
+									onClick={() => {
+										revoke.reset();
+										setRevokeTarget(row.original);
+									}}
 									className="text-destructive focus:text-destructive"
 								>
 									<LogOut className="mr-2 h-4 w-4" />
@@ -197,7 +201,7 @@ export function SessionsPage() {
 			{revokeTarget && (
 				<AlertDialog
 					open
-					onOpenChange={(o) => !o && !revoke.isPending && setRevokeTarget(null)}
+					onOpenChange={(o) => !o && !pending.current && setRevokeTarget(null)}
 				>
 					<AlertDialogContent>
 						<AlertDialogHeader>
@@ -208,6 +212,12 @@ export function SessionsPage() {
 								signed out on that device immediately.
 							</AlertDialogDescription>
 						</AlertDialogHeader>
+						{revoke.isError && (
+							<ErrorState
+								title="Couldn’t sign out this session"
+								detail={failureText("sign this session out", revoke.error)}
+							/>
+						)}
 						<AlertDialogFooter>
 							<AlertDialogCancel
 								disabled={revoke.isPending}
@@ -216,23 +226,26 @@ export function SessionsPage() {
 								Cancel
 							</AlertDialogCancel>
 							<AlertDialogAction
-								onClick={() =>
+								onClick={(event) => {
+									event.preventDefault();
+									if (pending.current) return;
+									pending.current = true;
 									revoke.mutate(
 										{ sessionId: revokeTarget.id, reason: "revoked_by_admin" },
 										{
 											onSuccess: () => {
+												pending.current = false;
 												toast.success("Session revoked");
 												setRevokeTarget(null);
 											},
-											onError: (failure) =>
-												toast.error(
-													failureText("sign this session out", failure),
-												),
+											onError: () => {
+												pending.current = false;
+											},
 										},
-									)
-								}
+									);
+								}}
 								disabled={revoke.isPending}
-								className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+								variant="destructive"
 							>
 								{revoke.isPending ? "Revoking..." : "Force logout"}
 							</AlertDialogAction>

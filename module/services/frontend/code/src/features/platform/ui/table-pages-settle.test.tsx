@@ -1,4 +1,10 @@
-import { cleanup, screen } from "@testing-library/react";
+import {
+	cleanup,
+	fireEvent,
+	screen,
+	waitFor,
+	within,
+} from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { Profiler, type ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -90,4 +96,47 @@ it("explains denied session access without offering retry or an empty list", asy
 	expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
 	expect(screen.queryByText(/No one is signed in/)).toBeNull();
 	expect(screen.queryByText("raw-internal-message")).toBeNull();
+});
+
+it("keeps a refused session revocation open and never exposes server details", async () => {
+	let finish!: () => void;
+	const held = new Promise<void>((resolve) => {
+		finish = resolve;
+	});
+	let calls = 0;
+	server.use(
+		http.post(rpc("PlatformAdminService", "RevokeSession"), async () => {
+			calls++;
+			await held;
+			return HttpResponse.json(
+				{ code: "permission_denied", message: "private diagnostics" },
+				{ status: 403 },
+			);
+		}),
+	);
+	renderInApp(<SessionsPage />);
+	fireEvent.click(
+		await screen.findByRole("button", { name: "Session actions" }),
+	);
+	fireEvent.click(screen.getByRole("menuitem", { name: "Force logout" }));
+	let dialog = screen.getByRole("alertdialog");
+	fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+	expect(calls).toBe(0);
+	fireEvent.click(screen.getByRole("button", { name: "Session actions" }));
+	fireEvent.click(screen.getByRole("menuitem", { name: "Force logout" }));
+	dialog = screen.getByRole("alertdialog");
+	fireEvent.click(within(dialog).getByRole("button", { name: "Force logout" }));
+	await waitFor(() => expect(calls).toBe(1));
+	expect(
+		within(dialog)
+			.getByRole("button", { name: "Cancel" })
+			.hasAttribute("disabled"),
+	).toBe(true);
+	fireEvent.keyDown(dialog, { key: "Escape" });
+	expect(screen.getByRole("alertdialog")).toBeTruthy();
+	finish();
+	expect(
+		await within(dialog).findByText("Couldn’t sign out this session"),
+	).toBeTruthy();
+	expect(screen.queryByText("private diagnostics")).toBeNull();
 });
