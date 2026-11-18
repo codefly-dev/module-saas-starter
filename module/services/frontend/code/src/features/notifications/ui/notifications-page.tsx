@@ -1,37 +1,58 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+	createColumnHelper,
+	getCoreRowModel,
+	getSortedRowModel,
+	useReactTable,
+} from "@tanstack/react-table";
 import { CheckCheck, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { failureText } from "@/shared/lib/failure-text";
+import { readOutcome } from "@/shared/lib/read-outcome";
 import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
 	Badge,
 	Button,
-	Card,
-	CardContent,
 	ErrorState,
 	Page as PageBody,
 	PageHeader,
 	Panel,
-	Skeleton,
 } from "@/shared/ui";
+import { DataTable } from "@/shared/ui/data-table";
 import { formatNotificationType, timeAgo } from "../model/transforms";
+import type { Notification } from "../model/types";
 import { notificationMutations } from "../service/mutations";
 import { notificationQueries } from "../service/queries";
+
+const NO_NOTIFICATIONS: Notification[] = [];
+const column = createColumnHelper<Notification>();
 
 export function NotificationsPage() {
 	const queryClient = useQueryClient();
 	const router = useRouter();
 	const [pages, setPages] = useState<string[]>([""]);
-	const { data, isLoading, isError } = useQuery(
+	const { data, isLoading, isError, error, refetch } = useQuery(
 		notificationQueries.list(50, { pageToken: pages[pages.length - 1] }),
 	);
-	const notifications = data?.notifications ?? [];
+	const notifications = data?.notifications ?? NO_NOTIFICATIONS;
 
+	const [deleteTarget, setDeleteTarget] = useState<Notification | null>(null);
+	const deleting = useRef(false);
 	const markReadMutation = useMutation({
 		mutationFn: (id: string) => notificationMutations.markRead(id),
+		onError: (error) =>
+			toast.error(failureText("mark this notification as read", error)),
 		onSuccess: () =>
 			queryClient.invalidateQueries({ queryKey: ["notifications"] }),
 	});
@@ -64,13 +85,100 @@ export function NotificationsPage() {
 	const deleteMutation = useMutation({
 		mutationFn: (id: string) => notificationMutations.delete(id),
 		onSuccess: () => {
+			deleting.current = false;
+			setDeleteTarget(null);
 			toast.success("Notification deleted");
 			queryClient.invalidateQueries({ queryKey: ["notifications"] });
 		},
-		onError: (error) =>
-			toast.error(failureText("delete the notification", error)),
+		onError: () => {
+			deleting.current = false;
+		},
 	});
 
+	const busy =
+		markReadMutation.isPending ||
+		markAllReadMutation.isPending ||
+		resolveActionMutation.isPending ||
+		deleteMutation.isPending;
+	const columns = useMemo(
+		() => [
+			column.display({
+				id: "message",
+				header: "Notification",
+				cell: ({ row }) => {
+					const notification = row.original;
+					return (
+						<Button
+							variant="ghost"
+							className="h-auto whitespace-normal text-left"
+							disabled={busy}
+							onClick={() => {
+								if (notification.hasAction)
+									resolveActionMutation.mutate({
+										id: notification.id,
+										unread: !notification.read,
+									});
+								else if (!notification.read)
+									markReadMutation.mutate(notification.id);
+							}}
+						>
+							<span>
+								<span className="block font-medium">{notification.title}</span>
+								<span className="block text-muted-foreground">
+									{notification.body}
+								</span>
+							</span>
+						</Button>
+					);
+				},
+			}),
+			column.accessor("type", {
+				header: "Category",
+				cell: ({ getValue }) => (
+					<Badge variant="outline">{formatNotificationType(getValue())}</Badge>
+				),
+			}),
+			column.accessor("read", {
+				header: "Status",
+				cell: ({ getValue }) => (getValue() ? "Read" : "Unread"),
+			}),
+			column.accessor("createdAt", {
+				header: "Received",
+				cell: ({ getValue }) => timeAgo(getValue()),
+			}),
+			column.display({
+				id: "actions",
+				header: "",
+				cell: ({ row }) => (
+					<Button
+						variant="ghost"
+						size="icon-sm"
+						aria-label={`Delete ${row.original.title}`}
+						disabled={busy}
+						onClick={() => {
+							deleteMutation.reset();
+							setDeleteTarget(row.original);
+						}}
+					>
+						<Trash2 />
+					</Button>
+				),
+			}),
+		],
+		[
+			busy,
+			resolveActionMutation.mutate,
+			markReadMutation.mutate,
+			deleteMutation.reset,
+		],
+	);
+	const table = useReactTable({
+		data: notifications,
+		columns,
+		getCoreRowModel: getCoreRowModel(),
+		getSortedRowModel: getSortedRowModel(),
+	});
+	const denied = readOutcome(isError, error) === "forbidden";
 	return (
 		<PageBody>
 			<PageHeader
@@ -80,108 +188,55 @@ export function NotificationsPage() {
 					<Button
 						variant="outline"
 						onClick={() => markAllReadMutation.mutate()}
-						disabled={markAllReadMutation.isPending}
+						disabled={
+							busy ||
+							isLoading ||
+							isError ||
+							!notifications.some((item) => !item.read)
+						}
 					>
 						<CheckCheck />
 						Mark all read
 					</Button>
 				}
 			/>
-
-			{/* A failed read is reported on its own: "No notifications yet" beside
-			    it would answer a question the page could not ask. */}
 			{isError ? (
 				<Panel>
 					<ErrorState
 						title="Couldn't load your notifications"
-						detail="Whether you have any is unknown. Reload the page; if it keeps failing, tell your administrator."
+						detail={
+							denied
+								? "You don’t have access to these notifications. Ask your administrator to grant access."
+								: "Check your connection and try again."
+						}
 					/>
+					{!denied && (
+						<Button variant="outline" onClick={() => void refetch()}>
+							Try again
+						</Button>
+					)}
 				</Panel>
-			) : isLoading ? (
-				<div className="space-y-3">
-					{Array.from({ length: 5 }).map((_, i) => (
-						<Skeleton key={i} className="h-20 w-full" />
-					))}
-				</div>
-			) : notifications.length === 0 ? (
-				<Card>
-					<CardContent className="py-12 text-center">
-						<p className="text-muted-foreground">No notifications yet.</p>
-					</CardContent>
-				</Card>
 			) : (
-				<div className="space-y-3">
-					{notifications.map((notification) => (
-						<Card
-							key={notification.id}
-							className={
-								!notification.read ? "border-primary/30 bg-muted/20" : ""
-							}
-						>
-							<CardContent className="flex items-start justify-between gap-2">
-								<Button
-									variant="ghost"
-									className="h-auto flex-1 flex-col items-start justify-start gap-0 whitespace-normal px-2 py-1 text-left font-normal"
-									onClick={() => {
-										if (notification.hasAction) {
-											resolveActionMutation.mutate({
-												id: notification.id,
-												unread: !notification.read,
-											});
-											return;
-										}
-										if (!notification.read) {
-											markReadMutation.mutate(notification.id);
-										}
-									}}
-								>
-									<span className="mb-1 flex items-center gap-2">
-										{!notification.read && (
-											<span
-												aria-hidden="true"
-												className="size-2 rounded-full bg-primary"
-											/>
-										)}
-										<span className="text-sm font-medium">
-											{notification.title}
-										</span>
-										<Badge variant="outline">
-											{formatNotificationType(notification.type)}
-										</Badge>
-									</span>
-									<span className="block text-sm text-muted-foreground">
-										{notification.body}
-									</span>
-									<span className="mt-1 block text-xs text-muted-foreground">
-										{timeAgo(notification.createdAt)}
-									</span>
-								</Button>
-								<Button
-									variant="ghost"
-									size="icon-sm"
-									className="shrink-0"
-									aria-label="Delete notification"
-									onClick={() => deleteMutation.mutate(notification.id)}
-								>
-									<Trash2 />
-								</Button>
-							</CardContent>
-						</Card>
-					))}
-				</div>
+				<DataTable
+					table={table}
+					isLoading={isLoading}
+					emptyMessage="No notifications yet. Invitations, security messages and updates will appear here."
+				/>
 			)}
 			<div className="flex gap-2">
 				{pages.length > 1 && (
 					<Button
 						variant="outline"
+						disabled={isLoading || busy}
 						onClick={() => setPages((current) => current.slice(0, -1))}
 					>
 						Newer notifications
 					</Button>
 				)}
-				{data?.nextPageToken && (
+				{!isError && data?.nextPageToken && (
 					<Button
 						variant="outline"
+						disabled={isLoading || busy}
 						onClick={() =>
 							setPages((current) => [...current, data.nextPageToken])
 						}
@@ -190,6 +245,50 @@ export function NotificationsPage() {
 					</Button>
 				)}
 			</div>
+			{deleteTarget && (
+				<AlertDialog
+					open
+					onOpenChange={(open) => {
+						if (!open && !deleting.current) setDeleteTarget(null);
+					}}
+				>
+					<AlertDialogContent>
+						<AlertDialogHeader>
+							<AlertDialogTitle>Delete notification?</AlertDialogTitle>
+							<AlertDialogDescription>
+								Delete “{deleteTarget.title}”? This notification will be removed
+								from your inbox.
+							</AlertDialogDescription>
+						</AlertDialogHeader>
+						{deleteMutation.isError && (
+							<ErrorState
+								title="Couldn’t delete this notification"
+								detail={failureText(
+									"delete the notification",
+									deleteMutation.error,
+								)}
+							/>
+						)}
+						<AlertDialogFooter>
+							<AlertDialogCancel disabled={deleteMutation.isPending}>
+								Cancel
+							</AlertDialogCancel>
+							<AlertDialogAction
+								variant="destructive"
+								disabled={deleteMutation.isPending}
+								onClick={(event) => {
+									event.preventDefault();
+									if (deleting.current) return;
+									deleting.current = true;
+									deleteMutation.mutate(deleteTarget.id);
+								}}
+							>
+								{deleteMutation.isPending ? "Deleting…" : "Delete notification"}
+							</AlertDialogAction>
+						</AlertDialogFooter>
+					</AlertDialogContent>
+				</AlertDialog>
+			)}
 		</PageBody>
 	);
 }
