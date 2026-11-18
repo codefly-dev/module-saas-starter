@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, extname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const codeDir = join(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -405,16 +406,10 @@ process.stdout.write(JSON.stringify({
 	it("marks link-backed Base UI buttons as non-native", () => {
 		const violations = sourceFiles(join(codeDir, "src")).flatMap((path) => {
 			const source = readFileSync(path, "utf8");
-			const linkButtons =
-				source.match(
-					/<Button\b(?:(?!<Button\b)[\s\S])*?render=\{<Link\b(?:(?!\/>\})[\s\S])*?\/>\}/g,
-				) ?? [];
-			return linkButtons
-				.filter((openingTag) => !openingTag.includes("nativeButton={false}"))
-				.map(
-					() =>
-						`${relative(codeDir, path)}: link-backed Button requires nativeButton={false}`,
-				);
+			return linkButtonsMissingNativeFlag(source).map(
+				() =>
+					`${relative(codeDir, path)}: link-backed Button requires nativeButton={false}`,
+			);
 		});
 		expect(violations).toEqual([]);
 	});
@@ -487,4 +482,66 @@ process.stdout.write(JSON.stringify({
 			"frontend package-lock.json workspace metadata is stale",
 		);
 	});
+});
+
+/** JSX boundaries matter: a following menu item's render prop is not a Button prop. */
+function linkButtonsMissingNativeFlag(source: string): ts.Node[] {
+	const file = ts.createSourceFile(
+		"component.tsx",
+		source,
+		ts.ScriptTarget.Latest,
+		true,
+		ts.ScriptKind.TSX,
+	);
+	const missing: ts.Node[] = [];
+	const visit = (node: ts.Node) => {
+		if (
+			(ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) &&
+			node.tagName.getText(file) === "Button"
+		) {
+			const attributes = node.attributes.properties.filter(ts.isJsxAttribute);
+			const render = attributes.find(
+				(attribute) => attribute.name.getText(file) === "render",
+			)?.initializer;
+			const child =
+				render && ts.isJsxExpression(render) ? render.expression : undefined;
+			const tag =
+				child && ts.isJsxElement(child) ? child.openingElement : child;
+			const native = attributes.find(
+				(attribute) => attribute.name.getText(file) === "nativeButton",
+			)?.initializer;
+			const nonNative =
+				native &&
+				ts.isJsxExpression(native) &&
+				native.expression?.kind === ts.SyntaxKind.FalseKeyword;
+			if (
+				tag &&
+				(ts.isJsxOpeningElement(tag) || ts.isJsxSelfClosingElement(tag)) &&
+				tag.tagName.getText(file) === "Link" &&
+				!nonNative
+			)
+				missing.push(node);
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(file);
+	return missing;
+}
+
+it("checks the Button's own render prop without crossing into a following menu item", () => {
+	expect(
+		linkButtonsMissingNativeFlag(
+			'<><Button>Retry</Button><DropdownMenuItem render={<Link href="/" />} /></>',
+		),
+	).toHaveLength(0);
+	expect(
+		linkButtonsMissingNativeFlag(
+			'<Button render={<Link href="/" />}>Open</Button>',
+		),
+	).toHaveLength(1);
+	expect(
+		linkButtonsMissingNativeFlag(
+			'<Button nativeButton={false} render={<Link href="/" />}>Open</Button>',
+		),
+	).toHaveLength(0);
 });
