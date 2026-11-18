@@ -146,7 +146,9 @@ describe("solution installation facts", () => {
 			name: "Expense reader",
 			permissions: [{ resource: "expenses", action: "read" }],
 		});
-		expect(roleOptionLabel(role)).toBe("Expense reader — expenses:read");
+		expect(roleOptionLabel(role)).toBe(
+			"Expense reader — An activity without a description",
+		);
 		expect(roleOptionLabel(create(RoleSchema, { name: "Empty" }))).toBe(
 			"Empty",
 		);

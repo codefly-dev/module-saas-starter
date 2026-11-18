@@ -445,7 +445,7 @@ function SolutionInstallationsForOrganization({
 								onSuccess: (installation) => {
 									if (installation.accessProblems.length)
 										toast.warning(
-											`Set up, but not every role's access was applied — grant the rest in Set up. ${installation.accessProblems.join(" ")}`,
+											`Set up, but not every role's access was applied — grant the rest in Set up.`,
 										);
 									else
 										toast.success(
@@ -476,7 +476,7 @@ function SolutionInstallationsForOrganization({
 								onSuccess: (installation) => {
 									if (installation.accessProblems.length)
 										toast.warning(
-											`Installed, but not every role's access was applied — grant the rest in Set up. ${installation.accessProblems.join(" ")}`,
+											`Installed, but not every role's access was applied — grant the rest in Set up.`,
 										);
 									else
 										toast.success(
@@ -836,7 +836,7 @@ function InstalledSection({
 			onSuccess: (installation) =>
 				installation.accessProblems.length
 					? toast.warning(
-							`${name(row)}: not every role's access was applied — grant the rest in Set up. ${installation.accessProblems.join(" ")}`,
+							`${name(row)}: not every role's access was applied — grant the rest in Set up.`,
 						)
 					: toast.success(`${name(row)} installation pending`),
 			onError: (error) =>
@@ -946,7 +946,8 @@ function InstalledSection({
 						/>
 						{row.failureReason && (
 							<p className="mt-1 text-sm text-muted-foreground">
-								{row.failureReason}
+								Setup did not complete. Ask your organization administrator to
+								review this installation.
 							</p>
 						)}
 					</div>

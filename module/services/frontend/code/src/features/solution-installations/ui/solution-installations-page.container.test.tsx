@@ -282,7 +282,11 @@ async function openGrant() {
 	);
 	const dialog = await screen.findByRole("dialog");
 	await choose(dialog, "Team", "Support");
-	await choose(dialog, "Role", "Solution user — solution:use");
+	await choose(
+		dialog,
+		"Role",
+		"Solution user — An activity without a description",
+	);
 	return dialog;
 }
 
@@ -497,7 +501,11 @@ describe("SolutionInstallationsPage admin container", () => {
 		);
 		const dialog = await screen.findByRole("dialog");
 		await choose(dialog, "Team", "Support");
-		await choose(dialog, "Role", "Solution user — solution:use");
+		await choose(
+			dialog,
+			"Role",
+			"Solution user — An activity without a description",
+		);
 		fireEvent.click(within(dialog).getByRole("button", { name: "Grant" }));
 
 		await waitFor(() => expect(granted).toBeDefined());
@@ -553,7 +561,11 @@ describe("SolutionInstallationsPage admin container", () => {
 		);
 		const dialog = await screen.findByRole("dialog");
 		await choose(dialog, "Team", "Support");
-		await choose(dialog, "Role", "Expense reader — expenses:read");
+		await choose(
+			dialog,
+			"Role",
+			"Expense reader — An activity without a description",
+		);
 		fireEvent.click(within(dialog).getByRole("button", { name: "Grant" }));
 		const alert = await within(dialog).findByRole("alert");
 		expect(alert.textContent).toContain(
@@ -978,7 +990,7 @@ describe("host read refusals and retained data", () => {
 			service: "PermissionService",
 			method: "ListRoles",
 			key: ["roles", "org-1"],
-			selected: "Solution user — solution:use",
+			selected: "Solution user — An activity without a description",
 			action: "Grant",
 		},
 	];
@@ -1386,7 +1398,12 @@ it("shows pending and failed installations and retries the failed step", async (
 		),
 	);
 	renderInApp(<Page />);
-	expect(await screen.findByText("Example setup refused")).toBeTruthy();
+	expect(
+		await screen.findByText(
+			"Setup did not complete. Ask your organization administrator to review this installation.",
+		),
+	).toBeTruthy();
+	expect(screen.queryByText("Example setup refused")).toBeNull();
 	expect(screen.queryByRole("button", { name: /grant.*team/i })).toBeNull();
 	fireEvent.click(screen.getByRole("button", { name: "Retry expenses" }));
 	expect(await screen.findByText("Being set up")).toBeTruthy();

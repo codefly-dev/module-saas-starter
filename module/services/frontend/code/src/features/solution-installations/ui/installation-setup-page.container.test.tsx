@@ -306,7 +306,7 @@ it("grants once, and reports what that grant carried", async () => {
 
 	for (const [label, option] of [
 		["Team", "Support"],
-		["Role", "Solution user — solution:use"],
+		["Role", "Solution user — An activity without a description"],
 	] as const) {
 		const control = within(dialog).getByRole("combobox", { name: label });
 		await waitFor(() =>

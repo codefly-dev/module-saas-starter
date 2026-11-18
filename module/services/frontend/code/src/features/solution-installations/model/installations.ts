@@ -1,5 +1,6 @@
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import type { ComponentProps } from "react";
+import { activityLabel } from "@/features/permissions/model/activity-label";
 import type { CollectionReadGrant } from "@/gen/saas/accounts/v1/authorization_pb";
 import type { Role } from "@/gen/saas/accounts/v1/common_pb";
 import {
@@ -272,7 +273,7 @@ export function installedRows(
 export function roleOptionLabel(role: Role): string {
 	if (role.permissions.length === 0) return role.name;
 	const permits = role.permissions
-		.map((p) => `${p.resource}:${p.action}`)
+		.map((p) => activityLabel(p) ?? "An activity without a description")
 		.join(", ");
 	return `${role.name} — ${permits}`;
 }
