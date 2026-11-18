@@ -4,6 +4,12 @@ import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { createClient } from "@connectrpc/connect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Mail, Search, X } from "lucide-react";
+import {
+	createColumnHelper,
+	getCoreRowModel,
+	useReactTable,
+} from "@tanstack/react-table";
+import { DataTable } from "@/shared/ui/data-table";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -15,6 +21,14 @@ import { apiTransport } from "@/lib/connect/transport";
 import { failureText } from "@/shared/lib/failure-text";
 import { readOutcome } from "@/shared/lib/read-outcome";
 import {
+	AlertDialog,
+	AlertDialogContent,
+	AlertDialogHeader,
+	AlertDialogTitle,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogCancel,
+	AlertDialogAction,
 	Badge,
 	Button,
 	Card,
@@ -32,14 +46,6 @@ import {
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
-	Spinner,
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-	useLoadingPhase,
 } from "@/shared/ui";
 
 const client = createClient(WaitlistService, apiTransport);
@@ -59,8 +65,12 @@ function stateLabel(state: WaitlistState): string {
 	return STATE_LABELS[state] ?? "Unknown";
 }
 
+const NO_ENTRIES: WaitlistEntry[] = [];
+const column = createColumnHelper<WaitlistEntry>();
+
 export function WaitlistAdminPage() {
 	const queryClient = useQueryClient();
+	const [rejecting, setRejecting] = useState<WaitlistEntry | null>(null);
 	const [query, setQuery] = useState("");
 	const [state, setState] = useState(WaitlistState.UNSPECIFIED);
 	const [source, setSource] = useState("");
@@ -102,6 +112,7 @@ export function WaitlistAdminPage() {
 				tags: entry.tags,
 			}),
 		onSuccess: () => {
+			setRejecting(null);
 			queryClient.invalidateQueries({ queryKey: ["waitlist"] });
 			toast.success("Access request updated");
 		},
@@ -116,8 +127,99 @@ export function WaitlistAdminPage() {
 		},
 		onError: (error) => toast.error(failureText("send the invitation", error)),
 	});
-	const { indicator, quiet } = useLoadingPhase(entries.isLoading);
 	const outcome = readOutcome(entries.isError, entries.error);
+
+	const columns = [
+		column.accessor("email", {
+			header: "Person",
+			cell: ({ row }) => (
+				<div>
+					<p className="font-medium">{row.original.email}</p>
+					<p className="text-sm text-muted-foreground">
+						{[row.original.name, row.original.company]
+							.filter(Boolean)
+							.join(" · ")}
+					</p>
+				</div>
+			),
+		}),
+		column.accessor("state", {
+			header: "Status",
+			cell: ({ getValue }) => (
+				<Badge variant="outline">{stateLabel(getValue())}</Badge>
+			),
+		}),
+		column.display({
+			id: "source",
+			header: "Came from",
+			cell: ({ row }) =>
+				[row.original.source, row.original.campaign]
+					.filter(Boolean)
+					.join(" / ") || "Direct",
+		}),
+		column.accessor("createdAt", {
+			header: "Created",
+			cell: ({ getValue }) => {
+				const date = getValue();
+				return date ? timestampDate(date).toLocaleDateString() : "—";
+			},
+		}),
+		column.display({
+			id: "actions",
+			header: "Actions",
+			cell: ({ row }) => {
+				const entry = row.original;
+				return (
+					<div className="flex flex-wrap gap-2">
+						{(entry.state === WaitlistState.PENDING ||
+							entry.state === WaitlistState.VERIFIED) && (
+							<>
+								<Button
+									size="sm"
+									variant="outline"
+									disabled={review.isPending}
+									aria-label={`Approve ${entry.email}`}
+									onClick={() =>
+										review.mutate({ entry, nextState: WaitlistState.APPROVED })
+									}
+								>
+									<Check aria-hidden />
+									Approve
+								</Button>
+								<Button
+									size="sm"
+									variant="ghost"
+									disabled={review.isPending}
+									aria-label={`Reject ${entry.email}`}
+									onClick={() => setRejecting(entry)}
+								>
+									<X aria-hidden />
+									Reject
+								</Button>
+							</>
+						)}
+						{entry.state === WaitlistState.APPROVED && (
+							<Button
+								size="sm"
+								variant="outline"
+								disabled={invite.isPending}
+								aria-label={`Invite ${entry.email}`}
+								onClick={() => invite.mutate(entry.id)}
+							>
+								<Mail aria-hidden />
+								Invite
+							</Button>
+						)}
+					</div>
+				);
+			},
+		}),
+	];
+	const table = useReactTable({
+		data: entries.data?.entries ?? NO_ENTRIES,
+		columns,
+		getCoreRowModel: getCoreRowModel(),
+	});
 
 	return (
 		<PageBody>
@@ -192,122 +294,39 @@ export function WaitlistAdminPage() {
 							placeholder="Campaign"
 						/>
 					</div>
-					<Panel className="overflow-x-auto p-0">
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>Person</TableHead>
-									<TableHead>Status</TableHead>
-									<TableHead>Came from</TableHead>
-									<TableHead>Created</TableHead>
-									<TableHead className="text-right">Actions</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{indicator && (
-									<TableRow>
-										<TableCell colSpan={5}>
-											<Spinner label="Loading access requests" size="sm" />
-										</TableCell>
-									</TableRow>
-								)}
-								{entries.isError && (
-									<TableRow>
-										<TableCell colSpan={5}>
-											<ErrorState
-												title="Couldn't load the access requests"
-												detail={
-													outcome === "forbidden"
-														? "Your account doesn't have the platform role this list needs."
-														: "Reload the page to try again. If it keeps failing, tell your administrator."
-												}
-											/>
-										</TableCell>
-									</TableRow>
-								)}
-								{!quiet &&
-									!indicator &&
-									!entries.isError &&
-									entries.data?.entries.length === 0 && (
-									<TableRow>
-										<TableCell colSpan={5}>
-											No matching access requests.
-										</TableCell>
-									</TableRow>
-								)}
-								{entries.data?.entries.map((entry) => (
-									<TableRow key={entry.id}>
-										<TableCell>
-											<div className="font-medium">{entry.email}</div>
-											<div className="text-xs text-muted-foreground">
-												{[entry.name, entry.company]
-													.filter(Boolean)
-													.join(" · ")}
-											</div>
-										</TableCell>
-										<TableCell>
-											<Badge variant="outline">{stateLabel(entry.state)}</Badge>
-										</TableCell>
-										<TableCell>
-											{[entry.source, entry.campaign]
-												.filter(Boolean)
-												.join(" / ") || "Direct"}
-										</TableCell>
-										<TableCell>
-											{entry.createdAt
-												? timestampDate(entry.createdAt).toLocaleDateString()
-												: "—"}
-										</TableCell>
-										<TableCell>
-											<div className="flex justify-end gap-1">
-												{(entry.state === WaitlistState.PENDING ||
-													entry.state === WaitlistState.VERIFIED) && (
-													<>
-														<Button
-															size="sm"
-															variant="ghost"
-															aria-label={`Approve ${entry.email}`}
-															onClick={() =>
-																review.mutate({
-																	entry,
-																	nextState: WaitlistState.APPROVED,
-																})
-															}
-														>
-															<Check className="h-4 w-4" />
-														</Button>
-														<Button
-															size="sm"
-															variant="ghost"
-															aria-label={`Reject ${entry.email}`}
-															onClick={() =>
-																review.mutate({
-																	entry,
-																	nextState: WaitlistState.REJECTED,
-																})
-															}
-														>
-															<X className="h-4 w-4" />
-														</Button>
-													</>
-												)}
-												{entry.state === WaitlistState.APPROVED && (
-													<Button
-														size="sm"
-														variant="ghost"
-														aria-label={`Invite ${entry.email}`}
-														onClick={() => invite.mutate(entry.id)}
-													>
-														<Mail className="h-4 w-4" />
-													</Button>
-												)}
-											</div>
-										</TableCell>
-									</TableRow>
-								))}
-							</TableBody>
-						</Table>
-					</Panel>
+					{entries.isError ? (
+						<Panel className="space-y-3">
+							<ErrorState
+								title="Couldn't load the access requests"
+								detail={
+									outcome === "forbidden"
+										? "You don't have access to these requests. Ask a platform administrator for access."
+										: "The requests could not be loaded. Try again."
+								}
+							/>
+							{outcome !== "forbidden" && (
+								<Button
+									variant="outline"
+									onClick={() => void entries.refetch()}
+								>
+									Try again
+								</Button>
+							)}
+						</Panel>
+					) : (
+						<DataTable
+							table={table}
+							isLoading={entries.isLoading}
+							emptyMessage={
+								query ||
+								source ||
+								campaign ||
+								state !== WaitlistState.UNSPECIFIED
+									? "No matching access requests. Change the filters to see more."
+									: "No access requests yet. New requests will appear here for review."
+							}
+						/>
+					)}
 					<div className="flex justify-end gap-2">
 						<Button
 							variant="outline"
@@ -339,6 +358,39 @@ export function WaitlistAdminPage() {
 					</div>
 				</CardContent>
 			</Card>
+			<AlertDialog
+				open={Boolean(rejecting)}
+				onOpenChange={(open) => {
+					if (!open && !review.isPending) setRejecting(null);
+				}}
+			>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Reject access request?</AlertDialogTitle>
+						<AlertDialogDescription>
+							Reject the request from {rejecting?.email}? They will not be
+							invited through this request.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel disabled={review.isPending}>
+							Cancel
+						</AlertDialogCancel>
+						<AlertDialogAction
+							disabled={review.isPending}
+							onClick={() => {
+								if (rejecting)
+									review.mutate({
+										entry: rejecting,
+										nextState: WaitlistState.REJECTED,
+									});
+							}}
+						>
+							{review.isPending ? "Rejecting…" : "Reject request"}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 		</PageBody>
 	);
 }
