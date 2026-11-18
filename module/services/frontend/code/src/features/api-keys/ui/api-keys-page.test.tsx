@@ -80,11 +80,65 @@ describe("APIKeysPage admin container", () => {
 		);
 		const dialog = await screen.findByRole("alertdialog");
 		fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
-		await screen.findByText("No API keys");
+		await screen.findByText(
+			"No API keys yet. Create a key to connect an application.",
+		);
 		expect(requestBody).toEqual({ id: "key-1", organizationId: "org-1" });
 		expect(
 			screen.queryByRole("button", { name: "Revoke Example key" }),
 		).toBeNull();
+	});
+	it("keeps the named confirmation open while revoking and explains a denial inline", async () => {
+		let finish!: () => void;
+		const pending = new Promise<void>((resolve) => {
+			finish = resolve;
+		});
+		const revoke = vi.fn(async () => {
+			await pending;
+			return HttpResponse.json(
+				{
+					code: "permission_denied",
+					message: "internal permission key:revoke",
+				},
+				{ status: 403 },
+			);
+		});
+		server.use(
+			http.post(rpc("APIKeyService", "ListAPIKeys"), () =>
+				HttpResponse.json({
+					keys: [{ id: "key-1", organizationId: "org-1", name: "Example key" }],
+				}),
+			),
+			http.post(rpc("APIKeyService", "RevokeAPIKey"), revoke),
+		);
+		renderInApp(<APIKeysPage />);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Revoke Example key" }),
+		);
+		const dialog = await screen.findByRole("alertdialog", {
+			name: "Revoke Example key?",
+		});
+		fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
+		await waitFor(() => expect(revoke).toHaveBeenCalledOnce());
+		expect(
+			within(dialog)
+				.getByRole("button", { name: "Revoking…" })
+				.hasAttribute("disabled"),
+		).toBe(true);
+		expect(
+			within(dialog)
+				.getByRole("button", { name: "Cancel" })
+				.hasAttribute("disabled"),
+		).toBe(true);
+		fireEvent.keyDown(dialog, { key: "Escape" });
+		expect(screen.getByRole("alertdialog")).toBeTruthy();
+		finish();
+		expect((await within(dialog).findByRole("alert")).textContent).toContain(
+			"Ask your organization administrator for access.",
+		);
+		expect(dialog.textContent).not.toContain("key:revoke");
+		fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+		await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
 	});
 	it("opens the creation dialog and displays the newly created secret", async () => {
 		const create = vi.fn(() =>
