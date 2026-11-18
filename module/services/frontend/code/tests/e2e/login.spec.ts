@@ -1,3 +1,4 @@
+import { signInForScenario } from "./fixture-session";
 import { expect, test } from "@playwright/test";
 import { resolveConsentPrompt } from "./consent";
 
@@ -16,15 +17,11 @@ test.describe("Login flow", () => {
 	test("fixture users are displayed in dev mode", async ({ page }) => {
 		await page.goto("/auth/login");
 
-		// Wait for fixture users to load
-		await expect(page.getByText("Sarah Chen")).toBeVisible({ timeout: 10000 });
-		await expect(page.getByText("Alice Johnson")).toBeVisible();
-		await expect(page.getByText("Bob Williams")).toBeVisible();
-		await expect(page.getByText("Carol Davis")).toBeVisible();
-
-		// Roles should be visible
-		await expect(page.getByText("super_admin")).toBeVisible();
-		await expect(page.getByText("member").first()).toBeVisible();
+		for (const name of ["Dana Lee", "Carol Davis", "Bob Williams"]) {
+			await expect(page.getByRole("button", { name: new RegExp(name) })).toBeVisible();
+		}
+		await expect(page.getByText("Sarah Chen")).toHaveCount(0);
+		await expect(page.getByText("Alice Johnson")).toHaveCount(0);
 	});
 
 	test("clicking fixture user logs in and redirects to dashboard", async ({
@@ -32,11 +29,7 @@ test.describe("Login flow", () => {
 	}) => {
 		await page.goto("/auth/login");
 
-		// Wait for fixture users
-		await expect(page.getByText("Sarah Chen")).toBeVisible({ timeout: 10000 });
-
-		// Click Sarah Chen (super_admin)
-		await page.getByText("Sarah Chen").click();
+		await page.getByRole("button", { name: /Dana Lee/ }).click();
 
 		// Should redirect to dashboard
 		await page.waitForURL("/", { timeout: 15000 });
@@ -46,9 +39,7 @@ test.describe("Login flow", () => {
 	});
 
 	test("super_admin sees admin navigation", async ({ page }) => {
-		await page.goto("/auth/login");
-		await expect(page.getByText("Sarah Chen")).toBeVisible({ timeout: 10000 });
-		await page.getByText("Sarah Chen").click();
+		await signInForScenario(page, "Sarah Chen");
 		await page.waitForURL("/", { timeout: 15000 });
 		await resolveConsentPrompt(page);
 		await page.getByRole("button", { name: "Admin", exact: true }).click();

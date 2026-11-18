@@ -1,3 +1,4 @@
+import { signInForScenario } from "./fixture-session";
 // Access-token revocation regression. The OWASP refresh-rotation
 // pattern (already in place) only invalidates the refresh chain on
 // logout — without an access-token revocation list, the *current*
@@ -27,9 +28,7 @@ async function loginAndGrabTokens(
 	page: Page,
 	fixtureName: string,
 ): Promise<{ accessToken: string; refreshToken: string }> {
-	await page.goto("/auth/login");
-	await expect(page.getByText(fixtureName)).toBeVisible({ timeout: 15000 });
-	await page.getByText(fixtureName).click();
+	await signInForScenario(page, fixtureName);
 	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
 
 	await expect

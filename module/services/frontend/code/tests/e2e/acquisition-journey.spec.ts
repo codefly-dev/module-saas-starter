@@ -1,10 +1,9 @@
+import { signInForScenario } from "./fixture-session";
 import { expect, type Page, test } from "@playwright/test";
 import { resolveConsentPrompt } from "./consent";
 
 async function loginAs(page: Page, fixtureName: string): Promise<string> {
-	await page.goto("/auth/login");
-	await expect(page.getByText(fixtureName)).toBeVisible({ timeout: 15000 });
-	await page.getByText(fixtureName).click();
+	await signInForScenario(page, fixtureName);
 	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 15000 });
 	await resolveConsentPrompt(page);
 	const refresh = await page.request.post("/v1/auth/refresh", { data: {} });

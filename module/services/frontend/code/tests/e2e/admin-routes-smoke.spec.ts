@@ -1,3 +1,4 @@
+import { signInForScenario } from "./fixture-session";
 // Smoke coverage for the admin routes that had no direct Playwright
 // assertion: each renders its own surface end-to-end (frontend → gateway →
 // api) for a super_admin, without bouncing back to login or tripping the
@@ -8,9 +9,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { resolveConsentPrompt } from "./consent";
 
 async function loginAsSuperAdmin(page: Page) {
-	await page.goto("/auth/login");
-	await expect(page.getByText("Sarah Chen")).toBeVisible({ timeout: 15000 });
-	await page.getByText("Sarah Chen").click();
+	await signInForScenario(page, "Sarah Chen");
 	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
 	await resolveConsentPrompt(page);
 }

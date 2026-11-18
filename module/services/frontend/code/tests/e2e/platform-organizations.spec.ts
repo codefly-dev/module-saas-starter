@@ -1,3 +1,4 @@
+import { signInForScenario } from "./fixture-session";
 // A platform administrator manages an organization by hand from the platform
 // view, end to end (frontend → gateway → accounts): create it, rename it, add a
 // member, change their role, remove them, and delete the organization. Uses the
@@ -8,9 +9,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { resolveConsentPrompt } from "./consent";
 
 async function loginAsSuperAdmin(page: Page) {
-	await page.goto("/auth/login");
-	await expect(page.getByText("Sarah Chen")).toBeVisible({ timeout: 15000 });
-	await page.getByText("Sarah Chen").click();
+	await signInForScenario(page, "Sarah Chen");
 	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
 	await resolveConsentPrompt(page);
 }

@@ -1,3 +1,4 @@
+import { signInForScenario } from "./fixture-session";
 // SSO admin E2E. Accounts runs in stub mode
 // (IDENTITY_MANAGEMENT_API_KEY absent from the fixture identity configuration),
 // so StartSetup returns a placeholder URL pointing
@@ -8,9 +9,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { resolveConsentPrompt } from "./consent";
 
 async function loginAsSuperAdmin(page: Page) {
-	await page.goto("/auth/login");
-	await expect(page.getByText("Sarah Chen")).toBeVisible({ timeout: 15000 });
-	await page.getByText("Sarah Chen").click();
+	await signInForScenario(page, "Sarah Chen");
 	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
 	await resolveConsentPrompt(page);
 	await expect

@@ -78,7 +78,7 @@ export default defineConfig({
 		stderr: "pipe",
 		env: {
 			// Fixture dev-login mode (no real WorkOS); without it the login page
-			// renders no user picker and every spec times out at "Sarah Chen".
+			// renders no fixture sign-in choices.
 			CODEFLY__FIXTURE: "dev-admin",
 			// Browser talks same-origin to the frontend; the Next server forwards
 			// API traffic to the auth-gateway (src/proxy.ts). Keeps auth cookies

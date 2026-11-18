@@ -1,3 +1,4 @@
+import { signInForScenario } from "./fixture-session";
 import { expect, test } from "@playwright/test";
 import { resolveConsentPrompt } from "./consent";
 
@@ -6,9 +7,7 @@ import { resolveConsentPrompt } from "./consent";
 // the middleware briefly redirects during auth and URL-only waits can
 // resolve before the page is usable.
 async function loginAsSuperAdmin(page: import("@playwright/test").Page) {
-	await page.goto("/auth/login");
-	await expect(page.getByText("Sarah Chen")).toBeVisible({ timeout: 15000 });
-	await page.getByText("Sarah Chen").click();
+	await signInForScenario(page, "Sarah Chen");
 	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
 	await resolveConsentPrompt(page);
 }

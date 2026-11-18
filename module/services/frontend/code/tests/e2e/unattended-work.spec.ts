@@ -1,3 +1,4 @@
+import { signInForScenario } from "./fixture-session";
 // The Unattended work page, in a real browser against the real host.
 //
 // What this proves that the container test cannot: the page's reads reach the
@@ -10,9 +11,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { resolveConsentPrompt } from "./consent";
 
 async function loginAsSuperAdmin(page: Page) {
-	await page.goto("/auth/login");
-	await expect(page.getByText("Sarah Chen")).toBeVisible({ timeout: 15000 });
-	await page.getByText("Sarah Chen").click();
+	await signInForScenario(page, "Sarah Chen");
 	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
 	await resolveConsentPrompt(page);
 }

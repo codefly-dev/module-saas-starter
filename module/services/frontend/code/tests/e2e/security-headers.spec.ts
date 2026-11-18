@@ -1,3 +1,4 @@
+import { signInForScenario } from "./fixture-session";
 // Anti-clickjacking + CSP regression (issue #210). Proves the product
 // frontend ships the framing/CSP defenses on real responses — both the
 // public login page and an authenticated dashboard route — so the
@@ -61,9 +62,7 @@ test.describe("Security headers", () => {
 	test("authenticated dashboard responses are not framable", async ({
 		page,
 	}) => {
-		await page.goto("/auth/login");
-		await expect(page.getByText("Sarah Chen")).toBeVisible({ timeout: 15000 });
-		await page.getByText("Sarah Chen").click();
+		await signInForScenario(page, "Sarah Chen");
 		await expect(page.getByText("Welcome back")).toBeVisible({
 			timeout: 20000,
 		});

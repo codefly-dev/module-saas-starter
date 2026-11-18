@@ -1,3 +1,4 @@
+import { signInForScenario } from "./fixture-session";
 // Real E2E — covers the admin golden path end-to-end through the
 // running stack (frontend → gateway → api → postgres/vault/redis).
 // These tests are meant to run with `codefly run service frontend`
@@ -32,15 +33,9 @@ function resolveFrontendURL(): string | null {
 	return null;
 }
 
-// loginAs walks the fixture login flow. fixtureName is the display text
-// on the login card (e.g. "Sarah Chen" → super_admin, "Bob Williams"
-// → member). Keys off the post-login "Welcome back" heading rather
-// than just the URL — the URL match can pass while the page is still
-// mid-render, leading to selector-not-found failures downstream.
+// Wait for the dashboard to render before exercising its controls.
 async function loginAs(page: Page, fixtureName: string) {
-	await page.goto("/auth/login");
-	await expect(page.getByText(fixtureName)).toBeVisible({ timeout: 15000 });
-	await page.getByText(fixtureName).click();
+	await signInForScenario(page, fixtureName);
 	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
 	await resolveConsentPrompt(page);
 }

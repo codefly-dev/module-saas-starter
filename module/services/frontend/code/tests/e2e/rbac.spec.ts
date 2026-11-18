@@ -1,3 +1,4 @@
+import { signInForScenario } from "./fixture-session";
 // The RBAC administration journey end to end: mint a role, grant it to a
 // person, confirm the grant on the permissions browser, then take it away from
 // that person's own page. Each step reads the surface an administrator reads
@@ -10,9 +11,7 @@ import { resolveConsentPrompt } from "./consent";
 const ROLE_NAME = `e2e-rbac-${Date.now()}`;
 
 async function loginAsSuperAdmin(page: Page) {
-	await page.goto("/auth/login");
-	await expect(page.getByText("Sarah Chen")).toBeVisible({ timeout: 15000 });
-	await page.getByText("Sarah Chen").click();
+	await signInForScenario(page, "Sarah Chen");
 	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
 	await resolveConsentPrompt(page);
 }
