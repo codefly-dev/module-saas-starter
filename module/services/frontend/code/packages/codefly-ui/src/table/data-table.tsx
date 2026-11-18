@@ -17,6 +17,8 @@ import {
 	TableRow,
 } from "../layout/table.js";
 
+const tableFrame = "overflow-hidden rounded-lg border bg-card text-card-foreground";
+
 interface DataTableProps<T> extends DelayedLoadingOptions {
 	table: TanStackTable<T>;
 	isLoading?: boolean;
@@ -67,9 +69,9 @@ export function DataTable<T>({
 
 	return (
 		<div>
-			<div className="rounded-md border">
+			<div className={tableFrame}>
 				<Table aria-label={ariaLabel}>
-					<TableHeader>
+					<TableHeader className="bg-muted/60">
 						{table.getHeaderGroups().map((headerGroup) => (
 							<TableRow key={headerGroup.id}>
 								{headerGroup.headers.map((header) => (
@@ -77,7 +79,7 @@ export function DataTable<T>({
 										key={header.id}
 										className={
 											header.column.getCanSort()
-												? "cursor-pointer select-none focus-visible:outline-2 focus-visible:outline-ring"
+												? "cursor-pointer select-none focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
 												: ""
 										}
 										tabIndex={header.column.getCanSort() ? 0 : undefined}
@@ -127,7 +129,7 @@ export function DataTable<T>({
 									data-state={row.getIsSelected() && "selected"}
 									className={
 										onRowClick
-											? "cursor-pointer focus-visible:outline-2 focus-visible:outline-ring"
+											? "cursor-pointer focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
 											: ""
 									}
 									tabIndex={onRowClick ? 0 : undefined}
@@ -228,13 +230,13 @@ export function DataTableSkeleton<T>({
 	const announced = rows > 0;
 	return (
 		<div
-			className="rounded-md border"
+			className={tableFrame}
 			{...(announced
 				? { "aria-busy": true, "aria-label": "Loading table" }
 				: {})}
 		>
 			<Table aria-label={ariaLabel}>
-				<TableHeader>
+				<TableHeader className="bg-muted/60">
 					{table.getHeaderGroups().map((headerGroup) => (
 						<TableRow key={headerGroup.id}>
 							{headerGroup.headers.map((header) => (

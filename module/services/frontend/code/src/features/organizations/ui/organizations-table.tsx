@@ -8,19 +8,9 @@ import {
 	type SortingState,
 	useReactTable,
 } from "@tanstack/react-table";
-import { MoreHorizontal, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 import { formatDate } from "@/shared/lib/utils";
-import {
-	Button,
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuGroup,
-	DropdownMenuItem,
-	DropdownMenuLabel,
-	DropdownMenuSeparator,
-	DropdownMenuTrigger,
-} from "@/shared/ui";
+import { Button } from "@/shared/ui";
 import { DataTable } from "@/shared/ui/data-table";
 import type { Organization } from "../model/types";
 
@@ -43,7 +33,16 @@ export function OrganizationsTable({
 		() => [
 			col.accessor("name", {
 				header: "Name",
-				cell: (info) => <span className="font-medium">{info.getValue()}</span>,
+				cell: ({ row }) => (
+					<Button
+						variant="link"
+						className="h-auto px-0 text-left font-medium"
+						aria-label={`Manage ${row.original.name}`}
+						onClick={() => onViewMembers(row.original)}
+					>
+						{row.original.name}
+					</Button>
+				),
 			}),
 			col.accessor("slug", {
 				header: "Address",
@@ -61,38 +60,6 @@ export function OrganizationsTable({
 					</span>
 				),
 			}),
-			col.display({
-				id: "actions",
-				cell: ({ row }) => {
-					const org = row.original;
-					return (
-						<DropdownMenu>
-							<DropdownMenuTrigger
-								render={
-									<Button
-										variant="ghost"
-										size="sm"
-										className="h-8 w-8 p-0"
-										aria-label={`Actions for ${org.name}`}
-									/>
-								}
-							>
-								<MoreHorizontal className="h-4 w-4" />
-							</DropdownMenuTrigger>
-							<DropdownMenuContent align="end">
-								<DropdownMenuGroup>
-									<DropdownMenuLabel>Actions</DropdownMenuLabel>
-									<DropdownMenuSeparator />
-									<DropdownMenuItem onClick={() => onViewMembers(org)}>
-										<Users className="mr-2 h-4 w-4" />
-										Manage
-									</DropdownMenuItem>
-								</DropdownMenuGroup>
-							</DropdownMenuContent>
-						</DropdownMenu>
-					);
-				},
-			}),
 		],
 		[onViewMembers],
 	);
@@ -109,6 +76,7 @@ export function OrganizationsTable({
 
 	return (
 		<DataTable
+			ariaLabel="Organizations"
 			table={table}
 			isLoading={isLoading}
 			emptyMessage="No organizations yet."
