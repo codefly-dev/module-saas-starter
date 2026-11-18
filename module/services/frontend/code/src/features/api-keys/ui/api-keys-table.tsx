@@ -152,11 +152,6 @@ export function APIKeysTable({
 				table={table}
 				isLoading={isLoading}
 				ariaLabel="API keys"
-				emptyMessage={
-					canManage
-						? "No API keys yet. Create a key to connect an application."
-						: "No API keys yet. An organization administrator can create one."
-				}
 			/>
 			<AlertDialog
 				open={selectedKey !== null}

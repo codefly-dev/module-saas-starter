@@ -85,9 +85,8 @@ describe("APIKeysPage admin container", () => {
 		);
 		const dialog = await screen.findByRole("alertdialog");
 		fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
-		await screen.findByText(
-			"No API keys yet. Create a key to connect an application.",
-		);
+		await screen.findByRole("heading", { name: "No API keys yet", level: 2 });
+		expect(screen.queryByRole("table", { name: "API keys" })).toBeNull();
 		expect(requestBody).toEqual({ id: "key-1", organizationId: "org-1" });
 		expect(
 			screen.queryByRole("button", { name: "Revoke Example key" }),

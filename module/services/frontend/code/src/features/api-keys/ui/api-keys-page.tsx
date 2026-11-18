@@ -75,6 +75,15 @@ export function APIKeysPage() {
 						)}
 					</Stack>
 				</Panel>
+			) : !isLoading && keys.length === 0 ? (
+				<EmptyState
+					icon={Key}
+					title="No API keys yet"
+					headingAs="h2"
+					description={canManage
+						? "Create a key to connect an application to this organization."
+						: "An organization administrator can create a key to connect an application."}
+				/>
 			) : (
 				<APIKeysTable
 					key={orgId}
