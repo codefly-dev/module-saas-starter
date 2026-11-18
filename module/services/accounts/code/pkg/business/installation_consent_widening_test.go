@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/codefly-dev/authority/libraries/solutionhost/go"
+	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
 	"github.com/stretchr/testify/require"
 )
 

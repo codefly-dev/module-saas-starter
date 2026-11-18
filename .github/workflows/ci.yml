@@ -392,6 +392,9 @@ jobs:
   # revision, or a patch below it within the same major.minor, so a declaration
   # names no suite the pin did not run.
   host-interface-conformance:
+    # Agent release resolution uses the authenticated GitHub API.
+    env:
+      GH_TOKEN: ${{ github.token }}
     name: Host interface conformance (authority main)
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -683,6 +686,9 @@ jobs:
   # near-instant no-op — the same property a downstream consumer sees when it
   # syncs the starter with no local deltas.
   codefly-plan:
+    # Agent release resolution uses the authenticated GitHub API.
+    env:
+      GH_TOKEN: ${{ github.token }}
     name: Codefly CI plan
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -811,6 +817,9 @@ jobs:
           if-no-files-found: error
 
   codefly-quality-phases:
+    # Agent release resolution uses the authenticated GitHub API.
+    env:
+      GH_TOKEN: ${{ github.token }}
     name: Codefly quality (${{ matrix.phase }})
     needs: codefly-plan
     # Always run on release tags: a release must exercise the full topology
@@ -1048,6 +1057,9 @@ jobs:
         run: test "${QUALITY_RESULT}" = success
 
   codefly-supply-chain:
+    # Agent release resolution uses the authenticated GitHub API.
+    env:
+      GH_TOKEN: ${{ github.token }}
     name: Codefly supply chain
     needs: codefly-plan
     # Always run on release tags: a release must exercise the full topology
@@ -1128,6 +1140,9 @@ jobs:
           npm --prefix module/services/marketing/code audit --omit=dev --audit-level=high
 
   codefly-build:
+    # Agent release resolution uses the authenticated GitHub API.
+    env:
+      GH_TOKEN: ${{ github.token }}
     name: Codefly build
     needs: codefly-plan
     # Always run on release tags: a release must exercise the full topology

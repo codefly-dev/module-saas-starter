@@ -834,3 +834,11 @@ nothing to copy by hand. What a consumer does with it is in
 [MODULE.md § Pinning the package by identity](./MODULE.md#pinning-the-package-by-identity).
 
 [#405]: https://github.com/codefly-dev/module-saas-starter/issues/405
+
+### Agent release resolution in CI
+
+Jobs that run Codefly receive the workflow's read-scoped GitHub token as
+`GH_TOKEN`. The pinned CLI's agent loader reads this variable when resolving
+and downloading releases. Without it, parallel hosted jobs share the public
+API's anonymous per-IP quota and can fail before auditing or testing a service.
+This changes authentication for release reads, not the release or audit gates.

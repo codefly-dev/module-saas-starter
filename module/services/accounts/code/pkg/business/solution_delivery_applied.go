@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/codefly-dev/authority/libraries/solutionhost/go"
+	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
 )
 
 // SolutionDeliveryObserverAuthorizer grants the protected applied-state

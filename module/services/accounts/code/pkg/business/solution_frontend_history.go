@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/codefly-dev/authority/libraries/solutionhost/go"
+	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
 	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 )
 
