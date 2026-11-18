@@ -1,7 +1,16 @@
 "use client";
 
 import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
 	Button,
+	Checkbox,
 	Label,
 	Spinner,
 	useLoadingPhase,
@@ -11,9 +20,9 @@ import { Fragment, type ReactNode, useState } from "react";
 import { useAccessibleScopes } from "./queries.js";
 import type {
 	CollectionAccessView,
+	CollectionGrantSubject,
 	CollectionGrantView,
 	DatasourceClient,
-	CollectionGrantSubject,
 } from "./types.js";
 
 export function CollectionReadBoundary({
@@ -120,6 +129,7 @@ export function CollectionGrants({
 	// what made this flow unreasonable — an administrator who has just connected
 	// a repository for a team of eight repeated the same four steps eight times.
 	const [selected, setSelected] = useState<string[]>([]);
+	const [removing, setRemoving] = useState<CollectionGrantView | null>(null);
 	const [outcome, setOutcome] = useState<BulkGrantOutcome | null>(null);
 	const cache = useQueryClient();
 	const subjects = useQuery({
@@ -135,7 +145,10 @@ export function CollectionGrants({
 	const revoke = useMutation({
 		mutationFn: (grant: CollectionGrantView) =>
 			client.revokeCollectionRead!(orgId, grant),
-		onSuccess: refresh,
+		onSuccess: async () => {
+			await refresh();
+			setRemoving(null);
+		},
 	});
 	const grant = useMutation({
 		// Sequential on purpose, not Promise.all. The host resolves the read role
@@ -241,12 +254,8 @@ export function CollectionGrants({
 								disabled={busy}
 								aria-label={`Remove ${grant.subjectLabel}`}
 								onClick={() => {
-									if (
-										window.confirm(
-											`Stop ${grant.subjectLabel} reading ${collection.label}?`,
-										)
-									)
-										revoke.mutate(grant);
+									revoke.reset();
+									setRemoving(grant);
 								}}
 							>
 								Remove
@@ -268,39 +277,36 @@ export function CollectionGrants({
 				</p>
 			) : (
 				<div className="space-y-2">
-					<Label htmlFor={`grant-subjects-${collection.nodeId}`}>
-						Add people or teams
-					</Label>
-					{/* A native multiple select: granting is one press for however many
-					    subjects were picked, rather than the same steps repeated once
-					    per person. */}
-					<select
-						id={`grant-subjects-${collection.nodeId}`}
-						aria-label="People and teams"
-						multiple
-						className="w-full rounded-lg border border-input bg-transparent p-1 type-body dark:bg-input/30"
-						size={Math.min(6, Math.max(3, subjects.data?.length ?? 3))}
-						value={selected}
-						onChange={(event) => {
-							setOutcome(null);
-							setSelected(
-								Array.from(event.target.selectedOptions, (o) => o.value),
-							);
-						}}
-					>
-						{subjects.data?.map((subject) => (
-							<option
-								key={`${subject.kind}:${subject.id}`}
-								value={`${subject.kind}:${subject.id}`}
-								className="rounded px-2 py-1"
-							>
-								{subject.label}
-							</option>
-						))}
-					</select>
-					<p className="type-caption-plain text-muted-foreground">
-						Hold Ctrl or ⌘ to pick several.
-					</p>
+					<fieldset disabled={busy} className="space-y-2">
+						<legend className="type-label">Add people or teams</legend>
+						<div className="max-h-48 space-y-2 overflow-y-auto rounded-lg border p-3">
+							{subjects.data?.map((subject) => {
+								const key = `${subject.kind}:${subject.id}`;
+								return (
+									<div key={key} className="flex items-center gap-2">
+										<Checkbox
+											id={`grant-${collection.nodeId}-${key}`}
+											checked={selected.includes(key)}
+											onCheckedChange={(checked) => {
+												setOutcome(null);
+												setSelected((current) =>
+													checked
+														? [...current, key]
+														: current.filter((value) => value !== key),
+												);
+											}}
+										/>
+										<Label htmlFor={`grant-${collection.nodeId}-${key}`}>
+											{subject.label}
+										</Label>
+										<span className="type-caption-plain text-muted-foreground">
+											{subject.kind === "team" ? "Team" : "Person"}
+										</span>
+									</div>
+								);
+							})}
+						</div>
+					</fieldset>
 					<Button
 						type="button"
 						size="sm"
@@ -317,6 +323,48 @@ export function CollectionGrants({
 					</Button>
 				</div>
 			)}
+			<AlertDialog
+				open={!!removing}
+				onOpenChange={(open) => {
+					if (!open && !revoke.isPending) setRemoving(null);
+				}}
+			>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>
+							Remove access for {removing?.subjectLabel}?
+						</AlertDialogTitle>
+						<AlertDialogDescription>
+							{removing?.subjectLabel} will lose this grant to read{" "}
+							{collection.label}.
+							{removing &&
+								removing.scopePath !== collection.scopePath &&
+								" This grant also covers other collections. Removing it affects all of them."}
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					{revoke.isError && (
+						<p role="alert" className="type-body text-destructive">
+							Couldn’t remove access. Ask your organization administrator to
+							check your access.
+						</p>
+					)}
+					<AlertDialogFooter>
+						<AlertDialogCancel disabled={revoke.isPending}>
+							Cancel
+						</AlertDialogCancel>
+						<AlertDialogAction
+							variant="destructive"
+							disabled={revoke.isPending}
+							onClick={(event) => {
+								event.preventDefault();
+								if (removing) revoke.mutate(removing);
+							}}
+						>
+							{revoke.isPending ? "Removing…" : "Remove access"}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 			{/* Per subject, because the loop's outcome is per subject: a run that
 			    granted six of eight is neither a success nor a failure. */}
 			{outcome && outcome.granted.length > 0 && (
@@ -340,19 +388,16 @@ export function CollectionGrants({
 						</>
 					) : (
 						<>
-							Couldn’t share with {failure.label}: {failure.message}
+							Couldn’t share with {failure.label}. Ask your organization
+							administrator to check your access.
 						</>
 					)}
 				</p>
 			))}
 			{grant.isError && (
 				<p role="alert" className="type-body text-destructive">
-					Couldn’t change who can read it: {grant.error.message}
-				</p>
-			)}
-			{revoke.isError && (
-				<p role="alert" className="type-body text-destructive">
-					Couldn’t change who can read it: {revoke.error.message}
+					Couldn’t change access. Ask your organization administrator to check
+					your access.
 				</p>
 			)}
 		</section>

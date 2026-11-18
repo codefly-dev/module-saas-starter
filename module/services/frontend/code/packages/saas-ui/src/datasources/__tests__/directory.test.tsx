@@ -432,9 +432,12 @@ describe("DatasourceDirectoryPanel", () => {
 		fireEvent.change(screen.getByLabelText("GitHub team"), {
 			target: { value: "acme/support" },
 		});
-		fireEvent.change(screen.getByLabelText("Your team"), {
-			target: { value: "t2" },
-		});
+		fireEvent.click(screen.getByLabelText("Your team"));
+		fireEvent.pointerDown(
+			await screen.findByRole("option", { name: "Support" }),
+			{ pointerType: "mouse" },
+		);
+		fireEvent.click(await screen.findByRole("option", { name: "Support" }));
 		fireEvent.click(bind);
 		await waitFor(() =>
 			expect(client.bindGroup).toHaveBeenCalledWith(
