@@ -31,7 +31,7 @@ export function writeRefusal(error: unknown): string {
 	switch (refused.code) {
 		case Code.FailedPrecondition:
 			if (refused.rawMessage === "mfa_required") {
-				return "Writing the envelope needs your passkey confirmed within the last 15 minutes. Confirm it (the sign-in page brings you back here), then write it again.";
+				return "Confirm your passkey before saving this configuration. After signing in, return here to review and save your draft.";
 			}
 			return "The current configuration cannot be applied. Refresh the page and review the latest revision.";
 		case Code.Aborted:

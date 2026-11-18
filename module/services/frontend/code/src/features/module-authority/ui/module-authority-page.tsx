@@ -6,8 +6,9 @@ import {
 	getCoreRowModel,
 	useReactTable,
 } from "@tanstack/react-table";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
+import { UserLabel } from "@/components/user-label";
 import { isMFARequired, stepUpToast } from "@/features/auth/model/step-up";
 import type { ModuleAuthorityRequest } from "@/gen/saas/accounts/v1/platform_admin_pb";
 import { failureText } from "@/shared/lib/failure-text";
@@ -31,7 +32,7 @@ import {
 	CardHeader,
 	CardTitle,
 	ErrorState,
-	Label,
+	Field,
 	Page as PageBody,
 	PageHeader,
 	Panel,
@@ -65,6 +66,7 @@ const header = (
 export function ModuleAuthorityPage() {
 	const read = useModuleEnvelope();
 	const write = usePutModuleEnvelope();
+	const pending = useRef(false);
 	const [draft, setDraft] = useState<Draft | null>(null);
 	const [confirming, setConfirming] = useState(false);
 	const [refusal, setRefusal] = useState<string | null>(null);
@@ -104,11 +106,14 @@ export function ModuleAuthorityPage() {
 	const base = draft?.base ?? current;
 	const text = draft?.text ?? nextRevisionDraft(envelope?.document, current);
 
-	const submit = () =>
+	const submit = () => {
+		if (pending.current) return;
+		pending.current = true;
 		write.mutate(
 			{ expectedRevision: base, document: text },
 			{
 				onSuccess: (response) => {
+					setConfirming(false);
 					toast.success(
 						`Revision ${response.envelope?.revision ?? base + ONE} written`,
 					);
@@ -119,9 +124,12 @@ export function ModuleAuthorityPage() {
 					if (isMFARequired(error)) stepUpToast();
 					setRefusal(writeRefusal(error));
 				},
-				onSettled: () => setConfirming(false),
+				onSettled: () => {
+					pending.current = false;
+				},
 			},
 		);
+	};
 
 	return (
 		<PageBody>
@@ -129,7 +137,9 @@ export function ModuleAuthorityPage() {
 
 			<Card>
 				<CardHeader>
-					<CardTitle className="text-base">Current configuration</CardTitle>
+					<CardTitle role="heading" aria-level={2} className="text-base">
+						Current configuration
+					</CardTitle>
 				</CardHeader>
 				<CardContent>
 					{envelope ? (
@@ -137,7 +147,9 @@ export function ModuleAuthorityPage() {
 							<dt className="text-muted-foreground">Revision</dt>
 							<dd className="font-mono">{envelope.revision.toString()}</dd>
 							<dt className="text-muted-foreground">Written by</dt>
-							<dd className="font-mono">{envelope.writtenBy}</dd>
+							<dd>
+								<UserLabel userId={envelope.writtenBy} />
+							</dd>
 							<dt className="text-muted-foreground">Written at</dt>
 							<dd>
 								{formatDate(
@@ -158,7 +170,9 @@ export function ModuleAuthorityPage() {
 
 			<Card>
 				<CardHeader>
-					<CardTitle className="text-base">Requested access</CardTitle>
+					<CardTitle role="heading" aria-level={2} className="text-base">
+						Requested access
+					</CardTitle>
 					<CardDescription>
 						{requested.length === 0
 							? "Installed modules will appear here when they request access."
@@ -181,7 +195,7 @@ export function ModuleAuthorityPage() {
 
 			<Card>
 				<CardHeader>
-					<CardTitle className="text-base">
+					<CardTitle role="heading" aria-level={2} className="text-base">
 						Write revision {(base + ONE).toString()}
 					</CardTitle>
 					<CardDescription>
@@ -198,7 +212,7 @@ export function ModuleAuthorityPage() {
 							refused. Discard the draft to start from the current revision.
 						</Banner>
 					)}
-					{refusal && (
+					{refusal && !confirming && (
 						<Banner
 							tone="danger"
 							title="Not written"
@@ -207,14 +221,20 @@ export function ModuleAuthorityPage() {
 							{refusal}
 						</Banner>
 					)}
-					<Label htmlFor="module-envelope-draft">Configuration document</Label>
-					<Textarea
-						id="module-envelope-draft"
-						className="min-h-72 font-mono text-xs"
-						spellCheck={false}
-						value={text}
-						onChange={(event) => setDraft({ base, text: event.target.value })}
-					/>
+					<Field label="Configuration document">
+						{(control) => (
+							<Textarea
+								{...control}
+								className="min-h-72 font-mono text-xs"
+								spellCheck={false}
+								value={text}
+								disabled={write.isPending}
+								onChange={(event) =>
+									setDraft({ base, text: event.target.value })
+								}
+							/>
+						)}
+					</Field>
 					<div className="flex gap-2">
 						<Button
 							onClick={() => setConfirming(true)}
@@ -228,7 +248,7 @@ export function ModuleAuthorityPage() {
 								setDraft(null);
 								setRefusal(null);
 							}}
-							disabled={draft === null}
+							disabled={draft === null || write.isPending}
 						>
 							Discard draft
 						</Button>
@@ -238,7 +258,7 @@ export function ModuleAuthorityPage() {
 
 			<AlertDialog
 				open={confirming}
-				onOpenChange={(open) => !write.isPending && setConfirming(open)}
+				onOpenChange={(open) => !pending.current && setConfirming(open)}
 			>
 				<AlertDialogContent>
 					<AlertDialogHeader>
@@ -251,6 +271,7 @@ export function ModuleAuthorityPage() {
 							excluded by the new configuration are removed.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
+					{refusal && <ErrorState title="Not written" detail={refusal} />}
 					<AlertDialogFooter>
 						<AlertDialogCancel disabled={write.isPending}>
 							Cancel

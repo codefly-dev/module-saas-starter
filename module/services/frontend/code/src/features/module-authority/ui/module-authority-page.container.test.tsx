@@ -6,10 +6,18 @@ import {
 	within,
 } from "@testing-library/react";
 import { HttpResponse, http, type JsonBodyType } from "msw";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
 import { ModuleAuthorityPage } from "./module-authority-page";
+
+vi.mock("@/lib/auth", () => ({
+	useAuth: () => ({
+		platformRole: "super_admin",
+		organizationId: "org-example",
+		user: { id: "user-example" },
+	}),
+}));
 
 afterEach(cleanup);
 
@@ -99,7 +107,10 @@ describe("ModuleAuthorityPage", () => {
 		);
 		renderInApp(<ModuleAuthorityPage />);
 
-		expect(await screen.findByText(revision3.writtenBy)).toBeTruthy();
+		expect(
+			await screen.findByRole("heading", { name: "Current configuration" }),
+		).toBeTruthy();
+		expect(screen.queryByText(revision3.writtenBy)).toBeNull();
 		expect(
 			screen.getByText(
 				/^1 of 2 requests are outside the configured access limits\./,
@@ -183,7 +194,7 @@ describe("ModuleAuthorityPage", () => {
 			"a session with no recent second factor",
 			{ code: "failed_precondition", message: "mfa_required" },
 			400,
-			"Writing the envelope needs your passkey confirmed within the last 15 minutes. Confirm it (the sign-in page brings you back here), then write it again.",
+			"Confirm your passkey before saving this configuration. After signing in, return here to review and save your draft.",
 		],
 		[
 			"a revision another administrator wrote first",
@@ -232,4 +243,45 @@ describe("ModuleAuthorityPage", () => {
 			"The current state doesn't allow this change.",
 		);
 	});
+});
+
+it("locks the module configuration while saving and preserves a refused draft", async () => {
+	serveEnvelope({ envelope: revision3, requested: [] });
+	let release = () => {};
+	let calls = 0;
+	server.use(
+		http.post(rpc("PlatformAdminService", "PutModuleEnvelope"), async () => {
+			calls += 1;
+			await new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			return HttpResponse.json(
+				{ code: "permission_denied", message: "private diagnostic" },
+				{ status: 403 },
+			);
+		}),
+	);
+	renderInApp(<ModuleAuthorityPage />);
+	const draft = (await screen.findByLabelText(
+		"Configuration document",
+	)) as HTMLTextAreaElement;
+	const changed = JSON.stringify({ revision: 4, principals: {} });
+	fireEvent.change(draft, { target: { value: changed } });
+	await write("4");
+	try {
+		await waitFor(() => expect(calls).toBe(1));
+		expect(draft.disabled).toBe(true);
+		expect(
+			(screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement)
+				.disabled,
+		).toBe(true);
+		fireEvent.keyDown(screen.getByRole("alertdialog"), { key: "Escape" });
+		expect(screen.getByRole("alertdialog")).toBeTruthy();
+	} finally {
+		release();
+	}
+	await screen.findByText("Not written");
+	expect(screen.getByRole("alertdialog")).toBeTruthy();
+	expect(draft.value).toBe(changed);
+	expect(screen.queryByText("private diagnostic")).toBeNull();
 });
