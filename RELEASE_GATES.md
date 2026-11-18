@@ -842,3 +842,7 @@ Jobs that run Codefly receive the workflow's read-scoped GitHub token as
 and downloading releases. Without it, parallel hosted jobs share the public
 API's anonymous per-IP quota and can fail before auditing or testing a service.
 This changes authentication for release reads, not the release or audit gates.
+
+The SDK boundary job retains both complete regenerated library trees in the
+`regenerated-libraries` CI artifact, including on drift failures, so the pinned
+generator output can be inspected and reproduced without a local container run.

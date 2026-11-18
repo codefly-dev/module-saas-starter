@@ -10,7 +10,7 @@ import (
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
-	"github.com/codefly-dev/authority/libraries/hop/go"
+	hop "github.com/codefly-dev/authority/libraries/hop/go"
 	"github.com/codefly-dev/authority/libraries/hop/go/hoptest"
 	"github.com/codefly-dev/authority/libraries/hop/go/routing"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"

@@ -566,6 +566,15 @@ jobs:
         run: codefly generate runnables saas-starter --check
       - name: Check generated libraries are reproducible with the pinned CLI
         run: bash scripts/ci/check-generated-libraries.sh
+      - name: Retain generated libraries for drift diagnosis
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: regenerated-libraries
+          path: |
+            libraries/source-read-sdk/
+            module/services/frontend/code/packages/saas-sdk/generated/
+          if-no-files-found: error
 
   module-package:
     name: Immutable module package
