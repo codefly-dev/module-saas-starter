@@ -79,6 +79,8 @@ func coreStatus(err error) error {
 		return status.Error(codes.NotFound, err.Error())
 	case errors.Is(err, workcontext.ErrRevoked), errors.Is(err, workcontext.ErrNoSeal):
 		return status.Error(codes.PermissionDenied, err.Error())
+	case errors.Is(err, business.ErrNoOpenSession):
+		return status.Error(codes.Unauthenticated, err.Error())
 	case errors.Is(err, workcontext.ErrInvalid), errors.Is(err, workcontext.ErrNotACoreToken), errors.Is(err, workcontext.ErrReplayed):
 		return status.Error(codes.Unauthenticated, err.Error())
 	case errors.Is(err, authority.ErrConflict):
