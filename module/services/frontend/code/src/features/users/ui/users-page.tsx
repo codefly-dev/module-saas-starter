@@ -7,7 +7,7 @@ import { useCallback, useState } from "react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/empty-state";
-import { refusalToast } from "@/features/auth/model/step-up";
+import { refusalMessage, refusalToast } from "@/features/auth/model/step-up";
 import { orgQueries } from "@/features/organizations/service/queries";
 import { OrgMembersPanel } from "@/features/organizations/ui/org-members-panel";
 import { useAuth } from "@/lib/auth";
@@ -115,7 +115,6 @@ function PlatformUsersPage() {
 			queryClient.invalidateQueries({ queryKey: ["users"] });
 			setSuspendTarget(null);
 		},
-		onError: (error) => toast.error(failureText("suspend the user", error)),
 	});
 
 	const unsuspendMutation = useMutation({
@@ -154,7 +153,6 @@ function PlatformUsersPage() {
 			queryClient.invalidateQueries({ queryKey: ["users"] });
 			setEditTarget(null);
 		},
-		onError: (error) => toast.error(failureText("update the user", error)),
 	});
 
 	const deleteMutation = useMutation({
@@ -164,15 +162,36 @@ function PlatformUsersPage() {
 			queryClient.invalidateQueries({ queryKey: ["users"] });
 			setDeleteTarget(null);
 		},
-		onError: (error) => toast.error(failureText("delete the user", error)),
 	});
 
-	const handleEdit = useCallback((user: User) => setEditTarget(user), []);
-	const handleDelete = useCallback((user: User) => setDeleteTarget(user), []);
-	const handleSuspend = useCallback((user: User) => setSuspendTarget(user), []);
+	const { reset: resetEdit } = updateMutation;
+	const handleEdit = useCallback(
+		(user: User) => {
+			resetEdit();
+			setEditTarget(user);
+		},
+		[resetEdit],
+	);
+	const { reset: resetDelete } = deleteMutation;
+	const handleDelete = useCallback(
+		(user: User) => {
+			resetDelete();
+			setDeleteTarget(user);
+		},
+		[resetDelete],
+	);
+	const { reset: resetSuspend } = suspendMutation;
+	const handleSuspend = useCallback(
+		(user: User) => {
+			resetSuspend();
+			setSuspendTarget(user);
+		},
+		[resetSuspend],
+	);
+	const { mutate: unsuspend } = unsuspendMutation;
 	const handleUnsuspend = useCallback(
-		(user: User) => unsuspendMutation.mutate(user.uuid),
-		[unsuspendMutation],
+		(user: User) => unsuspend(user.uuid),
+		[unsuspend],
 	);
 	const handleImpersonate = useCallback(
 		(user: User) => setImpersonateTarget(user),
@@ -239,6 +258,11 @@ function PlatformUsersPage() {
 					onSubmit={(edit) => updateMutation.mutate(edit)}
 					onCancel={() => setEditTarget(null)}
 					isPending={updateMutation.isPending}
+					error={
+						updateMutation.isError
+							? failureText("update the user", updateMutation.error)
+							: undefined
+					}
 				/>
 			)}
 
@@ -249,6 +273,11 @@ function PlatformUsersPage() {
 					onConfirm={() => deleteMutation.mutate(deleteTarget.uuid)}
 					onCancel={() => setDeleteTarget(null)}
 					isPending={deleteMutation.isPending}
+					error={
+						deleteMutation.isError
+							? failureText("delete the user", deleteMutation.error)
+							: undefined
+					}
 				/>
 			)}
 
@@ -260,6 +289,14 @@ function PlatformUsersPage() {
 					onSubmit={(vals) => impersonateMutation.mutate(vals)}
 					onCancel={() => setImpersonateTarget(null)}
 					isPending={impersonateMutation.isPending}
+					error={
+						impersonateMutation.isError
+							? refusalMessage(
+									impersonateMutation.error,
+									"Couldn’t start this session. Ask your administrator for help.",
+								)
+							: undefined
+					}
 				/>
 			)}
 
@@ -271,6 +308,11 @@ function PlatformUsersPage() {
 					onSubmit={(vals) => suspendMutation.mutate(vals)}
 					onCancel={() => setSuspendTarget(null)}
 					isPending={suspendMutation.isPending}
+					error={
+						suspendMutation.isError
+							? failureText("suspend the user", suspendMutation.error)
+							: undefined
+					}
 				/>
 			)}
 		</PageBody>
