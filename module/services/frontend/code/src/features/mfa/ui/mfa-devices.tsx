@@ -6,20 +6,20 @@ import {
 	useReactTable,
 } from "@tanstack/react-table";
 import { Trash2 } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
+import { failureText } from "@/shared/lib/failure-text";
 import { formatDate } from "@/shared/lib/utils";
 import {
 	AlertDialog,
-	AlertDialogAction,
 	AlertDialogCancel,
 	AlertDialogContent,
 	AlertDialogDescription,
 	AlertDialogFooter,
 	AlertDialogHeader,
 	AlertDialogTitle,
-	AlertDialogTrigger,
 	Badge,
 	Button,
+	ErrorState,
 } from "@/shared/ui";
 import { DataTable } from "@/shared/ui/data-table";
 import { formatDeviceType } from "../model/transforms";
@@ -30,10 +30,29 @@ const col = createColumnHelper<MFADevice>();
 interface MFADevicesProps {
 	data: MFADevice[];
 	isLoading: boolean;
-	onRevoke: (device: MFADevice) => void;
+	onRevoke: (device: MFADevice) => Promise<unknown>;
 }
 
 export function MFADevices({ data, isLoading, onRevoke }: MFADevicesProps) {
+	const [selected, setSelected] = useState<MFADevice>();
+	const [pending, setPending] = useState(false);
+	const [error, setError] = useState<string>();
+	const busy = useRef(false);
+	async function remove() {
+		if (!selected || busy.current) return;
+		busy.current = true;
+		setPending(true);
+		setError(undefined);
+		try {
+			await onRevoke(selected);
+			setSelected(undefined);
+		} catch (failure) {
+			setError(failureText("remove the security method", failure));
+		} finally {
+			busy.current = false;
+			setPending(false);
+		}
+	}
 	const columns = useMemo(
 		() => [
 			col.accessor("name", {
@@ -55,7 +74,7 @@ export function MFADevices({ data, isLoading, onRevoke }: MFADevicesProps) {
 				),
 			}),
 			col.accessor("lastUsedAt", {
-				header: "Last Used",
+				header: "Last used",
 				cell: (info) => (
 					<span className="text-muted-foreground text-sm">
 						{formatDate(info.getValue())}
@@ -67,39 +86,22 @@ export function MFADevices({ data, isLoading, onRevoke }: MFADevicesProps) {
 				cell: ({ row }) => {
 					const device = row.original;
 					return (
-						<AlertDialog>
-							<AlertDialogTrigger
-								render={
-									<Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-										<Trash2 className="h-4 w-4" />
-									</Button>
-								}
-							/>
-							<AlertDialogContent>
-								<AlertDialogHeader>
-									<AlertDialogTitle>Revoke device?</AlertDialogTitle>
-									<AlertDialogDescription>
-										This will remove &quot;{device.name}&quot; from your MFA
-										devices. You will need to re-enroll if you want to use it
-										again.
-									</AlertDialogDescription>
-								</AlertDialogHeader>
-								<AlertDialogFooter>
-									<AlertDialogCancel>Cancel</AlertDialogCancel>
-									<AlertDialogAction
-										onClick={() => onRevoke(device)}
-										className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-									>
-										Revoke
-									</AlertDialogAction>
-								</AlertDialogFooter>
-							</AlertDialogContent>
-						</AlertDialog>
+						<Button
+							variant="ghost"
+							size="icon"
+							aria-label={`Remove ${device.name}`}
+							onClick={() => {
+								setError(undefined);
+								setSelected(device);
+							}}
+						>
+							<Trash2 />
+						</Button>
 					);
 				},
 			}),
 		],
-		[onRevoke],
+		[],
 	);
 
 	const table = useReactTable({
@@ -109,10 +111,38 @@ export function MFADevices({ data, isLoading, onRevoke }: MFADevicesProps) {
 	});
 
 	return (
-		<DataTable
-			table={table}
-			isLoading={isLoading}
-			emptyMessage="No MFA devices enrolled."
-		/>
+		<>
+			<DataTable
+				table={table}
+				isLoading={isLoading}
+				ariaLabel="Security methods"
+				emptyMessage="No security methods yet. Add a passkey or authenticator app to protect your account."
+			/>
+			<AlertDialog
+				open={!!selected}
+				onOpenChange={(open) => {
+					if (!open && !busy.current) setSelected(undefined);
+				}}
+			>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Remove {selected?.name}?</AlertDialogTitle>
+						<AlertDialogDescription>
+							This security method will no longer work for sign-in. You can add
+							it again later.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					{error && (
+						<ErrorState title="Security method wasn’t removed" detail={error} />
+					)}
+					<AlertDialogFooter>
+						<AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+						<Button variant="destructive" disabled={pending} onClick={remove}>
+							{pending ? "Removing…" : "Remove security method"}
+						</Button>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+		</>
 	);
 }

@@ -1,4 +1,4 @@
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
@@ -50,4 +50,59 @@ describe("ConsentSettingsPage admin container", () => {
 		).toBeNull();
 		expect(screen.queryByRole("button", { name: "Save choices" })).toBeNull();
 	});
+});
+
+it("keeps choices locked during saving and preserves the draft after refusal", async () => {
+	let finish!: () => void;
+	let writes = 0;
+	server.use(
+		http.post(rpc("ConsentService", "GetStatus"), () =>
+			HttpResponse.json({ policyVersion: "2025-01", purposes: [] }),
+		),
+		http.post(rpc("ConsentService", "UpdatePreferences"), async () => {
+			writes++;
+			await new Promise<void>((resolve) => {
+				finish = resolve;
+			});
+			return HttpResponse.json(
+				{ code: "permission_denied", message: "private rule" },
+				{ status: 403 },
+			);
+		}),
+	);
+	renderInApp(<ConsentSettingsPage />);
+	const analytics = await screen.findByRole("switch", {
+		name: "Allow analytics",
+	});
+	fireEvent.click(analytics);
+	fireEvent.click(screen.getByRole("button", { name: "Save choices" }));
+	await waitFor(() => expect(writes).toBe(1));
+	expect(analytics.getAttribute("aria-disabled")).toBe("true");
+	expect(
+		screen
+			.getByRole("switch", { name: "Allow marketing" })
+			.getAttribute("aria-disabled"),
+	).toBe("true");
+	finish();
+	expect(
+		await screen.findByText(/Ask your organization administrator for access/),
+	).toBeTruthy();
+	expect(analytics.getAttribute("aria-checked")).toBe("true");
+	expect(screen.queryByText(/private rule/)).toBeNull();
+});
+it("explains a denied read without suggesting another attempt", async () => {
+	server.use(
+		http.post(rpc("ConsentService", "GetStatus"), () =>
+			HttpResponse.json(
+				{ code: "permission_denied", message: "private rule" },
+				{ status: 403 },
+			),
+		),
+	);
+	renderInApp(<ConsentSettingsPage />);
+	expect(
+		await screen.findByText(/Ask your organization administrator for access/),
+	).toBeTruthy();
+	expect(screen.queryByRole("switch")).toBeNull();
+	expect(screen.queryByText(/Try again/)).toBeNull();
 });

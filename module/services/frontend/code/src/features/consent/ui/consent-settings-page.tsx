@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@connectrpc/connect";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
 	ConsentPurpose,
@@ -23,6 +23,7 @@ import {
 	Panel,
 	Skeleton,
 	Switch,
+	useLoadingPhase,
 } from "@/shared/ui";
 
 const client = createClient(ConsentService, apiTransport);
@@ -30,7 +31,7 @@ const client = createClient(ConsentService, apiTransport);
 const HEADER = (
 	<PageHeader
 		title="Privacy choices"
-		description="Withdraw optional consent at any time. Changes take effect immediately."
+		description="Withdraw optional consent at any time. Save your choices to apply them."
 	/>
 );
 
@@ -44,6 +45,10 @@ export function ConsentSettingsPage() {
 	const [marketing, setMarketing] = useState(false);
 	const [policyVersion, setPolicyVersion] = useState("");
 	const [saving, setSaving] = useState(false);
+	const busy = useRef(false);
+	const [readError, setReadError] = useState<unknown>();
+	const [saveError, setSaveError] = useState<string>();
+	const { quiet, indicator } = useLoadingPhase(load === "loading");
 
 	useEffect(() => {
 		let cancelled = false;
@@ -64,8 +69,11 @@ export function ConsentSettingsPage() {
 				);
 				setLoad("ready");
 			})
-			.catch(() => {
-				if (!cancelled) setLoad("failed");
+			.catch((error) => {
+				if (!cancelled) {
+					setReadError(error);
+					setLoad("failed");
+				}
 			});
 		return () => {
 			cancelled = true;
@@ -73,6 +81,9 @@ export function ConsentSettingsPage() {
 	}, []);
 
 	async function save() {
+		if (busy.current || load !== "ready" || !policyVersion) return;
+		busy.current = true;
+		setSaveError(undefined);
 		setSaving(true);
 		try {
 			await client.updatePreferences({
@@ -89,17 +100,18 @@ export function ConsentSettingsPage() {
 			);
 			toast.success("Privacy choices updated");
 		} catch (error) {
-			toast.error(failureText("update your privacy choices", error));
+			setSaveError(failureText("update your privacy choices", error));
 		} finally {
+			busy.current = false;
 			setSaving(false);
 		}
 	}
 
-	if (load === "loading") {
+	if (quiet || indicator) {
 		return (
 			<PageBody>
 				{HEADER}
-				<Skeleton className="h-64 w-full" />
+				{indicator && <Skeleton className="h-64 w-full" />}
 			</PageBody>
 		);
 	}
@@ -111,7 +123,7 @@ export function ConsentSettingsPage() {
 				<Panel>
 					<ErrorState
 						title="Couldn't load your privacy choices"
-						detail="Your current choices are unknown, so they can't be changed here yet. Nothing was changed. Reload the page; if it keeps failing, tell your administrator."
+						detail={failureText("load your privacy choices", readError)}
 					/>
 				</Panel>
 			</PageBody>
@@ -145,6 +157,7 @@ export function ConsentSettingsPage() {
 							</p>
 						</div>
 						<Switch
+							disabled={saving}
 							checked={analytics}
 							onCheckedChange={setAnalytics}
 							aria-label="Allow analytics"
@@ -158,11 +171,18 @@ export function ConsentSettingsPage() {
 							</p>
 						</div>
 						<Switch
+							disabled={saving}
 							checked={marketing}
 							onCheckedChange={setMarketing}
 							aria-label="Allow marketing"
 						/>
 					</div>
+					{saveError && (
+						<ErrorState
+							title="Privacy choices weren’t saved"
+							detail={saveError}
+						/>
+					)}
 				</CardContent>
 				<CardFooter>
 					<Button onClick={save} disabled={saving || !policyVersion}>
