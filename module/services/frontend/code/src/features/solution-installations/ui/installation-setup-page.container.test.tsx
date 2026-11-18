@@ -571,10 +571,10 @@ it("a set-up module page's grants are edited from its Setup page", async () => {
 	);
 	// Support is the user role's only holder: it asks before leaving nobody.
 	expect(
-		user.getByText("Nobody will have Suite user access to suite."),
+		screen.getByText(/Nobody will have Suite user access to suite./),
 	).toBeTruthy();
 	expect(changes).toHaveLength(0);
-	fireEvent.click(user.getByRole("button", { name: "Remove anyway" }));
+	fireEvent.click(screen.getByRole("button", { name: "Remove access" }));
 	await waitFor(() => expect(changes).toHaveLength(1));
 	expect(changes[0]).toEqual({
 		procedure: "RevokeRole",
@@ -589,9 +589,10 @@ it("a set-up module page's grants are edited from its Setup page", async () => {
 	expect(admin.getByText("Nobody has it yet.")).toBeTruthy();
 	// The role reads as the page's, never as the organization's admin.
 	expect(admin.getByRole("heading", { name: "Suite admin" })).toBeTruthy();
-	fireEvent.change(admin.getByLabelText("Person or team"), {
-		target: { value: `team:${SUPPORT_TEAM}` },
-	});
+	fireEvent.click(admin.getByLabelText("Person or team"));
+	const team = await screen.findByRole("option", { name: "Team Support" });
+	fireEvent.pointerDown(team, { pointerType: "mouse" });
+	fireEvent.click(team);
 	fireEvent.click(
 		admin.getByRole("button", { name: "Give Suite admin access" }),
 	);
