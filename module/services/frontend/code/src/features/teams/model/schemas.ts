@@ -1,10 +1,14 @@
 import { z } from "zod";
 
 export const createTeamSchema = z.object({
-	name: z.string().min(1, "Name is required").max(100, "Name too long"),
+	name: z
+		.string()
+		.trim()
+		.min(1, "Name is required")
+		.max(100, "Use 100 characters or fewer"),
 	description: z
 		.string()
-		.max(500, "Description too long")
+		.max(500, "Use 500 characters or fewer")
 		.optional()
 		.default(""),
 });
