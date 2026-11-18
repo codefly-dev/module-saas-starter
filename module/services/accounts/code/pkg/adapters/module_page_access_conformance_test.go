@@ -546,8 +546,8 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		_, err = h.svc.InstallReviewedSolution(h.ctx, ivy, fixtureOrganization, forged, business.InstallAccess{})
 		code, ok = domain.CodeOf(err)
 		require.True(t, ok && code == domain.Denied, "nor the admin's review forged as her own: %v", err)
-		require.ErrorContains(t, err, "installation administration requires an administrator or owner of organization",
-			"refused by the host's installationsAt, not left to the core's consent check")
+		require.ErrorContains(t, err, "installation administration requires an administrator of organization",
+			"the member cannot administer this organization's installation")
 		approved, err := h.svc.InstallReviewedSolution(h.ctx, maya, fixtureOrganization, review, business.InstallAccess{})
 		require.NoError(t, err, "the page's admin approves it")
 		require.Equal(t, review.GetApproval().GetOperationId(), approved.Consent.OperationID)

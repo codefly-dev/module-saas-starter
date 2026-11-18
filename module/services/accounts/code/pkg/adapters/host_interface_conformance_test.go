@@ -503,8 +503,8 @@ func runHostInterfaceFixture(t *testing.T) {
 		// The installed proposals solution and its own workload. Its roles name
 		// its own kind alone, so records (Audience) is unrelated to it.
 		InstalledSolution: proposals, InstalledAudience: "conformance-proposals", InstalledCredential: credential("conformance-proposals"),
-		// An Acme owner who is not an administrator; a member with no role and no team.
-		OwnerToken: "fixture-owner", UnentitledToken: "fixture-no-roles",
+		// An Acme member with no installation role and no team.
+		UnentitledToken: "fixture-no-roles",
 		// Globex's administrator, and the hop's own workload credential (service
 		// account hop in the authority module's namespace).
 		OtherAdminToken: "fixture-zoe",
