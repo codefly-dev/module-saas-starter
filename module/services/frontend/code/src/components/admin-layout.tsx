@@ -95,8 +95,8 @@ function PluginNavigationSection({
 			<SidebarGroupContent className="space-y-2">
 				{groupPluginItems(section).map(([group, items]) => (
 					<div key={group ?? "default"}>
-						{group ? (
-							<div className="px-2 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
+						{group && group.trim().toLocaleLowerCase() !== section.label.trim().toLocaleLowerCase() ? (
+							<div className="px-2 pb-1 text-xs font-medium text-muted-foreground">
 								{group}
 							</div>
 						) : null}
@@ -331,7 +331,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 										<span className="text-sm font-medium">{userLabel}</span>
 										{platformRole && (
 											<span className="text-xs text-muted-foreground">
-												{platformRole}
+												{platformRole === "super_admin" ? "Platform administrator" : "Administrator"}
 											</span>
 										)}
 									</div>

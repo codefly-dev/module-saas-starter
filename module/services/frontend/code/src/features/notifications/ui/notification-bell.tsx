@@ -111,6 +111,8 @@ export function NotificationBell() {
 				variant="ghost"
 				size="sm"
 				className="relative h-8 w-8 p-0"
+				aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}
+				aria-expanded={open}
 				onClick={() => setOpen(!open)}
 			>
 				<Bell className="h-4 w-4" />

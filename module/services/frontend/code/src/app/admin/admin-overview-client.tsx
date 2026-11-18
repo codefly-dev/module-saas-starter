@@ -40,7 +40,7 @@ export default function AdminOverviewClient() {
 							const description = item.id ? ADMIN_CARD_DESCRIPTIONS[item.id] : undefined;
 							return (
 								<Link key={item.href} href={item.href} className="group rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-									<Card className="h-full transition-colors group-hover:bg-muted/50 group-focus-visible:bg-muted/50">
+									<Card className="h-full py-0 transition-colors group-hover:bg-muted/50 group-focus-visible:bg-muted/50">
 										<CardContent className="flex items-start gap-4 py-5">
 											<span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"><Icon className="size-5" aria-hidden="true" /></span>
 											<div className="min-w-0 flex-1 space-y-1">
