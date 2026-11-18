@@ -1,5 +1,4 @@
 import { timestampDate } from "@bufbuild/protobuf/wkt";
-import { ConnectError } from "@connectrpc/connect";
 import type { ComponentProps } from "react";
 import type { CollectionReadGrant } from "@/gen/saas/accounts/v1/authorization_pb";
 import type { Role } from "@/gen/saas/accounts/v1/common_pb";
@@ -10,7 +9,10 @@ import {
 	InstallationStatus,
 	type OrganizationInstallation,
 } from "@/gen/saas/accounts/v1/installations_pb";
+import { failureText } from "@/shared/lib/failure-text";
 import type { Badge } from "@/shared/ui";
+
+import { InstallReviewError } from "./install-review";
 
 type StatusTone = NonNullable<ComponentProps<typeof Badge>["tone"]>;
 
@@ -275,12 +277,8 @@ export function roleOptionLabel(role: Role): string {
 	return `${role.name} — ${permits}`;
 }
 
-/**
- * The host's own words for why it refused a write. A refusal is shown as the
- * host phrased it — never replaced with a generic "failed", and never with a
- * success the host did not grant.
- */
+/** A safe explanation of a failed installation read or change. */
 export function hostRefusal(error: unknown): string {
-	const message = ConnectError.from(error).rawMessage.trim();
-	return message || "The host refused without giving a reason.";
+	if (error instanceof InstallReviewError) return error.message;
+	return failureText("complete this request", error);
 }

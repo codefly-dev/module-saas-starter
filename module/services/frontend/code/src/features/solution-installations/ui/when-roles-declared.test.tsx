@@ -125,7 +125,9 @@ describe("WhenRolesDeclared", () => {
 		};
 		renderGate("module");
 		expect(screen.queryByText("Setup")).toBeNull();
-		expect(screen.getByRole("alert").textContent).toContain("registry is down");
+		expect(screen.getByRole("alert").textContent).toContain(
+			"Couldn't complete this request",
+		);
 	});
 
 	// A refused read is not "declares none": it stays unknown and says why.

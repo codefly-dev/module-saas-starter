@@ -5,6 +5,9 @@ import type {
 } from "@/gen/host/installation/v1/installation_pb";
 import type { ReviewedSolutionInstall } from "@/gen/saas/accounts/v1/installations_pb";
 
+/** A frontend validation failure with a locally authored explanation. */
+export class InstallReviewError extends Error {}
+
 /** Presentation must describe the same signed offer as the combined consent. */
 export function assertMatchingOffer(
 	review: ReviewedSolutionInstall,
@@ -22,7 +25,7 @@ export function assertMatchingOffer(
 		a.digest !== b.digest ||
 		a.expectedRevision !== b.expectedRevision
 	) {
-		throw new Error(
+		throw new InstallReviewError(
 			"The solution changed while preparing this review. Review the current access again.",
 		);
 	}
@@ -30,7 +33,7 @@ export function assertMatchingOffer(
 		review.installationRole !== "none" &&
 		!offer.roles.some((role) => role.name === review.installationRole)
 	) {
-		throw new Error(
+		throw new InstallReviewError(
 			"The solution's declared installation access is unavailable. Its owner must correct the declaration.",
 		);
 	}
@@ -89,7 +92,7 @@ const operationLabels = {
 export function moduleConsentText(raw: string): string[] {
 	const parsed = consent.safeParse(JSON.parse(raw));
 	if (!parsed.success)
-		throw new Error(
+		throw new InstallReviewError(
 			"Supporting module access cannot be displayed safely. Ask its owner to update the access declaration.",
 		);
 	const value = parsed.data;

@@ -1,10 +1,17 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import {
+	type CellContext,
+	type ColumnDef,
+	getCoreRowModel,
+	getPaginationRowModel,
+	useReactTable,
+} from "@tanstack/react-table";
 import { Layers, RefreshCw, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
 import { OrgSelector } from "@/components/org-selector";
@@ -44,17 +51,12 @@ import {
 	DelayedLoading,
 	PageHeader,
 	Spinner,
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
 	Tabs,
 	TabsList,
 	TabsTrigger,
 	useLoadingPhase,
 } from "@/shared/ui";
+import { DataTable } from "@/shared/ui/data-table";
 import { holdersByRole, statusLine } from "../model/access";
 import {
 	availableRows,
@@ -496,6 +498,15 @@ function SolutionInstallationsForOrganization({
 	);
 }
 
+// Cell component identity must survive background query updates. The current
+// renderers live in table metadata, so fresh handlers do not remount controls.
+function InstallationCell<T>(context: CellContext<T, unknown>) {
+	const { renderCell } = context.table.options.meta as {
+		renderCell: (context: CellContext<T, unknown>) => ReactNode;
+	};
+	return renderCell(context);
+}
+
 function AvailableSection({
 	showModules,
 	listed,
@@ -531,12 +542,175 @@ function AvailableSection({
 		unheld?: string[];
 	};
 }) {
+	"use no memo";
+	// TanStack updates its stable table instance when query results change.
 	const { indicator, quiet } = useLoadingPhase(query.isLoading);
 	const outcome = readOutcome(query.isError, query.error);
 	const withheld = !mayKeepRetainedRows(outcome);
 	const stale = staleReadNotice(outcome, "the available modules and solutions");
-	const rows = withheld ? [] : availableRows((query.data ?? []).filter(listed));
+	const rows = useMemo(
+		() => (withheld ? [] : availableRows((query.data ?? []).filter(listed))),
+		[withheld, query.data, listed],
+	);
 	const titles = useTargetTitles();
+	const columns: ColumnDef<ReturnType<typeof availableRows>[number]>[] = [
+		{
+			id: "name",
+			header: showModules
+				? "Module or solution"
+				: title === "Module pages"
+					? "Module page"
+					: "Solution",
+			cell: ({ row: tableRow }) => {
+				const row = tableRow.original;
+				return (
+					<div className="font-medium">
+						<TargetName alias={row.alias} titles={titles} />
+					</div>
+				);
+			},
+		},
+		{
+			id: "release",
+			header: showModules ? "Release" : "Version",
+			cell: ({ row: tableRow }) => {
+				const row = tableRow.original;
+				return (
+					<div>
+						{showModules ? (
+							<span className="font-mono text-sm">{row.release}</span>
+						) : (
+							<span title={row.release}>{row.solution.releaseVersion}</span>
+						)}
+					</div>
+				);
+			},
+		},
+		...(showModules
+			? [
+					{
+						id: "generation",
+						header: "Generation",
+						cell: ({
+							row: tableRow,
+						}: CellContext<
+							ReturnType<typeof availableRows>[number],
+							unknown
+						>) => {
+							const row = tableRow.original;
+							return (
+								<div className="text-sm text-muted-foreground">
+									{row.generation}
+								</div>
+							);
+						},
+					},
+				]
+			: []),
+		{
+			id: "state",
+			header: "State",
+			cell: ({ row: tableRow }) => {
+				const row = tableRow.original;
+				return (
+					<div>
+						{onSetUp && isModulePage(row.solution) ? (
+							pageAccess?.(row.solution).setUp ? (
+								<Badge tone="success" dot>
+									Set up
+								</Badge>
+							) : pageAccess?.(row.solution).setUp === false ? (
+								<Badge tone="warning" dot>
+									Nobody has access yet
+								</Badge>
+							) : (
+								<Badge variant="outline">Module page</Badge>
+							)
+						) : row.installed && pageAccess?.(row.solution).unheld?.length ? (
+							<Badge tone="warning" dot>
+								{`Installed · ${pageAccess(row.solution).unheld?.join(", ")} held by nobody`}
+							</Badge>
+						) : row.installed ? (
+							<Badge tone="success" dot>
+								Installed
+							</Badge>
+						) : (
+							<Badge variant="outline">Not installed</Badge>
+						)}
+					</div>
+				);
+			},
+		},
+		{
+			id: "actions",
+			header: "Action",
+			cell: ({ row: tableRow }) => {
+				const row = tableRow.original;
+				return (
+					<div className="text-right">
+						{showModules ? null : onSetUp && isModulePage(row.solution) ? (
+							pageAccess?.(row.solution).setUp &&
+							pageAccess(row.solution).installationId ? (
+								<Link
+									href={`/admin/solutions/${pageAccess(row.solution).installationId}`}
+									aria-label={`Manage access to ${row.alias}`}
+									className={buttonVariants({
+										variant: "outline",
+										size: "sm",
+									})}
+								>
+									Manage access
+								</Link>
+							) : (
+								<Button
+									size="sm"
+									aria-label={`Set up access to ${row.alias}`}
+									onClick={() => onSetUp(row.solution)}
+								>
+									Set up
+								</Button>
+							)
+						) : row.installed ? (
+							onSetUp && pageAccess?.(row.solution).unheld?.length ? (
+								<Button
+									size="sm"
+									aria-label={`Set up access to ${row.alias}`}
+									onClick={() => onSetUp(row.solution)}
+								>
+									Set up
+								</Button>
+							) : null
+						) : (
+							<Button
+								size="sm"
+								disabled={installing}
+								aria-label={`Install ${row.alias}`}
+								onClick={() => onInstall(row.solution)}
+							>
+								Install
+							</Button>
+						)}
+					</div>
+				);
+			},
+		},
+	];
+	const table = useReactTable({
+		data: rows,
+		columns: columns.map((column) => ({ ...column, cell: InstallationCell })),
+		meta: {
+			renderCell: (
+				context: CellContext<ReturnType<typeof availableRows>[number], unknown>,
+			) => {
+				const render = columns.find(
+					(column) => column.id === context.column.id,
+				)?.cell;
+				return typeof render === "function" ? render(context) : render;
+			},
+		},
+		getCoreRowModel: getCoreRowModel(),
+		getPaginationRowModel: getPaginationRowModel(),
+	});
 	if (hideWhenEmpty && query.isSuccess && rows.length === 0) return null;
 
 	return (
@@ -569,123 +743,14 @@ function AvailableSection({
 								{stale} {hostRefusal(query.error)}
 							</p>
 						)}
-						<Table
-							aria-label={
+						<DataTable
+							table={table}
+							ariaLabel={
 								showModules
 									? "Available modules and solutions"
 									: `Available ${title.toLowerCase()}`
 							}
-						>
-							<TableHeader>
-								<TableRow>
-									<TableHead>
-										{showModules
-											? "Module or solution"
-											: title === "Module pages"
-												? "Module page"
-												: "Solution"}
-									</TableHead>
-									<TableHead>{showModules ? "Release" : "Version"}</TableHead>
-									{showModules && <TableHead>Generation</TableHead>}
-									<TableHead>State</TableHead>
-									<TableHead className="text-right">Action</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{rows.map((row) => (
-									<TableRow key={row.targetId}>
-										<TableCell className="font-medium">
-											<TargetName alias={row.alias} titles={titles} />
-										</TableCell>
-										{showModules ? (
-											<>
-												<TableCell className="font-mono text-sm">
-													{row.release}
-												</TableCell>
-												<TableCell className="text-sm text-muted-foreground">
-													{row.generation}
-												</TableCell>
-											</>
-										) : (
-											<TableCell className="text-sm" title={row.release}>
-												{row.solution.releaseVersion}
-											</TableCell>
-										)}
-										<TableCell>
-											{onSetUp && isModulePage(row.solution) ? (
-												pageAccess?.(row.solution).setUp ? (
-													<Badge tone="success" dot>
-														Set up
-													</Badge>
-												) : pageAccess?.(row.solution).setUp === false ? (
-													<Badge tone="warning" dot>
-														Nobody has access yet
-													</Badge>
-												) : (
-													<Badge variant="outline">Module page</Badge>
-												)
-											) : row.installed &&
-												pageAccess?.(row.solution).unheld?.length ? (
-												<Badge tone="warning" dot>
-													{`Installed · ${pageAccess(row.solution).unheld?.join(", ")} held by nobody`}
-												</Badge>
-											) : row.installed ? (
-												<Badge tone="success" dot>
-													Installed
-												</Badge>
-											) : (
-												<Badge variant="outline">Not installed</Badge>
-											)}
-										</TableCell>
-										<TableCell className="text-right">
-											{showModules ? null : onSetUp &&
-												isModulePage(row.solution) ? (
-												pageAccess?.(row.solution).setUp &&
-												pageAccess(row.solution).installationId ? (
-													<Link
-														href={`/admin/solutions/${pageAccess(row.solution).installationId}`}
-														aria-label={`Manage access to ${row.alias}`}
-														className={buttonVariants({
-															variant: "outline",
-															size: "sm",
-														})}
-													>
-														Manage access
-													</Link>
-												) : (
-													<Button
-														size="sm"
-														aria-label={`Set up access to ${row.alias}`}
-														onClick={() => onSetUp(row.solution)}
-													>
-														Set up
-													</Button>
-												)
-											) : row.installed ? (
-												onSetUp && pageAccess?.(row.solution).unheld?.length ? (
-													<Button
-														size="sm"
-														aria-label={`Set up access to ${row.alias}`}
-														onClick={() => onSetUp(row.solution)}
-													>
-														Set up
-													</Button>
-												) : null
-											) : (
-												<Button
-													size="sm"
-													disabled={installing}
-													aria-label={`Install ${row.alias}`}
-													onClick={() => onInstall(row.solution)}
-												>
-													Install
-												</Button>
-											)}
-										</TableCell>
-									</TableRow>
-								))}
-							</TableBody>
-						</Table>
+						/>
 					</>
 				)}
 			</CardContent>
@@ -736,6 +801,8 @@ function InstalledSection({
 	updating: boolean;
 	onUpdate: (target: AvailableSolution) => void;
 }) {
+	"use no memo";
+	// TanStack updates its stable table instance when query results change.
 	const uninstall = useUninstallSolution(orgId);
 	const retry = useRetryInstallation(orgId);
 	const revoke = useRevokeInstallationFromTeam(orgId);
@@ -750,9 +817,13 @@ function InstalledSection({
 	const outcome = readOutcome(query.isError, query.error);
 	const withheld = !mayKeepRetainedRows(outcome);
 	const stale = staleReadNotice(outcome, "the installed modules and solutions");
-	const rows = withheld
-		? []
-		: installedRows((query.data ?? []).filter((row) => listed(row.target)));
+	const rows = useMemo(
+		() =>
+			withheld
+				? []
+				: installedRows((query.data ?? []).filter((row) => listed(row.target))),
+		[withheld, query.data, listed],
+	);
 	const titles = useTargetTitles();
 
 	const name = (row: InstalledRow) =>
@@ -810,6 +881,188 @@ function InstalledSection({
 		);
 	};
 
+	const columns: ColumnDef<InstalledRow>[] = [
+		{
+			id: "name",
+			header: showModules ? "Module or solution" : "Solution or module page",
+			cell: ({ row: tableRow }) => {
+				const row = tableRow.original;
+				return (
+					<div className="font-medium">
+						<Link
+							href={`/admin/solutions/${row.installationId}`}
+							className="hover:underline"
+						>
+							{row.solution.kind === "value" ? (
+								<TargetName alias={row.solution.text} titles={titles} />
+							) : (
+								<Fact view={row.solution} />
+							)}
+						</Link>
+						{showModules ? (
+							<span className="block font-normal">
+								<Fact view={row.revision} />
+							</span>
+						) : (
+							row.target && (
+								<span
+									className="block text-xs font-normal text-muted-foreground"
+									title={
+										row.revision.kind === "value"
+											? row.revision.text
+											: undefined
+									}
+								>
+									Version {row.target.releaseVersion}
+								</span>
+							)
+						)}
+						<span
+							className="block text-xs font-normal text-muted-foreground"
+							title={
+								row.installedAt
+									? undefined
+									: "This installation was made before install dates were kept."
+							}
+						>
+							{row.installedAt
+								? `Installed ${formatDate(row.installedAt)}`
+								: "Install date not recorded"}
+						</span>
+					</div>
+				);
+			},
+		},
+		{
+			id: "status",
+			header: "Status",
+			cell: ({ row: tableRow }) => {
+				const row = tableRow.original;
+				return (
+					<div>
+						<StatusLine
+							row={row}
+							unreached={access.unreached(row.installationId)}
+						/>
+						{row.failureReason && (
+							<p className="mt-1 text-sm text-muted-foreground">
+								{row.failureReason}
+							</p>
+						)}
+					</div>
+				);
+			},
+		},
+		{
+			id: "access",
+			header: "Who has access",
+			cell: ({ row: tableRow }) => {
+				const row = tableRow.original;
+				return (
+					<div>
+						{row.status !== InstallationStatus.ACTIVE ? (
+							<span className="text-sm text-muted-foreground">
+								Given once it is installed
+							</span>
+						) : row.hasHostScopeRoot ? (
+							<TeamExposure
+								row={row}
+								name={name(row)}
+								revoking={revoke.isPending}
+								granting={grant.isPending}
+								onGrant={() => {
+									grant.reset();
+									setGranting(row);
+								}}
+								onRevoke={(team) => runRevoke(row, team)}
+							/>
+						) : showModules ? (
+							<span className="text-sm text-muted-foreground">—</span>
+						) : (
+							<RoleHoldersCell row={row} access={access} />
+						)}
+					</div>
+				);
+			},
+		},
+		{
+			id: "actions",
+			header: "Action",
+			cell: ({ row: tableRow }) => {
+				const row = tableRow.original;
+				return (
+					<div className="text-right">
+						<div className="flex flex-col items-end gap-2">
+							{(row.status === InstallationStatus.FAILED ||
+								(row.status === InstallationStatus.PENDING &&
+									!row.hasHostScopeRoot)) && (
+								<Button
+									variant="outline"
+									size="sm"
+									disabled={retry.isPending || uninstall.isPending}
+									aria-label={`Retry ${name(row)}`}
+									onClick={() => runRetry(row)}
+								>
+									Retry
+								</Button>
+							)}
+							{row.upgradeAvailable &&
+								row.target &&
+								row.status === InstallationStatus.ACTIVE && (
+									<Button
+										size="sm"
+										disabled={updating || uninstall.isPending}
+										aria-label={`Update ${name(row)}`}
+										onClick={() => {
+											if (row.target) onUpdate(row.target);
+										}}
+									>
+										Review update
+									</Button>
+								)}
+							<Link
+								href={`/admin/solutions/${row.installationId}`}
+								aria-label={`Manage access to ${name(row)}`}
+								className={buttonVariants({
+									variant: "outline",
+									size: "sm",
+								})}
+							>
+								Manage access
+							</Link>
+							{/* A module is installed by composition; only its
+												    delivered withdrawal retires it. */}
+							{row.target?.kind !== "module" && (
+								<Button
+									variant="outline"
+									size="sm"
+									disabled={uninstall.isPending}
+									aria-label={`Uninstall ${name(row)}`}
+									onClick={() => setConfirming(row)}
+								>
+									Uninstall
+								</Button>
+							)}
+						</div>
+					</div>
+				);
+			},
+		},
+	];
+	const table = useReactTable({
+		data: rows,
+		columns: columns.map((column) => ({ ...column, cell: InstallationCell })),
+		meta: {
+			renderCell: (context: CellContext<InstalledRow, unknown>) => {
+				const render = columns.find(
+					(column) => column.id === context.column.id,
+				)?.cell;
+				return typeof render === "function" ? render(context) : render;
+			},
+		},
+		getCoreRowModel: getCoreRowModel(),
+		getPaginationRowModel: getPaginationRowModel(),
+	});
 	return (
 		<Card>
 			<CardHeader>
@@ -855,169 +1108,14 @@ function InstalledSection({
 								{stale} {hostRefusal(query.error)}
 							</p>
 						)}
-						<Table
-							aria-label={
+						<DataTable
+							table={table}
+							ariaLabel={
 								showModules
 									? "Installed modules and solutions"
 									: "Installed solutions"
 							}
-						>
-							<TableHeader>
-								<TableRow>
-									<TableHead>
-										{showModules
-											? "Module or solution"
-											: "Solution or module page"}
-									</TableHead>
-									<TableHead>Status</TableHead>
-									<TableHead>Who has access</TableHead>
-									<TableHead className="text-right">Action</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{rows.map((row) => (
-									<TableRow key={row.installationId}>
-										<TableCell className="font-medium">
-											<Link
-												href={`/admin/solutions/${row.installationId}`}
-												className="hover:underline"
-											>
-												{row.solution.kind === "value" ? (
-													<TargetName
-														alias={row.solution.text}
-														titles={titles}
-													/>
-												) : (
-													<Fact view={row.solution} />
-												)}
-											</Link>
-											{showModules ? (
-												<span className="block font-normal">
-													<Fact view={row.revision} />
-												</span>
-											) : (
-												row.target && (
-													<span
-														className="block text-xs font-normal text-muted-foreground"
-														title={
-															row.revision.kind === "value"
-																? row.revision.text
-																: undefined
-														}
-													>
-														Version {row.target.releaseVersion}
-													</span>
-												)
-											)}
-											<span
-												className="block text-xs font-normal text-muted-foreground"
-												title={
-													row.installedAt
-														? undefined
-														: "This installation was made before install dates were kept."
-												}
-											>
-												{row.installedAt
-													? `Installed ${formatDate(row.installedAt)}`
-													: "Install date not recorded"}
-											</span>
-										</TableCell>
-										<TableCell>
-											<StatusLine
-												row={row}
-												unreached={access.unreached(row.installationId)}
-											/>
-											{row.failureReason && (
-												<p className="mt-1 text-sm text-muted-foreground">
-													{row.failureReason}
-												</p>
-											)}
-										</TableCell>
-										{
-											<TableCell>
-												{row.status !== InstallationStatus.ACTIVE ? (
-													<span className="text-sm text-muted-foreground">
-														Given once it is installed
-													</span>
-												) : row.hasHostScopeRoot ? (
-													<TeamExposure
-														row={row}
-														name={name(row)}
-														revoking={revoke.isPending}
-														granting={grant.isPending}
-														onGrant={() => {
-															grant.reset();
-															setGranting(row);
-														}}
-														onRevoke={(team) => runRevoke(row, team)}
-													/>
-												) : showModules ? (
-													<span className="text-sm text-muted-foreground">
-														—
-													</span>
-												) : (
-													<RoleHoldersCell row={row} access={access} />
-												)}
-											</TableCell>
-										}
-										<TableCell className="text-right">
-											<div className="flex flex-col items-end gap-2">
-												{(row.status === InstallationStatus.FAILED ||
-													(row.status === InstallationStatus.PENDING &&
-														!row.hasHostScopeRoot)) && (
-													<Button
-														variant="outline"
-														size="sm"
-														disabled={retry.isPending || uninstall.isPending}
-														aria-label={`Retry ${name(row)}`}
-														onClick={() => runRetry(row)}
-													>
-														Retry
-													</Button>
-												)}
-												{row.upgradeAvailable &&
-													row.target &&
-													row.status === InstallationStatus.ACTIVE && (
-														<Button
-															size="sm"
-															disabled={updating || uninstall.isPending}
-															aria-label={`Update ${name(row)}`}
-															onClick={() => {
-																if (row.target) onUpdate(row.target);
-															}}
-														>
-															Review update
-														</Button>
-													)}
-												<Link
-													href={`/admin/solutions/${row.installationId}`}
-													aria-label={`Manage access to ${name(row)}`}
-													className={buttonVariants({
-														variant: "outline",
-														size: "sm",
-													})}
-												>
-													Manage access
-												</Link>
-												{/* A module is installed by composition; only its
-												    delivered withdrawal retires it. */}
-												{row.target?.kind !== "module" && (
-													<Button
-														variant="outline"
-														size="sm"
-														disabled={uninstall.isPending}
-														aria-label={`Uninstall ${name(row)}`}
-														onClick={() => setConfirming(row)}
-													>
-														Uninstall
-													</Button>
-												)}
-											</div>
-										</TableCell>
-									</TableRow>
-								))}
-							</TableBody>
-						</Table>
+						/>
 					</>
 				)}
 			</CardContent>

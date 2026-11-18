@@ -57,7 +57,7 @@ describe("a refused invitation", () => {
 		);
 		await waitFor(() =>
 			expect(toast.error).toHaveBeenCalledWith(
-				"seats quota exhausted: used 5 of 5",
+				"Couldn't make this change. A usage limit has been reached. Ask your organization administrator to review it.",
 			),
 		);
 	});

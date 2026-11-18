@@ -227,3 +227,17 @@ Its inventory distinguishes actual shared implementations, compatibility import
 paths, host adapters, feature orchestration and missing owner stories. Story counts
 do not establish complete component coverage. The host shares each public UI
 subpath as a federation singleton and compiles CSS from both UI owner packages.
+
+## Form and refusal presentation
+
+Product forms compose the published `@codefly-dev/ui` fields and controls.
+`Field` connects each label, hint and validation error to its input. Keep a
+failed submission beside the retained draft, disable editing while submitting,
+and withhold or explain controls that the current role cannot use.
+
+Server messages are diagnostics, not product copy. `shared/lib/failure-text.ts`
+provides status-based guidance; access refusals point to an administrator rather
+than suggesting a retry. Authentication's refusal helper preserves the passkey
+confirmation action. Installation review uses `InstallReviewError` only for
+locally authored validation explanations, such as a changed offer requiring a
+fresh review. Arbitrary transport errors never enter that path.

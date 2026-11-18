@@ -33,6 +33,7 @@ import {
 	Button,
 	Checkbox,
 	ErrorState,
+	Field,
 	Input,
 	Label,
 	Page as PageBody,
@@ -112,7 +113,7 @@ function RoleDetail({
 			<PageBody>
 				<PageHeader
 					title="Role not found"
-					description="No role with this id is visible in the selected organization."
+					description="This role is not available in the selected organization."
 					actions={<OrgSelector />}
 				/>
 				<BackToRoles />
@@ -138,9 +139,6 @@ function RoleDetail({
 					) : (
 						<Badge variant="secondary">Custom</Badge>
 					)}
-					<span className="select-all font-mono text-xs text-muted-foreground">
-						{role.id}
-					</span>
 				</Stack>
 			</PageHeader>
 
@@ -214,6 +212,13 @@ function RolePermissionsEditor({
 	};
 
 	const save = () => {
+		if (
+			!canWrite ||
+			updateRole.isPending ||
+			catalogue.isPending ||
+			catalogue.isError
+		)
+			return;
 		const permissions: Permission[] = [...granted].flatMap((label) => {
 			const separator = label.indexOf(":");
 			return separator <= 0
@@ -259,16 +264,23 @@ function RolePermissionsEditor({
 		>
 			<Panel>
 				<Stack gap={4}>
-					<Stack gap={2}>
-						<Label htmlFor="role-description">Description</Label>
-						<Input
-							id="role-description"
-							value={description}
-							disabled={!canWrite || updateRole.isPending}
-							onChange={(event) => setDescription(event.target.value)}
-							placeholder="What this role is for"
+					<Field label="Description">
+						{(control) => (
+							<Input
+								{...control}
+								value={description}
+								disabled={!canWrite || updateRole.isPending}
+								onChange={(event) => setDescription(event.target.value)}
+								placeholder="What this role is for"
+							/>
+						)}
+					</Field>
+					{updateRole.isError && (
+						<ErrorState
+							title="Couldn't update the role"
+							detail={failureText("update the role", updateRole.error)}
 						/>
-					</Stack>
+					)}
 					{catalogue.isError ? (
 						<ErrorState
 							title="Activities unavailable"

@@ -152,12 +152,12 @@ describe("solution installation facts", () => {
 		);
 	});
 
-	it("keeps the host's own words for a refusal", () => {
+	it("uses safe guidance for a refused request", () => {
 		expect(
 			hostRefusal(new ConnectError("no transport", Code.FailedPrecondition)),
-		).toBe("no transport");
+		).toContain("The current state doesn't allow this change.");
 		expect(hostRefusal(new ConnectError("", Code.Internal))).toBe(
-			"The host refused without giving a reason.",
+			"Couldn't complete this request. Try again; if it keeps failing, tell your administrator.",
 		);
 	});
 });

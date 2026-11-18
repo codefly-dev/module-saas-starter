@@ -288,7 +288,9 @@ describe("combined reviewed installation", () => {
 		refuseReview = true;
 		renderInApp(<Page />);
 		const dialog = await open();
-		await within(dialog).findByText(/Required module records/);
+		await within(dialog).findByText(
+			/The current state doesn't allow this change/,
+		);
 		expect(requests).toEqual([]);
 	});
 	it('the install dialog shows "You will get" with every role ticked and untickable', async () => {
