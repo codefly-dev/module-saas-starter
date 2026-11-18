@@ -5,21 +5,23 @@ import {
 	startRegistration,
 } from "@simplewebauthn/browser";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Fingerprint, Loader2, ShieldCheck } from "lucide-react";
-import { useState, useSyncExternalStore } from "react";
+import { Fingerprint } from "lucide-react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { failureText } from "@/shared/lib/failure-text";
 import {
 	Banner,
 	Button,
+	DelayedLoading,
 	Dialog,
 	DialogContent,
 	DialogDescription,
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
+	ErrorState,
+	Field,
 	Input,
-	Label,
 } from "@/shared/ui";
 import { mfaMutations } from "../service/mutations";
 
@@ -45,6 +47,8 @@ function getServerBrowserCapability() {
 
 export function PasskeySetup({ open, onClose }: PasskeySetupProps) {
 	const queryClient = useQueryClient();
+	const busy = useRef(false);
+	const [nameError, setNameError] = useState<string>();
 	const [name, setName] = useState("My passkey");
 	const supported = useSyncExternalStore(
 		subscribeToBrowserCapability,
@@ -72,58 +76,54 @@ export function PasskeySetup({ open, onClose }: PasskeySetupProps) {
 			toast.success("Passkey added");
 			onClose();
 		},
-		onError: (error) => toast.error(registrationError(error)),
+		onSettled: () => {
+			busy.current = false;
+		},
 	});
 
 	return (
 		<Dialog
 			open={open}
-			onOpenChange={(next) => !next && !registration.isPending && onClose()}
+			onOpenChange={(next) =>
+				!next && !registration.isPending && !busy.current && onClose()
+			}
 		>
 			<DialogContent className="overflow-hidden p-0 sm:max-w-md">
-				<div className="bg-primary px-6 py-7 text-primary-foreground">
-					<div className="mb-4 flex size-11 items-center justify-center rounded-2xl bg-primary-foreground/15 ring-1 ring-primary-foreground/25">
-						<Fingerprint className="size-6" />
-					</div>
-					<DialogHeader>
-						<DialogTitle className="text-xl text-primary-foreground">
-							Add a passkey
-						</DialogTitle>
-						<DialogDescription className="text-primary-foreground/75">
-							Use Face ID, Touch ID, Windows Hello, or a hardware security key
-							for phishing-resistant verification.
-						</DialogDescription>
-					</DialogHeader>
-				</div>
+				<DialogHeader className="px-6 pt-6">
+					<DialogTitle>Add a passkey</DialogTitle>
+					<DialogDescription>
+						Use your device’s screen lock or a security key to sign in.
+					</DialogDescription>
+				</DialogHeader>
 
 				<div className="space-y-5 px-6 py-6">
 					{registration.isError && (
-						<Banner tone="danger" title="Passkey wasn’t added">
-							{registrationError(registration.error)}
-						</Banner>
-					)}
-					<div className="space-y-2">
-						<Label htmlFor="passkey-name">Passkey name</Label>
-						<Input
-							id="passkey-name"
-							value={name}
-							onChange={(event) => setName(event.target.value)}
-							maxLength={100}
-							placeholder="MacBook Touch ID"
-							disabled={registration.isPending}
+						<ErrorState
+							title="Passkey wasn’t added"
+							detail={registrationError(registration.error)}
 						/>
-						<p className="text-xs text-muted-foreground">
-							Pick a name that helps you recognize this device later.
-						</p>
-					</div>
+					)}
 
-					<div className="flex gap-3 rounded-xl border bg-muted/40 p-4 text-sm">
-						<ShieldCheck className="mt-0.5 size-5 shrink-0 text-primary" />
-						<p className="leading-5 text-muted-foreground">
-							Your biometric never leaves your device. We store only the
-							encrypted public credential and authenticator state.
-						</p>
-					</div>
+					<Field
+						label="Passkey name"
+						description="Choose a name that helps you recognize this device later."
+						error={nameError}
+					>
+						{(control) => (
+							<Input
+								{...control}
+								value={name}
+								onChange={(event) => {
+									setName(event.target.value);
+									setNameError(undefined);
+								}}
+								maxLength={100}
+								placeholder="Personal laptop"
+								disabled={registration.isPending}
+							/>
+						)}
+					</Field>
+					<Banner>Your fingerprint or face scan stays on your device.</Banner>
 
 					{!supported && (
 						<Banner tone="warning">
@@ -142,14 +142,22 @@ export function PasskeySetup({ open, onClose }: PasskeySetupProps) {
 						Cancel
 					</Button>
 					<Button
-						onClick={() => registration.mutate()}
-						disabled={!supported || registration.isPending || !name.trim()}
+						onClick={() => {
+							if (busy.current || !supported) return;
+							if (!name.trim()) {
+								setNameError("Enter a passkey name.");
+								return;
+							}
+							busy.current = true;
+							registration.mutate();
+						}}
+						disabled={!supported || registration.isPending}
 					>
-						{registration.isPending ? (
-							<Loader2 className="animate-spin" />
-						) : (
-							<Fingerprint />
-						)}
+						<DelayedLoading
+							active={registration.isPending}
+							label="Waiting for your device"
+						/>
+						{!registration.isPending && <Fingerprint />}
 						{registration.isPending
 							? "Waiting for your device…"
 							: "Create passkey"}

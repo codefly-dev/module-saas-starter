@@ -44,3 +44,13 @@ it("keeps the dialog and field disabled during registration", async () => {
 	fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
 	expect(onClose).not.toHaveBeenCalled();
 });
+
+it("validates a blank name before starting a credential ceremony", async () => {
+	renderInApp(<PasskeySetup open onClose={() => undefined} />);
+	const name = screen.getByRole("textbox", { name: "Passkey name" });
+	fireEvent.change(name, { target: { value: "   " } });
+	fireEvent.click(screen.getByRole("button", { name: "Create passkey" }));
+	expect(await screen.findByText("Enter a passkey name.")).toBeTruthy();
+	expect(name.getAttribute("aria-invalid")).toBe("true");
+	expect(begin).not.toHaveBeenCalled();
+});

@@ -1,11 +1,13 @@
 "use client";
 
+import { CopyButton } from "@codefly-dev/ui/content";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import { failureText } from "@/shared/lib/failure-text";
 import {
 	Button,
 	DelayedLoading,
@@ -16,9 +18,11 @@ import {
 	DialogHeader,
 	DialogTitle,
 	ErrorState,
+	Field,
 	Input,
-	Label,
 	QRCode,
+	Spinner,
+	useLoadingPhase,
 } from "@/shared/ui";
 import { type VerifyTOTPValues, verifyTOTPSchema } from "../model/schemas";
 import { mfaMutations } from "../service/mutations";
@@ -36,7 +40,7 @@ export function MFASetup({ open, onClose }: MFASetupProps) {
 	const [provisioningUri, setProvisioningUri] = useState<string | null>(null);
 	const [secret, setSecret] = useState<string | null>(null);
 	const [backupCodes, setBackupCodes] = useState<string[]>([]);
-	const [copied, setCopied] = useState(false);
+	const verifying = useRef(false);
 	// SetupTOTP is not idempotent: each call writes another unverified device
 	// row with another secret. So the session effect below runs its body once per
 	// opening, and this is the latch that holds it to once.
@@ -60,20 +64,31 @@ export function MFASetup({ open, onClose }: MFASetupProps) {
 	const startSetup = setupMutation.mutate;
 	const resetSetup = setupMutation.reset;
 
+	const backupMutation = useMutation({
+		mutationFn: () => mfaMutations.generateBackupCodes(),
+		onSuccess: (result) => setBackupCodes(result.backupCodes),
+	});
 	const verifyMutation = useMutation({
 		mutationFn: (code: string) => mfaMutations.verifyTOTP(code),
-		onSuccess: async () => {
-			toast.success("MFA enabled successfully");
-			const result = await mfaMutations.generateBackupCodes();
-			setBackupCodes(result.backupCodes);
+		onSuccess: () => {
+			toast.success("Authenticator app added");
 			setStep("backup");
+			backupMutation.mutate();
 			queryClient.invalidateQueries({ queryKey: ["mfa"] });
 		},
-		onError: () => toast.error("Invalid code. Please try again."),
+		onSettled: () => {
+			verifying.current = false;
+		},
 	});
-
+	const resetVerification = verifyMutation.reset;
+	const resetBackup = backupMutation.reset;
+	const { quiet, indicator } = useLoadingPhase(setupMutation.isPending);
+	const pending =
+		setupMutation.isPending ||
+		verifyMutation.isPending ||
+		backupMutation.isPending;
 	const handleOpen = (isOpen: boolean) => {
-		if (!isOpen) onClose();
+		if (!isOpen && !pending && !verifying.current) onClose();
 	};
 
 	// `open` becoming true IS the start of a session, and this is the only place
@@ -106,17 +121,11 @@ export function MFASetup({ open, onClose }: MFASetupProps) {
 		setSecret(null);
 		setBackupCodes([]);
 		form.reset();
+		resetVerification();
+		resetBackup();
 		resetSetup();
 		startSetup();
-	}, [open, startSetup, resetSetup, form]);
-
-	const copySecret = () => {
-		if (secret) {
-			navigator.clipboard.writeText(secret);
-			setCopied(true);
-			setTimeout(() => setCopied(false), 2000);
-		}
-	};
+	}, [open, startSetup, resetSetup, resetVerification, resetBackup, form]);
 
 	return (
 		<Dialog open={open} onOpenChange={handleOpen}>
@@ -124,10 +133,9 @@ export function MFASetup({ open, onClose }: MFASetupProps) {
 				{step === "qr" && (
 					<>
 						<DialogHeader>
-							<DialogTitle>Set Up Two-Factor Authentication</DialogTitle>
+							<DialogTitle>Set up an authenticator app</DialogTitle>
 							<DialogDescription>
-								Scan the QR code with your authenticator app (Google
-								Authenticator, Authy, 1Password, etc.).
+								Scan the QR code with your authenticator app.
 							</DialogDescription>
 						</DialogHeader>
 						<div className="space-y-4">
@@ -138,7 +146,9 @@ export function MFASetup({ open, onClose }: MFASetupProps) {
 							    a density skin would move the reservation and leave the jump
 							    it exists to prevent. */}
 							<div className="flex min-h-[14rem] items-center justify-center">
-								{provisioningUri ? (
+								{indicator ? (
+									<Spinner label="Preparing your authenticator code" />
+								) : quiet ? null : provisioningUri ? (
 									<QRCode
 										value={provisioningUri}
 										label="Scan this code with your authenticator app to add this account. The same secret is written out below the code."
@@ -148,16 +158,22 @@ export function MFASetup({ open, onClose }: MFASetupProps) {
 									<div className="space-y-3">
 										<ErrorState
 											title="We could not prepare your authenticator code"
-											detail="Two-factor authentication is not enabled yet. Try again, or close this and come back to it."
+											detail={failureText(
+												"prepare your authenticator code",
+												setupMutation.error,
+											)}
 										/>
-										<Button
-											variant="outline"
-											size="sm"
-											onClick={() => startSetup()}
-											disabled={setupMutation.isPending}
-										>
-											Try again
-										</Button>
+										{ConnectError.from(setupMutation.error).code !==
+											Code.PermissionDenied && (
+											<Button
+												variant="outline"
+												size="sm"
+												onClick={() => startSetup()}
+												disabled={setupMutation.isPending}
+											>
+												Try again
+											</Button>
+										)}
 									</div>
 								) : (
 									<DelayedLoading
@@ -168,29 +184,18 @@ export function MFASetup({ open, onClose }: MFASetupProps) {
 							</div>
 							{secret && (
 								<div className="space-y-1">
-									<Label>Or enter this code manually:</Label>
+									<p className="type-label">Or enter this code manually:</p>
 									<div className="flex items-center gap-2">
 										<code className="flex-1 rounded bg-muted px-3 py-2 font-mono text-sm break-all tracking-widest">
 											{secret}
 										</code>
-										<Button
-											variant="outline"
-											size="sm"
-											onClick={copySecret}
-											aria-label="Copy the setup code"
-										>
-											{copied ? (
-												<Check className="h-4 w-4" />
-											) : (
-												<Copy className="h-4 w-4" />
-											)}
-										</Button>
+										<CopyButton text={secret} label="setup code" />
 									</div>
 								</div>
 							)}
 						</div>
 						<DialogFooter>
-							<Button variant="outline" onClick={onClose}>
+							<Button variant="outline" disabled={pending} onClick={onClose}>
 								Cancel
 							</Button>
 							<Button onClick={() => setStep("verify")} disabled={!secret}>
@@ -203,38 +208,54 @@ export function MFASetup({ open, onClose }: MFASetupProps) {
 				{step === "verify" && (
 					<>
 						<DialogHeader>
-							<DialogTitle>Verify Your Code</DialogTitle>
+							<DialogTitle>Verify your code</DialogTitle>
 							<DialogDescription>
 								Enter the 6-digit code from your authenticator app to confirm
 								setup.
 							</DialogDescription>
 						</DialogHeader>
 						<form
-							onSubmit={form.handleSubmit((vals) =>
-								verifyMutation.mutate(vals.code),
-							)}
+							noValidate
+							onSubmit={form.handleSubmit((vals) => {
+								if (verifying.current || pending) return;
+								verifying.current = true;
+								verifyMutation.mutate(vals.code);
+							})}
 							className="space-y-4"
 						>
-							<div className="space-y-2">
-								<Label htmlFor="totp-code">Verification Code</Label>
-								<Input
-									id="totp-code"
-									placeholder="000000"
-									maxLength={6}
-									className="text-center font-mono text-lg tracking-[0.5em]"
-									{...form.register("code")}
-									autoFocus
-								/>
-								{form.formState.errors.code && (
-									<p className="text-sm text-destructive">
-										{form.formState.errors.code.message}
-									</p>
+							<Field
+								label="Verification code"
+								error={form.formState.errors.code?.message}
+							>
+								{(control) => (
+									<Input
+										{...control}
+										disabled={pending}
+										inputMode="numeric"
+										autoComplete="one-time-code"
+										placeholder="000000"
+										maxLength={6}
+										className="text-center font-mono text-lg tracking-widest"
+										{...form.register("code")}
+										autoFocus
+									/>
 								)}
-							</div>
+							</Field>
+							{verifyMutation.isError && (
+								<ErrorState
+									title="Code wasn’t verified"
+									detail={failureText(
+										"verify your authenticator code",
+										verifyMutation.error,
+									)}
+								/>
+							)}
+
 							<DialogFooter>
 								<Button
 									type="button"
 									variant="outline"
+									disabled={pending}
 									onClick={() => setStep("qr")}
 								>
 									Back
@@ -250,12 +271,25 @@ export function MFASetup({ open, onClose }: MFASetupProps) {
 				{step === "backup" && (
 					<>
 						<DialogHeader>
-							<DialogTitle>Save Your Backup Codes</DialogTitle>
+							<DialogTitle>Save your backup codes</DialogTitle>
 							<DialogDescription>
 								Store these codes in a safe place. Each code can be used once if
 								you lose access to your authenticator.
 							</DialogDescription>
 						</DialogHeader>
+						<DelayedLoading
+							active={backupMutation.isPending}
+							label="Preparing backup codes"
+						/>
+						{backupMutation.isError && (
+							<ErrorState
+								title="Authenticator app added, but backup codes are unavailable"
+								detail={failureText(
+									"prepare backup codes",
+									backupMutation.error,
+								)}
+							/>
+						)}
 						<div className="grid grid-cols-2 gap-2 rounded-lg border bg-muted/50 p-4">
 							{backupCodes.map((code) => (
 								<code
@@ -267,17 +301,15 @@ export function MFASetup({ open, onClose }: MFASetupProps) {
 							))}
 						</div>
 						<DialogFooter>
-							<Button
-								variant="outline"
-								onClick={() => {
-									navigator.clipboard.writeText(backupCodes.join("\n"));
-									toast.success("Backup codes copied to clipboard");
-								}}
-							>
-								<Copy className="mr-2 h-4 w-4" />
-								Copy All
+							{backupCodes.length > 0 && (
+								<CopyButton
+									text={backupCodes.join("\n")}
+									label="all backup codes"
+								/>
+							)}
+							<Button disabled={pending} onClick={onClose}>
+								Done
 							</Button>
-							<Button onClick={onClose}>Done</Button>
 						</DialogFooter>
 					</>
 				)}
