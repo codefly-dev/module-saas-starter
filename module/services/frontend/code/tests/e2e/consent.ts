@@ -1,26 +1,22 @@
 import { expect, type Page } from "@playwright/test";
 
 export async function resolveConsentPrompt(page: Page): Promise<void> {
-	const prompt = page.getByRole("dialog", {
-		name: /Terms acceptance|Optional tracking preferences/,
-	});
+	const terms = page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: "Review the current Terms" }) });
+	const preferences = page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: "Your privacy choices" }) });
 	try {
-		await prompt.waitFor({ state: "visible", timeout: 1000 });
+		await terms.or(preferences).waitFor({ state: "visible", timeout: 3000 });
 	} catch {
 		return;
 	}
-
-	const terms = page.getByRole("dialog", { name: "Terms acceptance" });
 	if (await terms.isVisible()) {
 		const accept = terms.getByRole("button", { name: "Accept Terms" });
 		await expect(accept).toBeEnabled();
 		await accept.click();
+		await expect(terms).toBeHidden();
 	}
 
-	const preferences = page.getByRole("dialog", {
-		name: "Optional tracking preferences",
-	});
-	await expect(preferences).toBeVisible();
+	// Returning users can already have preferences for the current policy.
+	if (!(await preferences.isVisible())) return;
 	await preferences.getByRole("button", { name: "Reject optional" }).click();
 	await expect(preferences).toHaveCount(0);
 }

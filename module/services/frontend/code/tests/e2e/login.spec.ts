@@ -1,3 +1,4 @@
+import { signInForScenario } from "./fixture-session";
 import { expect, test } from "@playwright/test";
 import { resolveConsentPrompt } from "./consent";
 
@@ -16,15 +17,13 @@ test.describe("Login flow", () => {
 	test("fixture users are displayed in dev mode", async ({ page }) => {
 		await page.goto("/auth/login");
 
-		// Wait for fixture users to load
-		await expect(page.getByText("Sarah Chen")).toBeVisible({ timeout: 10000 });
-		await expect(page.getByText("Alice Johnson")).toBeVisible();
-		await expect(page.getByText("Bob Williams")).toBeVisible();
-		await expect(page.getByText("Carol Davis")).toBeVisible();
-
-		// Roles should be visible
-		await expect(page.getByText("super_admin")).toBeVisible();
-		await expect(page.getByText("member").first()).toBeVisible();
+		const choices = page.getByRole("group", { name: "Development sign-in — choose a person" });
+		await expect(choices.getByRole("button")).toHaveCount(3);
+		for (const name of ["Dana Lee", "Carol Davis", "Bob Williams"]) {
+			await expect(choices.getByRole("button", { name: new RegExp(name) })).toBeVisible();
+		}
+		await expect(page.getByText("Sarah Chen")).toHaveCount(0);
+		await expect(page.getByText("Alice Johnson")).toHaveCount(0);
 	});
 
 	test("clicking fixture user logs in and redirects to dashboard", async ({
@@ -32,23 +31,17 @@ test.describe("Login flow", () => {
 	}) => {
 		await page.goto("/auth/login");
 
-		// Wait for fixture users
-		await expect(page.getByText("Sarah Chen")).toBeVisible({ timeout: 10000 });
-
-		// Click Sarah Chen (super_admin)
-		await page.getByText("Sarah Chen").click();
+		await page.getByRole("button", { name: /Dana Lee/ }).click();
 
 		// Should redirect to dashboard
 		await page.waitForURL("/", { timeout: 15000 });
 
 		// Should see the welcome page
-		await expect(page.getByText("Welcome back")).toBeVisible();
+		await expect(page.getByRole("heading", { name: /^Welcome back/ })).toBeVisible();
 	});
 
 	test("super_admin sees admin navigation", async ({ page }) => {
-		await page.goto("/auth/login");
-		await expect(page.getByText("Sarah Chen")).toBeVisible({ timeout: 10000 });
-		await page.getByText("Sarah Chen").click();
+		await signInForScenario(page, "Sarah Chen");
 		await page.waitForURL("/", { timeout: 15000 });
 		await resolveConsentPrompt(page);
 		await page.getByRole("button", { name: "Admin", exact: true }).click();
@@ -76,10 +69,7 @@ test.describe("Login flow", () => {
 		await expect(page.getByText("Sign in")).toBeVisible();
 	});
 
-	test("non-admin user redirected away from /admin", async ({ page }) => {
-		// Log in as a regular member (Bob), then try to access an admin URL.
-		// The (admin) layout should bounce us back to the main dashboard —
-		// this is the UI-side enforcement of the module-only admin surface.
+	test("a member sees the Admin refusal and can return to the dashboard", async ({ page }) => {
 		await page.goto("/auth/login");
 		await expect(page.getByText("Bob Williams")).toBeVisible({
 			timeout: 10000,
@@ -87,10 +77,12 @@ test.describe("Login flow", () => {
 		await page.getByText("Bob Williams").click();
 		await page.waitForURL("/", { timeout: 15000 });
 
-		// Direct navigation to an admin URL should land back on /, not
-		// /admin/users. Confirms the (admin)/layout.tsx redirect works.
+		await resolveConsentPrompt(page);
 		await page.goto("/admin/users");
+		await expect(page.getByRole("heading", { name: "You don't have access to Admin" })).toBeVisible();
+		await expect(page.getByRole("heading", { name: "Platform Users" })).toHaveCount(0);
+		await page.getByRole("link", { name: "Back to the dashboard" }).click();
 		await page.waitForURL("/", { timeout: 10000 });
-		await expect(page.getByText("Welcome back")).toBeVisible();
+		await expect(page.getByRole("heading", { name: /^Welcome back/ })).toBeVisible();
 	});
 });

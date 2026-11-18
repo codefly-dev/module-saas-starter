@@ -1,24 +1,14 @@
+import { signInForScenario } from "./fixture-session";
 import { expect, type Page, test } from "@playwright/test";
 import { resolveConsentPrompt } from "./consent";
 
 async function loginAs(page: Page, fixtureName: string): Promise<string> {
-	await page.goto("/auth/login");
-	await expect(page.getByText(fixtureName)).toBeVisible({ timeout: 15000 });
-	await page.getByText(fixtureName).click();
-	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 15000 });
+	await signInForScenario(page, fixtureName);
+	await expect(page.getByRole("heading", { name: /^Welcome back/ })).toBeVisible({ timeout: 15000 });
 	await resolveConsentPrompt(page);
 	const refresh = await page.request.post("/v1/auth/refresh", { data: {} });
 	expect(refresh.ok()).toBe(true);
 	return ((await refresh.json()) as { accessToken: string }).accessToken;
-}
-
-function claims(token: string): { org: string; sub: string } {
-	const [, payload] = token.split(".");
-	if (!payload) throw new Error("access token has no payload");
-	return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as {
-		org: string;
-		sub: string;
-	};
 }
 
 async function invitationRPC(
@@ -101,51 +91,28 @@ test.describe("Acquisition journey", () => {
 		page,
 		browser,
 	}) => {
-		const adminToken = await loginAs(page, "Sarah Chen");
-		const orgId = claims(adminToken).org;
-		const listed = await invitationRPC(page, "ListInvitations", adminToken, {
-			orgId,
+		const operator = await loginAs(page, "Sarah Chen");
+		const slug = "invite-" + crypto.randomUUID();
+		const name = "Invitation QA " + slug;
+		const headers = { Authorization: `Bearer ${operator}` };
+		const created = await page.request.post("/saas.accounts.v1.OrganizationService/CreateOrganization", {
+			headers, data: { name, slug },
 		});
-		expect(listed.response.ok()).toBe(true);
-		const existing = (
-			JSON.parse(listed.body) as {
-				invitations?: Array<{
-					id: string;
-					email: string;
-					status: string;
-				}>;
-			}
-		).invitations?.find(
-			(invitation) =>
-				invitation.email === "dana@example.com" &&
-				invitation.status === "INVITATION_STATUS_PENDING",
-		);
-
-		let invitationId = existing?.id;
-		if (!invitationId) {
-			const created = await invitationRPC(
-				page,
-				"CreateInvitation",
-				adminToken,
-				{
-					orgId,
-					email: "dana@example.com",
-					role: "INVITATION_ROLE_MEMBER",
-				},
-			);
-			expect(created.response.ok(), created.body).toBe(true);
-			invitationId = (
-				JSON.parse(created.body) as { invitation?: { id?: string } }
-			).invitation?.id;
-		}
-		expect(invitationId).toBeTruthy();
-
-		const inviteeContext = await browser.newContext({
-			baseURL: new URL(page.url()).origin,
+		expect(created.ok(), await created.text()).toBe(true);
+		const orgId: string = (await created.json()).organization.id;
+		const switched = await page.request.post("/v1/auth/switch-organization", {
+			headers, data: { organizationId: orgId },
 		});
-		const inviteePage = await inviteeContext.newPage();
-		let inviteeUserId = "";
+		expect(switched.ok(), await switched.text()).toBe(true);
+		const adminToken: string = (await switched.json()).accessToken;
+		const inviteeContext = await browser.newContext({ baseURL: new URL(page.url()).origin });
 		try {
+			const invitation = await invitationRPC(page, "CreateInvitation", adminToken, {
+				orgId, email: "dana@example.com", role: "INVITATION_ROLE_MEMBER",
+			});
+			expect(invitation.response.ok(), invitation.body).toBe(true);
+			const invitationId: string = JSON.parse(invitation.body).invitation.id;
+			const inviteePage = await inviteeContext.newPage();
 			await inviteePage.goto(
 				`/auth/login?next=${encodeURIComponent(`/invitations/accept?id=${invitationId}`)}`,
 			);
@@ -163,17 +130,18 @@ test.describe("Acquisition journey", () => {
 				authenticationResponse.ok(),
 				await authenticationResponse.text(),
 			).toBe(true);
-			inviteeUserId = claims(
-				(
-					(await authenticationResponse.json()) as {
-						accessToken: string;
-					}
-				).accessToken,
-			).sub;
 			await expect(
 				inviteePage.getByRole("button", { name: "Accept invitation" }),
 			).toBeVisible({ timeout: 20000 });
 
+			await inviteePage
+				.getByRole("button", { name: "Accept invitation" })
+				.click();
+			await expect(inviteePage.getByText("Invitation accepted")).toBeVisible(
+				{ timeout: 20000 },
+			);
+			await expect(inviteePage.getByText("member of " + name, { exact: false })).toBeVisible();
+			await resolveConsentPrompt(inviteePage);
 			const organizationSwitch = inviteePage.waitForResponse((response) => {
 				const url = response.url().toLowerCase();
 				return (
@@ -181,18 +149,13 @@ test.describe("Acquisition journey", () => {
 					url.includes("/v1/auth/switch-organization")
 				);
 			});
-			await inviteePage
-				.getByRole("button", { name: "Accept invitation" })
-				.click();
+			await inviteePage.getByRole("button", { name: "Continue to workspace" }).click();
 			const organizationSwitchResponse = await organizationSwitch;
 			expect(
 				organizationSwitchResponse.ok(),
 				await organizationSwitchResponse.text(),
 			).toBe(true);
-			await expect(inviteePage.getByText("Invitation accepted")).toBeVisible(
-				{ timeout: 20000 },
-			);
-			await expect(inviteePage.getByText(/member of Acme Corp/)).toBeVisible();
+
 
 			const after = await invitationRPC(
 				page,
@@ -210,16 +173,10 @@ test.describe("Acquisition journey", () => {
 			);
 			expect(accepted?.status).toBe("INVITATION_STATUS_ACCEPTED");
 		} finally {
-			if (inviteeUserId) {
-				const cleanup = await page.request.post(
-					"/saas.accounts.v1.OrganizationService/RemoveMember",
-					{
-						headers: { Authorization: `Bearer ${adminToken}` },
-						data: { orgId, userId: inviteeUserId },
-					},
-				);
-				expect(cleanup.ok(), await cleanup.text()).toBe(true);
-			}
+			const removed = await page.request.post("/saas.accounts.v1.OrganizationService/DeleteOrganization", {
+				headers: { Authorization: `Bearer ${adminToken}` }, data: { orgId, confirmSlug: slug },
+			});
+			expect(removed.ok(), await removed.text()).toBe(true);
 			await inviteeContext.close();
 		}
 	});

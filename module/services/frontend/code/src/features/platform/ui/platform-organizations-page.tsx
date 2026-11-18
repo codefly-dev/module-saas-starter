@@ -44,8 +44,7 @@ const col = createColumnHelper<PlatformOrganizationRow>();
 
 /**
  * Every organization on the platform, for a platform administrator: find one,
- * open it, and manage it by hand — rename it, change its members and their
- * roles, delete it — without belonging to it.
+ * inspect its roster, and manage it when signed into it with the required role.
  */
 export function PlatformOrganizationsPage() {
 	const { platformRole } = useAuth();

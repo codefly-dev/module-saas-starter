@@ -116,7 +116,7 @@ func requireOrgOwner(ctx context.Context, actorID, orgID string) error {
 	if role == "" {
 		return status.Error(codes.PermissionDenied, "not a member of this organization")
 	}
-	if role != "owner" {
+	if role != gen.OrgRole_ORG_ROLE_OWNER.String() {
 		return status.Error(codes.PermissionDenied, "only the organization's owner may delete it")
 	}
 	return nil

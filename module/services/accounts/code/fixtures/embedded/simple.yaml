@@ -1,6 +1,7 @@
 # simple fixture — minimal admin user for quick dev
 # Used with: codefly run service --fixture simple
 
+sign_in_choices: [local-admin]
 users:
   - id: 00000000-0000-7000-8000-0000000000b1
     email: admin@example.com

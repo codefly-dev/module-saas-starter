@@ -65,6 +65,7 @@ export const FixtureRoleAssignmentSchema = z
 
 export const FixtureFileSchema = z.object({
 	users: z.array(FixtureUserSchema),
+	sign_in_choices: z.array(z.string().min(1)).max(3).optional(),
 	organizations: z.array(FixtureOrgSchema).optional(),
 	teams: z.array(FixtureTeamSchema).optional(),
 	agents: z.array(FixtureAgentSchema).optional(),

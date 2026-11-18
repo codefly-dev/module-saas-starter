@@ -78,7 +78,7 @@ export default defineConfig({
 		stderr: "pipe",
 		env: {
 			// Fixture dev-login mode (no real WorkOS); without it the login page
-			// renders no user picker and every spec times out at "Sarah Chen".
+			// renders no fixture sign-in choices.
 			CODEFLY__FIXTURE: "dev-admin",
 			// Browser talks same-origin to the frontend; the Next server forwards
 			// API traffic to the auth-gateway (src/proxy.ts). Keeps auth cookies
@@ -87,14 +87,17 @@ export default defineConfig({
 			// named explicitly — it is the same single product API path, not an
 			// alternate one.
 			PRODUCT_GATEWAY_INTERNAL: productGateway,
+			// The production build serves the origin Codefly allocated for this test.
+			CODEFLY__WORKSPACE_CONFIGURATION__APPLICATION__APP_BASE_URL: frontendUrl,
 			// Force the Codefly fixture identity adapter for this browser suite.
 			// The login page reads the `identity` group at request time.
 			CODEFLY__WORKSPACE_CONFIGURATION__IDENTITY__IDENTITY_PROVIDER: "fixture",
-			NEXT_PUBLIC_LEGAL_ENTITY_NAME: "Codefly E2E",
-			NEXT_PUBLIC_LEGAL_CONTACT_EMAIL: "legal@example.test",
-			NEXT_PUBLIC_LEGAL_TERMS_CONTENT:
+			CODEFLY__WORKSPACE_CONFIGURATION__PRODUCT_FEATURES__NEXT_PUBLIC_ENABLE_SSO: "true",
+			CODEFLY__WORKSPACE_CONFIGURATION__LEGAL__NEXT_PUBLIC_LEGAL_ENTITY_NAME: "Codefly E2E",
+			CODEFLY__WORKSPACE_CONFIGURATION__LEGAL__NEXT_PUBLIC_LEGAL_CONTACT_EMAIL: "legal@example.test",
+			CODEFLY__WORKSPACE_CONFIGURATION__LEGAL__NEXT_PUBLIC_LEGAL_TERMS_CONTENT:
 				"E2E Terms content used only to exercise configured legal routes.",
-			NEXT_PUBLIC_LEGAL_PRIVACY_CONTENT:
+			CODEFLY__WORKSPACE_CONFIGURATION__LEGAL__NEXT_PUBLIC_LEGAL_PRIVACY_CONTENT:
 				"E2E Privacy content used only to exercise configured legal routes.",
 		},
 	},

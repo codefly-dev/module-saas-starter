@@ -7,7 +7,9 @@ import { server } from "@/test/setup";
 
 const authState = vi.hoisted(() => ({
 	platformRole: "super_admin" as string | undefined,
-	orgRole: undefined,
+	orgRole: "owner",
+	organizationId: "org-acme",
+	impersonation: { isImpersonating: false },
 	isAuthenticated: true,
 	user: { id: "admin-1" },
 }));
@@ -23,6 +25,18 @@ afterEach(cleanup);
 const settle = () => new Promise((resolve) => setTimeout(resolve, 300));
 
 describe("OrganizationDetail", () => {
+	it("keeps another organization's roster read-only for a platform administrator", async () => {
+		server.use(http.post(rpc("PlatformAdminService", "GetOrganizationRoster"), () =>
+			HttpResponse.json({ members: [{ orgId: "org-other", userId: "viewer", userEmail: "viewer@example.com", role: "ORG_ROLE_MEMBER" }] }),
+		));
+		renderInApp(<OrganizationDetail organization={{ id: "org-other", name: "Other", slug: "other" }} source="platform" />);
+		await screen.findByText("viewer@example.com");
+		expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+		expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+		expect(screen.queryByRole("button", { name: "Remove viewer@example.com" })).toBeNull();
+		expect(screen.queryByPlaceholderText("Search by name or email…")).toBeNull();
+	});
+
 	// Picking a directory user re-renders the members panel. Its table rows were
 	// a new array on every render, which TanStack Table answers with a page
 	// reset — a state update on the panel — so the panel re-rendered forever. In
@@ -30,7 +44,7 @@ describe("OrganizationDetail", () => {
 	// tab; here it shows as commits that never stop.
 	it("settles after a platform administrator picks a user to add", async () => {
 		server.use(
-			http.post(rpc("PlatformAdminService", "GetOrganizationRoster"), () =>
+			http.post(rpc("OrganizationService", "ListMembers"), () =>
 				HttpResponse.json({
 					members: [
 						{

@@ -96,8 +96,7 @@ instance reloads; the owner's prepublication overlap requirement still applies.
   found no route: the person is authenticated as on every protected route
   (ext_authz, revocation included), the call is metered on the organization's
   budget, the authority's `Issue` gives the person's Work Context at the module
-  whose published routes resolve the path (held until shortly before it
-  lapses), and the call goes through the same HTTP face in-process with that
+  whose published routes resolve the path on each request, and the call goes through the same HTTP face in-process with that
   context and nothing else: no `Authorization`, no `Cookie`, no identity header,
   no caller `x-codefly-*` header. A path published by two modules is refused
   (409); a module route under a `/v1/` prefix the catalog owns is refused (403).
@@ -179,8 +178,8 @@ holding any of them could act with it somewhere else. So
 authenticated request it forwards and puts in its place, under the Work
 Context header, **a Work Context at that solution**: the authority's `Issue`,
 addressed to the principal the solution's applied manifest declares, short
-lived, held until shortly before it lapses by the same holder the hop's browser
-path uses for a module (`personContexts`). It is refused everywhere else: this
+lived and issued on each request through the same path the browser uses
+for a module (`personContexts`). It is refused everywhere else: this
 edge refuses it at another solution's route by its audience, and it is no
 access token at the host's API
 (`TestWhatASolutionReceivesIsRefusedAtTheHostAPIAndAtAnotherSolution` replays

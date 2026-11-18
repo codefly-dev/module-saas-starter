@@ -77,19 +77,22 @@ export function OrgMembersPanel({
 	source = "membership",
 }: OrgMembersPanelProps) {
 	const queryClient = useQueryClient();
-	const { platformRole } = useAuth();
+	const { platformRole, organizationId, orgRole, impersonation } = useAuth();
+	const current = organizationId === orgId && !impersonation.isImpersonating;
+	const canManage = current && (orgRole === "admin" || orgRole === "owner");
 	const [newUserId, setNewUserId] = useState("");
 	const [newRole, setNewRole] = useState<OrgRole>("member");
 
+	const usePlatformRoster = source === "platform" && organizationId !== orgId;
 	const membershipRoster = useQuery({
 		...orgQueries.members(orgId),
-		enabled: source === "membership" && !!orgId,
+		enabled: !usePlatformRoster && !!orgId,
 	});
 	const platformRoster = useQuery({
 		...orgQueries.roster(orgId),
-		enabled: source === "platform" && !!orgId,
+		enabled: usePlatformRoster && !!orgId,
 	});
-	const roster = source === "platform" ? platformRoster : membershipRoster;
+	const roster = usePlatformRoster ? platformRoster : membershipRoster;
 	const { data: raw, isLoading, isError, error } = roster;
 	const outcome = readOutcome(isError, error);
 	// A refused roster takes precedence over rows already on screen. TanStack keeps
@@ -173,6 +176,7 @@ export function OrgMembersPanel({
 				header: "Role",
 				cell: ({ row }) => {
 					const member = row.original;
+					if (!canManage) return roleLabel(member.role);
 					const label = member.userEmail || "this member";
 					return (
 						<Select
@@ -218,6 +222,7 @@ export function OrgMembersPanel({
 				id: "actions",
 				header: "",
 				cell: ({ row }) => {
+					if (!current) return null;
 					const label = row.original.userEmail || "this member";
 					return (
 						<div className="flex items-center justify-end gap-1">
@@ -241,7 +246,7 @@ export function OrgMembersPanel({
 									}
 								/>
 							</RoleGate>
-							<AlertDialog>
+							{canManage && <AlertDialog>
 								<AlertDialogTrigger
 									render={
 										<Button
@@ -271,13 +276,13 @@ export function OrgMembersPanel({
 										</AlertDialogAction>
 									</AlertDialogFooter>
 								</AlertDialogContent>
-							</AlertDialog>
+							</AlertDialog>}
 						</div>
 					);
 				},
 			}),
 		],
-		[changeRole, changingRole, removeMember, orgId, orgName],
+		[changeRole, changingRole, removeMember, orgId, orgName, canManage, current],
 	);
 
 	const table = useReactTable({
@@ -304,7 +309,7 @@ export function OrgMembersPanel({
 				)}
 			</div>
 
-			{platformRole ? (
+			{canManage && (platformRole ? (
 				<div className="flex items-center gap-2">
 					<UserPicker
 						value={newUserId}
@@ -344,7 +349,7 @@ export function OrgMembersPanel({
 				// directory; they invite by email, and get a link to share when the
 				// deployment sends no email.
 				<InvitationForm orgId={orgId} />
-			)}
+			))}
 
 			{stale && (
 				<p role="status" className="text-sm text-muted-foreground">

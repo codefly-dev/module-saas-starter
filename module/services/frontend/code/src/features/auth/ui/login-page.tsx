@@ -37,6 +37,7 @@ const SIGN_IN_FAILED =
 interface FixtureResponse {
 	name: string;
 	users: FixtureUser[];
+	sign_in_choices?: string[];
 }
 
 /**
@@ -130,7 +131,13 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 		fetch("/api/fixtures")
 			.then((res) => (res.ok ? (res.json() as Promise<FixtureResponse>) : null))
 			.then((data) => {
-				if (data?.users) setFixtureUsers(data.users);
+				if (!data?.users) return;
+				const choices = data.sign_in_choices;
+				if (!choices) {
+					setFixtureUsers(data.users.length <= 3 ? data.users : []);
+					return;
+				}
+				setFixtureUsers(choices.flatMap((id) => data.users.filter((u) => u.provider_id === id)));
 			})
 			.catch(() => {});
 	}, [devMode, clientRefusal]);
@@ -273,8 +280,8 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 							fixtureUsers.length > 0 &&
 							!clientPending &&
 							!clientRefusal && (
-								<div className="space-y-2">
-									<p className="text-xs font-medium text-muted-foreground">
+								<div role="group" aria-labelledby="fixture-sign-in-heading" className="space-y-2">
+									<p id="fixture-sign-in-heading" className="text-xs font-medium text-muted-foreground">
 										Development sign-in — choose a person
 									</p>
 									{fixtureUsers.map((u) => {

@@ -1,3 +1,4 @@
+import { signInForScenario } from "./fixture-session";
 // Access-token revocation regression. The OWASP refresh-rotation
 // pattern (already in place) only invalidates the refresh chain on
 // logout — without an access-token revocation list, the *current*
@@ -11,26 +12,12 @@
 // it.
 
 import { expect, type Page, test } from "@playwright/test";
-import { resolveServiceAddressSync } from "codefly";
-
-function mustResolve(type: "rest" | "connect"): string {
-	const address = resolveServiceAddressSync("accounts", type);
-	if (!address)
-		throw new Error(`cannot resolve Codefly endpoint accounts/${type}`);
-	return address;
-}
-
-const API_REST = process.env.API_REST ?? mustResolve("rest");
-const API_CONNECT = process.env.API_CONNECT ?? mustResolve("connect");
-
 async function loginAndGrabTokens(
 	page: Page,
 	fixtureName: string,
 ): Promise<{ accessToken: string; refreshToken: string }> {
-	await page.goto("/auth/login");
-	await expect(page.getByText(fixtureName)).toBeVisible({ timeout: 15000 });
-	await page.getByText(fixtureName).click();
-	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
+	await signInForScenario(page, fixtureName);
+	await expect(page.getByRole("heading", { name: /^Welcome back/ })).toBeVisible({ timeout: 20000 });
 
 	await expect
 		.poll(async () =>
@@ -76,12 +63,13 @@ async function loginAndGrabTokens(
 }
 
 async function authedRPC(
+	origin: string,
 	service: string,
 	method: string,
 	body: Record<string, unknown>,
 	bearer: string,
 ): Promise<{ status: number; body: string }> {
-	const res = await fetch(`${API_CONNECT}/${service}/${method}`, {
+	const res = await fetch(`${origin}/${service}/${method}`, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
@@ -103,6 +91,7 @@ test.describe("Access-token revocation", () => {
 		// bearer is good and the test isn't measuring an unrelated
 		// failure when we try it again after logout.
 		const before = await authedRPC(
+			new URL(page.url()).origin,
 			"saas.accounts.v1.UserService",
 			"GetSelf",
 			{},
@@ -112,7 +101,7 @@ test.describe("Access-token revocation", () => {
 
 		// Log out — this should add the access JTI to the revocation list
 		// AND revoke the refresh family.
-		const logoutRes = await fetch(`${API_REST}/v1/auth/logout`, {
+		const logoutRes = await fetch(`${new URL(page.url()).origin}/v1/auth/logout`, {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
@@ -127,17 +116,13 @@ test.describe("Access-token revocation", () => {
 		// rejected. Without it, the access token would still work for the
 		// remainder of its 15-min lifetime.
 		const after = await authedRPC(
+			new URL(page.url()).origin,
 			"saas.accounts.v1.UserService",
 			"GetSelf",
 			{},
 			accessToken,
 		);
-		// Either the bearer fails to validate (interceptor's IsRevoked
-		// check) OR the handler reports "not found" because the request
-		// never made it past auth. We just need a non-2xx — anything in
-		// [400, 599) confirms revocation fired.
-		expect(after.status).toBeGreaterThanOrEqual(400);
-		expect(after.status).toBeLessThan(600);
+		expect(after.status).toBe(401);
 	});
 
 	test("logout invalidates the refresh token (OWASP rotation)", async ({
@@ -150,7 +135,7 @@ test.describe("Access-token revocation", () => {
 		// revocation.
 		const { refreshToken } = await loginAndGrabTokens(page, "Sarah Chen");
 
-		const logoutRes = await fetch(`${API_REST}/v1/auth/logout`, {
+		const logoutRes = await fetch(`${new URL(page.url()).origin}/v1/auth/logout`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ refresh_token: refreshToken }),
@@ -158,11 +143,11 @@ test.describe("Access-token revocation", () => {
 		expect(logoutRes.ok).toBe(true);
 
 		// Try to use the revoked refresh — should fail.
-		const refreshRes = await fetch(`${API_REST}/v1/auth/refresh`, {
+		const refreshRes = await fetch(`${new URL(page.url()).origin}/v1/auth/refresh`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ refresh_token: refreshToken }),
 		});
-		expect(refreshRes.ok).toBe(false);
+		expect(refreshRes.status).toBe(401);
 	});
 });

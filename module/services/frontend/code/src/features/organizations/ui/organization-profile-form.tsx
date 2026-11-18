@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm, useFormState } from "react-hook-form";
 import { toast } from "sonner";
 import {
 	Button,
@@ -33,9 +33,11 @@ export function OrganizationProfileForm({
 		defaultValues: { name: organization.name, slug: organization.slug },
 	});
 
+	const { isDirty } = useFormState({ control: form.control });
+	const { reset } = form;
 	useEffect(() => {
-		form.reset({ name: organization.name, slug: organization.slug });
-	}, [organization.name, organization.slug, form]);
+		reset({ name: organization.name, slug: organization.slug });
+	}, [organization.name, organization.slug, reset]);
 
 	const onSubmit = (values: CreateOrgValues) =>
 		update.mutate(
@@ -61,9 +63,15 @@ export function OrganizationProfileForm({
 				<CardContent className="space-y-4">
 					<div className="space-y-2">
 						<Label htmlFor={`org-name-${organization.id}`}>Name</Label>
-						<Input
-							id={`org-name-${organization.id}`}
-							{...form.register("name")}
+						<Controller
+							name="name"
+							control={form.control}
+							render={({ field }) => (
+								<Input
+									id={`org-name-${organization.id}`}
+									{...field}
+								/>
+							)}
 						/>
 						{form.formState.errors.name && (
 							<p className="text-sm text-destructive">
@@ -73,10 +81,16 @@ export function OrganizationProfileForm({
 					</div>
 					<div className="space-y-2">
 						<Label htmlFor={`org-slug-${organization.id}`}>Slug</Label>
-						<Input
-							id={`org-slug-${organization.id}`}
-							className="font-mono"
-							{...form.register("slug")}
+						<Controller
+							name="slug"
+							control={form.control}
+							render={({ field }) => (
+								<Input
+									id={`org-slug-${organization.id}`}
+									className="font-mono"
+									{...field}
+								/>
+							)}
 						/>
 						{form.formState.errors.slug && (
 							<p className="text-sm text-destructive">
@@ -88,7 +102,7 @@ export function OrganizationProfileForm({
 				<CardFooter>
 					<Button
 						type="submit"
-						disabled={update.isPending || !form.formState.isDirty}
+						disabled={update.isPending || !isDirty}
 					>
 						{update.isPending ? "Saving..." : "Save"}
 					</Button>

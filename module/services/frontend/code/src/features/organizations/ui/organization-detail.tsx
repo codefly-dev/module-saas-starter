@@ -1,11 +1,8 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { Badge, Button } from "@/shared/ui";
-import { toOrgRole } from "../model/types";
-import { orgQueries } from "../service/queries";
 import { OrgMembersPanel } from "./org-members-panel";
 import { OrganizationLifecycleCard } from "./organization-lifecycle-card";
 import { OrganizationProfileForm } from "./organization-profile-form";
@@ -19,7 +16,7 @@ interface OrganizationDetailProps {
 	};
 	/**
 	 * "membership" is an organization's own administrators managing it;
-	 * "platform" is a platform administrator managing any organization.
+	 * "platform" also allows reading the roster outside the current organization.
 	 */
 	source: "membership" | "platform";
 	onClose?: () => void;
@@ -27,11 +24,8 @@ interface OrganizationDetailProps {
 }
 
 /**
- * One organization, managed by hand: its name and slug, its members and their
- * roles, and leaving or deleting it. The same surface serves an organization's
- * administrators and a platform administrator; only the roster's source and
- * who may leave differ. The server authorizes every write — the controls shown
- * here follow what it will allow, and its refusals are shown as it words them.
+ * The platform directory can show a roster across organizations. Changes use
+ * the active organization's signed role, and deletion requires its owner.
  */
 export function OrganizationDetail({
 	organization,
@@ -39,20 +33,10 @@ export function OrganizationDetail({
 	onClose,
 	onDeleted,
 }: OrganizationDetailProps) {
-	const { user, platformRole } = useAuth();
-	// The caller's own role decides whether "Delete" is theirs to offer; it is
-	// read from the same roster the members table shows.
-	const { data: roster } = useQuery({
-		...orgQueries.members(organization.id),
-		enabled: source === "membership" && !organization.archived,
-	});
-	const callerRole = roster?.members.find((m) => m.userId === user?.id)?.role;
-	const isOwner =
-		callerRole !== undefined &&
-		toOrgRole(callerRole as unknown as number) === "owner";
-	const canDelete =
-		!organization.archived && (platformRole === "super_admin" || isOwner);
-	const canLeave = source === "membership" && !organization.archived;
+	const { organizationId, orgRole, impersonation } = useAuth();
+	const current = organizationId === organization.id;
+	const canManage = current && !impersonation.isImpersonating && (orgRole === "admin" || orgRole === "owner");
+	const canLeave = source === "membership" && current && !impersonation.isImpersonating;
 
 	return (
 		<section
@@ -85,7 +69,7 @@ export function OrganizationDetail({
 				</p>
 			) : (
 				<>
-					<OrganizationProfileForm organization={organization} />
+					{canManage && <OrganizationProfileForm organization={organization} />}
 					<OrgMembersPanel
 						orgId={organization.id}
 						orgName={organization.name}
@@ -94,7 +78,7 @@ export function OrganizationDetail({
 					<OrganizationLifecycleCard
 						organization={organization}
 						canLeave={canLeave}
-						canDelete={canDelete}
+						canDelete={canManage && orgRole === "owner"}
 						onDeleted={onDeleted}
 					/>
 				</>

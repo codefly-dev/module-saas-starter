@@ -1,3 +1,4 @@
+import { signInForScenario } from "./fixture-session";
 // Auth-boundary regression. Closes the gap that the navigation specs
 // can't see: a non-admin who skips the FE entirely and hits the
 // Connect transport directly. Without server-side enforcement (the
@@ -32,10 +33,8 @@ const FRONTEND =
 	process.env.PLAYWRIGHT_BASE_URL ?? mustResolve("frontend", "http");
 
 async function loginAs(page: Page, fixtureName: string): Promise<string> {
-	await page.goto("/auth/login");
-	await expect(page.getByText(fixtureName)).toBeVisible({ timeout: 15000 });
-	await page.getByText(fixtureName).click();
-	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
+	await signInForScenario(page, fixtureName);
+	await expect(page.getByRole("heading", { name: /^Welcome back/ })).toBeVisible({ timeout: 20000 });
 	await expect
 		.poll(async () =>
 			(await page.context().cookies()).some(
