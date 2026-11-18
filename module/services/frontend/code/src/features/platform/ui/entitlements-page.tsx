@@ -7,12 +7,15 @@ import {
 	getSortedRowModel,
 	useReactTable,
 } from "@tanstack/react-table";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { OrgSelector } from "@/components/org-selector";
-import type { Entitlement as EntitlementKey } from "@/gen/saas/accounts/v1/frontend_catalog";
+import { refusalMessage, refusalToast } from "@/features/auth/model/step-up";
+import {
+	ENTITLEMENT_DEFINITIONS,
+	type Entitlement as EntitlementKey,
+} from "@/gen/saas/accounts/v1/frontend_catalog";
 import { useAuth } from "@/lib/auth";
-import { failureText } from "@/shared/lib/failure-text";
 import { readOutcome } from "@/shared/lib/read-outcome";
 import { formatLimit } from "@/shared/lib/utils";
 import {
@@ -25,8 +28,8 @@ import {
 	DialogHeader,
 	DialogTitle,
 	ErrorState,
+	Field,
 	Input,
-	Label,
 	Page as PageBody,
 	PageHeader,
 	Panel,
@@ -68,6 +71,9 @@ export function EntitlementsPage() {
 }
 
 function EntitlementsPageForOrganization({ orgId }: { orgId: string }) {
+	const { platformRole } = useAuth();
+	const canManage = Boolean(platformRole);
+	const busy = useRef(false);
 	const {
 		data,
 		isLoading,
@@ -87,15 +93,16 @@ function EntitlementsPageForOrganization({ orgId }: { orgId: string }) {
 	const [error, setError] = useState("");
 
 	function handleOverride() {
-		if (!orgId || !overrideTarget || !limitValue) return;
+		if (!canManage || busy.current || !orgId || !overrideTarget) return;
 		const limit = parseEntitlementLimit(limitValue);
 		if (limit === null) {
 			setError(
-				"Enter a whole number from -1 to 9223372036854775807 (-1 means unlimited).",
+				"Enter a whole number of zero or more, or -1 for unlimited. The value must fit the supported limit.",
 			);
 			return;
 		}
 		setError("");
+		busy.current = true;
 		overrideEntitlement.mutate(
 			{
 				orgId,
@@ -105,20 +112,27 @@ function EntitlementsPageForOrganization({ orgId }: { orgId: string }) {
 			},
 			{
 				onSuccess: () => {
-					toast.success("Entitlement override applied");
+					toast.success("Plan limit updated");
 					setOverrideTarget(null);
 					setLimitValue("");
 					setReason("");
 				},
 				onError: (failure) =>
-					toast.error(failureText("apply the override", failure)),
+					refusalToast(failure, "Couldn't update the limit"),
+				onSettled: () => {
+					busy.current = false;
+				},
 			},
 		);
 	}
 
+	const { reset: resetOverride } = overrideEntitlement;
 	const columns = useMemo(
 		() => [
-			col.accessor("feature", { header: "Feature" }),
+			col.accessor("feature", {
+				header: "Feature",
+				cell: (info) => ENTITLEMENT_DEFINITIONS[info.getValue()].description,
+			}),
 			col.accessor("limit", {
 				header: "Limit",
 				cell: (info) => formatLimit(info.getValue()),
@@ -140,29 +154,33 @@ function EntitlementsPageForOrganization({ orgId }: { orgId: string }) {
 				),
 			}),
 			col.accessor("hasOverride", {
-				header: "Override",
+				header: "Custom limit",
 				cell: (info) =>
-					info.getValue() ? <Badge variant="outline">Override</Badge> : null,
+					info.getValue() ? (
+						<Badge variant="outline">Custom limit</Badge>
+					) : null,
 			}),
 			col.display({
 				id: "actions",
 				header: "",
-				cell: ({ row }) => (
-					<Button
-						variant="ghost"
-						size="sm"
-						onClick={() => {
-							setOverrideTarget(row.original.feature);
-							setLimitValue(String(row.original.limit));
-							setError("");
-						}}
-					>
-						Override
-					</Button>
-				),
+				cell: ({ row }) =>
+					canManage ? (
+						<Button
+							variant="ghost"
+							size="sm"
+							onClick={() => {
+								resetOverride();
+								setOverrideTarget(row.original.feature);
+								setLimitValue(String(row.original.limit));
+								setError("");
+							}}
+						>
+							Change limit
+						</Button>
+					) : null,
 			}),
 		],
-		[],
+		[canManage, resetOverride],
 	);
 
 	const table = useReactTable({
@@ -175,8 +193,8 @@ function EntitlementsPageForOrganization({ orgId }: { orgId: string }) {
 	return (
 		<PageBody>
 			<PageHeader
-				title="Entitlements"
-				description="View and override organization entitlements."
+				title="Plan limits"
+				description="Review what this organization can use and its current limits."
 				actions={<OrgSelector />}
 			>
 				{data?.planName && <Badge variant="secondary">{data.planName}</Badge>}
@@ -185,10 +203,10 @@ function EntitlementsPageForOrganization({ orgId }: { orgId: string }) {
 			{isError ? (
 				<Panel>
 					<ErrorState
-						title="Couldn't load the entitlements"
+						title="Couldn't load the plan limits"
 						detail={
 							outcome === "forbidden"
-								? "Your account doesn't have the role needed to see this organization's entitlements."
+								? "You don't have access to these plan limits. Ask a platform administrator to grant access."
 								: "Reload the page to try again. If it keeps failing, tell your administrator."
 						}
 					/>
@@ -197,13 +215,18 @@ function EntitlementsPageForOrganization({ orgId }: { orgId: string }) {
 				<DataTable
 					table={table}
 					isLoading={orgId ? isLoading : false}
-					emptyMessage={orgId ? "No entitlements" : "Select an organization"}
+					emptyMessage={
+						orgId
+							? "No plan limits are configured. Ask a platform administrator to review this organization’s plan."
+							: "Select an organization"
+					}
 				/>
 			)}
 
 			<Dialog
 				open={!!overrideTarget}
 				onOpenChange={(v) => {
+					if (busy.current || overrideEntitlement.isPending) return;
 					if (!v) {
 						setOverrideTarget(null);
 						setLimitValue("");
@@ -213,41 +236,60 @@ function EntitlementsPageForOrganization({ orgId }: { orgId: string }) {
 			>
 				<DialogContent className="sm:max-w-md">
 					<DialogHeader>
-						<DialogTitle>Override entitlement</DialogTitle>
+						<DialogTitle>Change plan limit</DialogTitle>
 						<DialogDescription>
-							Override the limit for{" "}
-							<span className="font-mono">{overrideTarget}</span>.
+							{overrideTarget &&
+								ENTITLEMENT_DEFINITIONS[overrideTarget].description}
 						</DialogDescription>
 					</DialogHeader>
-					<div className="space-y-4 py-4">
-						{error && (
-							<p role="alert" className="text-sm text-destructive">
-								{error}
-							</p>
+					<form
+						id="change-plan-limit"
+						noValidate
+						className="space-y-4 py-4"
+						onSubmit={(event) => {
+							event.preventDefault();
+							handleOverride();
+						}}
+					>
+						<Field
+							label="New limit"
+							description="Use -1 for unlimited."
+							error={error || undefined}
+						>
+							{(control) => (
+								<Input
+									{...control}
+									inputMode="numeric"
+									value={limitValue}
+									disabled={overrideEntitlement.isPending}
+									onChange={(event) => setLimitValue(event.target.value)}
+								/>
+							)}
+						</Field>
+						<Field label="Reason (optional)">
+							{(control) => (
+								<Input
+									{...control}
+									value={reason}
+									disabled={overrideEntitlement.isPending}
+									onChange={(event) => setReason(event.target.value)}
+								/>
+							)}
+						</Field>
+						{overrideEntitlement.isError && (
+							<ErrorState
+								title="Limit wasn’t updated"
+								detail={refusalMessage(
+									overrideEntitlement.error,
+									"Your entries have been kept. Try saving again.",
+								)}
+							/>
 						)}
-						<div className="space-y-2">
-							<Label htmlFor="ent-limit">New limit</Label>
-							<Input
-								id="ent-limit"
-								type="number"
-								placeholder="Limit value (-1 for unlimited)"
-								value={limitValue}
-								onChange={(e) => setLimitValue(e.target.value)}
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="ent-reason">Reason</Label>
-							<Input
-								id="ent-reason"
-								placeholder="Optional reason"
-								value={reason}
-								onChange={(e) => setReason(e.target.value)}
-							/>
-						</div>
-					</div>
+					</form>
 					<DialogFooter>
 						<Button
 							variant="outline"
+							disabled={overrideEntitlement.isPending}
 							onClick={() => {
 								setOverrideTarget(null);
 								setLimitValue("");
@@ -257,10 +299,11 @@ function EntitlementsPageForOrganization({ orgId }: { orgId: string }) {
 							Cancel
 						</Button>
 						<Button
-							onClick={handleOverride}
-							disabled={overrideEntitlement.isPending || !limitValue}
+							type="submit"
+							form="change-plan-limit"
+							disabled={overrideEntitlement.isPending || !canManage}
 						>
-							{overrideEntitlement.isPending ? "Applying..." : "Apply override"}
+							{overrideEntitlement.isPending ? "Saving…" : "Save limit"}
 						</Button>
 					</DialogFooter>
 				</DialogContent>
