@@ -1,3 +1,5 @@
+import { Code, ConnectError } from "@connectrpc/connect";
+import { failureText } from "@/shared/lib/failure-text";
 import {
 	ONBOARDING_STEP_CONTENT,
 	type OnboardingProgress,
@@ -34,6 +36,8 @@ export interface OnboardingViewModel {
 	requiredOnly: boolean;
 	pending: boolean;
 	error?: string;
+	fieldErrors?: { name?: string; slug?: string };
+	retryable?: boolean;
 }
 
 export interface OnboardingControllerOptions {
@@ -67,6 +71,7 @@ export class OnboardingController {
 	private readonly navigate: (href: string) => void;
 	private readonly listeners = new Set<Listener>();
 	private model: OnboardingViewModel;
+	private createdOrganizationId?: string;
 
 	constructor(options: OnboardingControllerOptions) {
 		this.backend = options.backend;
@@ -97,6 +102,7 @@ export class OnboardingController {
 	}
 
 	setOrganizationName(name: string): void {
+		if (this.model.pending) return;
 		const current = this.model.draft;
 		// The slug follows the name until the person edits it. Following only
 		// while it is empty froze it at the first letter typed.
@@ -106,16 +112,17 @@ export class OnboardingController {
 			name,
 			slug: following ? slugifyOrganizationName(name) : current.slug,
 		};
-		this.update({ draft, error: undefined });
+		this.update({ draft, error: undefined, fieldErrors: undefined });
 		this.draftStore?.save(draft);
 	}
 
 	setOrganizationSlug(slug: string): void {
+		if (this.model.pending) return;
 		const draft = {
 			...this.model.draft,
 			slug: normalizeOrganizationSlug(slug),
 		};
-		this.update({ draft, error: undefined });
+		this.update({ draft, error: undefined, fieldErrors: undefined });
 		this.draftStore?.save(draft);
 	}
 
@@ -124,13 +131,22 @@ export class OnboardingController {
 		const slug = normalizeOrganizationSlug(this.model.draft.slug);
 		if (!name || !validOrganizationSlug(slug)) {
 			this.update({
-				error: "Enter an organization name and a valid workspace slug.",
+				fieldErrors: {
+					name: !name ? "Enter an organization name." : undefined,
+					slug: !validOrganizationSlug(slug)
+						? "Use 2–63 lowercase letters, numbers or hyphens, starting and ending with a letter or number."
+						: undefined,
+				},
 			});
 			return;
 		}
 		await this.run(async () => {
-			const organizationId = await this.backend.createOrganization(name, slug);
+			const organizationId =
+				this.createdOrganizationId ??
+				(await this.backend.createOrganization(name, slug));
+			this.createdOrganizationId = organizationId;
 			await this.backend.switchOrganization(organizationId);
+			this.createdOrganizationId = undefined;
 			this.draftStore?.clear();
 			this.update({
 				organizationId,
@@ -142,6 +158,10 @@ export class OnboardingController {
 
 	async refresh(): Promise<void> {
 		const organizationId = this.model.organizationId;
+		if (this.createdOrganizationId) {
+			await this.createOrganization();
+			return;
+		}
 		if (!organizationId) {
 			this.update({ phase: "organization" });
 			return;
@@ -175,16 +195,30 @@ export class OnboardingController {
 
 	private async run(operation: () => Promise<void>): Promise<void> {
 		if (this.model.pending) return;
-		this.update({ pending: true, error: undefined });
+		this.update({
+			pending: true,
+			error: undefined,
+			fieldErrors: undefined,
+			retryable: undefined,
+		});
 		try {
 			await operation();
 		} catch (error) {
 			this.update({
-				phase: "error",
-				error:
-					error instanceof Error
-						? error.message
-						: "Onboarding is temporarily unavailable.",
+				phase:
+					this.model.organizationId || this.createdOrganizationId
+						? "error"
+						: "organization",
+				error: failureText(
+					this.createdOrganizationId
+						? "open your new organization"
+						: "continue setup",
+					error,
+				),
+				retryable: !(
+					error instanceof ConnectError &&
+					[Code.PermissionDenied, Code.Unauthenticated].includes(error.code)
+				),
 			});
 		} finally {
 			this.update({ pending: false });
