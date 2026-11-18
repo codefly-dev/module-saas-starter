@@ -10,6 +10,8 @@ const { enterImpersonation, auth } = vi.hoisted(() => ({
 	auth: {
 		platformRole: "super_admin" as string | undefined,
 		organizationId: "org-1",
+		orgRole: "admin",
+		impersonation: { isImpersonating: false },
 	},
 }));
 vi.mock("@/lib/auth", () => ({
