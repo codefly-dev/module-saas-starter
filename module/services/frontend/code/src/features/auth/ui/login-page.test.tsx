@@ -88,9 +88,62 @@ function clientQuery(overrides: Record<string, string> = {}) {
 	});
 }
 
-afterEach(cleanup);
+afterEach(() => {
+	cleanup();
+	vi.unstubAllGlobals();
+});
 
 describe("LoginPage", () => {
+	it("does not present a failed choice read as no available sign-in methods", async () => {
+		h.providers = [];
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue(new Response(null, { status: 503 })),
+		);
+		render(<LoginPage identity={{}} />);
+		expect(
+			await screen.findByText("Couldn’t load sign-in choices"),
+		).toBeTruthy();
+		expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+		expect(screen.queryByText("No sign-in choices available")).toBeNull();
+	});
+
+	it("explains an empty sign-in catalogue", async () => {
+		h.providers = [];
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue(Response.json({ users: [] })),
+		);
+		render(<LoginPage identity={{}} />);
+		expect(
+			await screen.findByText("No sign-in choices available"),
+		).toBeTruthy();
+		expect(
+			screen.getByText(/Ask your administrator to configure/),
+		).toBeTruthy();
+	});
+
+	it("locks every provider while sign-in starts and allows recovery after failure", async () => {
+		let fail!: (error: Error) => void;
+		h.signInWith.mockImplementation(
+			() =>
+				new Promise((_resolve, reject) => {
+					fail = reject;
+				}),
+		);
+		render(<LoginPage identity={{}} />);
+		const button = screen.getByRole("button", {
+			name: /Continue with Provider/,
+		});
+		fireEvent.click(button);
+		expect(button.hasAttribute("disabled")).toBe(true);
+		fireEvent.click(button);
+		expect(h.signInWith).toHaveBeenCalledTimes(1);
+		fail(new Error("private diagnostics"));
+		await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+		expect(screen.queryByText("private diagnostics")).toBeNull();
+	});
+
 	it("does not present authentication as Terms acceptance", () => {
 		render(<LoginPage identity={{}} />);
 
@@ -120,7 +173,7 @@ describe("LoginPage", () => {
 		);
 
 		await waitFor(() =>
-			expect(screen.getByText(/temporarily misconfigured/)).toBeTruthy(),
+			expect(screen.getByText(/Couldn't sign you in/)).toBeTruthy(),
 		);
 		expect(h.push).not.toHaveBeenCalled();
 	});
