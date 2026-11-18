@@ -1,6 +1,4 @@
-import { activityLabel } from "../model/activity-label";
-
-("use client");
+"use client";
 
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -38,6 +36,7 @@ import {
 	useLoadingPhase,
 } from "@/shared/ui";
 import { DataTable } from "@/shared/ui/data-table";
+import { activityLabel } from "../model/activity-label";
 import {
 	type GrantSource,
 	groupByResource,

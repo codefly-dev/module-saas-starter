@@ -12,8 +12,9 @@ import {
 	CardFooter,
 	CardHeader,
 	CardTitle,
+	ErrorState,
+	Field,
 	Input,
-	Label,
 } from "@/shared/ui";
 import { lifecycleErrorMessage } from "../model/errors";
 import { type CreateOrgValues, createOrgSchema } from "../model/schemas";
@@ -51,39 +52,56 @@ export function OrganizationProfileForm({
 
 	return (
 		<Card>
-			<form onSubmit={form.handleSubmit(onSubmit)}>
+			<form
+				noValidate
+				onSubmit={form.handleSubmit((values) => {
+					if (!update.isPending) onSubmit(values);
+				})}
+			>
 				<CardHeader>
 					<CardTitle>Organization</CardTitle>
 					<CardDescription>
-						The name members see, and the slug that identifies it.
+						The name members see and the address that identifies this
+						organization.
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-4">
-					<div className="space-y-2">
-						<Label htmlFor={`org-name-${organization.id}`}>Name</Label>
-						<Input
-							id={`org-name-${organization.id}`}
-							{...form.register("name")}
-						/>
-						{form.formState.errors.name && (
-							<p className="text-sm text-destructive">
-								{form.formState.errors.name.message}
-							</p>
+					<Field
+						label="Name"
+						error={form.formState.errors.name?.message}
+						required
+					>
+						{(control) => (
+							<Input
+								{...control}
+								{...form.register("name")}
+								disabled={update.isPending}
+							/>
 						)}
-					</div>
-					<div className="space-y-2">
-						<Label htmlFor={`org-slug-${organization.id}`}>Slug</Label>
-						<Input
-							id={`org-slug-${organization.id}`}
-							className="font-mono"
-							{...form.register("slug")}
-						/>
-						{form.formState.errors.slug && (
-							<p className="text-sm text-destructive">
-								{form.formState.errors.slug.message}
-							</p>
+					</Field>
+					<Field
+						label="Organization address"
+						description="Use lowercase letters, numbers and hyphens."
+						error={form.formState.errors.slug?.message}
+						required
+					>
+						{(control) => (
+							<Input
+								{...control}
+								{...form.register("slug")}
+								disabled={update.isPending}
+							/>
 						)}
-					</div>
+					</Field>
+					{update.isError && (
+						<ErrorState
+							title="Couldn't update the organization"
+							detail={lifecycleErrorMessage(
+								update.error,
+								"Check your connection and try again.",
+							)}
+						/>
+					)}
 				</CardContent>
 				<CardFooter>
 					<Button

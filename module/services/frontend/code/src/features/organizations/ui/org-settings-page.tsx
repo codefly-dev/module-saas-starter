@@ -20,8 +20,8 @@ import {
 	CardHeader,
 	CardTitle,
 	ErrorState,
+	Field,
 	Input,
-	Label,
 	Page as PageBody,
 	PageHeader,
 	Panel,
@@ -117,7 +117,8 @@ function OrganizationIdentity({ orgId }: { orgId: string }) {
 			</Panel>
 		);
 	}
-	if (!organization) return null;
+	if (!organization)
+		return <Spinner label="Loading the organization" size="sm" />;
 	const identity = {
 		id: organization.id,
 		name: organization.name,
@@ -129,7 +130,11 @@ function OrganizationIdentity({ orgId }: { orgId: string }) {
 			{(isAdministrator || platformRole === "super_admin") && (
 				<OrganizationProfileForm organization={identity} />
 			)}
-			<OrgSettingsForm key={orgId} orgId={orgId} />
+			<OrgSettingsForm
+				key={orgId}
+				orgId={orgId}
+				canEdit={isAdministrator || platformRole === "super_admin"}
+			/>
 			<OrganizationLifecycleCard
 				organization={identity}
 				canLeave
@@ -139,7 +144,13 @@ function OrganizationIdentity({ orgId }: { orgId: string }) {
 	);
 }
 
-function OrgSettingsForm({ orgId }: { orgId: string }) {
+function OrgSettingsForm({
+	orgId,
+	canEdit,
+}: {
+	orgId: string;
+	canEdit: boolean;
+}) {
 	const {
 		data: settings,
 		isLoading,
@@ -193,7 +204,12 @@ function OrgSettingsForm({ orgId }: { orgId: string }) {
 	}
 
 	return (
-		<form onSubmit={form.handleSubmit(onSubmit)}>
+		<form
+			noValidate
+			onSubmit={form.handleSubmit((values) => {
+				if (canEdit && !updateMutation.isPending) onSubmit(values);
+			})}
+		>
 			<Card>
 				<CardHeader>
 					<CardTitle>Branding</CardTitle>
@@ -202,59 +218,63 @@ function OrgSettingsForm({ orgId }: { orgId: string }) {
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-4">
-					<div className="space-y-2">
-						<Label htmlFor="logoUrl">Logo URL</Label>
-						<Input
-							id="logoUrl"
-							placeholder="https://example.com/logo.png"
-							{...form.register("logoUrl")}
-						/>
-						{form.formState.errors.logoUrl && (
-							<p className="text-sm text-destructive">
-								{form.formState.errors.logoUrl.message}
-							</p>
-						)}
-					</div>
-
-					<div className="space-y-2">
-						<Label htmlFor="primaryColor">Primary Color</Label>
-						<div className="flex items-center gap-3">
+					<Field
+						label="Logo URL"
+						error={form.formState.errors.logoUrl?.message}
+					>
+						{(control) => (
 							<Input
-								id="primaryColor"
-								placeholder={defaultOrgSettings.primaryColor}
-								className="flex-1"
-								{...form.register("primaryColor")}
+								{...control}
+								placeholder="https://example.com/logo.png"
+								{...form.register("logoUrl")}
+								disabled={!canEdit || updateMutation.isPending}
 							/>
+						)}
+					</Field>
+					<Field
+						label="Primary color"
+						error={form.formState.errors.primaryColor?.message}
+					>
+						{(control) => (
+							<div className="flex items-center gap-3">
+								<Input
+									{...control}
+									placeholder={defaultOrgSettings.primaryColor}
+									{...form.register("primaryColor")}
+									disabled={!canEdit || updateMutation.isPending}
+								/>
+								<Input
+									type="color"
+									aria-label="Pick the primary color"
+									value={
+										form.watch("primaryColor") ||
+										defaultOrgSettings.primaryColor
+									}
+									onChange={(e) =>
+										form.setValue("primaryColor", e.target.value, {
+											shouldDirty: true,
+											shouldValidate: true,
+										})
+									}
+									disabled={!canEdit || updateMutation.isPending}
+									className="h-10 w-10 shrink-0 cursor-pointer p-0.5"
+								/>
+							</div>
+						)}
+					</Field>
+					<Field
+						label="Browser icon URL"
+						error={form.formState.errors.faviconUrl?.message}
+					>
+						{(control) => (
 							<Input
-								type="color"
-								aria-label="Pick the primary color"
-								value={
-									form.watch("primaryColor") || defaultOrgSettings.primaryColor
-								}
-								onChange={(e) => form.setValue("primaryColor", e.target.value)}
-								className="h-10 w-10 shrink-0 cursor-pointer p-0.5"
+								{...control}
+								placeholder="https://example.com/favicon.ico"
+								{...form.register("faviconUrl")}
+								disabled={!canEdit || updateMutation.isPending}
 							/>
-						</div>
-						{form.formState.errors.primaryColor && (
-							<p className="text-sm text-destructive">
-								{form.formState.errors.primaryColor.message}
-							</p>
 						)}
-					</div>
-
-					<div className="space-y-2">
-						<Label htmlFor="faviconUrl">Favicon URL</Label>
-						<Input
-							id="faviconUrl"
-							placeholder="https://example.com/favicon.ico"
-							{...form.register("faviconUrl")}
-						/>
-						{form.formState.errors.faviconUrl && (
-							<p className="text-sm text-destructive">
-								{form.formState.errors.faviconUrl.message}
-							</p>
-						)}
-					</div>
+					</Field>
 				</CardContent>
 
 				<CardHeader>
@@ -264,24 +284,35 @@ function OrgSettingsForm({ orgId }: { orgId: string }) {
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-4">
-					<div className="space-y-2">
-						<Label htmlFor="customDomain">Custom Domain</Label>
-						<Input
-							id="customDomain"
-							placeholder="app.yourdomain.com"
-							{...form.register("customDomain")}
-						/>
-						{form.formState.errors.customDomain && (
-							<p className="text-sm text-destructive">
-								{form.formState.errors.customDomain.message}
-							</p>
+					<Field
+						label="Custom domain"
+						error={form.formState.errors.customDomain?.message}
+					>
+						{(control) => (
+							<Input
+								{...control}
+								placeholder="app.example.com"
+								{...form.register("customDomain")}
+								disabled={!canEdit || updateMutation.isPending}
+							/>
 						)}
-					</div>
+					</Field>
+					{updateMutation.isError && (
+						<ErrorState
+							title="Couldn't save the settings"
+							detail={failureText("save the settings", updateMutation.error)}
+						/>
+					)}
 				</CardContent>
 
-				<CardFooter>
-					<Button type="submit" disabled={updateMutation.isPending}>
-						{updateMutation.isPending ? "Saving..." : "Save Settings"}
+				<CardFooter className="flex flex-wrap gap-3">
+					{!canEdit && (
+						<p className="text-sm text-muted-foreground">
+							An organization administrator can update these settings.
+						</p>
+					)}
+					<Button type="submit" disabled={!canEdit || updateMutation.isPending}>
+						{updateMutation.isPending ? "Saving..." : "Save settings"}
 					</Button>
 				</CardFooter>
 			</Card>

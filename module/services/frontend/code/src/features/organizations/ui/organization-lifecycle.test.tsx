@@ -66,7 +66,7 @@ describe("LeaveOrganizationDialog", () => {
 		expect(authState.logout).not.toHaveBeenCalled();
 	});
 
-	it("shows the server's refusal for the sole member, with the way forward", async () => {
+	it("shows safe guidance when the organization cannot be left", async () => {
 		organizations([acme, { id: "org-beta", name: "Beta", slug: "beta" }]);
 		server.use(
 			http.post(rpc("OrganizationService", "LeaveOrganization"), () =>
@@ -90,7 +90,7 @@ describe("LeaveOrganizationDialog", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Leave organization" }));
 		const alert = await screen.findByRole("alert");
 		expect(alert.textContent).toContain(
-			"you are this organization's only member; delete it instead of leaving",
+			"Ask an organization administrator to review its members and settings.",
 		);
 		expect(screen.getByRole("link", { name: "Manage members" })).toBeTruthy();
 	});

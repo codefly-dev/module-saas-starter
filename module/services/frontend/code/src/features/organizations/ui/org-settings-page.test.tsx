@@ -28,6 +28,18 @@ describe("organization settings tenant selection", () => {
 		renderInApp(<OrgSettingsPage />);
 		expect(await screen.findByDisplayValue("app.example.com")).toBeTruthy();
 		expect(body).toEqual({ orgId: "org-example" });
+		expect(
+			(
+				screen.getByRole("button", {
+					name: "Save settings",
+				}) as HTMLButtonElement
+			).disabled,
+		).toBe(true);
+		expect(
+			screen.getByText(
+				"An organization administrator can update these settings.",
+			),
+		).toBeTruthy();
 	});
 	it("offers retry instead of an editable blank form on load failure", async () => {
 		server.use(
@@ -42,6 +54,6 @@ describe("organization settings tenant selection", () => {
 		expect((await screen.findByRole("alert")).textContent).toContain(
 			"Couldn't load the organization settings",
 		);
-		expect(screen.queryByRole("button", { name: "Save Settings" })).toBeNull();
+		expect(screen.queryByRole("button", { name: "Save settings" })).toBeNull();
 	});
 });

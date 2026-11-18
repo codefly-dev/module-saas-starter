@@ -46,7 +46,7 @@ export function OrganizationsTable({
 				cell: (info) => <span className="font-medium">{info.getValue()}</span>,
 			}),
 			col.accessor("slug", {
-				header: "Slug",
+				header: "Address",
 				cell: (info) => (
 					<span className="font-mono text-sm text-muted-foreground">
 						{info.getValue()}
@@ -69,7 +69,12 @@ export function OrganizationsTable({
 						<DropdownMenu>
 							<DropdownMenuTrigger
 								render={
-									<Button variant="ghost" size="sm" className="h-8 w-8 p-0" />
+									<Button
+										variant="ghost"
+										size="sm"
+										className="h-8 w-8 p-0"
+										aria-label={`Actions for ${org.name}`}
+									/>
 								}
 							>
 								<MoreHorizontal className="h-4 w-4" />

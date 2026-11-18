@@ -75,10 +75,15 @@ export function OrganizationsPage() {
 				actions={
 					// The deployment's creation policy decides; the server enforces it
 					// either way, so this only stops offering what it would refuse.
-					raw?.canCreate ? (
-						<Button onClick={() => setShowCreate(true)}>
+					raw?.canCreate && !isError ? (
+						<Button
+							onClick={() => {
+								createMutation.reset();
+								setShowCreate(true);
+							}}
+						>
 							<Plus className="mr-2 h-4 w-4" />
-							Create Organization
+							Create organization
 						</Button>
 					) : undefined
 				}
@@ -127,6 +132,15 @@ export function OrganizationsPage() {
 			)}
 
 			<OrgForm
+				key={showCreate ? "create" : "closed"}
+				error={
+					createMutation.isError
+						? lifecycleErrorMessage(
+								createMutation.error,
+								"Check your connection and try again.",
+							)
+						: undefined
+				}
 				open={showCreate}
 				onSubmit={(vals) => createMutation.mutate(vals)}
 				onCancel={() => setShowCreate(false)}
