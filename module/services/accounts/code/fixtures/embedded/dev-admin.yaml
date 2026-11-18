@@ -1,29 +1,12 @@
 # dev-admin fixture — seeds a complete dev environment
 # Used with: codefly run service --fixture dev-admin
-# This file is shared across all services in the module, and it is the ONE
-# fixture every composition seeds — a module playground, a module page or a
-# solution run locally with the authority. Its five people are the same
-# everywhere:
-#
-#   admin@acme.com   Sarah Chen    the platform admin (super_admin), owner of Acme Corp
-#   alice@acme.com   Alice Johnson the organisation admin of Acme Corp
-#   bob@acme.com     Bob Williams  a member holding no role on any target: refused
-#   carol@acme.com   Carol Davis   a member: the user of every target
-#   dana@example.com Dana Lee      a member: the admin of every target
-#
-# Every role-gated target the composition delivers (a solution, a module page
-# declaring roles) is installed at Acme Corp by Alice, each of its two roles to
-# its team, `<target>-admin` and `<target>-user`, and Carol and Dana join the
-# team of their role (`installations`, below); Bob joins none, so every page
-# refuses him. Signed in as Sarah or Alice, "Act as this team" on any of those
-# teams opens a session that is that team and nothing else; signed in as Carol
-# or Dana, the product shows that one team's reach, and signed in as Bob, a
-# refusal. The other people below are the authority interface's own local
-# fixture, kept for parity with its sign-in page.
+# The sign-in page offers Dana (page admin), Carol (page user), and Bob
+# (no page role). Other seeded identities support host and integration tests.
 
 # User ids are pinned so a reseed keeps the same principal uuid: committed
 # configuration (grants, e2e specs, runbooks) can quote a fixture principal
 # without re-deriving it after every fresh seed.
+sign_in_choices: [dev-dana, dev-carol, dev-bob]
 users:
   - id: 00000000-0000-7000-8000-0000000000a1
     email: admin@acme.com

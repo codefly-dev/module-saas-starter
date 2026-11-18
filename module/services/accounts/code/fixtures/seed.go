@@ -34,6 +34,7 @@ var embeddedFixtures embed.FS
 
 // fixtureFile mirrors module/fixtures/*.yaml.
 type fixtureFile struct {
+	SignInChoices []string                `yaml:"sign_in_choices"` // Presentation order for the development sign-in page.
 	Users         []fixtureUser           `yaml:"users"`
 	Organizations []fixtureOrg            `yaml:"organizations"`
 	Teams         []fixtureTeam           `yaml:"teams"`

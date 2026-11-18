@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import yaml from "js-yaml";
+import { FixtureFileSchema } from "@/lib/fixtures/types";
 import {
 	cleanup,
 	fireEvent,
@@ -90,6 +94,20 @@ function clientQuery(overrides: Record<string, string> = {}) {
 afterEach(cleanup);
 
 describe("LoginPage", () => {
+	it("offers only the three page-role cases from the full dev-admin fixture", async () => {
+		h.providers = [];
+		const fixture = FixtureFileSchema.parse(yaml.load(readFileSync(resolve(process.cwd(), "../../../fixtures/dev-admin.yaml"), "utf8")));
+		const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(fixture));
+		try {
+			render(<LoginPage identity={{}} />);
+			await screen.findByText("Dana Lee");
+			const people = fixture.users.filter((person) => screen.queryByText(person.email));
+			expect(people.map((person) => person.name).sort()).toEqual(["Bob Williams", "Carol Davis", "Dana Lee"]);
+		} finally {
+			fetch.mockRestore();
+		}
+	});
+
 	it("does not present authentication as Terms acceptance", () => {
 		render(<LoginPage identity={{}} />);
 
