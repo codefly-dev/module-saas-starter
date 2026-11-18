@@ -1,10 +1,11 @@
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Button } from "@/shared/ui";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
 import { ManageMemberRolesDialog } from "./manage-member-roles-dialog";
+import { RevokeRoleButton } from "./revoke-role-button";
 
 vi.mock("@/lib/auth", () => ({
 	useAuth: () => ({ organizationId: "org-1", orgRole: "owner" }),
@@ -64,7 +65,13 @@ describe("the grants dialog says which of the two an empty list means", () => {
 		open();
 
 		expect(await screen.findByText("No custom roles assigned.")).toBeTruthy();
-		fireEvent.click(screen.getByRole("combobox"));
+		expect(
+			(
+				screen.getByRole("combobox", {
+					name: "Grant a role",
+				}) as HTMLButtonElement
+			).disabled,
+		).toBe(true);
 		expect(
 			await screen.findByText(
 				/don't have permission to see this organization's roles/,
@@ -87,4 +94,88 @@ describe("the grants dialog says which of the two an empty list means", () => {
 
 		expect(await screen.findByText("No custom roles assigned.")).toBeTruthy();
 	});
+});
+
+it("locks the role picker while assigning and keeps a refusal beside it", async () => {
+	let release = () => {};
+	server.use(
+		http.post(rpc("PermissionService", "ListRoles"), () =>
+			HttpResponse.json({ roles: [{ id: "role-1", name: "Support" }] }),
+		),
+		http.post(rpc("PermissionService", "ListRoleAssignments"), () =>
+			HttpResponse.json({ assignments: [] }),
+		),
+		http.post(rpc("PermissionService", "AssignRole"), async () => {
+			await new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			return denied();
+		}),
+	);
+	open();
+	await screen.findByText("No custom roles assigned.");
+	const picker = screen.getByRole("combobox", { name: "Grant a role" });
+	await waitFor(() =>
+		expect((picker as HTMLButtonElement).disabled).toBe(false),
+	);
+	fireEvent.click(picker);
+	fireEvent.click(await screen.findByRole("option", { name: /Support/ }));
+	fireEvent.click(screen.getByRole("button", { name: "Assign" }));
+	try {
+		await screen.findByRole("button", { name: "Assigning…" });
+		expect((picker as HTMLButtonElement).disabled).toBe(true);
+		expect(
+			(screen.getByRole("button", { name: "Done" }) as HTMLButtonElement)
+				.disabled,
+		).toBe(true);
+		fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+		expect(screen.getByRole("dialog")).toBeTruthy();
+	} finally {
+		release();
+	}
+	await waitFor(() => expect(picker.getAttribute("aria-invalid")).toBe("true"));
+	expect(screen.queryByText("nope")).toBeNull();
+});
+
+it("confirms the named role removal and retains a failed outcome in its dialog", async () => {
+	let release = () => {};
+	let calls = 0;
+	server.use(
+		http.post(rpc("PermissionService", "RevokeRole"), async () => {
+			calls += 1;
+			await new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			return denied();
+		}),
+	);
+	renderInApp(
+		<RevokeRoleButton
+			subjectId="u-1"
+			subjectLabel="Jane Doe"
+			roleId="role-1"
+			roleName="Support"
+			orgId="org-1"
+		/>,
+	);
+	fireEvent.click(screen.getByRole("button", { name: "Remove Support" }));
+	expect(screen.getByRole("alertdialog").textContent).toContain("Jane Doe");
+	fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+	expect(calls).toBe(0);
+	fireEvent.click(screen.getByRole("button", { name: "Remove Support" }));
+	fireEvent.click(screen.getByRole("button", { name: "Remove role" }));
+	try {
+		await waitFor(() => expect(calls).toBe(1));
+		expect(
+			(screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement)
+				.disabled,
+		).toBe(true);
+		fireEvent.keyDown(screen.getByRole("alertdialog"), { key: "Escape" });
+		expect(screen.getByRole("alertdialog")).toBeTruthy();
+	} finally {
+		release();
+	}
+	await screen.findByText("Couldn’t remove this role");
+	expect(screen.getByRole("alertdialog")).toBeTruthy();
+	expect(screen.queryByText("nope")).toBeNull();
 });

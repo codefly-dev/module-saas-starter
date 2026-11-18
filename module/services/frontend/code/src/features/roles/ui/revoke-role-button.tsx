@@ -1,7 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { toast } from "sonner";
 import { failureText } from "@/shared/lib/failure-text";
 import {
@@ -15,6 +15,7 @@ import {
 	AlertDialogTitle,
 	AlertDialogTrigger,
 	Button,
+	ErrorState,
 } from "@/shared/ui";
 import { useRevokeRole } from "../service/mutations";
 
@@ -36,11 +37,15 @@ export function RevokeRoleButton({
 }) {
 	const [open, setOpen] = useState(false);
 	const revoke = useRevokeRole();
+	const pending = useRef(false);
 	return (
 		<AlertDialog
 			open={open}
 			onOpenChange={(next) => {
-				if (!revoke.isPending) setOpen(next);
+				if (!pending.current) {
+					setOpen(next);
+					if (!next) revoke.reset();
+				}
 			}}
 		>
 			<AlertDialogTrigger
@@ -63,25 +68,36 @@ export function RevokeRoleButton({
 						this assignment. Access from other roles or teams will remain.
 					</AlertDialogDescription>
 				</AlertDialogHeader>
+				{revoke.isError && (
+					<ErrorState
+						title="Couldn’t remove this role"
+						detail={failureText("remove this role", revoke.error)}
+					/>
+				)}
 				<AlertDialogFooter>
 					<AlertDialogCancel disabled={revoke.isPending}>
 						Cancel
 					</AlertDialogCancel>
 					<AlertDialogAction
 						disabled={revoke.isPending}
-						onClick={() =>
+						onClick={(event) => {
+							event.preventDefault();
+							if (pending.current) return;
+							pending.current = true;
 							revoke.mutate(
 								{ subjectId, roleId, orgId, scope },
 								{
 									onSuccess: () => {
+										pending.current = false;
 										toast.success("Role removed");
 										setOpen(false);
 									},
-									onError: (error) =>
-										toast.error(failureText("remove this role", error)),
+									onError: () => {
+										pending.current = false;
+									},
 								},
-							)
-						}
+							);
+						}}
 					>
 						{revoke.isPending ? "Removing…" : "Remove role"}
 					</AlertDialogAction>

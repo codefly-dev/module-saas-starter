@@ -1,9 +1,8 @@
 "use client";
-import { RevokeRoleButton } from "./revoke-role-button";
 
 import { Plus } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { failureText } from "@/shared/lib/failure-text";
 import {
@@ -22,6 +21,8 @@ import {
 	DialogHeader,
 	DialogTitle,
 	DialogTrigger,
+	ErrorState,
+	Field,
 	Select,
 	SelectContent,
 	SelectItem,
@@ -32,6 +33,7 @@ import {
 } from "@/shared/ui";
 import { useAssignRole } from "../service/mutations";
 import { useRoleAssignments, useRoles } from "../service/queries";
+import { RevokeRoleButton } from "./revoke-role-button";
 
 interface ManageMemberRolesDialogProps {
 	orgId: string;
@@ -56,10 +58,12 @@ export function ManageMemberRolesDialog({
 }: ManageMemberRolesDialogProps) {
 	const [open, setOpen] = useState(false);
 	const [picked, setPicked] = useState<string>("");
+	const pending = useRef(false);
 
 	const {
 		data: roles = [],
 		isError: rolesFailed,
+		isPending: rolesLoading,
 		error: rolesError,
 	} = useRoles(orgId);
 	const {
@@ -93,7 +97,16 @@ export function ManageMemberRolesDialog({
 	const roleNameById = new Map(roles.map((r) => [r.id, r.name] as const));
 
 	function handleAssign() {
-		if (!picked) return;
+		if (
+			!picked ||
+			pending.current ||
+			rolesFailed ||
+			isError ||
+			rolesLoading ||
+			isLoading
+		)
+			return;
+		pending.current = true;
 		assignRole.mutate(
 			{ subjectId: userId, roleId: picked, orgId },
 			{
@@ -101,13 +114,20 @@ export function ManageMemberRolesDialog({
 					toast.success(`Role assigned to ${userLabel}`);
 					setPicked("");
 				},
-				onError: (e) => toast.error(failureText("assign this role", e)),
+				onSettled: () => {
+					pending.current = false;
+				},
 			},
 		);
 	}
 
 	return (
-		<Dialog open={open} onOpenChange={setOpen}>
+		<Dialog
+			open={open}
+			onOpenChange={(next) => {
+				if (!pending.current) setOpen(next);
+			}}
+		>
 			<DialogTrigger render={trigger ?? <Button variant="outline" size="sm" />}>
 				{!trigger && "Manage roles"}
 			</DialogTrigger>
@@ -168,68 +188,125 @@ export function ManageMemberRolesDialog({
 					</div>
 
 					<div className="space-y-2">
-						<div className="text-sm font-medium">Grant a role</div>
-						<div className="flex items-center gap-2">
-							<Select value={picked} onValueChange={(v) => setPicked(v ?? "")}>
-								<SelectTrigger className="flex-1">
-									<SelectValue placeholder="Pick a role…">
-										{picked
-											? roleNameById.get(picked) || "Role unavailable"
-											: undefined}
-									</SelectValue>
-								</SelectTrigger>
-								<SelectContent>
-									{availableRoles.length === 0 ? (
-										<div className="px-2 py-2 text-sm text-muted-foreground">
-											<div>
-												{readOutcomeMessage(
-													rolesOutcome,
-													"this organization's roles",
-													"No roles available.",
-												)}
-											</div>
-											<Link
-												href="/admin/roles"
-												className="text-primary hover:underline"
-												onClick={() => setOpen(false)}
-											>
-												Create a custom role →
-											</Link>
-										</div>
-									) : (
-										availableRoles.map((r) => (
-											<SelectItem key={r.id} value={r.id}>
-												<span className="flex items-center gap-2">
-													{r.name}
-													{r.builtIn ? (
-														<Badge variant="outline" className="text-[10px]">
-															built-in
-														</Badge>
-													) : (
-														<Badge variant="secondary" className="text-[10px]">
-															custom
-														</Badge>
+						<Field
+							label="Grant a role"
+							description={
+								rolesLoading ? (
+									<Spinner label="Loading available roles" size="sm" />
+								) : undefined
+							}
+							error={
+								assignRole.isError
+									? failureText("assign this role", assignRole.error)
+									: undefined
+							}
+						>
+							{(control) => (
+								<div className="flex items-center gap-2">
+									<Select
+										disabled={
+											assignRole.isPending ||
+											rolesLoading ||
+											rolesFailed ||
+											isError ||
+											isLoading
+										}
+										value={picked}
+										onValueChange={(v) => {
+											setPicked(v ?? "");
+											assignRole.reset();
+										}}
+									>
+										<SelectTrigger {...control} className="flex-1">
+											<SelectValue placeholder="Pick a role…">
+												{picked
+													? roleNameById.get(picked) || "Role unavailable"
+													: undefined}
+											</SelectValue>
+										</SelectTrigger>
+										<SelectContent>
+											{availableRoles.length === 0 ? (
+												<div className="px-2 py-2 text-sm text-muted-foreground">
+													<div>
+														{readOutcomeMessage(
+															rolesOutcome,
+															"this organization's roles",
+															"No roles available.",
+														)}
+													</div>
+													{!rolesFailed && !rolesLoading && (
+														<Link
+															href="/admin/roles"
+															className="text-primary hover:underline"
+															onClick={() => setOpen(false)}
+														>
+															Create a custom role →
+														</Link>
 													)}
-												</span>
-											</SelectItem>
-										))
-									)}
-								</SelectContent>
-							</Select>
-							<Button
-								size="sm"
-								onClick={handleAssign}
-								disabled={!picked || assignRole.isPending}
-							>
-								<Plus className="mr-1 h-4 w-4" />
-								{assignRole.isPending ? "Assigning…" : "Assign"}
-							</Button>
-						</div>
+												</div>
+											) : (
+												availableRoles.map((r) => (
+													<SelectItem key={r.id} value={r.id}>
+														<span className="flex items-center gap-2">
+															{r.name}
+															{r.builtIn ? (
+																<Badge
+																	variant="outline"
+																	className="text-[10px]"
+																>
+																	built-in
+																</Badge>
+															) : (
+																<Badge
+																	variant="secondary"
+																	className="text-[10px]"
+																>
+																	custom
+																</Badge>
+															)}
+														</span>
+													</SelectItem>
+												))
+											)}
+										</SelectContent>
+									</Select>
+									<Button
+										size="sm"
+										onClick={handleAssign}
+										disabled={
+											!picked ||
+											assignRole.isPending ||
+											rolesFailed ||
+											isError ||
+											rolesLoading ||
+											isLoading
+										}
+									>
+										<Plus className="mr-1 h-4 w-4" />
+										{assignRole.isPending ? "Assigning…" : "Assign"}
+									</Button>
+								</div>
+							)}
+						</Field>
+						{rolesFailed && (
+							<ErrorState
+								title="Roles unavailable"
+								detail={readOutcomeMessage(
+									rolesOutcome,
+									"this organization's roles",
+									"",
+								)}
+							/>
+						)}
 					</div>
 				</div>
 
 				<DialogFooter>
-					<Button variant="outline" onClick={() => setOpen(false)}>
+					<Button
+						variant="outline"
+						disabled={assignRole.isPending}
+						onClick={() => setOpen(false)}
+					>
 						Done
 					</Button>
 				</DialogFooter>
