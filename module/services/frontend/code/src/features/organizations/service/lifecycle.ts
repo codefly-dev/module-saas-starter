@@ -17,33 +17,29 @@ function invalidateOrganization(
 	queryClient.invalidateQueries({ queryKey: ["platform-organizations"] });
 }
 
-/**
- * Runs an action that ends the caller's membership of `orgId` — leaving it or
- * deleting it. When the browser is signed into that organization, the session
- * moves to another one first: the membership's removal revokes every session
- * bound to it. With nowhere to move, the action still runs and the user is
- * signed out, which is the honest outcome — they belong to no organization.
- */
+/** Submit the departure under the current tenant. Once it commits, its
+ * membership can no longer authorize requests. Move to a remaining workspace
+ * if the session still permits the exchange, otherwise finish signing out. */
 function useDeparture() {
 	const queryClient = useQueryClient();
 	const { organizationId, switchOrganization, logout } = useAuth();
 	return async (orgId: string, action: () => Promise<unknown>) => {
-		let stranded = false;
-		if (organizationId === orgId) {
-			const { organizations } = await queryClient.fetchQuery(orgQueries.list());
-			const next = fallbackOrganization(organizations, orgId);
-			if (next) {
-				await switchOrganization(next.id);
-			} else {
-				stranded = true;
-			}
-		}
+		const current = organizationId === orgId;
+		const next = current
+			? fallbackOrganization((await queryClient.fetchQuery(orgQueries.list())).organizations, orgId)
+			: undefined;
 		await action();
 		invalidateOrganization(queryClient, orgId);
-		// Stranded: the person left their last organization, so there is nothing
-		// left to be signed in to. Through the shared journey, so an incomplete
-		// sign-out is not left looking like a finished one.
-		if (stranded) await signOutAndLeave(logout);
+		if (!current) return;
+		if (next) {
+			try {
+				await switchOrganization(next.id);
+				return;
+			} catch {
+				// The removed membership's session may already have been revoked.
+			}
+		}
+		await signOutAndLeave(logout);
 	};
 }
 

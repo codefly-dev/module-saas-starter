@@ -15,7 +15,7 @@ async function loginAsSuperAdmin(page: Page) {
 }
 
 test("a platform administrator manages an organization by hand", async ({
-	page,
+	page, browser,
 }) => {
 	const stamp = Date.now().toString(36);
 	const name = `E2E Org ${stamp}`;
@@ -34,6 +34,12 @@ test("a platform administrator manages an organization by hand", async ({
 	await expect(create.getByLabel("Slug")).toHaveValue(slug);
 	await create.getByRole("button", { name: "Create" }).click();
 	await expect(page.getByText(`Created ${name}`)).toBeVisible();
+
+	// The creator is the owner. Enter that organization before changing it.
+	const switcher = page.getByRole("button", { name: "Organization", exact: true });
+	await switcher.click();
+	await page.getByRole("menuitem", { name, exact: true }).click();
+	await expect(switcher).toContainText(name);
 
 	// Find it and open it.
 	await page.getByLabel("Search organizations").fill(slug);
@@ -74,6 +80,20 @@ test("a platform administrator manages an organization by hand", async ({
 	await detail.getByRole("button", { name: "Delete", exact: true }).click();
 	const confirm = page.getByRole("dialog");
 	await confirm.getByLabel(/to confirm/).fill(slug);
+	const deletion = page.waitForResponse(response => response.url().endsWith("/DeleteOrganization") && response.request().method() === "POST");
 	await confirm.getByRole("button", { name: "Delete organization" }).click();
-	await expect(page.getByText(`${renamed} was deleted`)).toBeVisible();
+	const result = await deletion;
+	expect(result.ok(), await result.text()).toBe(true);
+	// The deleted membership no longer authorizes the page. Verify the
+	// resulting organization state from a fresh platform directory session.
+	const verifier = await browser.newPage({ baseURL: new URL(page.url()).origin });
+	try {
+		await loginAsSuperAdmin(verifier);
+		await verifier.goto("/admin/platform/organizations");
+		await verifier.getByLabel("Search organizations").fill(slug);
+		await verifier.getByRole("switch").click();
+		await expect(verifier.getByRole("row").filter({ hasText: renamed })).toContainText("Archived");
+	} finally {
+		await verifier.close();
+	}
 });
