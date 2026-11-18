@@ -1,5 +1,6 @@
 "use client";
 
+import { Radio, RadioGroup } from "@codefly-dev/ui/layout";
 import { Check, Copy, Plus } from "lucide-react";
 import { useId, useState } from "react";
 import { toast } from "sonner";
@@ -7,6 +8,7 @@ import { OrgSelector } from "@/components/org-selector";
 import { failureText } from "@/shared/lib/failure-text";
 import {
 	Button,
+	Checkbox,
 	Dialog,
 	DialogContent,
 	DialogDescription,
@@ -33,14 +35,14 @@ const SCOPE_PRESETS = [
 		id: "read_only",
 		label: "Read-only access",
 		description:
-			"Read users, orgs, audit logs, webhooks, and entitlements. Cannot mutate.",
+			"View people, organizations, activity logs, webhooks, and plan details. Cannot make changes.",
 		scopes: [{ resource: "*", action: "read" }],
 	},
 	{
 		id: "read_write",
 		label: "Read & write",
 		description:
-			"Full app access, except creating API keys. Use for backend integrations that need to mutate data.",
+			"Read and change application data, except creating API keys. Use only when your integration needs to make changes.",
 		scopes: [
 			{ resource: "*", action: "read" },
 			{ resource: "*", action: "write" },
@@ -59,9 +61,9 @@ const SCOPE_PRESETS = [
 	},
 	{
 		id: "module_envelope",
-		label: "Module envelope only",
+		label: "Manage application access limits",
 		description:
-			"Write the authority ceiling modules are derived inside, and nothing else. For an operator or an automation that corrects a module's ceiling without a browser; a key cannot mint another key.",
+			"View and update the maximum access available to connected applications. Does not allow creating other keys.",
 		scopes: [
 			{ resource: "module_envelope", action: "read" },
 			{ resource: "module_envelope", action: "write" },
@@ -69,9 +71,9 @@ const SCOPE_PRESETS = [
 	},
 	{
 		id: "no_scopes",
-		label: "No scopes",
+		label: "No application access",
 		description:
-			"For sandboxing — every scoped handler will reject the key. Useful for testing scope enforcement.",
+			"Use to test that protected actions are denied. This key has no granted access.",
 		scopes: [],
 	},
 ] as const;
@@ -183,7 +185,7 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 				form={formId}
 				disabled={createKey.isPending || !keyName.trim() || !orgId}
 			>
-				{createKey.isPending ? "Creating..." : "Create Key"}
+				{createKey.isPending ? "Creating..." : "Create key"}
 			</Button>
 		</DialogFooter>
 	);
@@ -199,7 +201,7 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 		>
 			<DialogTrigger render={<Button />}>
 				<Plus className="mr-2 h-4 w-4" />
-				Create Key
+				Create key
 			</DialogTrigger>
 			<DialogContent
 				className="sm:max-w-md"
@@ -209,7 +211,7 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 				{plaintextKey ? (
 					<>
 						<DialogHeader>
-							<DialogTitle>API Key Created</DialogTitle>
+							<DialogTitle>API key created</DialogTitle>
 							<DialogDescription>
 								Copy your API key now. You will not be able to see it again.
 							</DialogDescription>
@@ -235,14 +237,16 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 							<p className="text-sm text-destructive font-medium">
 								This key will not be shown again. Make sure to copy it.
 							</p>
-							<label className="flex items-center gap-2 text-sm">
-								<input
-									type="checkbox"
+							<div className="flex items-center gap-2 text-sm">
+								<Checkbox
+									id={`${formId}-saved`}
 									checked={copied}
-									onChange={(event) => setCopied(event.target.checked)}
+									onCheckedChange={setCopied}
 								/>
-								I have saved this key securely
-							</label>
+								<Label htmlFor={`${formId}-saved`}>
+									I have saved this key securely
+								</Label>
+							</div>
 						</div>
 					</>
 				) : (
@@ -256,9 +260,10 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 						className="space-y-4"
 					>
 						<DialogHeader>
-							<DialogTitle>Create API Key</DialogTitle>
+							<DialogTitle>Create API key</DialogTitle>
 							<DialogDescription>
-								Generate a new API key for programmatic access.
+								Let an integration access this organization. Choose only the
+								access it needs.
 							</DialogDescription>
 						</DialogHeader>
 						{!orgId && (
@@ -279,7 +284,7 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 									id="key-name"
 									required
 									disabled={createKey.isPending}
-									placeholder="e.g. production-backend"
+									placeholder="e.g. reporting integration"
 									value={keyName}
 									onChange={(e) => setKeyName(e.target.value)}
 								/>
@@ -297,7 +302,7 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 										if (v) setEnvironment(v);
 									}}
 								>
-									<SelectTrigger>
+									<SelectTrigger aria-label="Environment">
 										<SelectValue />
 									</SelectTrigger>
 									<SelectContent>
@@ -308,32 +313,35 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 							</div>
 
 							<div className="space-y-2">
-								<Label>Scopes</Label>
-								<div className="rounded-md border divide-y">
+								<Label id={`${formId}-access-label`}>Access</Label>
+								<RadioGroup
+									value={scopePreset}
+									onValueChange={setScopePreset}
+									disabled={createKey.isPending}
+									aria-labelledby={`${formId}-access-label`}
+									className="rounded-md border divide-y gap-0"
+								>
 									{SCOPE_PRESETS.map((preset) => (
-										<label
-											key={preset.id}
-											className="flex items-start gap-3 p-3 cursor-pointer hover:bg-accent/30"
-										>
-											<input
-												type="radio"
-												name="scope-preset"
+										<div key={preset.id} className="flex items-start gap-3 p-3">
+											<Radio
+												id={`${formId}-${preset.id}`}
 												value={preset.id}
-												checked={scopePreset === preset.id}
-												onChange={() => setScopePreset(preset.id)}
-												className="mt-0.5"
+												aria-describedby={`${formId}-${preset.id}-description`}
 											/>
 											<div className="space-y-0.5">
-												<div className="font-medium text-sm">
+												<Label htmlFor={`${formId}-${preset.id}`}>
 													{preset.label}
-												</div>
-												<div className="text-xs text-muted-foreground">
+												</Label>
+												<p
+													id={`${formId}-${preset.id}-description`}
+													className="text-xs text-muted-foreground"
+												>
 													{preset.description}
-												</div>
+												</p>
 											</div>
-										</label>
+										</div>
 									))}
-								</div>
+								</RadioGroup>
 								<p className="text-xs text-muted-foreground">
 									Choose the minimum access your integration needs.
 								</p>

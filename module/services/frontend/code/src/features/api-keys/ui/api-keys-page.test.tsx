@@ -92,17 +92,19 @@ describe("APIKeysPage admin container", () => {
 		);
 		server.use(http.post(rpc("APIKeyService", "CreateAPIKey"), create));
 		renderInApp(<APIKeysPage />);
-		fireEvent.click(screen.getByRole("button", { name: "Create Key" }));
+		fireEvent.click(screen.getByRole("button", { name: "Create key" }));
 		const dialog = await screen.findByRole("dialog");
 		fireEvent.change(within(dialog).getByLabelText("Name"), {
 			target: { value: "Example integration" },
 		});
-		fireEvent.click(within(dialog).getByRole("button", { name: "Create Key" }));
+		fireEvent.click(within(dialog).getByRole("button", { name: "Create key" }));
 		expect(await screen.findByText("sk_test_example_secret")).toBeTruthy();
 		expect(create).toHaveBeenCalledOnce();
 		expect(within(dialog).queryByRole("button", { name: "Close" })).toBeNull();
 		fireEvent.click(
-			within(dialog).getByLabelText("I have saved this key securely"),
+			within(dialog).getByRole("checkbox", {
+				name: "I have saved this key securely",
+			}),
 		);
 		fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
 		await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -110,7 +112,7 @@ describe("APIKeysPage admin container", () => {
 	it("explains the missing organization instead of leaving a dead create button", async () => {
 		auth.organizationId = "";
 		renderInApp(<APIKeysPage />);
-		fireEvent.click(screen.getByRole("button", { name: "Create Key" }));
+		fireEvent.click(screen.getByRole("button", { name: "Create key" }));
 		expect(
 			await screen.findByText("Select an organization to create its API key."),
 		).toBeTruthy();
@@ -128,7 +130,7 @@ describe("APIKeysPage admin container", () => {
 			),
 		);
 		renderInApp(<APIKeysPage />);
-		fireEvent.click(screen.getByRole("button", { name: "Create Key" }));
+		fireEvent.click(screen.getByRole("button", { name: "Create key" }));
 		const dialog = await screen.findByRole("dialog");
 		fireEvent.change(within(dialog).getByLabelText("Name"), {
 			target: { value: "Example integration" },

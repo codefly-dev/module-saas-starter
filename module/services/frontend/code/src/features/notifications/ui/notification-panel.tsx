@@ -1,11 +1,13 @@
 "use client";
 
+import { EmptyState } from "@codefly-dev/ui/layout";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCheck, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Button, Separator, Skeleton } from "@/shared/ui";
+import { failureText } from "@/shared/lib/failure-text";
+import { Button, ErrorState, Separator, Skeleton } from "@/shared/ui";
 import { timeAgo } from "../model/transforms";
 import { notificationMutations } from "../service/mutations";
 import { notificationQueries } from "../service/queries";
@@ -17,8 +19,10 @@ interface NotificationPanelProps {
 export function NotificationPanel({ onClose }: NotificationPanelProps) {
 	const queryClient = useQueryClient();
 	const router = useRouter();
-	const { data, isLoading } = useQuery(notificationQueries.list(10));
-	const notifications = data?.notifications ?? [];
+	const { data, isLoading, isError, error } = useQuery(
+		notificationQueries.list(10),
+	);
+	const notifications = isError ? [] : (data?.notifications ?? []);
 
 	const markReadMutation = useMutation({
 		mutationFn: (id: string) => notificationMutations.markRead(id),
@@ -53,7 +57,7 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 	});
 
 	return (
-		<div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-lg border bg-popover shadow-lg">
+		<div className="w-full">
 			<div className="flex items-center justify-between border-b px-4 py-3">
 				<h3 className="text-sm font-semibold">Notifications</h3>
 				<div className="flex items-center gap-1">
@@ -62,7 +66,12 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 						size="sm"
 						className="h-7 px-2 text-xs"
 						onClick={() => markAllReadMutation.mutate()}
-						disabled={markAllReadMutation.isPending}
+						disabled={
+							markAllReadMutation.isPending ||
+							isLoading ||
+							isError ||
+							notifications.length === 0
+						}
 					>
 						<CheckCheck className="mr-1 h-3 w-3" />
 						Mark all read
@@ -72,6 +81,7 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 						size="sm"
 						className="h-7 w-7 p-0"
 						onClick={onClose}
+						aria-label="Close notifications"
 					>
 						<X className="h-3 w-3" />
 					</Button>
@@ -85,16 +95,24 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 							<Skeleton key={i} className="h-14 w-full" />
 						))}
 					</div>
+				) : isError ? (
+					<ErrorState
+						title="Couldn’t load notifications"
+						detail={failureText("load notifications", error)}
+					/>
 				) : notifications.length === 0 ? (
-					<p className="py-8 text-center text-sm text-muted-foreground">
-						No notifications
-					</p>
+					<EmptyState
+						className="py-6"
+						heading="No notifications"
+						description="Updates that need your attention will appear here."
+					/>
 				) : (
 					notifications.map((notification) => (
-						<button
+						<Button
+							variant="ghost"
 							type="button"
 							key={notification.id}
-							className={`w-full text-left px-4 py-3 hover:bg-muted/50 transition-colors ${
+							className={`h-auto w-full justify-start whitespace-normal rounded-none text-left px-4 py-3 hover:bg-muted/50 transition-colors ${
 								!notification.read ? "bg-muted/30" : ""
 							}`}
 							onClick={() => {
@@ -126,7 +144,7 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 									</p>
 								</div>
 							</div>
-						</button>
+						</Button>
 					))
 				)}
 			</div>

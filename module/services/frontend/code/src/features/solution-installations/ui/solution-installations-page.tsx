@@ -50,10 +50,10 @@ import {
 	TableHead,
 	TableHeader,
 	TableRow,
-	useLoadingPhase,
 	Tabs,
 	TabsList,
 	TabsTrigger,
+	useLoadingPhase,
 } from "@/shared/ui";
 import { holdersByRole, statusLine } from "../model/access";
 import {
@@ -1220,15 +1220,17 @@ function TeamExposure({
 							>
 								{team.team}
 								<span className="text-muted-foreground">· {team.role}</span>
-								<button
+								<Button
+									variant="ghost"
+									size="icon-sm"
 									type="button"
 									onClick={() => onRevoke(team)}
 									disabled={revoking}
-									className="ml-1 hover:text-destructive disabled:opacity-50"
+									className="ml-1 size-6 hover:text-destructive"
 									aria-label={`Remove ${team.team} from ${name}`}
 								>
 									<X className="h-3 w-3" />
-								</button>
+								</Button>
 							</Badge>
 						</li>
 					))}

@@ -3,7 +3,7 @@
 import { roleAbilities } from "@codefly-dev/saas-ui/solution";
 import { createClient } from "@connectrpc/connect";
 import { useQuery } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { teamQueries } from "@/features/teams/service/queries";
 import { OfferService } from "@/gen/host/installation/v1/installation_pb";
 import type {
@@ -15,6 +15,7 @@ import { apiTransport } from "@/lib/connect/transport";
 import { useInstallationService } from "@/lib/hooks/use-api-client";
 import {
 	Button,
+	Checkbox,
 	DelayedLoading,
 	Dialog,
 	DialogContent,
@@ -22,6 +23,7 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
+	Label,
 } from "@/shared/ui";
 import {
 	assertMatchingOffer,
@@ -77,6 +79,7 @@ export function InstallSolutionDialog({
 		useTargetTitles().get(solution.routeAlias) ?? solution.routeAlias;
 	const { user } = useAuth();
 	const top = useRef<HTMLDivElement>(null);
+	const approvalId = useId();
 	const [chosen, setChosen] = useState<Record<string, string>>({});
 	const [untaken, setUntaken] = useState<ReadonlySet<string>>(new Set());
 	const [approved, setApproved] = useState(false);
@@ -195,17 +198,19 @@ export function InstallSolutionDialog({
 							modules={data.modules.map(({ module }) => module)}
 						/>
 						<TechnicalAccess offer={data.offer} modules={data.modules} />
-						<label className="flex items-start gap-2">
-							<input
-								type="checkbox"
+						<div className="flex items-start gap-2">
+							<Checkbox
+								id={approvalId}
 								checked={approved}
-								onChange={(event) => setApproved(event.target.checked)}
+								onCheckedChange={setApproved}
 								disabled={isPending}
 							/>
-							I approve this {upgrade ? "release" : "solution"} and the access
-							it and its supporting modules require, including the technical
-							details.
-						</label>
+							<Label htmlFor={approvalId}>
+								I approve this {upgrade ? "release" : "solution"} and the access
+								it and its supporting modules require, including the technical
+								details.
+							</Label>
+						</div>
 					</div>
 				)}
 				{error && (

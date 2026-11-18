@@ -6,8 +6,11 @@ import {
 	RoleAbilitiesList,
 	roleLabel,
 } from "@codefly-dev/saas-ui/solution";
+import { useId } from "react";
 import type { Team } from "@/gen/saas/accounts/v1/common_pb";
 import {
+	Checkbox,
+	Label,
 	Select,
 	SelectContent,
 	SelectItem,
@@ -51,6 +54,7 @@ export function InstallationTeamAssignment({
 	/** How the host titles the target; each role reads as its ("<Title> admin"). */
 	title?: string;
 }) {
+	const checkboxPrefix = useId();
 	return (
 		<section aria-label="Roles" className="space-y-3">
 			<div>
@@ -131,15 +135,17 @@ export function InstallationTeamAssignment({
 								has.
 							</p>
 						)}
-						<label className="inline-flex items-center gap-2">
-							<input
-								type="checkbox"
+						<div className="inline-flex items-center gap-2">
+							<Checkbox
+								id={`${checkboxPrefix}-${entry.role}`}
 								checked={taken.has(entry.role)}
 								disabled={disabled}
-								onChange={(event) => onTake(entry.role, event.target.checked)}
+								onCheckedChange={(checked) => onTake(entry.role, checked)}
 							/>
-							Add me to this team
-						</label>
+							<Label htmlFor={`${checkboxPrefix}-${entry.role}`}>
+								Add me to this team
+							</Label>
+						</div>
 					</section>
 				);
 			})}

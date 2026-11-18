@@ -1511,7 +1511,8 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 				name: "Add me to this team",
 			}) as HTMLInputElement;
 		// Every role ticked for the administrator; nothing must be picked.
-		for (const role of ["admin", "user"]) expect(me(role).checked).toBe(true);
+		for (const role of ["admin", "user"])
+			expect(me(role).getAttribute("aria-checked")).toBe("true");
 		fireEvent.click(me("admin"));
 		fireEvent.click(
 			within(dialog).getByRole("button", { name: "Set up access" }),
