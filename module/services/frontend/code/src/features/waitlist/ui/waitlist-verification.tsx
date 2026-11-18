@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
@@ -9,68 +9,94 @@ import {
 	CardDescription,
 	CardFooter,
 	CardHeader,
-	CardTitle,
+	ErrorState,
+	Page,
+	PageHeader,
+	Spinner,
 } from "@/shared/ui";
 
 export function WaitlistVerification() {
 	const [message, setMessage] = useState("");
 	const [loading, setLoading] = useState(true);
 	const [succeeded, setSucceeded] = useState(false);
+	const [retryable, setRetryable] = useState(false);
+	const [attempt, setAttempt] = useState(0);
 
 	useEffect(() => {
+		setLoading(true);
+		setRetryable(false);
+		let live = true;
 		fetch("/waitlist/verify/api", { method: "POST", cache: "no-store" })
 			.then(async (response) => {
 				const body = (await response.json()) as {
 					message?: string;
 					state?: string;
 				};
-				setSucceeded(
+				if (!live) return;
+				const verified =
 					response.ok &&
-						[
-							"WAITLIST_STATE_VERIFIED",
-							"WAITLIST_STATE_APPROVED",
-							"WAITLIST_STATE_INVITED",
-							"WAITLIST_STATE_CONVERTED",
-						].includes(body.state ?? ""),
-				);
+					[
+						"WAITLIST_STATE_VERIFIED",
+						"WAITLIST_STATE_APPROVED",
+						"WAITLIST_STATE_INVITED",
+						"WAITLIST_STATE_CONVERTED",
+					].includes(body.state ?? "");
+				setSucceeded(verified);
+				setRetryable(response.status >= 500 || response.status === 429);
 				setMessage(
-					body.message ??
-						(response.ok
-							? "Your email is verified."
-							: "This verification link is invalid or no longer available."),
+					verified
+						? "Your email is verified."
+						: response.status >= 500 || response.status === 429
+							? "We couldn’t verify your email right now. Please try again shortly."
+							: "This verification link is invalid or no longer available. Request a new link to continue.",
 				);
 			})
 			.catch(() => {
+				if (!live) return;
 				setSucceeded(false);
-				setMessage("Verification is temporarily unavailable. Try again.");
+				setMessage(
+					"We couldn’t confirm whether your email was verified. Open the link from your email again, or contact your administrator.",
+				);
 			})
-			.finally(() => setLoading(false));
-	}, []);
+			.finally(() => {
+				if (live) setLoading(false);
+			});
+		return () => {
+			live = false;
+		};
+	}, [attempt]);
 
 	return (
-		<div className="flex min-h-screen items-center justify-center p-4">
+		<Page className="flex min-h-screen items-center justify-center p-4">
 			<Card className="w-full max-w-md text-center">
 				<CardHeader>
+					<PageHeader
+						title={loading ? "Verifying email" : "Email verification"}
+					/>
 					{loading ? (
-						<Loader2 className="mx-auto h-10 w-10 animate-spin" />
+						<Spinner label="Verifying email" />
 					) : succeeded ? (
-						<CheckCircle2
-							aria-label="Verification succeeded"
-							className="mx-auto h-10 w-10 text-primary"
-						/>
+						<>
+							<CheckCircle2
+								aria-label="Verification succeeded"
+								className="mx-auto h-10 w-10 text-primary"
+							/>
+							<CardDescription>{message}</CardDescription>
+						</>
 					) : (
-						<AlertCircle
-							aria-label="Verification failed"
-							className="mx-auto h-10 w-10 text-destructive"
+						<ErrorState
+							title="Email verification needs attention"
+							detail={message}
 						/>
 					)}
-					<CardTitle>
-						{loading ? "Verifying email" : "Waitlist status"}
-					</CardTitle>
-					<CardDescription aria-live="polite">{message}</CardDescription>
 				</CardHeader>
 				{!loading && (
 					<CardFooter className="justify-center">
+						{retryable && (
+							<Button onClick={() => setAttempt((value) => value + 1)}>
+								Try again
+							</Button>
+						)}
 						<Button
 							nativeButton={false}
 							render={<Link href="/waitlist" />}
@@ -81,6 +107,6 @@ export function WaitlistVerification() {
 					</CardFooter>
 				)}
 			</Card>
-		</div>
+		</Page>
 	);
 }

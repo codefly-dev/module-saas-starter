@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Fingerprint, Loader2 } from "lucide-react";
+import { ArrowLeft, Fingerprint } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { signInFailureText } from "@/features/auth/ui/login-page";
@@ -14,11 +14,15 @@ import {
 	ErrorState,
 	Field,
 	Input,
+	Page,
+	PageHeader,
+	Spinner,
 } from "@/shared/ui";
 
 export default function MFAClient() {
 	const { completeMFA, completeMFAWithPasskey, cancelMFA } = useAuth();
 	const inputRef = useRef<HTMLInputElement>(null);
+	const pending = useRef(false);
 	const [code, setCode] = useState("");
 	const [error, setError] = useState<string | null>(null);
 	const [submitting, setSubmitting] = useState(false);
@@ -28,13 +32,16 @@ export default function MFAClient() {
 
 	async function submit(event: FormEvent) {
 		event.preventDefault();
+		if (pending.current) return;
 		const normalized = code.replace(/[\s-]/g, "");
 		if (normalized.length < 6) return;
+		pending.current = true;
 		setError(null);
 		setSubmitting(true);
 		try {
 			await completeMFA(normalized);
 		} catch (caught) {
+			pending.current = false;
 			setError(
 				signInFailureText(
 					caught,
@@ -47,11 +54,14 @@ export default function MFAClient() {
 	}
 
 	async function usePasskey() {
+		if (pending.current) return;
+		pending.current = true;
 		setError(null);
 		setPasskeySubmitting(true);
 		try {
 			await completeMFAWithPasskey();
 		} catch (caught) {
+			pending.current = false;
 			setError(
 				signInFailureText(
 					caught,
@@ -63,12 +73,10 @@ export default function MFAClient() {
 	}
 
 	return (
-		<main className="flex min-h-screen w-full items-center justify-center p-4">
+		<Page className="flex min-h-screen w-full items-center justify-center p-4">
 			<Card className="w-full max-w-md">
 				<CardHeader>
-					<h1 data-slot="page-title" className="type-page-title">
-						One more check
-					</h1>
+					<PageHeader title="One more check" />
 					<CardDescription>
 						Enter the code from your authenticator app, or use one of your
 						one-time recovery codes.
@@ -89,7 +97,7 @@ export default function MFAClient() {
 									autoComplete="one-time-code"
 									value={code}
 									onChange={(event) => setCode(event.target.value)}
-									disabled={submitting}
+									disabled={submitting || passkeySubmitting}
 									placeholder="000 000"
 									aria-invalid={Boolean(error)}
 									className="text-center font-mono tracking-widest"
@@ -104,9 +112,13 @@ export default function MFAClient() {
 								type="submit"
 								size="lg"
 								className="w-full"
-								disabled={submitting || code.replace(/[\s-]/g, "").length < 6}
+								disabled={
+									submitting ||
+									passkeySubmitting ||
+									code.replace(/[\s-]/g, "").length < 6
+								}
 							>
-								{submitting && <Loader2 className="animate-spin" />}
+								{submitting && <Spinner label="Checking your sign-in" />}
 								Verify and continue
 							</Button>
 							<Button
@@ -118,7 +130,7 @@ export default function MFAClient() {
 								onClick={usePasskey}
 							>
 								{passkeySubmitting ? (
-									<Loader2 className="animate-spin" />
+									<Spinner label="Checking your sign-in" />
 								) : (
 									<Fingerprint />
 								)}
@@ -140,6 +152,6 @@ export default function MFAClient() {
 					</form>
 				</CardContent>
 			</Card>
-		</main>
+		</Page>
 	);
 }

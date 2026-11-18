@@ -39,10 +39,9 @@ afterEach(() => {
 describe("InvitationAcceptance", () => {
 	it("does not offer acceptance for an expired invitation", async () => {
 		vi.spyOn(globalThis, "fetch").mockResolvedValue(
-			new Response(
-				JSON.stringify({ status: "INVITATION_STATUS_EXPIRED" }),
-				{ status: 200 },
-			),
+			new Response(JSON.stringify({ status: "INVITATION_STATUS_EXPIRED" }), {
+				status: 200,
+			}),
 		);
 
 		render(<InvitationAcceptance />);
@@ -59,10 +58,9 @@ describe("InvitationAcceptance", () => {
 		const request = vi
 			.spyOn(globalThis, "fetch")
 			.mockResolvedValueOnce(
-				new Response(
-					JSON.stringify({ status: "INVITATION_STATUS_PENDING" }),
-					{ status: 200 },
-				),
+				new Response(JSON.stringify({ status: "INVITATION_STATUS_PENDING" }), {
+					status: 200,
+				}),
 			)
 			.mockResolvedValueOnce(
 				new Response(
@@ -173,4 +171,23 @@ describe("a sign-in longer than the emailed link's cookie", () => {
 		);
 		expect(screen.queryByText(/invalid, expired, revoked/i)).toBeNull();
 	});
+});
+
+it("does not render raw upstream error text or offer retry for an invalid link", async () => {
+	vi.spyOn(globalThis, "fetch").mockResolvedValue(
+		Response.json({ error: "private diagnostics" }, { status: 400 }),
+	);
+	render(<InvitationAcceptance />);
+	await screen.findByText(/Ask the inviter for a new link/);
+	expect(screen.queryByText("private diagnostics")).toBeNull();
+	expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+});
+
+it("does not offer acceptance when a successful inspection omits its state", async () => {
+	vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({}));
+	render(<InvitationAcceptance />);
+	await screen.findByText(/Ask the inviter for a new link/);
+	expect(
+		screen.queryByRole("button", { name: "Accept invitation" }),
+	).toBeNull();
 });
