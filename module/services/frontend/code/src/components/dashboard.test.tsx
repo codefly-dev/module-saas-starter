@@ -1,3 +1,4 @@
+import { Code, ConnectError } from "@connectrpc/connect";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { Dashboard, type DashboardData } from "./dashboard";
@@ -76,7 +77,7 @@ describe("Dashboard renderer", () => {
 				},
 			],
 		});
-		expect(screen.getByText("Failed to load.")).toBeTruthy();
+		expect(screen.getByText("Couldn't load this summary")).toBeTruthy();
 	});
 
 	it("shows the empty message when a widget resolves to no data", () => {
@@ -107,7 +108,7 @@ describe("Dashboard renderer", () => {
 				},
 			],
 		});
-		expect(screen.getByText("Failed to load.")).toBeTruthy();
+		expect(screen.getByText("Couldn't load this summary")).toBeTruthy();
 		expect(screen.queryByText("Nothing here.")).toBeNull();
 	});
 
@@ -128,7 +129,7 @@ describe("Dashboard renderer", () => {
 		});
 		expect(screen.getByText("user.login")).toBeTruthy();
 		expect(screen.getByText("7")).toBeTruthy();
-		expect(screen.queryByText("Failed to load.")).toBeNull();
+		expect(screen.queryByText("Couldn't load this summary")).toBeNull();
 	});
 
 	it("renders a metrics widget as a full-width tile row", () => {
@@ -198,4 +199,36 @@ describe("Dashboard renderer", () => {
 		);
 		expect(screen.getByText("No events in range.")).toBeTruthy();
 	});
+});
+
+it("hides retained summaries after an access refusal", () => {
+	renderDashboard({
+		widgets: [
+			{
+				id: "private",
+				kind: "bars",
+				items: [{ label: "Sensitive activity", value: 9 }],
+				error: new ConnectError("internal rule", Code.PermissionDenied),
+			},
+		],
+	});
+	expect(
+		screen.getByText(/Ask your administrator to grant access/),
+	).toBeTruthy();
+	expect(screen.queryByText("Sensitive activity")).toBeNull();
+	expect(screen.queryByText("internal rule")).toBeNull();
+});
+it("does not show computed zero metrics while the source is loading", () => {
+	renderDashboard({
+		widgets: [
+			{
+				id: "metrics",
+				kind: "metrics",
+				metrics: [{ id: "events", label: "Events", value: 0 }],
+				isLoading: true,
+			},
+		],
+	});
+	expect(screen.getByRole("status", { name: "Loading summary" })).toBeTruthy();
+	expect(screen.queryByText("Events")).toBeNull();
 });
