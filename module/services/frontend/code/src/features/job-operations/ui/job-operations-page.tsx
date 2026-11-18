@@ -1,11 +1,18 @@
 "use client";
 
 import { timestampDate } from "@bufbuild/protobuf/wkt";
+import { EmptyState } from "@codefly-dev/ui/layout";
+import {
+	createColumnHelper,
+	getCoreRowModel,
+	getPaginationRowModel,
+	useReactTable,
+} from "@tanstack/react-table";
 import { ListChecks, RefreshCw, RotateCcw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ResourceLabel } from "@/components/resource-label";
-import type { JobSummary } from "@/gen/saas/jobs/v1/jobs_pb";
+import type { JobQueueSnapshot, JobSummary } from "@/gen/saas/jobs/v1/jobs_pb";
 import { JobState } from "@/gen/saas/jobs/v1/jobs_pb";
 import { failureText } from "@/shared/lib/failure-text";
 import { readOutcome } from "@/shared/lib/read-outcome";
@@ -42,13 +49,8 @@ import {
 	SelectTrigger,
 	SelectValue,
 	Skeleton,
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
 } from "@/shared/ui";
+import { DataTable } from "@/shared/ui/data-table";
 import { useReplayJob } from "../service/mutations";
 import { useJob, useJobOperations, useJobs } from "../service/queries";
 
@@ -112,7 +114,7 @@ function count(values: bigint[]): string {
 // when it was refused; otherwise the Refresh button is right there.
 function loadFailureDetail(error: unknown): string {
 	return readOutcome(true, error) === "forbidden"
-		? "Your account doesn't have the platform role this page needs."
+		? "You don’t have access to this page. Ask a platform administrator to grant it."
 		: "Use Refresh to try again. If it keeps failing, tell your administrator.";
 }
 
@@ -136,7 +138,7 @@ export function JobOperationsPage() {
 
 	// Totals are sums over a read; with no answer there is nothing to sum, and
 	// a row of zeros would read as four healthy queues.
-	const counted = operations.data !== undefined;
+	const counted = operations.data !== undefined && !operations.isError;
 	const totals = useMemo(
 		() => ({
 			ready: count(snapshots.map((item) => item.ready)),
@@ -216,44 +218,14 @@ export function JobOperationsPage() {
 							detail={loadFailureDetail(operations.error)}
 						/>
 					) : snapshots.length === 0 ? (
-						<p className="text-sm text-muted-foreground">No queues found.</p>
+						<EmptyState
+							icon={<ListChecks />}
+							className="py-6"
+							heading="No queues found"
+							description="Queues appear when the application schedules background work."
+						/>
 					) : (
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>Queue</TableHead>
-									<TableHead>Ready</TableHead>
-									<TableHead>Processing</TableHead>
-									<TableHead>Scheduled</TableHead>
-									<TableHead>Failed for good</TableHead>
-									<TableHead>Oldest ready</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{snapshots.map((snapshot) => (
-									<TableRow key={snapshot.queue}>
-										<TableCell className="font-mono text-xs">
-											{snapshot.queue}
-										</TableCell>
-										<TableCell>{snapshot.ready.toLocaleString()}</TableCell>
-										<TableCell>
-											{snapshot.processing.toLocaleString()}
-										</TableCell>
-										<TableCell>{snapshot.scheduled.toLocaleString()}</TableCell>
-										<TableCell>
-											{snapshot.deadLetter.toLocaleString()}
-										</TableCell>
-										<TableCell>
-											{formatDate(
-												snapshot.oldestReadyAt
-													? timestampDate(snapshot.oldestReadyAt).toISOString()
-													: undefined,
-											)}
-										</TableCell>
-									</TableRow>
-								))}
-							</TableBody>
-						</Table>
+						<QueueTable snapshots={snapshots} />
 					)}
 				</CardContent>
 			</Card>
@@ -262,8 +234,8 @@ export function JobOperationsPage() {
 				<CardHeader>
 					<CardTitle className="text-base">Jobs</CardTitle>
 					<CardDescription>
-						Where each job went, how many times it was tried and why it
-						failed. What a job carries is never shown.
+						Where each job went, how many times it was tried and why it failed.
+						What a job carries is never shown.
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-4">
@@ -290,7 +262,7 @@ export function JobOperationsPage() {
 							]}
 							onValueChange={selectState}
 						>
-							<SelectTrigger className="w-44">
+							<SelectTrigger className="w-44" aria-label="Job state">
 								<SelectValue />
 							</SelectTrigger>
 							<SelectContent>
@@ -312,62 +284,40 @@ export function JobOperationsPage() {
 							detail={loadFailureDetail(jobs.error)}
 						/>
 					) : jobs.data?.jobs.length === 0 ? (
-						<div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
-							<ListChecks className="h-8 w-8" />
-							<p className="text-sm">No jobs match these filters.</p>
-						</div>
+						<EmptyState
+							icon={<ListChecks />}
+							className="py-6"
+							heading={
+								queue || state !== undefined
+									? "No jobs match these filters"
+									: "No background jobs yet"
+							}
+							description={
+								queue || state !== undefined
+									? "Clear the filters to see all available background jobs."
+									: "Jobs appear when the application schedules background work."
+							}
+						>
+							{(queue || state !== undefined) && (
+								<Button
+									variant="outline"
+									onClick={() => {
+										setQueueDraft("");
+										setQueue("");
+										setState(undefined);
+										setPageToken("");
+										setPreviousTokens([]);
+									}}
+								>
+									Clear filters
+								</Button>
+							)}
+						</EmptyState>
 					) : (
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>Created</TableHead>
-									<TableHead>Queue / topic</TableHead>
-									<TableHead>Scope</TableHead>
-									<TableHead>State</TableHead>
-									<TableHead>Attempts</TableHead>
-									<TableHead>Failure</TableHead>
-									<TableHead />
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{jobs.data?.jobs.map((job) => (
-									<TableRow key={job.id}>
-										<TableCell>
-											{formatDate(timestamp(job.createdAt))}
-										</TableCell>
-										<TableCell>
-											<div className="font-mono text-xs">{job.queue}</div>
-											<div className="text-xs text-muted-foreground">
-												{job.topic}
-											</div>
-										</TableCell>
-										<TableCell className="font-mono text-xs">
-											{scopeLabel(job)}
-										</TableCell>
-										<TableCell>
-											<Badge variant={stateBadgeVariant(job.state)}>
-												{jobStateLabel(job.state)}
-											</Badge>
-										</TableCell>
-										<TableCell>
-											{job.attemptCount}/{job.maxAttempts}
-										</TableCell>
-										<TableCell className="max-w-48 truncate text-xs text-muted-foreground">
-											{job.lastFailure?.code ?? "-"}
-										</TableCell>
-										<TableCell>
-											<Button
-												size="sm"
-												variant="ghost"
-												onClick={() => setSelectedJobID(job.id)}
-											>
-												Inspect
-											</Button>
-										</TableCell>
-									</TableRow>
-								))}
-							</TableBody>
-						</Table>
+						<JobsTable
+							jobs={jobs.data?.jobs ?? []}
+							onInspect={setSelectedJobID}
+						/>
 					)}
 
 					<div className="flex justify-end gap-2">
@@ -413,7 +363,7 @@ export function JobOperationsPage() {
 							title="Couldn't load this job"
 							detail={
 								readOutcome(true, detail.error) === "forbidden"
-									? "Your account doesn't have the platform role this needs."
+									? "You don’t have access to this job. Ask a platform administrator to grant it."
 									: "Close this and open the job again. If it keeps failing, tell your administrator."
 							}
 						/>
@@ -436,7 +386,13 @@ export function JobOperationsPage() {
 													<span>
 														Attempt {attempt.number} · {attempt.workerId}
 													</span>
-													<span>{attempt.failure?.code ?? "In progress"}</span>
+													<span>
+														{attempt.failure
+															? "Attempt failed"
+															: attempt.finishedAt
+																? "Finished"
+																: "In progress"}
+													</span>
 												</div>
 												<div className="mt-1 text-muted-foreground">
 													Started{" "}
@@ -529,6 +485,117 @@ export function JobOperationsPage() {
 			</AlertDialog>
 		</PageBody>
 	);
+}
+
+function QueueTable({ snapshots }: { snapshots: JobQueueSnapshot[] }) {
+	const columns = useMemo(() => {
+		const col = createColumnHelper<JobQueueSnapshot>();
+		return [
+			col.accessor("queue", { header: "Queue" }),
+			col.accessor("ready", {
+				header: "Ready",
+				cell: ({ getValue }) => getValue().toLocaleString(),
+			}),
+			col.accessor("processing", {
+				header: "Processing",
+				cell: ({ getValue }) => getValue().toLocaleString(),
+			}),
+			col.accessor("scheduled", {
+				header: "Scheduled",
+				cell: ({ getValue }) => getValue().toLocaleString(),
+			}),
+			col.accessor("deadLetter", {
+				header: "Failed for good",
+				cell: ({ getValue }) => getValue().toLocaleString(),
+			}),
+			col.accessor("oldestReadyAt", {
+				header: "Oldest ready",
+				cell: ({ getValue }) => formatDate(timestamp(getValue())),
+			}),
+		];
+	}, []);
+	const table = useReactTable({
+		data: snapshots,
+		columns,
+		getCoreRowModel: getCoreRowModel(),
+		getPaginationRowModel: getPaginationRowModel(),
+	});
+	return <DataTable table={table} />;
+}
+
+function JobsTable({
+	jobs,
+	onInspect,
+}: {
+	jobs: JobSummary[];
+	onInspect: (id: string) => void;
+}) {
+	const columns = useMemo(() => {
+		const col = createColumnHelper<JobSummary>();
+		return [
+			col.accessor("createdAt", {
+				header: "Created",
+				cell: ({ getValue }) => formatDate(timestamp(getValue())),
+			}),
+			col.accessor("queue", {
+				header: "Queue / topic",
+				cell: ({ row }) => (
+					<div>
+						{row.original.queue}
+						<p className="text-xs text-muted-foreground">
+							{row.original.topic}
+						</p>
+					</div>
+				),
+			}),
+			col.display({
+				id: "scope",
+				header: "Applies to",
+				cell: ({ row }) => scopeLabel(row.original),
+			}),
+			col.accessor("state", {
+				header: "State",
+				cell: ({ getValue }) => (
+					<Badge variant={stateBadgeVariant(getValue())}>
+						{jobStateLabel(getValue())}
+					</Badge>
+				),
+			}),
+			col.display({
+				id: "attempts",
+				header: "Attempts",
+				cell: ({ row }) =>
+					`${row.original.attemptCount}/${row.original.maxAttempts}`,
+			}),
+			col.display({
+				id: "failure",
+				header: "Failure",
+				cell: ({ row }) =>
+					row.original.lastFailure ? "Attempt failed" : "None recorded",
+			}),
+			col.display({
+				id: "inspect",
+				header: "Details",
+				cell: ({ row }) => (
+					<Button
+						size="sm"
+						variant="ghost"
+						onClick={() => onInspect(row.original.id)}
+					>
+						Inspect
+					</Button>
+				),
+			}),
+		];
+	}, [onInspect]);
+	const table = useReactTable({
+		data: jobs,
+		columns,
+		getCoreRowModel: getCoreRowModel(),
+		manualPagination: true,
+		pageCount: 1,
+	});
+	return <DataTable table={table} />;
 }
 
 function MetricCard({
@@ -626,12 +693,8 @@ function JobDetail({ job }: { job: JobSummary }) {
 					<div className="sm:col-span-2">
 						<dt className="text-muted-foreground">Last failure</dt>
 						<dd>
-							<span className="font-mono text-xs">{job.lastFailure.code}</span>
-							{job.lastFailure.message && (
-								<span className="ml-2 text-muted-foreground">
-									{job.lastFailure.message}
-								</span>
-							)}
+							The job could not finish. Review its attempts and ask a platform
+							administrator to investigate before running it again.
 						</dd>
 					</div>
 				)}

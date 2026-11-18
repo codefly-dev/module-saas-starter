@@ -1,4 +1,5 @@
 "use client";
+import { Progress } from "@codefly-dev/ui/layout";
 
 import {
 	createColumnHelper,
@@ -31,8 +32,8 @@ import {
 	Panel,
 } from "@/shared/ui";
 import { DataTable } from "@/shared/ui/data-table";
-import type { Entitlement } from "../model/types";
 import { parseEntitlementLimit } from "../model/limit";
+import type { Entitlement } from "../model/types";
 import { useOverrideEntitlement } from "../service/mutations";
 import { useOrgEntitlements } from "../service/queries";
 
@@ -46,16 +47,16 @@ const NO_ENTITLEMENTS: Entitlement[] = [];
 function UsageBar({ limit, used }: { limit: number; used: number }) {
 	if (limit <= 0) return null;
 	const pct = Math.min(100, Math.round((used / limit) * 100));
-	const color =
-		pct > 80 ? "bg-destructive" : pct > 50 ? "bg-warning" : "bg-success";
+	const tone = pct > 80 ? "danger" : pct > 50 ? "warning" : "success";
 	return (
 		<div className="flex items-center gap-2">
-			<div className="flex-1 rounded-full bg-muted h-2">
-				<div
-					className={`h-2 rounded-full ${color}`}
-					style={{ width: `${pct}%` }}
-				/>
-			</div>
+			<Progress
+				value={pct}
+				tone={tone}
+				label="Plan usage"
+				valueText={`${used.toLocaleString()} of ${limit.toLocaleString()} used`}
+				className="flex-1"
+			/>
 			<span className="text-xs text-muted-foreground">{pct}%</span>
 		</div>
 	);
@@ -67,9 +68,12 @@ export function EntitlementsPage() {
 }
 
 function EntitlementsPageForOrganization({ orgId }: { orgId: string }) {
-	const { data, isLoading, isError, error: readError } = useOrgEntitlements(
-		orgId || null,
-	);
+	const {
+		data,
+		isLoading,
+		isError,
+		error: readError,
+	} = useOrgEntitlements(orgId || null);
 	// A failed read leaves no rows, exactly as an organization with no
 	// entitlements does; the table is replaced so the two cannot be confused.
 	const outcome = readOutcome(isError, readError);

@@ -2,11 +2,19 @@
 
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
+import { EmptyState } from "@codefly-dev/ui/layout";
+import {
+	createColumnHelper,
+	getCoreRowModel,
+	getPaginationRowModel,
+	useReactTable,
+} from "@tanstack/react-table";
 import { Radio, RefreshCw, Workflow } from "lucide-react";
 import { useMemo } from "react";
 import type {
 	EventSubscriptionSummary,
 	EventTypeSnapshot,
+	QueueDeadLetters,
 } from "@/gen/saas/events/v1/operations_pb";
 import { readOutcome } from "@/shared/lib/read-outcome";
 import { formatDate, truncateUUID } from "@/shared/lib/utils";
@@ -22,13 +30,8 @@ import {
 	Page as PageBody,
 	PageHeader,
 	Skeleton,
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
 } from "@/shared/ui";
+import { DataTable } from "@/shared/ui/data-table";
 import { useEventOperations, useEventSubscriptions } from "../service/queries";
 
 // Catalog visibility is a free-form string carried from the declared event
@@ -60,7 +63,7 @@ function optionalDate(value?: Timestamp): string {
 // when it was refused; otherwise the Refresh button is right there.
 function loadFailureDetail(error: unknown): string {
 	return readOutcome(true, error) === "forbidden"
-		? "Your account doesn't have the platform role this page needs."
+		? "You don’t have access to this page. Ask a platform administrator to grant it."
 		: "Use Refresh to try again. If it keeps failing, tell your administrator.";
 }
 
@@ -68,7 +71,7 @@ export function EventOperationsPage() {
 	const operations = useEventOperations();
 	const subscriptions = useEventSubscriptions();
 
-	const relay = operations.data?.relay;
+	const relay = operations.isError ? undefined : operations.data?.relay;
 	const eventTypes = useMemo(
 		() => operations.data?.eventTypes ?? [],
 		[operations.data?.eventTypes],
@@ -128,8 +131,8 @@ export function EventOperationsPage() {
 				<CardHeader>
 					<CardTitle className="text-base">Event types</CardTitle>
 					<CardDescription>
-						Every declared event type with its counts. Types that were
-						published without being declared are listed too.
+						Every declared event type with its counts. Types that were published
+						without being declared are listed too.
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
@@ -141,30 +144,14 @@ export function EventOperationsPage() {
 							detail={loadFailureDetail(operations.error)}
 						/>
 					) : eventTypes.length === 0 ? (
-						<div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
-							<Workflow className="h-8 w-8" />
-							<p className="text-sm">No event types found.</p>
-						</div>
+						<EmptyState
+							className="py-6"
+							icon={<Workflow />}
+							heading="No event types found."
+							description="Event activity appears after an application starts publishing events."
+						/>
 					) : (
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>Type</TableHead>
-									<TableHead>Visibility</TableHead>
-									<TableHead>Publisher</TableHead>
-									<TableHead>Version</TableHead>
-									<TableHead>Subscribers</TableHead>
-									<TableHead>Total</TableHead>
-									<TableHead>Waiting</TableHead>
-									<TableHead>Last event</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{eventTypes.map((snapshot) => (
-									<EventTypeRow key={snapshot.type} snapshot={snapshot} />
-								))}
-							</TableBody>
-						</Table>
+						<EventTypesTable rows={eventTypes} />
 					)}
 				</CardContent>
 			</Card>
@@ -173,8 +160,8 @@ export function EventOperationsPage() {
 				<CardHeader>
 					<CardTitle className="text-base">Subscriptions</CardTitle>
 					<CardDescription>
-						Every active subscription on the platform, with the number of
-						events its queue could not deliver.
+						Every active subscription on the platform, with the number of events
+						its queue could not deliver.
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
@@ -186,67 +173,32 @@ export function EventOperationsPage() {
 							detail={loadFailureDetail(subscriptions.error)}
 						/>
 					) : subscriptions.data?.subscriptions.length === 0 ? (
-						<div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
-							<Radio className="h-8 w-8" />
-							<p className="text-sm">No active subscriptions.</p>
-						</div>
+						<EmptyState
+							className="py-6"
+							icon={<Radio />}
+							heading="No active subscriptions."
+							description="Subscriptions appear when an application starts receiving events."
+						/>
 					) : (
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>Subscriber</TableHead>
-									<TableHead>Pattern</TableHead>
-									<TableHead>Queue</TableHead>
-									<TableHead>Delivery</TableHead>
-									<TableHead>Undelivered</TableHead>
-									<TableHead>Created</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{subscriptions.data?.subscriptions.map((sub) => (
-									<SubscriptionRow key={sub.id} subscription={sub} />
-								))}
-							</TableBody>
-						</Table>
+						<SubscriptionsTable
+							rows={subscriptions.data?.subscriptions ?? []}
+						/>
 					)}
 				</CardContent>
 			</Card>
 
-			{deadLetters.length > 0 && (
+			{!operations.isError && deadLetters.length > 0 && (
 				<Card>
 					<CardHeader>
-						<CardTitle className="text-base">Undelivered events by queue</CardTitle>
+						<CardTitle className="text-base">
+							Undelivered events by queue
+						</CardTitle>
 						<CardDescription>
 							Events set aside after every delivery attempt failed.
 						</CardDescription>
 					</CardHeader>
 					<CardContent>
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>Queue</TableHead>
-									<TableHead>Undelivered</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{deadLetters.map((entry) => (
-									<TableRow key={entry.queue}>
-										<TableCell className="font-mono text-xs">
-											{entry.queue}
-										</TableCell>
-										<TableCell
-											className={
-												entry.deadLetter !== BigInt(0)
-													? "text-destructive"
-													: undefined
-											}
-										>
-											{entry.deadLetter.toLocaleString()}
-										</TableCell>
-									</TableRow>
-								))}
-							</TableBody>
-						</Table>
+						<UndeliveredTable rows={deadLetters} />
 					</CardContent>
 				</Card>
 			)}
@@ -254,62 +206,105 @@ export function EventOperationsPage() {
 	);
 }
 
-function EventTypeRow({ snapshot }: { snapshot: EventTypeSnapshot }) {
-	return (
-		<TableRow>
-			<TableCell className="font-mono text-xs">{snapshot.type}</TableCell>
-			<TableCell>
-				<Badge variant={visibilityBadgeVariant(snapshot.visibility)}>
-					{eventVisibilityLabel(snapshot.visibility)}
-				</Badge>
-			</TableCell>
-			<TableCell className="font-mono text-xs">
-				{snapshot.publisher || "-"}
-			</TableCell>
-			<TableCell>{snapshot.major ? `v${snapshot.major}` : "-"}</TableCell>
-			<TableCell>{snapshot.subscribers.toLocaleString()}</TableCell>
-			<TableCell>{snapshot.totalEvents.toLocaleString()}</TableCell>
-			<TableCell
-				className={
-					snapshot.unpublished !== BigInt(0) ? "text-destructive" : undefined
-				}
-			>
-				{snapshot.unpublished.toLocaleString()}
-			</TableCell>
-			<TableCell>{optionalDate(snapshot.lastEventAt)}</TableCell>
-		</TableRow>
-	);
+function EventTypesTable({ rows }: { rows: EventTypeSnapshot[] }) {
+	const columns = useMemo(() => {
+		const col = createColumnHelper<EventTypeSnapshot>();
+		return [
+			col.accessor("type", { header: "Event" }),
+			col.accessor("visibility", {
+				header: "Visibility",
+				cell: ({ getValue }) => (
+					<Badge variant={visibilityBadgeVariant(getValue())}>
+						{eventVisibilityLabel(getValue())}
+					</Badge>
+				),
+			}),
+			col.accessor("publisher", {
+				header: "Publisher",
+				cell: ({ getValue }) => getValue() || "Unavailable",
+			}),
+			col.accessor("major", {
+				header: "Version",
+				cell: ({ getValue }) => (getValue() ? `v${getValue()}` : "Unavailable"),
+			}),
+			col.accessor("subscribers", {
+				header: "Subscribers",
+				cell: ({ getValue }) => getValue().toLocaleString(),
+			}),
+			col.accessor("totalEvents", {
+				header: "Total",
+				cell: ({ getValue }) => getValue().toLocaleString(),
+			}),
+			col.accessor("unpublished", {
+				header: "Waiting",
+				cell: ({ getValue }) => getValue().toLocaleString(),
+			}),
+			col.accessor("lastEventAt", {
+				header: "Last event",
+				cell: ({ getValue }) => optionalDate(getValue()),
+			}),
+		];
+	}, []);
+	const table = useReactTable({
+		data: rows,
+		columns,
+		getCoreRowModel: getCoreRowModel(),
+		getPaginationRowModel: getPaginationRowModel(),
+	});
+	return <DataTable table={table} />;
 }
 
-function SubscriptionRow({
-	subscription,
-}: {
-	subscription: EventSubscriptionSummary;
-}) {
-	return (
-		<TableRow>
-			<TableCell className="font-mono text-xs">
-				{truncateUUID(subscription.subscriberPrincipalId)}
-			</TableCell>
-			<TableCell className="font-mono text-xs">
-				{subscription.typePattern}
-			</TableCell>
-			<TableCell className="font-mono text-xs">{subscription.queue}</TableCell>
-			<TableCell>
-				<Badge variant="outline">{subscription.delivery}</Badge>
-			</TableCell>
-			<TableCell
-				className={
-					subscription.queueDeadLetter !== BigInt(0)
-						? "text-destructive"
-						: undefined
-				}
-			>
-				{subscription.queueDeadLetter.toLocaleString()}
-			</TableCell>
-			<TableCell>{optionalDate(subscription.createdAt)}</TableCell>
-		</TableRow>
-	);
+function SubscriptionsTable({ rows }: { rows: EventSubscriptionSummary[] }) {
+	const columns = useMemo(() => {
+		const col = createColumnHelper<EventSubscriptionSummary>();
+		return [
+			col.accessor("subscriberPrincipalId", {
+				header: "Subscriber",
+				cell: ({ getValue }) => truncateUUID(getValue()),
+			}),
+			col.accessor("typePattern", { header: "Events" }),
+			col.accessor("queue", { header: "Queue" }),
+			col.accessor("delivery", {
+				header: "Delivery",
+				cell: ({ getValue }) => <Badge variant="outline">{getValue()}</Badge>,
+			}),
+			col.accessor("queueDeadLetter", {
+				header: "Undelivered",
+				cell: ({ getValue }) => getValue().toLocaleString(),
+			}),
+			col.accessor("createdAt", {
+				header: "Created",
+				cell: ({ getValue }) => optionalDate(getValue()),
+			}),
+		];
+	}, []);
+	const table = useReactTable({
+		data: rows,
+		columns,
+		getCoreRowModel: getCoreRowModel(),
+		getPaginationRowModel: getPaginationRowModel(),
+	});
+	return <DataTable table={table} />;
+}
+
+function UndeliveredTable({ rows }: { rows: QueueDeadLetters[] }) {
+	const columns = useMemo(() => {
+		const col = createColumnHelper<QueueDeadLetters>();
+		return [
+			col.accessor("queue", { header: "Queue" }),
+			col.accessor("deadLetter", {
+				header: "Undelivered",
+				cell: ({ getValue }) => getValue().toLocaleString(),
+			}),
+		];
+	}, []);
+	const table = useReactTable({
+		data: rows,
+		columns,
+		getCoreRowModel: getCoreRowModel(),
+		getPaginationRowModel: getPaginationRowModel(),
+	});
+	return <DataTable table={table} />;
 }
 
 function MetricCard({

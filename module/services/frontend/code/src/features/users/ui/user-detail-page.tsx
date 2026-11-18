@@ -1,38 +1,41 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import {
+	createColumnHelper,
+	getCoreRowModel,
+	getPaginationRowModel,
+	useReactTable,
+} from "@tanstack/react-table";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import { useMemo } from "react";
 import { OrgSelector } from "@/components/org-selector";
+import { activityLabel } from "@/features/permissions/model/activity-label";
+import type { EffectivePermission } from "@/features/permissions/model/effective";
 import { useEffectivePermissions } from "@/features/permissions/service/effective";
 import {
 	GrantSourceBadge,
 	sourceKey,
 } from "@/features/permissions/ui/grant-source";
-import { RevokeRoleButton } from "@/features/roles/ui/revoke-role-button";
 import { ManageMemberRolesDialog } from "@/features/roles/ui/manage-member-roles-dialog";
+import { RevokeRoleButton } from "@/features/roles/ui/revoke-role-button";
 import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
 import { useAuth } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { failureText } from "@/shared/lib/failure-text";
-import { truncateUUID } from "@/shared/lib/utils";
 import {
 	Badge,
 	Button,
+	ErrorState,
 	Page as PageBody,
 	PageHeader,
 	Panel,
-	ErrorState,
-	Spinner,
 	Section,
+	Spinner,
 	Stack,
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
 } from "@/shared/ui";
+import { DataTable } from "@/shared/ui/data-table";
 import { userQueries } from "../service/queries";
 
 export function UserDetailPage({ userId }: { userId: string }) {
@@ -117,7 +120,7 @@ function UserDetail({
 							<ManageMemberRolesDialog
 								orgId={orgId}
 								userId={userId}
-								userLabel={user?.primaryEmail || truncateUUID(userId)}
+								userLabel={user?.primaryEmail || "this person"}
 							/>
 						)}
 						<Button
@@ -158,8 +161,7 @@ function UserDetail({
 										href={`/admin/roles/${assignment.roleId}`}
 										className="hover:underline"
 									>
-										{roleNameById.get(assignment.roleId) ??
-											truncateUUID(assignment.roleId)}
+										{roleNameById.get(assignment.roleId) ?? "Role unavailable"}
 										{assignment.scope ? ` in ${assignment.scope}` : ""}
 									</Link>
 									{canGrant && (
@@ -223,36 +225,46 @@ function UserDetail({
 							No additional access from assigned roles in this organization.
 						</span>
 					) : (
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>Permission</TableHead>
-									<TableHead>Granted by</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{permissions.map((entry) => (
-									<TableRow key={entry.permission}>
-										<TableCell className="font-mono text-xs">
-											{entry.permission}
-										</TableCell>
-										<TableCell>
-											<Stack direction="row" gap={2} className="flex-wrap">
-												{entry.sources.map((source) => (
-													<GrantSourceBadge
-														key={sourceKey(source)}
-														source={source}
-													/>
-												))}
-											</Stack>
-										</TableCell>
-									</TableRow>
-								))}
-							</TableBody>
-						</Table>
+						<AssignedAccessTable permissions={permissions} />
 					)}
 				</Panel>
 			</Section>
 		</PageBody>
 	);
+}
+
+const accessColumn = createColumnHelper<EffectivePermission>();
+function AssignedAccessTable({
+	permissions,
+}: {
+	permissions: EffectivePermission[];
+}) {
+	const columns = useMemo(
+		() => [
+			accessColumn.accessor("permission", {
+				header: "Activity",
+				cell: ({ row }) =>
+					activityLabel(row.original) || "Additional assigned access",
+			}),
+			accessColumn.display({
+				id: "sources",
+				header: "Granted by",
+				cell: ({ row }) => (
+					<Stack direction="row" gap={2} className="flex-wrap">
+						{row.original.sources.map((source) => (
+							<GrantSourceBadge key={sourceKey(source)} source={source} />
+						))}
+					</Stack>
+				),
+			}),
+		],
+		[],
+	);
+	const table = useReactTable({
+		data: permissions,
+		columns,
+		getCoreRowModel: getCoreRowModel(),
+		getPaginationRowModel: getPaginationRowModel(),
+	});
+	return <DataTable table={table} />;
 }

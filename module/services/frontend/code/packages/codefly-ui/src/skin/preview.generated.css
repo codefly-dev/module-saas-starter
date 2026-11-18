@@ -116,7 +116,6 @@
   :root, :host {
     --font-sans: var(--appearance-font-sans);
     --font-mono: var(--appearance-font-mono);
-    --color-amber-400: oklch(82.8% .189 84.429);
     --color-amber-500: oklch(76.9% .188 70.08);
     --color-black: #000;
     --color-white: #fff;
@@ -1763,10 +1762,6 @@
     background-color: var(--accent);
   }
 
-  .bg-amber-500 {
-    background-color: var(--color-amber-500);
-  }
-
   .bg-background {
     background-color: var(--background);
   }
@@ -1893,7 +1888,7 @@
     background-color: var(--sidebar-border);
   }
 
-  .bg-success\/5 {
+  .bg-success, .bg-success\/5 {
     background-color: var(--success);
   }
 
@@ -1917,7 +1912,7 @@
     background-color: #0000;
   }
 
-  .bg-warning\/10 {
+  .bg-warning, .bg-warning\/10 {
     background-color: var(--warning);
   }
 
@@ -4636,10 +4631,6 @@
 
   .dark\:border-input:is(.dark *) {
     border-color: var(--input);
-  }
-
-  .dark\:bg-amber-400:is(.dark *) {
-    background-color: var(--color-amber-400);
   }
 
   .dark\:bg-destructive\/20:is(.dark *) {

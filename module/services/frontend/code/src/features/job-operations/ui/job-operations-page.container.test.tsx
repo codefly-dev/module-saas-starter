@@ -1,4 +1,4 @@
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
@@ -32,5 +32,36 @@ describe("JobOperationsPage admin container", () => {
 		);
 		renderInApp(<JobOperationsPage />);
 		expect(await screen.findByText("emails")).toBeTruthy();
+	});
+	it("keeps failure details private in the list and inspection dialog", async () => {
+		const job = {
+			id: "job-1",
+			queue: "emails",
+			state: "JOB_STATE_DEAD_LETTER",
+			attemptCount: 1,
+			maxAttempts: 1,
+			lastFailure: {
+				code: "PRIVATE_INTERNAL_CODE",
+				message: "secret-token-123",
+			},
+		};
+		server.use(
+			http.post(rpc("PlatformAdminService", "GetJobOperations"), () =>
+				HttpResponse.json({ queues: [] }),
+			),
+			http.post(rpc("PlatformAdminService", "ListJobs"), () =>
+				HttpResponse.json({ jobs: [job] }),
+			),
+			http.post(rpc("PlatformAdminService", "GetJob"), () =>
+				HttpResponse.json({ job, attempts: [], transitions: [] }),
+			),
+		);
+		renderInApp(<JobOperationsPage />);
+		expect(await screen.findByText("Attempt failed")).toBeTruthy();
+		fireEvent.click(screen.getByRole("button", { name: "Inspect" }));
+		expect(await screen.findByText(/The job could not finish/)).toBeTruthy();
+		expect(
+			screen.queryByText(/PRIVATE_INTERNAL_CODE|secret-token-123/),
+		).toBeNull();
 	});
 });

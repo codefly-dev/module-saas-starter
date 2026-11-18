@@ -103,8 +103,8 @@ describe("UserDetailPage", () => {
 
 		renderInApp(<UserDetailPage userId="user-1" />);
 
-		expect(await screen.findByText("content:write")).toBeTruthy();
-		expect(screen.getByText("audit:read")).toBeTruthy();
+		expect(await screen.findByText("Additional assigned access")).toBeTruthy();
+		expect(screen.getByText("View and export the activity log")).toBeTruthy();
 		expect(screen.getByText("Auditor via compliance")).toBeTruthy();
 		// Both the direct-assignment badge and the provenance badge name the
 		// scope, because acting on either one without it revokes nothing.
@@ -163,7 +163,7 @@ describe("UserDetailPage", () => {
 
 		renderInApp(<UserDetailPage userId="user-1" />);
 
-		await screen.findByText("content:write");
+		await screen.findByText("Additional assigned access");
 		expect(assignmentRequests.every((body) => !!body.subjectId)).toBe(true);
 		expect(new Set(assignmentRequests.map((body) => body.subjectId))).toEqual(
 			new Set(["user-1", "team-1"]),

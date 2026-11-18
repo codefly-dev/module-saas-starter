@@ -8,6 +8,8 @@ import {
 import { toast } from "sonner";
 import type { RoleViewEntry } from "@/gen/host/session/v1/session_pb";
 import { useAuth } from "@/lib/auth";
+import { failureText } from "@/shared/lib/failure-text";
+import { Banner, Button } from "@/shared/ui";
 
 /** What a session acts as, when it acts as less than its person. */
 export interface Narrowed {
@@ -33,9 +35,7 @@ export function useNarrowedSession(): Narrowed {
 
 const back = (exit: () => Promise<void>) => () =>
 	void exit().catch((e: unknown) =>
-		toast.error(
-			e instanceof Error ? e.message : "Could not restore your session.",
-		),
+		toast.error(failureText("restore your session", e)),
 	);
 
 /**
@@ -104,9 +104,9 @@ export function RoleViewBanner() {
 	if (narrowedSessionEnd) {
 		const expired = narrowedSessionEnd.reason === "expired";
 		return (
-			<div
-				role="alert"
-				className="fixed bottom-0 left-0 right-0 z-[9999] border-t-2 border-red-700 bg-red-200 px-4 py-2 text-sm text-red-950"
+			<Banner
+				tone="danger"
+				className="fixed inset-x-4 bottom-4 z-50 bg-background shadow-lg"
 			>
 				<span className="font-bold">
 					Your session acting as {narrowedSessionEnd.as} has ended
@@ -115,14 +115,16 @@ export function RoleViewBanner() {
 				{expired
 					? "its credential expired. Nothing more is done as them, and you are not back in your own session until you choose to be."
 					: "its credential had lapsed when the page reloaded. You are back in your own session, with all of your own access."}
-				<button
+				<Button
+					variant="outline"
+					size="sm"
 					type="button"
-					className="ml-3 rounded bg-red-900 px-3 py-1 text-red-50"
+					className="ml-3"
 					onClick={expired ? back(exitRoleView) : dismissNarrowedSessionEnd}
 				>
 					{expired ? "Return to my own session" : "Understood"}
-				</button>
-			</div>
+				</Button>
+			</Banner>
 		);
 	}
 	if (narrowedSessionEnding) {
@@ -131,30 +133,32 @@ export function RoleViewBanner() {
 			minute: "2-digit",
 		});
 		return (
-			<div
-				role="status"
-				className="fixed bottom-0 left-0 right-0 z-[9999] border-t-2 border-amber-600 bg-amber-200 px-4 py-2 text-sm text-amber-950"
+			<Banner
+				tone="warning"
+				className="fixed inset-x-4 bottom-4 z-50 bg-background shadow-lg"
 			>
 				<span className="font-bold">
 					Your session acting as {narrowedSessionEnding.as} will end at {at}
 				</span>{" "}
 				&mdash; it could not be renewed. Nothing is done as them after that, and
 				you are not back in your own session until you choose to be.
-				<button
+				<Button
+					variant="outline"
+					size="sm"
 					type="button"
-					className="ml-3 rounded bg-amber-900 px-3 py-1 text-amber-50"
+					className="ml-3"
 					onClick={back(exitRoleView)}
 				>
 					Return to my own session
-				</button>
-			</div>
+				</Button>
+			</Banner>
 		);
 	}
 	if (!confirmed)
 		return (
-			<div
-				role="status"
-				className="fixed bottom-0 left-0 right-0 z-[9999] border-t-2 border-amber-600 bg-amber-200 px-4 py-2 text-sm text-amber-950"
+			<Banner
+				tone="warning"
+				className="fixed inset-x-4 bottom-4 z-50 bg-background shadow-lg"
 			>
 				<span className="font-bold">
 					{sessionRead === "reading"
@@ -163,7 +167,7 @@ export function RoleViewBanner() {
 				</span>{" "}
 				&mdash; it may be acting as less than you hold, so no administrator
 				access is offered until the host says. The host decides every action.
-			</div>
+			</Banner>
 		);
 	return null;
 }
