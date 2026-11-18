@@ -20,7 +20,7 @@ import (
 	"accounts/pkg/infra"
 
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
-	"github.com/codefly-dev/core/solutionhost"
+	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )

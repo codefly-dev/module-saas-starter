@@ -237,10 +237,10 @@ is a new pass. `syncSource`, which reached the same sync engines carrying no
 effect identity, is **deleted** from the kit rather than deprecated, and a
 TypeScript AST walk over this repository fails on any remaining caller
 (`src/features/datasources/__tests__/reconcile-is-the-only-manual-pass.test.ts`).
-The reconcile-schedules panel lists a person's pass in the **same table** as the
-declared schedule's last and next occurrence, with its effect identity beside
-them; the passes it can list are the ones this browser admitted, because a
-receipt is recovered by identity and never enumerated.
+No surface lists past passes: a receipt is recovered by identity and never
+enumerated. Admin → Data sources says each source's schedule in one sentence
+("Syncs every 6 hours; you can also sync now."), and the Unattended work
+playground reads the declaration behind it.
 
 **What is not proven:** no live occurrence exists. Nothing in this repository
 composes a module that executes declared work, so the declaration is built

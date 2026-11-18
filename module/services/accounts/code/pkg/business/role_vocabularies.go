@@ -81,13 +81,14 @@ func organizationRoleWords() []string {
 // catalogueBuiltInRoleWords are the built-in roles the permission vocabulary
 // grants at least one permission to, in the order the vocabulary first names
 // them. A platform role that reaches a permission through the `*:*` root is
-// not a catalogue role and is left out.
+// not a catalogue role and is left out, and so is the default member role,
+// which is held through membership and is assigned to nobody.
 func catalogueBuiltInRoleWords() []string {
 	var words []string
 	for _, definition := range servicePermissionVocabulary {
 		for _, holder := range definition.BuiltInRoles {
 			name, _, _ := strings.Cut(holder, " (")
-			if strings.HasPrefix(name, "platform ") || slices.Contains(words, name) {
+			if strings.HasPrefix(name, "platform ") || holder == memberByMembership || slices.Contains(words, name) {
 				continue
 			}
 			words = append(words, name)

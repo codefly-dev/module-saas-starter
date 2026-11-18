@@ -157,6 +157,9 @@ type Store interface {
 	// transaction commits.
 	LockDatasourceSourceCredentialRef(ctx context.Context, orgID, id string) (string, error)
 	UpdateDatasourceSourceCredential(ctx context.Context, orgID, id, credentialRef string) error
+	// ClearDatasourceSourceCredential deletes a GitHub source's sealed token and
+	// webhook signing secret and marks it a public repository, in one write.
+	ClearDatasourceSourceCredential(ctx context.Context, orgID, id string) error
 	GetDatasourceSourceByID(ctx context.Context, id string) (*DatasourceSource, error)
 	// AdvanceDatasourceCursor records the head commit fully enqueued as a change
 	// set, its delivery provenance, and pushes next_reconcile_at out by the
@@ -689,7 +692,19 @@ type Store interface {
 	// session-revocation marker per id and kill the access half immediately.
 	RevokeSession(ctx context.Context, deviceSessionID string, reason string) ([]string, error)
 	RevokeSessionFamily(ctx context.Context, familyID string, reason string) error
-	RevokeAllUserSessions(ctx context.Context, userID string, reason string) ([]string, error)
+	// RevokeAllUserSessions revokes every live session row of one user and
+	// returns each with its family, so the caller can write the access
+	// revocation markers (Service.revokeSessionAccess) once the revocation has
+	// committed.
+	RevokeAllUserSessions(ctx context.Context, userID string, reason string) ([]RevokedSession, error)
+	// InvalidatedUserSessions returns the sessions of one user that were
+	// revoked and whose access tokens may still be unexpired — every revoked
+	// row inside its absolute lifetime, other than one a refresh rotated. It
+	// is how a caller learns what the database's invalidation triggers revoked
+	// (a membership, platform-role, second-factor or scoped-role change),
+	// which report nothing: Service.revokeInvalidatedSessionAccess reads it
+	// once the change has committed and writes the access markers.
+	InvalidatedUserSessions(ctx context.Context, userID string) ([]RevokedSession, error)
 	UpdateSessionActivity(ctx context.Context, sessionID string) error
 
 	// Webhooks
@@ -1016,6 +1031,14 @@ type RetentionPolicy struct {
 	ResourceType  string
 	RetentionDays int
 	CreatedAt     time.Time
+}
+
+// RevokedSession names one session row a revocation ended, by the two ids its
+// access tokens carry: the row's own, which is their `sid` and changes on every
+// refresh, and the family's, which does not.
+type RevokedSession struct {
+	ID       string
+	FamilyID string
 }
 
 // Session represents a refresh token session.

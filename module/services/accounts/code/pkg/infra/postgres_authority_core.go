@@ -10,8 +10,9 @@ package infra
 // control-plane only: the core is the platform's authority and decides across
 // organizations (a module delivered is installed at every one). Identity is
 // accounts' own and is only read here: organizations, memberships, teams, and
-// the organization roles a member holds, synthesized from accounts' RBAC
-// (role assignments, scope grants and the members' contributed permissions).
+// the name of the organisation role that lets a member administer. An
+// organisation role reaches no module, so accounts' RBAC (role assignments,
+// scope grants) is never handed to the core.
 // The organization's authorization revision is accounts' own lever, so every
 // RBAC change accounts records already revokes what the core issued.
 //
@@ -32,7 +33,6 @@ import (
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
-	resources "github.com/codefly-dev/authority/libraries/resources/go"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
@@ -182,8 +182,8 @@ func (t coreTx) Person(id string) (domain.Person, error) {
 	return domain.Person{ID: id}, nil
 }
 
-// Member is a person as a member of one organization: their membership role,
-// their teams there, and the organization roles they hold (memberRoles).
+// Member is a person as a member of one organization: their teams there and
+// the organisation role they administer by, if any (memberRoles).
 func (t coreTx) Member(organization, id string) (domain.Person, error) {
 	if _, ok := asUUID(id); !ok {
 		// An empty or malformed id names nobody; it must never read as "every
@@ -238,21 +238,7 @@ func (t coreTx) members(organization, person string) ([]domain.Person, error) {
 		SELECT m.user_id::text, m.role,
 		       COALESCE((SELECT array_agg(tm.team_id::text ORDER BY tm.team_id)
 		                   FROM public.team_members tm JOIN public.teams tt ON tt.id = tm.team_id
-		                  WHERE tm.user_id = m.user_id AND tt.org_id = m.org_id), ARRAY[]::text[]),
-		       COALESCE((SELECT array_agg(a.id::text ORDER BY a.id)
-		                   FROM public.role_assignments a
-		                  WHERE a.org_id = m.org_id
-		                    AND ((a.subject_kind = 'principal' AND a.subject_id = m.user_id)
-		                      OR (a.subject_kind = 'team' AND a.subject_id IN (
-		                             SELECT tm.team_id FROM public.team_members tm JOIN public.teams tt ON tt.id = tm.team_id
-		                              WHERE tm.user_id = m.user_id AND tt.org_id = m.org_id)))), ARRAY[]::text[]),
-		       COALESCE((SELECT array_agg(g.id::text ORDER BY g.id)
-		                   FROM public.scope_grants g
-		                  WHERE g.org_id = m.org_id AND (g.expires_at IS NULL OR g.expires_at > now())
-		                    AND ((g.subject_kind = 'principal' AND g.subject_id = m.user_id)
-		                      OR (g.subject_kind = 'team' AND g.subject_id IN (
-		                             SELECT tm.team_id FROM public.team_members tm JOIN public.teams tt ON tt.id = tm.team_id
-		                              WHERE tm.user_id = m.user_id AND tt.org_id = m.org_id)))), ARRAY[]::text[])
+		                  WHERE tm.user_id = m.user_id AND tt.org_id = m.org_id), ARRAY[]::text[])
 		  FROM public.organization_members m
 		 WHERE m.org_id = $1 AND ($2::uuid IS NULL OR m.user_id = $2)
 		   AND EXISTS (SELECT 1 FROM public.users u WHERE u.uuid = m.user_id AND u.status = 'active')
@@ -263,118 +249,27 @@ func (t coreTx) members(organization, person string) ([]domain.Person, error) {
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (domain.Person, error) {
 		p := domain.Person{Organization: organization}
 		var membership string
-		var assignments, grants []string
-		if err := row.Scan(&p.ID, &membership, &p.Teams, &assignments, &grants); err != nil {
+		if err := row.Scan(&p.ID, &membership, &p.Teams); err != nil {
 			return p, err
 		}
-		p.Roles = memberRoles(membership, assignments, grants)
+		p.Roles = memberRoles(membership)
 		return p, nil
 	})
 }
 
-// The organization roles a member holds, as the core names them: the
-// membership's administrator role ("owner" or "admin", which the core reads to
-// let a person administer installations and carries no scope of its own), the
-// members' contributed permissions, and one
-// role per role assignment and per live scope grant reaching them, directly
-// or through a team.
-const (
-	membersRole          = "members"
-	assignmentRolePrefix = "assignment:"
-	scopeGrantRolePrefix = "scope-grant:"
-)
-
-func memberRoles(membership string, assignments, grants []string) []string {
-	var roles []string
+// The organisation roles a member holds, as the core reads them: the
+// membership role that administers ("owner" or "admin"), normalized to the
+// core's single administrative role, "admin", and nothing else. An
+// organisation role decides administration only (members, teams,
+// installations, grants) and reaches no module, so a member's role
+// assignments and scope grants are this host's own business and are never
+// handed to the core: a person reaches a module only through a role on an
+// installation (RoleGrants).
+func memberRoles(membership string) []string {
 	if membership == "owner" || membership == "admin" {
-		roles = append(roles, membership)
+		return []string{domain.AdminRole}
 	}
-	if len(business.MemberPermissions()) > 0 {
-		roles = append(roles, membersRole)
-	}
-	for _, id := range assignments {
-		roles = append(roles, assignmentRolePrefix+id)
-	}
-	for _, id := range grants {
-		roles = append(roles, scopeGrantRolePrefix+id)
-	}
-	return roles
-}
-
-// OrgRole answers one of the roles memberRoles names.
-func (t coreTx) OrgRole(organization, name string) (domain.OrgRole, error) {
-	role := domain.OrgRole{Organization: organization, Name: name}
-	org, ok := asUUID(organization)
-	if !ok {
-		return role, coreMissing("role", organization+"/"+name)
-	}
-	switch {
-	case name == "owner" || name == "admin":
-		// Administering is not reading: the role names who may install, grant and
-		// manage members, and holds no scope. What an owner or admin may do to an
-		// audience's data is exactly what a grant, a team or the members' own
-		// permissions give them.
-		return role, nil
-	case name == membersRole:
-		for _, p := range business.MemberPermissions() {
-			role.Scopes = append(role.Scopes, domain.RoleScope{Kind: p.Resource, Actions: []string{p.Action}})
-		}
-		return role, nil
-	case strings.HasPrefix(name, assignmentRolePrefix):
-		id, ok := asUUID(strings.TrimPrefix(name, assignmentRolePrefix))
-		if !ok {
-			break
-		}
-		return t.grantedRole(role, `
-			SELECT p.resource, p.action, a.scope
-			  FROM public.role_assignments a JOIN public.role_permissions p ON p.role_id = a.role_id
-			 WHERE a.org_id = $1 AND a.id = $2
-			 ORDER BY p.resource, p.action`, org, id)
-	case strings.HasPrefix(name, scopeGrantRolePrefix):
-		id, ok := asUUID(strings.TrimPrefix(name, scopeGrantRolePrefix))
-		if !ok {
-			break
-		}
-		return t.grantedRole(role, `
-			SELECT p.resource, p.action, COALESCE(n.resource_id, n.id::text)
-			  FROM public.scope_grants g
-			  JOIN public.role_permissions p ON p.role_id = g.role_id
-			  LEFT JOIN public.scope_nodes n ON n.org_id = g.org_id AND n.scope_path = g.scope_path
-			 WHERE g.org_id = $1 AND g.id = $2 AND (g.expires_at IS NULL OR g.expires_at > now())
-			 ORDER BY p.resource, p.action`, org, id)
-	}
-	return role, coreMissing("role", organization+"/"+name)
-}
-
-// grantedRole reads a role's permissions, each narrowed to the resource its
-// grant names (none: the whole kind). "*" is every kind or every action.
-func (t coreTx) grantedRole(role domain.OrgRole, query string, args ...any) (domain.OrgRole, error) {
-	rows, err := t.q.Query(t.ctx, query, args...)
-	if err != nil {
-		return role, err
-	}
-	defer rows.Close()
-	found := false
-	for rows.Next() {
-		found = true
-		var resource, action string
-		var narrowed *string
-		if err := rows.Scan(&resource, &action, &narrowed); err != nil {
-			return role, err
-		}
-		sc := domain.RoleScope{Kind: resource, Actions: []string{action}}
-		if narrowed != nil && *narrowed != "" {
-			sc.Resources = []resources.Grant{{ID: *narrowed}}
-		}
-		role.Scopes = append(role.Scopes, sc)
-	}
-	if err := rows.Err(); err != nil {
-		return role, err
-	}
-	if !found {
-		return role, coreMissing("role", role.Organization+"/"+role.Name)
-	}
-	return role, nil
+	return nil
 }
 
 // --- modules and tombstones -------------------------------------------------

@@ -240,6 +240,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.authority.decision_refused": {
+      "address": "saas.authority.decision_refused",
+      "title": "saas.authority.decision_refused",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.authority.decision_refused"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.authority.installation_activated": {
       "address": "saas.authority.installation_activated",
       "title": "saas.authority.installation_activated",
@@ -400,6 +411,17 @@
       "messages": {
         "envelope": {
           "$ref": "#/components/messages/saas.authority.role_view_opened"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.authority.session_ended": {
+      "address": "saas.authority.session_ended",
+      "title": "saas.authority.session_ended",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.authority.session_ended"
         }
       },
       "x-visibility": "external",
@@ -2489,6 +2511,13 @@
       },
       "title": "saas publishes saas.auth.sso_jit_provisioned"
     },
+    "send:saas.authority.decision_refused": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.authority.decision_refused"
+      },
+      "title": "saas publishes saas.authority.decision_refused"
+    },
     "send:saas.authority.installation_activated": {
       "action": "send",
       "channel": {
@@ -2593,6 +2622,13 @@
         "$ref": "#/channels/saas.authority.role_view_opened"
       },
       "title": "saas publishes saas.authority.role_view_opened"
+    },
+    "send:saas.authority.session_ended": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.authority.session_ended"
+      },
+      "title": "saas publishes saas.authority.session_ended"
     },
     "send:saas.billing.checkout_started": {
       "action": "send",
@@ -3969,6 +4005,13 @@
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
       },
+      "saas.authority.decision_refused": {
+        "name": "saas.authority.decision_refused",
+        "title": "saas.authority.decision_refused",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
       "saas.authority.installation_activated": {
         "name": "saas.authority.installation_activated",
         "title": "saas.authority.installation_activated",
@@ -4070,6 +4113,13 @@
       "saas.authority.role_view_opened": {
         "name": "saas.authority.role_view_opened",
         "title": "saas.authority.role_view_opened",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.authority.session_ended": {
+        "name": "saas.authority.session_ended",
+        "title": "saas.authority.session_ended",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

@@ -9,8 +9,8 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
+	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/core/solutionhost"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
@@ -546,7 +546,7 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		_, err = h.svc.InstallReviewedSolution(h.ctx, ivy, fixtureOrganization, forged, business.InstallAccess{})
 		code, ok = domain.CodeOf(err)
 		require.True(t, ok && code == domain.Denied, "nor the admin's review forged as her own: %v", err)
-		require.ErrorContains(t, err, "installation administration requires an administrator or owner of organization",
+		require.ErrorContains(t, err, "installation administration requires an administrator of organization",
 			"refused by the host's installationsAt, not left to the core's consent check")
 		approved, err := h.svc.InstallReviewedSolution(h.ctx, maya, fixtureOrganization, review, business.InstallAccess{})
 		require.NoError(t, err, "the page's admin approves it")
@@ -744,12 +744,12 @@ func testModulePageRoleReachesThroughItsBinding(t *testing.T, h reviewedClosureH
 		_, err = through(authority.Person{ID: conformanceAlice, Organization: fixtureOrganization})
 		require.ErrorContains(t, err, "holds no role on "+page, "an administrator holding no role is refused like any member")
 		_, err = h.core.IssueForPerson(h.ctx, maya, authority.IssueRequest{Audience: store})
-		require.ErrorContains(t, err, "holds nothing at this audience", "on her own session, her own grants at the store decide")
+		require.ErrorContains(t, err, store+" declares no roles", "on her own session she holds nothing at the store: it is reached through the page's binding")
 	})
 
 	// The host's module edge names the page a call comes from, and the
 	// authority interface issues through the page's target's binding.
-	t.Run("a page's call on the module edge goes through its target's binding; an unbound module on the person's own access", func(t *testing.T) {
+	t.Run("a page's call on the module edge goes through its target's binding; a module it declares no binding to is refused", func(t *testing.T) {
 		const other = "conformance-reach-page-unbound"
 		deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: other, ceilings: []*authorityv1.WorkScopeV1{wireScope(other+".row", "read")}})
 		sess, err := sessionv1.NewSessionServiceClient(h.conn).SignIn(h.ctx, &sessionv1.SignInRequest{FixtureToken: "fixture-maya"})
@@ -778,7 +778,7 @@ func testModulePageRoleReachesThroughItsBinding(t *testing.T, h reviewedClosureH
 		_, err = issue(store, wireScope(row, "write"))
 		require.ErrorContains(t, err, `widens what its owner holds through binding "rows"`, "refused what the role lacks")
 		_, err = issue(other)
-		require.ErrorContains(t, err, "holds nothing at this audience", "a module the target declares no binding to is on the person's own access")
+		require.ErrorContains(t, err, "declares no binding to "+other, "a module the target declares no binding to is not reached from its page")
 		// Only the module edge names a page: a solution backend holding her
 		// bearer, or a module, cannot mint the page hop.
 		for _, actor := range []string{"", h.moduleCredential} {

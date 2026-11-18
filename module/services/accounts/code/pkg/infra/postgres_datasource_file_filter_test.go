@@ -92,6 +92,35 @@ func TestPostgresDatasourcePublicCredentialKindPersistsAndClearsWithAnEnvelope(t
 	require.Equal(t, []string{".md"}, updated.FileExtensions, "the rest of the config is untouched")
 }
 
+// Removing a token leaves the source a public repository in one write: the
+// sealed token and the webhook secret go, the public marker is set, and the
+// rest of the config (its file filter) is untouched.
+func TestPostgresClearDatasourceSourceCredentialMakesTheSourcePublic(t *testing.T) {
+	owner := seedUser(t)
+	org := seedOrg(t, owner)
+	template := installationSourceByID(t, seedDatasourceSource(t, org))
+
+	source := *template
+	source.ID = business.NewIDString()
+	source.CredentialSecretRef = "vault:v1:envelope"
+	source.WebhookSecretRef = "vault:v1:webhook"
+	source.GitHubInstallationID = ""
+	source.GitHubCredentialKind = ""
+	source.FileExtensions = []string{".md"}
+	require.NoError(t, testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error {
+		return testStore.InsertDatasourceSource(ctx, &source)
+	}))
+
+	require.NoError(t, testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error {
+		return testStore.ClearDatasourceSourceCredential(ctx, org, source.ID)
+	}))
+	cleared := installationSourceByID(t, source.ID)
+	require.Empty(t, cleared.CredentialSecretRef)
+	require.Empty(t, cleared.WebhookSecretRef)
+	require.Equal(t, "public", cleared.GitHubCredentialKind)
+	require.Equal(t, []string{".md"}, cleared.FileExtensions, "the rest of the config is untouched")
+}
+
 // The fetch-scope update writes the three fields it owns and nothing else — and
 // in particular rebuilds the github config envelope from the whole source, not
 // from the file filter alone. Rebuilt from the filter, a public source's

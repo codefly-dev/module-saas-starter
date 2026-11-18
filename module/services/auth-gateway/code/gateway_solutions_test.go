@@ -11,7 +11,7 @@ import (
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
-	"github.com/codefly-dev/core/solutionhost"
+	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
@@ -261,12 +261,12 @@ func TestGateway_Solution_ValidJWT_ForwardsWithIdentity(t *testing.T) {
 	require.NotEmpty(t, fake.lastHeaders.Get("x-user-id"))
 	require.NotEmpty(t, fake.lastHeaders.Get("x-org-id"))
 	require.Equal(t, "admin", fake.lastHeaders.Get("x-org-role"))
-	// The caller's bearer DOES travel to the solution, which is the recorded
-	// state of SA-F-BEARER and not agreement with it: the solution authenticates
-	// by it and nothing mints the audience-bound capability that should replace
-	// it. See removePersonsSessionCredential in gateway.go. The cookie does not
-	// travel, and TestSolutionUpstreamReceivesNoCookie asserts that.
-	require.Equal(t, "Bearer "+token, fake.lastHeaders.Get("authorization"))
+	// The caller's bearer does NOT travel to the solution: it is a credential
+	// for the whole host. A solution that declares an authority principal is
+	// handed the person's Work Context addressed to it instead
+	// (forwardUpstreamCredential, upstream_audienced_credential_test.go); this
+	// one declares none and receives who the person is and no credential.
+	require.Empty(t, fake.lastHeaders.Get("authorization"))
 	// The gateway token is an accounts-only capability and must not leak to a
 	// solution upstream.
 	require.Empty(t, fake.lastHeaders.Get("x-codefly-gateway-token"))

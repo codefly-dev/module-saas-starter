@@ -50,7 +50,7 @@ describe("NoReadableCollection", () => {
 				/Ask an organization administrator to grant you read access/,
 			),
 		).toBeTruthy();
-		expect(screen.getByText(/Data sources → Collection access/)).toBeTruthy();
+		expect(screen.getByText(/Admin → Data sources/)).toBeTruthy();
 		// A member cannot make the grant, so no link sends them to a page that refuses.
 		expect(screen.queryByRole("link")).toBeNull();
 	});

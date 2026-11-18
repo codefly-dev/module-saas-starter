@@ -34,6 +34,16 @@ func quotaStatusError(err error) error {
 	return err
 }
 
+// pageTokenStatus answers a page token the listing did not issue as the
+// caller's error it is, with the store's own sentence; anything else passes on.
+func pageTokenStatus(err error) error {
+	var storeErr *business.StoreError
+	if errors.As(err, &storeErr) && storeErr.StoreErrorType == business.ErrTypeValidation {
+		return status.Error(codes.InvalidArgument, storeErr.Error())
+	}
+	return err
+}
+
 // quotaRefusal carries the quota's own sentence ("seats quota exhausted: used
 // 5 of 5"), never the wrapped chain: the message is shown to the person who hit
 // the limit, and the internal call path is not theirs to read.
@@ -194,7 +204,8 @@ func (s *UserServer) ListUsers(ctx context.Context, req *gen.ListUsersRequest) (
 	if err := requirePlatformAdmin(ctx, actorID); err != nil {
 		return nil, err
 	}
-	return service.ListUsers(ctx, req)
+	response, err := service.ListUsers(ctx, req)
+	return response, pageTokenStatus(err)
 }
 
 func (s *UserServer) UpdateUser(ctx context.Context, req *gen.UpdateUserRequest) (*gen.User, error) {
@@ -984,7 +995,8 @@ func (s *APIKeyServer) ListAPIKeys(ctx context.Context, req *gen.ListAPIKeysRequ
 	if err := requireOrgMember(ctx, actorID, req.OrganizationId); err != nil {
 		return nil, err
 	}
-	return service.ListAPIKeys(ctx, req)
+	response, err := service.ListAPIKeys(ctx, req)
+	return response, pageTokenStatus(err)
 }
 
 func (s *APIKeyServer) RevokeAPIKey(ctx context.Context, req *gen.RevokeAPIKeyRequest) (*emptypb.Empty, error) {
@@ -1406,26 +1418,17 @@ func (s *AuditServer) QueryAuditLog(ctx context.Context, req *gen.QueryAuditLogR
 	if err != nil {
 		return nil, err
 	}
-	// Audit log is read-through-membership: org members see their own org's
-	// audit trail and nobody else's — a platform role reads no organization's
-	// trail without being a member of it. No org_id means a platform-wide
-	// read, which requires platform admin — UNLESS the caller carries a verified
-	// active org: default the read to that org rather than denying, so an org
-	// member (including a solution acting on the user's behalf, e.g. a composed solution)
-	// sees their own org's audit trail without a platform grant.
-	if req.OrgId == "" {
-		if err := requirePlatformAdmin(ctx, actorID); err != nil {
-			callerOrg, ok := wool.Get(ctx).OrgID()
-			if !ok || callerOrg == "" {
-				return nil, err
-			}
-			req.OrgId = callerOrg
-		}
-	} else {
-		if err := requireOrgMember(ctx, actorID, req.OrgId); err != nil {
-			return nil, err
-		}
+	// The audit trail is read with audit:read in the organization, and by
+	// nobody else — a platform role reads no organization's trail without
+	// holding the permission in it. No org_id means the platform-wide read,
+	// which a platform role makes; a caller without one reads their own
+	// verified organization instead (a solution acting for a person included),
+	// under the same permission as if they had named it.
+	orgID, err := requireAuditRead(ctx, actorID, req.OrgId, true)
+	if err != nil {
+		return nil, err
 	}
+	req.OrgId = orgID
 
 	q := business.AuditQuery{
 		OrgID:      req.OrgId,
@@ -1488,15 +1491,10 @@ func (s *AuditServer) AggregateAuditLog(ctx context.Context, req *gen.AggregateA
 	if err != nil {
 		return nil, err
 	}
-	// Same read-through-membership authorization as QueryAuditLog.
-	if req.OrgId == "" {
-		if err := requirePlatformAdmin(ctx, actorID); err != nil {
-			return nil, err
-		}
-	} else {
-		if err := requireOrgMember(ctx, actorID, req.OrgId); err != nil {
-			return nil, err
-		}
+	// audit:read in the organization, or a platform role for the platform-wide
+	// aggregate.
+	if _, err := requireAuditRead(ctx, actorID, req.OrgId, false); err != nil {
+		return nil, err
 	}
 
 	q := business.AuditQuery{
@@ -1573,7 +1571,13 @@ func (s *AuditServer) AggregateAuditLog(ctx context.Context, req *gen.AggregateA
 }
 
 func (s *AuditServer) ListAuditEventTypes(ctx context.Context, req *gen.ListAuditEventTypesRequest) (*gen.ListAuditEventTypesResponse, error) {
-	if _, err := requireAuth(ctx); err != nil {
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// The catalog names no organization: whoever may read a trail may read what
+	// it can contain — audit:read in their own organization, or a platform role.
+	if _, err := requireAuditRead(ctx, actorID, "", true); err != nil {
 		return nil, err
 	}
 	// The code-owned catalog plus every type a registered solution declared,

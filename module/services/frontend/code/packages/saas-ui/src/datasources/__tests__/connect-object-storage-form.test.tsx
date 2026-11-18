@@ -23,7 +23,7 @@ function fillRequired() {
 	fill("Bucket", "acme-docs");
 	fill("Access key ID", "AKIAEXAMPLE");
 	fill("Secret access key", "example-secret");
-	fill("Target collection", "Handbook");
+	fill("Collection", "Handbook");
 }
 
 describe("ConnectObjectStorageForm", () => {

@@ -42,6 +42,7 @@ var auditActorTypeIndirectSites = map[string]string{
 	"webhooks.go:CreateSubscription":                               "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",
 	"authority_core_audit.go:journalAuthority":                     "authorityActor returns ActorTypeUser or ActorTypeSystem on every branch; TestAuthorityChangesAreRecordedAsRegisteredMutations pins it.",
 	"authority_core_audit.go:RecordAuthorityIssue":                 "authorityActor returns ActorTypeUser or ActorTypeSystem on every branch; TestAuthorityChangesAreRecordedAsRegisteredMutations pins it.",
+	"authority_core_audit.go:recordAuthorityDecision":              "authorityActor returns ActorTypeUser or ActorTypeSystem on every branch, and the row filed under no tenant is ActorTypeSystem; TestARefusedDecisionIsARowOfItsOrganizationsJournal pins both.",
 	"webhooks.go:DeleteSubscription":                               "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",
 	"webhooks.go:ReplayWebhookDelivery":                            "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",
 	"webhooks.go:RotateWebhookSecret":                              "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",

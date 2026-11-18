@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/codefly-dev/core/solutionhost"
+	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
 )
 
 // The rules core states about a manifest and leaves to the host, because only

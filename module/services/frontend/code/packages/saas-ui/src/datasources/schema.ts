@@ -64,7 +64,7 @@ export const connectGitHubSchema = z
 			.max(255, "Repository name too long")
 			.regex(
 				/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/,
-				"Use the owner/name form, e.g. codefly-dev/module-saas-starter",
+				"Use the owner/name form, e.g. acme/handbook",
 			),
 		paths: fetchScopeFields.paths,
 		branch: fetchScopeFields.branch,
@@ -72,8 +72,8 @@ export const connectGitHubSchema = z
 		boundaryNodeId: z.string().optional(),
 		targetCollection: z
 			.string()
-			.min(1, "Target collection is required")
-			.max(255, "Target collection too long"),
+			.min(1, "Name the collection its content lands in")
+			.max(255, "Collection name too long"),
 		accessToken: z.string().max(1024, "Access token too long").optional(),
 		webhookSecret: z.string().max(1024, "Webhook secret too long").optional(),
 	})
@@ -88,7 +88,7 @@ export const connectGitHubSchema = z
 				input: values,
 				code: "custom",
 				path: ["accessToken"],
-				message: "Access token is required",
+				message: "Paste an access token, or choose another way to connect",
 			});
 		}
 	});

@@ -249,6 +249,17 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 		// Current is the caller's own session: authenticated by the bearer it
 		// describes, organisation-less like the session itself may be.
 		"/host.session.v1.SessionService/Current": read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
+		// End ends the caller's own session and every role view and cast opened
+		// from it: the bearer it is called with decides which, organisation-less
+		// like the session itself may be. Recorded when it ends one; a retry
+		// finds no open session and is refused, so it is not idempotent.
+		"/host.session.v1.SessionService/End": func() *policyv1.MethodPolicy {
+			p := authenticatedMint(string(EventAuthoritySessionEnded))
+			p.Tenant = policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE
+			p.RateLimit = policyv1.RateLimitClass_RATE_LIMIT_CLASS_STANDARD_WRITE
+			p.ResponseSensitivity = policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL
+			return p
+		}(),
 		// OpenRoleView mints a session (a bearer), so its response is secret and its
 		// retry is not idempotent. Any member opens one: the core decides which roles
 		// the caller acts as, and journals the view in its own transaction.
@@ -361,7 +372,8 @@ var interfaceDescriptions = map[string]string{
 	"SessionService/SignIn":                 "Open a session for a fixture person by their fixture token.",
 	"SessionService/OpenRoleView":           "Open a session that acts as some of the roles the caller holds on one installation; it only narrows.",
 	"SessionService/OpenTeamCast":           "Open a session that acts as one team and nothing else, for a caller who could grant that team's roles.",
-	"SessionService/Current":                "Answer the session the caller's bearer belongs to, without the bearer.",
+	"SessionService/Current":                "Answer the session the caller's bearer belongs to, without the bearer: who it is, when it ends on its own and the grant epoch of what it holds.",
+	"SessionService/End":                    "End the caller's session and every role view and cast opened from it; each of those bearers is unauthenticated from then on.",
 	"SessionService/ListCastableTeams":      "List the teams the caller may act as now, each with what it holds, by the rule that decides OpenTeamCast.",
 	"SessionService/ListFixturePeople":      "List the people fixture sign-in admits, in the fixture's order; none where it is not enabled.",
 }

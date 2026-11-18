@@ -104,6 +104,7 @@ func (s *Service) SuspendUser(ctx context.Context, actorID string, req *gen.Susp
 	}
 
 	var stranded []string
+	var revoked []RevokedSession
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		var err error
 		// Taken even though nothing here is refused: holding each organization's
@@ -114,9 +115,23 @@ func (s *Service) SuspendUser(ctx context.Context, actorID string, req *gen.Susp
 		if err != nil {
 			return err
 		}
+		// Before the status write, whose trigger revokes the same rows and
+		// reports none of them: the rows named here are what the access
+		// markers below are written for.
+		revoked, err = s.store.RevokeAllUserSessions(ctx, req.UserId, SessionRevokedUserNotActive)
+		if err != nil {
+			return err
+		}
 		if err := s.store.UpdateUserStatus(ctx, req.UserId, "suspended"); err != nil {
 			return err
 		}
+		// Include earlier committed revocations so retrying a suspension
+		// retries markers lost to a transient revocation-store failure.
+		previous, err := s.store.InvalidatedUserSessions(ctx, req.UserId)
+		if err != nil {
+			return err
+		}
+		revoked = append(revoked, previous...)
 		if len(stranded) == 0 {
 			return s.emitTx(ctx, actorID, "user", EventUserSuspended, "user", req.UserId, "")
 		}
@@ -125,13 +140,17 @@ func (s *Service) SuspendUser(ctx context.Context, actorID string, req *gen.Susp
 	}); err != nil {
 		return w.Wrapf(err, "cannot suspend user")
 	}
+	// Suspension contains a compromised account, and the gateway admits an
+	// already-issued access token from the revocation list alone: without the
+	// markers the credential being contained stays usable for its whole lifetime.
+	containmentErr := s.publishSessionRevocations(ctx, revoked)
 
 	message := fmt.Sprintf("Security: user %s suspended by %s (reason: %s)", req.UserId, actorID, req.Reason)
 	if len(stranded) > 0 {
 		message += fmt.Sprintf(" — organizations left without an administrator: %s", strings.Join(stranded, ", "))
 	}
 	s.notifySlack(ctx, message)
-	return nil
+	return containmentErr
 }
 
 // UnsuspendUser reactivates a suspended user account (super_admin only).
@@ -451,18 +470,13 @@ func (s *Service) RevokeSession(ctx context.Context, actorID string, req *gen.Re
 		return w.Wrapf(err, "cannot revoke session")
 	}
 
-	// Killing the refresh family leaves the victim's outstanding access token
-	// valid until its natural TTL on every path. Write a session-revocation
-	// marker per revoked row so the access half dies now. Best-effort: the DB
-	// revocation above is the durable authority, and a store outage bounds the
-	// residual exposure to AccessTokenTTL rather than failing the kill.
-	if s.minter != nil {
-		for _, sessionID := range revokedSessionIDs {
-			if err := s.minter.RevokeSessionAccess(ctx, sessionID); err != nil {
-				w.Warn("RevokeSessionAccess failed (best-effort)", wool.ErrField(err))
-			}
-		}
-	}
+	// Killing the refresh family leaves the victim's outstanding access tokens
+	// valid until their natural TTL on every path, so the access half is ended
+	// by markers: one per revoked row, and one for the family itself. The row
+	// ids alone reached only the family's current session — every refresh mints
+	// a new one — so the access token minted before the last refresh survived
+	// the kill.
+	s.revokeSessionAccess(ctx, append(revokedSessionIDs, req.SessionId))
 
 	return nil
 }
@@ -483,6 +497,8 @@ func (s *Service) GrantPlatformRole(ctx context.Context, actorID string, req *ge
 	}); err != nil {
 		return w.Wrapf(err, "cannot grant platform role")
 	}
+	// A token minted before the grant states the old platform role.
+	s.revokeInvalidatedSessionAccess(ctx, req.UserId)
 
 	// Notify the user about their new platform role
 	_ = s.NotifyUser(
@@ -523,6 +539,9 @@ func (s *Service) RevokePlatformRole(ctx context.Context, actorID string, req *g
 	}); err != nil {
 		return w.Wrapf(err, "cannot revoke platform role")
 	}
+	// The revocation that matters most to end now: an issued access token
+	// still states the platform role until its marker is written.
+	s.revokeInvalidatedSessionAccess(ctx, req.UserId)
 	return nil
 }
 

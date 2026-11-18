@@ -27,7 +27,7 @@ describe("describeSync", () => {
 
 		expect(report.state).toBe("queued");
 		expect(report.active).toBe(true);
-		expect(report.headline).toBe("Accepted, waiting for a worker");
+		expect(report.headline).toBe("Waiting to start");
 		expect(report.step).toBe(1);
 		expect(report.stepCount).toBe(SYNC_STEPS.length);
 		// Entered, not completed: a bar at 0 has to keep meaning "the host has not
@@ -43,7 +43,7 @@ describe("describeSync", () => {
 			{ now: NOW },
 		);
 		expect(fetching.state).toBe("running");
-		expect(fetching.headline).toBe("Fetching from the repository");
+		expect(fetching.headline).toBe("Reading the repository");
 		expect(fetching.step).toBe(2);
 		expect(fetching.percent).toBe(50);
 		expect(fetching.counts).toEqual([]);
@@ -279,9 +279,9 @@ describe("describeSync", () => {
 		expect(report.state).toBe("stalling");
 		expect(report.tone).toBe("warning");
 		expect(report.active).toBe(true);
-		expect(report.headline).toBe("Fetching from the repository");
+		expect(report.headline).toBe("Reading the repository");
 		expect(report.detail).toContain("No progress for 2 minutes");
-		expect(report.detail).toContain("has not given up");
+		expect(report.detail).toContain("still trying");
 	});
 
 	it("measures a stall from the latest phase the host stamped, not from the oldest", () => {

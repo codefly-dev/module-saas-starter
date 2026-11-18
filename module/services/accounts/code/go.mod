@@ -7,15 +7,15 @@ require (
 	buf.build/go/protovalidate v1.4.0
 	connectrpc.com/connect v1.21.1
 	connectrpc.com/otelconnect v0.9.0
-	github.com/codefly-dev/authority/libraries/authority-client/go v0.2.1-0.20261115131434-3574603a5f27
-	github.com/codefly-dev/authority/libraries/authority-core/go v0.1.1
-	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261115171111-fecafe1e3c12
-	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261115131434-3574603a5f27
-	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261115131434-3574603a5f27
+	github.com/codefly-dev/authority/libraries/authority-client/go v0.2.1-0.20261118173646-458769add33b
+	github.com/codefly-dev/authority/libraries/authority-core/go v0.1.2-0.20261118173646-458769add33b
+	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261118173646-458769add33b
+	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261118173646-458769add33b
+	github.com/codefly-dev/authority/libraries/solutionhost/go v0.0.0-20261118173646-458769add33b
 	github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc
-	github.com/codefly-dev/core v0.19.32
+	github.com/codefly-dev/core v0.19.34-0.20261117211945-b67415c6891b
 	github.com/codefly-dev/interface-cache/go/cache v0.4.2-0.20261110162340-1f824ec7cb21
-	github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261021192505-6fd56dae2e04
+	github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261117094433-02cb6483b246
 	github.com/codefly-dev/sdk-go v0.4.1
 	github.com/codefly-dev/sdk-go/workcontext v0.1.1-0.20261018052022-70dc7a546458
 	github.com/codefly-dev/service-object-storage v0.0.19
@@ -65,7 +65,8 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cheggaaa/pb/v3 v3.2.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
-	github.com/codefly-dev/authority/libraries/hop/go v0.2.1-0.20261115131434-3574603a5f27 // indirect
+	github.com/codefly-dev/authority/libraries/hop/go v0.2.1-0.20261117230331-f1724b073a69 // indirect
+	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261117230331-f1724b073a69 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect

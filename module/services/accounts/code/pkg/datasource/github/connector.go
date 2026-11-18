@@ -121,13 +121,13 @@ func (c *FilesConnector) Descriptor() connector.Descriptor {
 	return connector.Descriptor{
 		Key:         ConnectorKey,
 		DisplayName: "GitHub",
-		Description: "A GitHub repository, pulled on sync and kept fresh through push webhooks.",
+		Description: "A GitHub repository, brought in on every sync and kept up to date as people push to it.",
 		Interface:   connector.InterfaceFiles,
 		ConfigFields: []connector.ConfigField{
-			{Key: "repo", DisplayName: "Repository", Help: "owner/name, e.g. codefly-dev/module-saas-starter", Required: true},
-			{Key: "paths", DisplayName: "Paths", Help: "Path prefixes to ingest; empty means the whole repository.", Required: false},
-			{Key: "file_extensions", DisplayName: "File types", Help: "Case-insensitive suffix allowlist such as .md or .mdx, intersected with paths; empty means all types.", Required: false},
-			{Key: "branch", DisplayName: "Branch", Help: "Git ref to pull; empty resolves to the default branch.", Required: false},
+			{Key: "repo", DisplayName: "Repository", Help: "As it appears on GitHub, e.g. acme/handbook.", Required: true},
+			{Key: "paths", DisplayName: "Paths", Help: "Folders to bring in; leave empty for the whole repository.", Required: false},
+			{Key: "file_extensions", DisplayName: "File types", Help: "File types to keep, such as .md or .mdx; leave empty for every type.", Required: false},
+			{Key: "branch", DisplayName: "Branch", Help: "Leave empty for the repository's default branch.", Required: false},
 		},
 		CredentialModes: []connector.CredentialMode{connector.CredentialOrgApp, connector.CredentialStaticSecret, connector.CredentialNone},
 		SupportsWebhook: true,

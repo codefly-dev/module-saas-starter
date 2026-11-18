@@ -6,7 +6,7 @@ import (
 
 	"accounts/internal/deliverytest"
 
-	"github.com/codefly-dev/core/solutionhost"
+	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
 )
 
 // Every admission fixture is signed and verified, because core's Delivered

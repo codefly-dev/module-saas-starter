@@ -8,6 +8,7 @@ import (
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
+	"github.com/codefly-dev/core/wool"
 	"github.com/google/uuid"
 )
 
@@ -130,4 +131,123 @@ func (s *Service) RecordAuthorityIssue(ctx context.Context, organization, actor 
 	return s.store.WithOrgTx(ctx, organization, func(ctx context.Context) error {
 		return s.emitTx(ctx, actorID, actorType, event, "work_context", task, organization)
 	})
+}
+
+// ErrAuthorityDecisionUnrecorded reports an admitted issue this host's
+// journal did not take: the capability is not handed out. It names no cause;
+// the journal's own failure is logged where it happened.
+var ErrAuthorityDecisionUnrecorded = errors.New("the issue could not be recorded in the audit journal, so it is not handed out")
+
+type authorityProbeKey struct{}
+
+// AuthorityProbe marks ctx as asking the core a question whose answer the
+// asking operation discards: a mint held to what the core would issue, a
+// source's governing scope checked against a role. The core decides as it
+// would for a caller, and what it answers is no issue and no refusal of its
+// own, so it is not a row of the journal. The operation that asked records
+// what it did.
+func AuthorityProbe(ctx context.Context) context.Context {
+	return context.WithValue(ctx, authorityProbeKey{}, true)
+}
+
+// recordAuthorityDecision is the core's decision hook
+// (authority.Config.Decisions, owner decision 11): each decision the core
+// makes for a caller becomes a row of the journal this host already keeps.
+//
+//   - An admitted check or resource listing is not recorded: every served
+//     call makes one.
+//   - An admitted issue is the record it always was (RecordAuthorityIssue: a
+//     task started, a child session for one more hop), written in the
+//     organization it was issued in before the capability is handed out. One
+//     that cannot be written answers ErrAuthorityDecisionUnrecorded, and the
+//     core then hands out nothing.
+//   - A refusal is saas.authority.decision_refused in the organization it was
+//     decided in, as the person who asked when one did: what was asked, and
+//     why it was refused. It is an observation: the refusal stands whether or
+//     not the row could be written, and a row that could not is logged by the
+//     emitter.
+//   - What a capability that did not verify says of itself (Decision.Claimed)
+//     is proven by nothing. Its row is filed under no tenant, recorded as
+//     nobody's, with the organization and the actor it claims in the payload;
+//     so is a refusal naming no organization of this host.
+func (s *Service) recordAuthorityDecision(ctx context.Context, d authority.Decision) error {
+	if d.AdmittedCheck() {
+		return nil
+	}
+	if probing, _ := ctx.Value(authorityProbeKey{}).(bool); probing {
+		return nil
+	}
+	if d.Outcome == authority.Admitted {
+		// One more hop on a presented capability, or a page's call through
+		// its target's binding: the actor is no longer the owner.
+		child := d.Kind == authority.DecisionIssueChild || (d.Kind == authority.DecisionIssuePage && d.Actor != d.Owner)
+		if err := s.RecordAuthorityIssue(ctx, d.Organization, d.Actor, child, d.Task); err != nil {
+			wool.Get(ctx).In("recordAuthorityDecision").Warn("an admitted issue could not be recorded, so it is withheld",
+				wool.Field("decision", string(d.Kind)), wool.Field("org", d.Organization), wool.Field("audience", d.Audience), wool.ErrField(err))
+			return ErrAuthorityDecisionUnrecorded
+		}
+		return nil
+	}
+	payload := map[string]any{"decision": string(d.Kind), "code": d.Code, "reason": d.Reason}
+	for name, value := range map[string]string{
+		"owner": d.Owner, "actor": d.Actor, "audience": d.Audience, "binding": d.Binding, "operation": d.Operation,
+		"method": d.Method, "installation": d.Installation, "task": d.Task, "delegation": d.Delegation,
+	} {
+		if value != "" {
+			payload[name] = value
+		}
+	}
+	if d.Advisory {
+		payload["advisory"] = true
+	}
+	organization, actorID, actorType := d.Organization, "", ActorTypeSystem
+	if _, err := uuid.Parse(organization); err != nil || d.Claimed {
+		// Filed under no tenant: the organization is a claim, or none of
+		// this host's, and stays in the payload as what was named.
+		if organization != "" {
+			payload["organization"] = organization
+		}
+		if d.Claimed {
+			payload["claimed"] = true
+		}
+		organization = ""
+	} else {
+		actorID, actorType = authorityActor(d.Actor)
+	}
+	s.emit(ctx, actorID, actorType, EventAuthorityDecisionRefused, "authority_decision", d.Audience, organization, payload)
+	return nil
+}
+
+// RecordAuthorityRefusal records a refusal this host made itself while
+// deciding an issue, before the core was asked for it: a stated credential
+// whose own grants hold nothing at the audience, or that is confined
+// elsewhere. It is the row the core's own refusal would have been.
+func (s *Service) RecordAuthorityRefusal(ctx context.Context, kind authority.DecisionKind, organization, person, audience, reason string) {
+	_ = s.recordAuthorityDecision(ctx, authority.Decision{Kind: kind, Outcome: authority.Refused, Code: authority.CodeDenied, Reason: reason,
+		Organization: organization, Owner: person, Actor: person, Audience: audience})
+}
+
+// DecisionHopForward names, in the journal, a refusal the hop's front door
+// made itself: beside the core's own decision kinds, which it is none of.
+const DecisionHopForward authority.DecisionKind = "hop"
+
+// HopRefusal is one call the hop's front door refused itself, as the hop
+// tells it (the hop library's forward.Refusal): the call, the refusal's code
+// and the hop's own reason, the module addressed and what identifies the work.
+// Claimed says the identity was read from a Work Context the authority did not
+// check.
+type HopRefusal struct {
+	Method, Code, Reason                      string
+	Module                                    string
+	Organization, Owner, Actor, Binding, Task string
+	Claimed                                   bool
+}
+
+// RecordHopRefusal records a refusal the hop made itself, which never reaches
+// the core, as the row a refusal of the core's is (recordAuthorityDecision):
+// in the organization of a call whose identity the authority checked, under
+// no tenant for one read from an unverified Work Context or carrying none.
+func (s *Service) RecordHopRefusal(ctx context.Context, r HopRefusal) {
+	_ = s.recordAuthorityDecision(ctx, authority.Decision{Kind: DecisionHopForward, Outcome: authority.Refused, Code: r.Code, Reason: r.Reason,
+		Organization: r.Organization, Owner: r.Owner, Actor: r.Actor, Audience: r.Module, Binding: r.Binding, Method: r.Method, Task: r.Task, Claimed: r.Claimed})
 }

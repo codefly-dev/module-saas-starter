@@ -55,7 +55,6 @@ const reads: Record<string, unknown> = {
 	ListDevices: { devices: [] },
 	GetSSO: {},
 	ListPlatformAdmins: { admins: [] },
-	ListFeatureFlags: { flags: [] },
 	ListActiveSessions: { sessions: [] },
 };
 export const apiTransport = createConnectTransport({

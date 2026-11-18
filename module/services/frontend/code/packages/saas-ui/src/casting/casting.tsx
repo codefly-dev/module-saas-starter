@@ -30,7 +30,15 @@ import {
 	useState,
 	useSyncExternalStore,
 } from "react";
-import { type CastHost, type CastSession, type CastTeam, type Holding, refusalText, signedOut } from "./host.js";
+import {
+	atSessionEnd,
+	type CastHost,
+	type CastSession,
+	type CastTeam,
+	type Holding,
+	refusalText,
+	signedOut,
+} from "./host.js";
 import {
 	type CastRefusal,
 	castAsk,
@@ -144,7 +152,19 @@ export function CastingProvider({
 		};
 	}, [host, generation]);
 	const ours = read?.host === host ? read : undefined;
-	const session = ours?.session;
+	// A session is held no longer than the end the host stated for it
+	// (expires_at_unix): once that has passed the host is asked again, once,
+	// and the session is not presented, even if the host answers it again.
+	const [endedAt, setEndedAt] = useState(0);
+	const endsAt = ours?.session?.expiresAtUnix ?? 0;
+	useEffect(() => {
+		if (endsAt === endedAt) return;
+		return atSessionEnd(endsAt, () => {
+			setEndedAt(endsAt);
+			reread();
+		});
+	}, [endsAt, endedAt, reread]);
+	const session = endsAt && endsAt === endedAt ? undefined : ours?.session;
 	const listed = ours?.teams;
 	const reading = !ours || ours.generation !== generation;
 	// A holding is named as the menu names its target, else as it was named

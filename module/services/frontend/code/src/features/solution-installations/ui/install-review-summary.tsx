@@ -14,6 +14,7 @@ import type { ReviewedSupportingModule } from "@/gen/saas/accounts/v1/installati
 import { Button } from "@/shared/ui";
 import { reachDetail, supportingSummary } from "../model/install-review";
 import { DeclaredOperations } from "./declared-access";
+import { ReviewSection, RolePanel } from "./review-section";
 
 /** What each declared role lets people do, one card per role. */
 export function RoleReach({
@@ -26,25 +27,20 @@ export function RoleReach({
 }) {
 	if (!offer.roles.length) return null;
 	return (
-		<section aria-label="Roles" className="space-y-3">
-			<h3 className="font-medium">Roles</h3>
-			{roleAbilities(offer.target, offer.roles).map((abilities) => (
-				<section
-					key={abilities.role}
-					aria-label={`Role ${abilities.role}`}
-					className="space-y-2 rounded-lg border p-3"
-				>
-					<h4 className="font-medium">
-						What {article(roleLabel(title, abilities.role)).toLowerCase()}{" "}
-						{roleLabel(title, abilities.role)} can do
-					</h4>
-					<RoleAbilitiesList
-						abilities={abilities}
-						label={`What ${article(roleLabel(title, abilities.role)).toLowerCase()} ${roleLabel(title, abilities.role)} can do`}
-					/>
-				</section>
-			))}
-		</section>
+		<ReviewSection title="Roles" className="space-y-3">
+			{roleAbilities(offer.target, offer.roles).map((abilities) => {
+				const heading = `What ${article(roleLabel(title, abilities.role)).toLowerCase()} ${roleLabel(title, abilities.role)} can do`;
+				return (
+					<RolePanel
+						key={abilities.role}
+						role={abilities.role}
+						heading={heading}
+					>
+						<RoleAbilitiesList abilities={abilities} label={heading} />
+					</RolePanel>
+				);
+			})}
+		</ReviewSection>
 	);
 }
 
@@ -67,11 +63,10 @@ export function UpdateAsks({
 		? updateAsks(offer.target, offer.roles, approved)
 		: [];
 	return (
-		<section
-			aria-label="What this update adds"
-			className="space-y-2 rounded-lg border border-warning/40 bg-warning/5 p-3"
+		<ReviewSection
+			title="What this update adds"
+			className="rounded-lg border border-warning/40 bg-warning/5 p-3"
 		>
-			<h3 className="font-medium">What this update adds</h3>
 			{!approved.length ? (
 				<p>
 					What you approved earlier was not recorded in detail, so everything
@@ -85,7 +80,7 @@ export function UpdateAsks({
 			) : (
 				asks.map((role) => (
 					<div key={role.role}>
-						<p className="font-medium">
+						<p className="type-label">
 							{article(roleLabel(title, role.role))}{" "}
 							{roleLabel(title, role.role)} would also be able to
 						</p>
@@ -99,7 +94,7 @@ export function UpdateAsks({
 			<p className="text-muted-foreground">
 				Until you update, everyone keeps exactly the access you approved.
 			</p>
-		</section>
+		</ReviewSection>
 	);
 }
 
@@ -111,8 +106,7 @@ export function SupportingModules({
 }) {
 	const { installs, standing, reused, optional } = supportingSummary(modules);
 	return (
-		<section aria-label="Supporting modules" className="space-y-1">
-			<h3 className="font-medium">Supporting modules</h3>
+		<ReviewSection title="Supporting modules" className="space-y-1">
 			{!modules.length && <p>It needs no other module.</p>}
 			{installs.length > 0 && (
 				<p>
@@ -133,7 +127,7 @@ export function SupportingModules({
 					Uninstalling it later keeps the modules other solutions share.
 				</p>
 			)}
-		</section>
+		</ReviewSection>
 	);
 }
 
@@ -172,7 +166,7 @@ export function TechnicalAccess({
 					<DeclaredOperations offer={offer} />
 					{reachDetail(offer).length > 0 && (
 						<div className="space-y-1">
-							<p className="font-medium">What each role reaches</p>
+							<p className="type-label">What each role reaches</p>
 							<ul className="list-disc pl-5">
 								{reachDetail(offer).map((line) => (
 									<li key={line}>{line}</li>
@@ -182,7 +176,7 @@ export function TechnicalAccess({
 					)}
 					{installed.map(({ module, access }) => (
 						<div key={module.principal} className="space-y-1">
-							<p className="font-medium">
+							<p className="type-label">
 								{module.target || module.principal}
 								{module.release && ` — ${module.release}`}
 							</p>

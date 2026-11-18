@@ -13,6 +13,7 @@ import {
 	type CatalogueRelease,
 } from "@/gen/saas/accounts/v1/platform_admin_pb";
 import { SolutionRegistrationStatus } from "@/gen/saas/accounts/v1/solution_registry_pb";
+import { formatDate } from "@/shared/lib/utils";
 import type { Badge } from "@/shared/ui";
 
 type StatusTone = NonNullable<ComponentProps<typeof Badge>["tone"]>;
@@ -49,6 +50,19 @@ export const CATALOGUE_STATES = [
 	"Observed",
 ] as const;
 export type CatalogueState = (typeof CATALOGUE_STATES)[number];
+
+/**
+ * What each state is called on screen. The keys above are the registry's own
+ * names and stay the model's; a reader scanning the table is given the question
+ * each column answers instead: what was asked for, what was approved, what was
+ * deployed, and what was seen running.
+ */
+export const STATE_HEADINGS: Record<CatalogueState, string> = {
+	Desired: "Requested",
+	Authorized: "Approved",
+	Applied: "Deployed",
+	Observed: "Observed",
+};
 
 export function gapLabel(reason: CatalogueGapReason): string {
 	switch (reason) {
@@ -322,10 +336,11 @@ export function catalogueStates(
 			},
 			{
 				label: "Observed at",
-				view: fact(entry.observed?.observationFreshnessValue, (v) => ({
-					kind: "value",
-					text: timestampDate(v.value as Timestamp).toISOString(),
-				})),
+				// Read as a date; the exact instant stays on hover.
+				view: fact(entry.observed?.observationFreshnessValue, (v) => {
+					const at = timestampDate(v.value as Timestamp).toISOString();
+					return { kind: "value", text: formatDate(at), detail: at };
+				}),
 			},
 		],
 	};
@@ -371,7 +386,7 @@ export function catalogueGaps(entries: CatalogueEntry[]): CatalogueNote[] {
 		const states = catalogueStates(entry);
 		for (const state of CATALOGUE_STATES) {
 			for (const item of states[state]) {
-				note(`${state} · ${item.label}`, item.view);
+				note(`${STATE_HEADINGS[state]} · ${item.label}`, item.view);
 			}
 		}
 		for (const installation of entry.installations) {

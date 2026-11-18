@@ -5,7 +5,7 @@ import { resolve } from "path";
 export function GET() {
 	try {
 		const spec = readFileSync(
-			resolve(process.cwd(), "../../api/openapi/user.swagger.json"),
+			resolve(process.cwd(), "../../accounts/openapi/api.swagger.json"),
 			"utf-8",
 		);
 		return new NextResponse(spec, {

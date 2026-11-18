@@ -40,7 +40,7 @@ func (s *PostgresStore) GetRetentionPolicies(ctx context.Context) ([]*business.R
 
 func (s *PostgresStore) DeleteOldSessions(ctx context.Context, before time.Time) (int64, error) {
 	q := s.getQueryExecutor(ctx)
-	tag, err := q.Exec(ctx, `DELETE FROM sessions WHERE created_at < $1`, before)
+	tag, err := q.Exec(ctx, `DELETE FROM sessions WHERE created_at < $1 AND expires_at < NOW()`, before)
 	if err != nil {
 		return 0, err
 	}

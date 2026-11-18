@@ -1,10 +1,10 @@
 "use client";
 
-import { ConnectError } from "@connectrpc/connect";
 import { Check, Copy, Plus } from "lucide-react";
 import { useId, useState } from "react";
 import { toast } from "sonner";
 import { OrgSelector } from "@/components/org-selector";
+import { failureText } from "@/shared/lib/failure-text";
 import {
 	Button,
 	Dialog,
@@ -131,11 +131,7 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 					toast.success(`Key "${keyName.trim()}" created`);
 					setPlaintextKey(data.plaintextKey);
 				},
-				onError: (cause) =>
-					setError(
-						ConnectError.from(cause).rawMessage ||
-							"Couldn't create the key. Please try again.",
-					),
+				onError: (cause) => setError(failureText("create the key", cause)),
 			},
 		);
 	}
@@ -230,7 +226,7 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 									aria-label="Copy API key"
 								>
 									{copied ? (
-										<Check className="h-4 w-4 text-green-500" />
+										<Check className="h-4 w-4 text-success" />
 									) : (
 										<Copy className="h-4 w-4" />
 									)}

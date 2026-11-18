@@ -374,3 +374,51 @@ func TestTheOneFixtureSeatsSomeoneOnEveryStandardRole(t *testing.T) {
 	}
 	t.Fatal("dev-admin has no row standing for every target")
 }
+
+// THE NO-ROLE SEAT is empty: Bob is the person a refusal is proven with, so
+// the fixture gives him nothing a composed module could read as a holding. He
+// reads no collection, is assigned no organisation role, and is named by no
+// installation, as its owner, a member of a role or through a team it names.
+// A grant to him here would make a refusal pass or fail for the wrong reason.
+func TestTheNoRoleSeatHoldsNothing(t *testing.T) {
+	const bob = "bob@acme.com"
+	data, err := embeddedFixtures.ReadFile("embedded/dev-admin.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f fixtureFile
+	if err := yaml.Unmarshal(data, &f); err != nil {
+		t.Fatal(err)
+	}
+	for _, collection := range f.Collections {
+		if slices.Contains(collection.Readers, bob) {
+			t.Errorf("Bob reads %q through %q; the no-role seat holds no grant", collection.Label, collection.Role)
+		}
+	}
+	for _, assignment := range f.Assignments {
+		if assignment.Email == bob {
+			t.Errorf("Bob is assigned %q; the no-role seat holds no role", assignment.Role)
+		}
+	}
+	teams := map[string]bool{}
+	for _, team := range f.Teams {
+		if slices.Contains(team.Members, bob) {
+			teams[team.Name] = true
+		}
+	}
+	for _, row := range f.Installations {
+		if row.Owner == bob {
+			t.Errorf("Bob owns the installation %s", row.describe())
+		}
+		for role, people := range row.Members {
+			if slices.Contains(people, bob) {
+				t.Errorf("Bob holds %s on %s", role, row.describe())
+			}
+		}
+		for _, team := range row.Teams {
+			if teams[team] {
+				t.Errorf("Bob is in team %q, which holds %s on %s", team, row.Role, row.describe())
+			}
+		}
+	}
+}

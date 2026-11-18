@@ -134,5 +134,10 @@ func (s *Service) RevokeRole(ctx context.Context, actorID string, req *gen.Revok
 	}); err != nil {
 		return w.Wrapf(err, "cannot revoke role")
 	}
+	// As on assignment: a scoped role taken from a person revoked their
+	// sessions, and the access tokens those issued end with them.
+	if req.Scope != "" {
+		s.revokeInvalidatedSessionAccess(ctx, req.SubjectId)
+	}
 	return nil
 }

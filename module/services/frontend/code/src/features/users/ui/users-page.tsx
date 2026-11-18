@@ -2,15 +2,26 @@
 
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import { Search, Users } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 
+import { EmptyState } from "@/components/empty-state";
 import { refusalToast } from "@/features/auth/model/step-up";
 import { orgQueries } from "@/features/organizations/service/queries";
 import { OrgMembersPanel } from "@/features/organizations/ui/org-members-panel";
 import { useAuth } from "@/lib/auth";
-import { Button, Input } from "@/shared/ui";
+import { failureText } from "@/shared/lib/failure-text";
+import { readOutcome } from "@/shared/lib/read-outcome";
+import {
+	Button,
+	ErrorState,
+	Input,
+	Page as PageBody,
+	PageHeader,
+	Panel,
+	Stack,
+} from "@/shared/ui";
 import { toUserStatus, type User } from "../model/types";
 import { type UserEdit, userMutations } from "../service/mutations";
 import { userQueries } from "../service/queries";
@@ -40,24 +51,21 @@ export function UsersPage() {
 function OrganizationPeoplePage({ orgId }: { orgId: string }) {
 	const { data } = useQuery(orgQueries.detail(orgId));
 	return (
-		<div className="space-y-6">
-			<div>
-				<h2 data-slot="page-title" className="type-page-title">
-					Users
-				</h2>
-				<p className="text-muted-foreground mt-1">
-					Organization roles for each person. What a person can do in a solution
-					or module page is given by its roles, under Solutions.
-				</p>
-			</div>
+		<PageBody>
+			<PageHeader
+				title="Users"
+				description="Organization roles for each person. What a person can do in a solution or module page is given by its roles, under Solutions."
+			/>
 			{orgId ? (
 				<OrgMembersPanel orgId={orgId} orgName={data?.name ?? ""} />
 			) : (
-				<p className="text-sm text-muted-foreground">
-					Choose an organization to see its people.
-				</p>
+				<EmptyState
+					icon={Users}
+					title="Choose an organization to see its people"
+					description="Each person's roles are held in one organization."
+				/>
 			)}
-		</div>
+		</PageBody>
 	);
 }
 
@@ -75,8 +83,12 @@ function PlatformUsersPage() {
 		data: raw,
 		isLoading,
 		isError,
+		error,
 		refetch,
 	} = useQuery(userQueries.list(search));
+	// A refusal is not cured by asking again, so only a read that did not come
+	// back offers the retry.
+	const refused = readOutcome(isError, error) === "forbidden";
 	const users: User[] = (raw?.users ?? []).map((u) => ({
 		uuid: u.uuid,
 		primaryEmail: u.primaryEmail,
@@ -103,7 +115,7 @@ function PlatformUsersPage() {
 			queryClient.invalidateQueries({ queryKey: ["users"] });
 			setSuspendTarget(null);
 		},
-		onError: () => toast.error("Failed to suspend user"),
+		onError: (error) => toast.error(failureText("suspend the user", error)),
 	});
 
 	const unsuspendMutation = useMutation({
@@ -112,7 +124,7 @@ function PlatformUsersPage() {
 			toast.success("User unsuspended");
 			queryClient.invalidateQueries({ queryKey: ["users"] });
 		},
-		onError: () => toast.error("Failed to unsuspend user"),
+		onError: (error) => toast.error(failureText("unsuspend the user", error)),
 	});
 
 	// Entering the session is the whole operation: the token never needs to be
@@ -142,7 +154,7 @@ function PlatformUsersPage() {
 			queryClient.invalidateQueries({ queryKey: ["users"] });
 			setEditTarget(null);
 		},
-		onError: () => toast.error("Failed to update user"),
+		onError: (error) => toast.error(failureText("update the user", error)),
 	});
 
 	const deleteMutation = useMutation({
@@ -152,7 +164,7 @@ function PlatformUsersPage() {
 			queryClient.invalidateQueries({ queryKey: ["users"] });
 			setDeleteTarget(null);
 		},
-		onError: () => toast.error("Failed to delete user"),
+		onError: (error) => toast.error(failureText("delete the user", error)),
 	});
 
 	const handleEdit = useCallback((user: User) => setEditTarget(user), []);
@@ -168,39 +180,46 @@ function PlatformUsersPage() {
 	);
 
 	return (
-		<div className="space-y-6">
-			<div className="flex items-center justify-between">
-				<h2 data-slot="page-title" className="type-page-title">
-					Users
-				</h2>
-				<div className="relative w-80">
-					<Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-					<Input
-						placeholder="Search by email or name..."
-						value={search}
-						onChange={(e) => setSearch(e.target.value)}
-						className="pl-9"
-					/>
-				</div>
-			</div>
+		<PageBody>
+			<PageHeader
+				title="Users"
+				description="Everyone who can sign in, across every organization."
+				actions={
+					<div className="relative w-80">
+						<Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+						<Input
+							placeholder="Search by email or name..."
+							aria-label="Search users"
+							value={search}
+							onChange={(e) => setSearch(e.target.value)}
+							className="pl-9"
+						/>
+					</div>
+				}
+			/>
 
 			{isError ? (
-				<div
-					role="alert"
-					className="flex items-center justify-between gap-4 rounded-lg border border-destructive/30 bg-destructive/5 p-4"
-				>
-					<div>
-						<p className="font-medium text-destructive">
-							Users could not be loaded
-						</p>
-						<p className="text-sm text-muted-foreground">
-							The directory request failed or your platform role is not active.
-						</p>
-					</div>
-					<Button variant="outline" onClick={() => void refetch()}>
-						Retry
-					</Button>
-				</div>
+				<Panel>
+					<Stack gap={3} align="start">
+						<ErrorState
+							title="Couldn't load the users"
+							detail={
+								refused
+									? "You don't have permission to see every account. Ask a platform administrator for access."
+									: "Whether any match is unknown. Try again; if it keeps failing, tell your administrator."
+							}
+						/>
+						{!refused && (
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() => void refetch()}
+							>
+								Try again
+							</Button>
+						)}
+					</Stack>
+				</Panel>
 			) : (
 				<UsersTable
 					data={users}
@@ -254,6 +273,6 @@ function PlatformUsersPage() {
 					isPending={suspendMutation.isPending}
 				/>
 			)}
-		</div>
+		</PageBody>
 	);
 }

@@ -5,11 +5,11 @@ import (
 	"crypto/ed25519"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/memstore"
-	corescope "github.com/codefly-dev/authority/libraries/authority-core/go/scope"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
@@ -35,10 +35,11 @@ import (
 
 type snapshotProbeStore struct {
 	business.Store
-	core    *memstore.Store
-	replay  workcontext.ReplayStore
-	asked   atomic.Int64 // questions opened (WithAuthoritySnapshot)
-	outside atomic.Int64 // core reads made outside any question's snapshot
+	sessionFailure error
+	core           *memstore.Store
+	replay         workcontext.ReplayStore
+	asked          atomic.Int64 // questions opened (WithAuthoritySnapshot)
+	outside        atomic.Int64 // core reads made outside any question's snapshot
 }
 
 type inProbeSnapshot struct{}
@@ -57,6 +58,20 @@ func (s *snapshotProbeStore) WithAuthoritySnapshot(ctx context.Context, fn func(
 // A signed-in person's membership, as the Issue handler checks it.
 func (s *snapshotProbeStore) GetOrgMembership(_ context.Context, orgID, userID string) (*gen.OrgMembership, error) {
 	return &gen.OrgMembership{OrgId: orgID, UserId: userID, Role: gen.OrgRole_ORG_ROLE_MEMBER}, nil
+}
+
+// The session a signed-in person's bearer names, read from this host's own
+// record while the caller is authenticated, before the question is asked.
+func (s *snapshotProbeStore) WithControlPlane(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+func (s *snapshotProbeStore) SessionEndsAt(context.Context, string) (time.Time, bool, error) {
+	return time.Now().Add(time.Hour), true, nil
+}
+
+func (s *snapshotProbeStore) EndSessionTree(context.Context, string, string) ([]business.RevokedSession, error) {
+	return nil, nil
 }
 
 // The issue record, which the handler makes outside the question.
@@ -89,7 +104,6 @@ func TestEveryHostAuthorityQuestionIsOneSnapshot(t *testing.T) {
 	const solution, records, kind = "probe-solution", "probe-records", "probe.item"
 	probe := &snapshotProbeStore{core: memstore.New(), replay: workcontext.NewMemoryReplayStore()}
 	probe.core.PutOrganization(domain.Organization{ID: org, Name: "Probe"})
-	probe.core.PutOrgRole(domain.OrgRole{Organization: org, Name: "admin", Scopes: []domain.RoleScope{{Kind: corescope.AnyKind, Actions: []string{corescope.AnyAction}}}})
 	probe.core.PutPerson(domain.Person{ID: admin, Organization: org, Roles: []string{"admin"}})
 	probe.core.PutPerson(domain.Person{ID: member, Organization: org})
 
@@ -181,4 +195,8 @@ func TestEveryHostAuthorityQuestionIsOneSnapshot(t *testing.T) {
 		require.Equal(t, int64(1), probe.asked.Load()-asked, "%s asks the core one question", handler.name)
 		require.Zero(t, probe.outside.Load()-outside, "%s: every read the core makes is the question's snapshot", handler.name)
 	}
+}
+
+func (s *snapshotProbeStore) CheckCapabilitySession(context.Context, string) error {
+	return s.sessionFailure
 }

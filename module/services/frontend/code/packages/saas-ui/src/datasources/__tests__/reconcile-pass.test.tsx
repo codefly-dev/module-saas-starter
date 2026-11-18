@@ -81,7 +81,7 @@ function committingClient(overrides: Partial<DatasourceClient> = {}) {
 }
 
 const press = async () =>
-	fireEvent.click(await screen.findByRole("button", { name: /^Sync$/ }));
+	fireEvent.click(await screen.findByRole("button", { name: /^Sync now / }));
 
 const notice = async () =>
 	(await screen.findByRole("status")).textContent ?? "";
@@ -101,11 +101,12 @@ it("admits one pass under an effect identity the kit minted", async () => {
 	// would make every press a new pass.
 	expect(admitted[0]).toBeTruthy();
 	expect(client.lookupReconcileSource).not.toHaveBeenCalled();
-	// The outcome the operation returned, not an acknowledgement that a request
-	// was sent: the identity and the job are both on screen.
+	// The outcome the operation returned, said to a person: the identity and
+	// the job are an operator's handles and stay off the screen.
 	const text = await notice();
-	expect(text).toContain(admitted[0]);
-	expect(text).toContain("job-1");
+	expect(text).toContain("is syncing");
+	expect(text).not.toContain(admitted[0]);
+	expect(text).not.toContain("job-1");
 });
 
 it("answers a double press with the first pass's receipt, not a second pass", async () => {
@@ -124,9 +125,8 @@ it("answers a double press with the first pass's receipt, not a second pass", as
 	expect(client.lookupReconcileSource).toHaveBeenCalledWith(admitted[0]);
 	expect(client.reconcileSource).toHaveBeenCalledTimes(1);
 	const text = await notice();
-	expect(text).toContain("already being reconciled");
-	expect(text).toContain(admitted[0]);
-	expect(text).toContain("job-1");
+	expect(text).toContain("Already syncing");
+	expect(text).toContain("nothing was sent twice");
 });
 
 it("believes the press after a recovered receipt, and it is a new pass", async () => {
@@ -145,7 +145,7 @@ it("believes the press after a recovered receipt, and it is a new pass", async (
 	expect(receipts.size).toBe(2);
 	const identities = [...new Set(admitted)];
 	expect(identities).toHaveLength(2);
-	expect(await notice()).toContain("job-2");
+	expect(await notice()).toContain("Sync started");
 });
 
 it("re-presents the same identity when a lookup is inconclusive", async () => {

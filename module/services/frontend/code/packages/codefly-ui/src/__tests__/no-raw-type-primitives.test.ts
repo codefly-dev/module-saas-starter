@@ -73,14 +73,8 @@ const files = sourceFiles(srcDir);
 // predates the slots and still hardcodes primitives; those files are pinned
 // here at their EXACT counts so the debt can only shrink, and a line is deleted
 // when its file reaches zero. Anything else in that package is default-deny.
-const SAAS_UI_BASELINE: Record<string, number> = {
-	"datasources/collection-access.tsx": 2,
-	// Lowered from 16 when the credential block moved into
-	// `datasources/credential-mode.tsx`, which carries none: the shared copy
-	// names its slots, so the debt left behind shrank rather than moving.
-	"datasources/connect-github-form.tsx": 10,
-	"datasources/datasources-panel.tsx": 15,
-};
+// The data-sources page rewrite named every slot, so the baseline is empty.
+const SAAS_UI_BASELINE: Record<string, number> = {};
 const saasUiDir = resolve(srcDir, "../../saas-ui/src");
 const saasUiFiles = existsSync(saasUiDir) ? sourceFiles(saasUiDir) : [];
 

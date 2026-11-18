@@ -8,17 +8,24 @@ agent:
     # carries core v0.15.1's NewAPI fix (an endpoint keeps its exposure and
     # location) and the ConfigMap quoting fix.
     #
-    # 0.0.167 is the security floor. The agent pins the framework EXACTLY in
-    # `base/code` and `templates/factory/code`, and its framework gate holds the
-    # lockfile's resolved version equal to the declared one, so no service built
-    # by it can resolve past the agent's pin. Through 0.0.166 that pin was
+    # 0.0.167 is the security floor for a NEW service. The agent pins the
+    # framework exactly in `base/code` and `templates/factory/code`, and that
+    # pin only sets what a new service is scaffolded with: it does not hold an
+    # existing service to it. This service's framework version is the one its
+    # own `code/package.json` declares and its lockfile resolves, moved with
+    # `codefly upgrade service`. Through 0.0.166 the agent's pin was
     # next 16.3.6, which carries three criticals: unauthenticated RCE in the
     # Image Optimization API via SVG (GHSA-2464-fhr4-w9xw), DoS in App Router
     # Server Actions (GHSA-p3m5-59mp-jv5r), and RCE in `use cache` functions
-    # returning typed arrays (GHSA-673q-mjm6-r5xr). 0.0.167 ships next 16.4.1
+    # returning typed arrays (GHSA-673q-mjm6-r5xr). 0.0.167 scaffolds next 16.4.1
     # (service-nextjs#177), and with it Go 1.27.3 for GO-2026-6809 (#178) and
     # typescript back to ^5, the only major typescript-eslint@8 admits (#179).
-    version: 0.0.167
+    #
+    # 0.0.171 is the release pinned here: its builder materialises traced
+    # packages during standalone relocation and builds on node 24.22.1
+    # (`scripts/ci/build-images.json` records the image). This service's own
+    # framework is next 16.4.6, set in `code/package.json`.
+    version: 0.0.171
     publisher: codefly.dev
 service-dependencies:
     - name: auth-gateway

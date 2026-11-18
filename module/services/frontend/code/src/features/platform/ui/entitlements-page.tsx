@@ -11,6 +11,8 @@ import { toast } from "sonner";
 import { OrgSelector } from "@/components/org-selector";
 import type { Entitlement as EntitlementKey } from "@/gen/saas/accounts/v1/frontend_catalog";
 import { useAuth } from "@/lib/auth";
+import { failureText } from "@/shared/lib/failure-text";
+import { readOutcome } from "@/shared/lib/read-outcome";
 import { formatLimit } from "@/shared/lib/utils";
 import {
 	Badge,
@@ -21,8 +23,12 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
+	ErrorState,
 	Input,
 	Label,
+	Page as PageBody,
+	PageHeader,
+	Panel,
 } from "@/shared/ui";
 import { DataTable } from "@/shared/ui/data-table";
 import type { Entitlement } from "../model/types";
@@ -41,7 +47,7 @@ function UsageBar({ limit, used }: { limit: number; used: number }) {
 	if (limit <= 0) return null;
 	const pct = Math.min(100, Math.round((used / limit) * 100));
 	const color =
-		pct > 80 ? "bg-destructive" : pct > 50 ? "bg-yellow-500" : "bg-green-500";
+		pct > 80 ? "bg-destructive" : pct > 50 ? "bg-warning" : "bg-success";
 	return (
 		<div className="flex items-center gap-2">
 			<div className="flex-1 rounded-full bg-muted h-2">
@@ -61,7 +67,12 @@ export function EntitlementsPage() {
 }
 
 function EntitlementsPageForOrganization({ orgId }: { orgId: string }) {
-	const { data, isLoading } = useOrgEntitlements(orgId || null);
+	const { data, isLoading, isError, error: readError } = useOrgEntitlements(
+		orgId || null,
+	);
+	// A failed read leaves no rows, exactly as an organization with no
+	// entitlements does; the table is replaced so the two cannot be confused.
+	const outcome = readOutcome(isError, readError);
 	const overrideEntitlement = useOverrideEntitlement();
 
 	const [overrideTarget, setOverrideTarget] = useState<EntitlementKey | null>(
@@ -95,7 +106,8 @@ function EntitlementsPageForOrganization({ orgId }: { orgId: string }) {
 					setLimitValue("");
 					setReason("");
 				},
-				onError: () => toast.error("Failed to apply override"),
+				onError: (failure) =>
+					toast.error(failureText("apply the override", failure)),
 			},
 		);
 	}
@@ -157,27 +169,33 @@ function EntitlementsPageForOrganization({ orgId }: { orgId: string }) {
 	});
 
 	return (
-		<div className="space-y-6">
-			<div className="flex items-center justify-between">
-				<div className="flex items-center gap-4">
-					<div>
-						<h1 data-slot="page-title" className="type-page-title">
-							Entitlements
-						</h1>
-						<p className="text-muted-foreground">
-							View and override organization entitlements.
-						</p>
-					</div>
-					{data?.planName && <Badge variant="secondary">{data.planName}</Badge>}
-				</div>
-				<OrgSelector />
-			</div>
+		<PageBody>
+			<PageHeader
+				title="Entitlements"
+				description="View and override organization entitlements."
+				actions={<OrgSelector />}
+			>
+				{data?.planName && <Badge variant="secondary">{data.planName}</Badge>}
+			</PageHeader>
 
-			<DataTable
-				table={table}
-				isLoading={orgId ? isLoading : false}
-				emptyMessage={orgId ? "No entitlements" : "Select an organization"}
-			/>
+			{isError ? (
+				<Panel>
+					<ErrorState
+						title="Couldn't load the entitlements"
+						detail={
+							outcome === "forbidden"
+								? "Your account doesn't have the role needed to see this organization's entitlements."
+								: "Reload the page to try again. If it keeps failing, tell your administrator."
+						}
+					/>
+				</Panel>
+			) : (
+				<DataTable
+					table={table}
+					isLoading={orgId ? isLoading : false}
+					emptyMessage={orgId ? "No entitlements" : "Select an organization"}
+				/>
+			)}
 
 			<Dialog
 				open={!!overrideTarget}
@@ -191,7 +209,7 @@ function EntitlementsPageForOrganization({ orgId }: { orgId: string }) {
 			>
 				<DialogContent className="sm:max-w-md">
 					<DialogHeader>
-						<DialogTitle>Override Entitlement</DialogTitle>
+						<DialogTitle>Override entitlement</DialogTitle>
 						<DialogDescription>
 							Override the limit for{" "}
 							<span className="font-mono">{overrideTarget}</span>.
@@ -204,7 +222,7 @@ function EntitlementsPageForOrganization({ orgId }: { orgId: string }) {
 							</p>
 						)}
 						<div className="space-y-2">
-							<Label htmlFor="ent-limit">New Limit</Label>
+							<Label htmlFor="ent-limit">New limit</Label>
 							<Input
 								id="ent-limit"
 								type="number"
@@ -238,11 +256,11 @@ function EntitlementsPageForOrganization({ orgId }: { orgId: string }) {
 							onClick={handleOverride}
 							disabled={overrideEntitlement.isPending || !limitValue}
 						>
-							{overrideEntitlement.isPending ? "Applying..." : "Apply Override"}
+							{overrideEntitlement.isPending ? "Applying..." : "Apply override"}
 						</Button>
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
-		</div>
+		</PageBody>
 	);
 }

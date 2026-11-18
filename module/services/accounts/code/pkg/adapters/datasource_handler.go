@@ -390,13 +390,19 @@ func (h *datasourceConnectHandler) SyncSource(
 	if err != nil {
 		return nil, err
 	}
+	if err := validateSyncSourceRequest(req.Msg); err != nil {
+		return nil, err
+	}
 	if err := h.authorizeSourceWrite(ctx, actorID, req.Msg.OrgId, req.Msg.Id); err != nil {
 		return nil, err
 	}
 	var jobID string
-	if req.Msg.Reconnect {
+	switch {
+	case req.Msg.RemoveCredential:
+		jobID, err = h.svc.RemoveDatasourceSourceCredential(ctx, actorID, req.Msg.OrgId, req.Msg.Id)
+	case req.Msg.Reconnect:
 		jobID, err = h.svc.ReconnectDatasourceSource(ctx, actorID, req.Msg.OrgId, req.Msg.Id, req.Msg.AccessToken)
-	} else {
+	default:
 		jobID, err = h.svc.SyncDatasourceSource(ctx, actorID, req.Msg.OrgId, req.Msg.Id, req.Msg.AccessToken)
 	}
 	if err != nil {
@@ -411,6 +417,16 @@ func (h *datasourceConnectHandler) SyncSource(
 		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(&gen.SyncSourceResponse{JobId: jobID}), nil
+}
+
+// validateSyncSourceRequest refuses a request that asks for two things at once:
+// removing a token is a reconnect that carries no replacement for it.
+func validateSyncSourceRequest(msg *gen.SyncSourceRequest) error {
+	if msg.GetRemoveCredential() && (!msg.GetReconnect() || msg.GetAccessToken() != "") {
+		return connect.NewError(connect.CodeInvalidArgument,
+			errors.New("removing a token is a reconnect with no replacement token"))
+	}
+	return nil
 }
 
 func (h *datasourceConnectHandler) GetSourceSync(
@@ -578,6 +594,7 @@ func datasourceSourceToProto(source *business.DatasourceSource, registry *connec
 		StatusReason:       source.StatusReason,
 		WebhookConfigured:  source.WebhookConfigured(),
 		LiveDelivery:       datasourceLiveDeliveryToProto(live),
+		CredentialMode:     datasourceCredentialModeEnum[source.CredentialMode()],
 		CreatedAt:          timestamppb.New(source.CreatedAt),
 		UpdatedAt:          timestamppb.New(source.UpdatedAt),
 		LastIngestedCommit: source.LastIngestedCommit,

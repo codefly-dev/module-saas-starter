@@ -7,6 +7,7 @@ import {
 	accounts,
 	type Datasource,
 	type DatasourceAccountLink,
+	DatasourceCredentialMode,
 	DatasourceDomainStatus,
 	DatasourceLiveDelivery,
 	DatasourceProvider,
@@ -31,6 +32,7 @@ import type {
 	ApiCredentialKindName,
 	ApiOAuth2GrantName,
 	DatasourceClient,
+	DatasourceCredentialModeName,
 	DatasourceLiveDeliveryName,
 	DatasourceProviderName,
 	DatasourceStatusName,
@@ -93,6 +95,23 @@ export function datasourceClientOverTransport(
 	contentResource?: string,
 ): DatasourceClient {
 	const client = accounts.New(transport).datasource();
+	// The one path that reaches SyncSource: a reconnect, which rebinds whose
+	// authority the source's syncs run under — with a replacement token, with
+	// none, or removing the one it holds.
+	const reconnect = async (
+		orgId: string,
+		id: string,
+		change: { accessToken?: string; removeCredential?: true },
+	) => {
+		const response = await client.syncSource({
+			orgId,
+			id,
+			reconnect: true,
+			...change,
+		});
+		notifySourceSyncRequested(id);
+		return response.jobId;
+	};
 	return {
 		async getCatalog() {
 			const response = await client.getDatasourceCatalog({});
@@ -407,16 +426,10 @@ export function datasourceClientOverTransport(
 				throw error;
 			}
 		},
-		async reconnectSource(orgId, id, accessToken) {
-			const response = await client.syncSource({
-				orgId,
-				id,
-				reconnect: true,
-				...(accessToken ? { accessToken } : {}),
-			});
-			notifySourceSyncRequested(id);
-			return response.jobId;
-		},
+		reconnectSource: (orgId, id, accessToken) =>
+			reconnect(orgId, id, accessToken ? { accessToken } : {}),
+		removeSourceCredential: (orgId, id) =>
+			reconnect(orgId, id, { removeCredential: true }),
 		async getSourceSync(orgId, sourceId, jobId) {
 			try {
 				const response = await client.getSourceSync({
@@ -603,6 +616,7 @@ function toAccountLinkView(link: DatasourceAccountLink): AccountLinkView {
 		connector: link.connector,
 		providerAccountId: link.providerAccountId,
 		providerAccountLogin: link.providerAccountLogin,
+		memberLabel: link.memberLabel || undefined,
 	};
 }
 
@@ -650,6 +664,39 @@ const providerNames: Partial<
 > = {
 	[DatasourceProvider.GITHUB]: "github",
 	[DatasourceProvider.API]: "api",
+	[DatasourceProvider.CRAWLER]: "crawler",
+	[DatasourceProvider.UPLOAD]: "upload",
+};
+
+/**
+ * What a source is called where a repository has no name to give: a bucket
+ * and its prefix, or the site a crawler reads.
+ */
+function sourceName(source: Datasource): string {
+	if (source.github) return source.github.repo;
+	if (source.upload)
+		return [source.upload.bucket, source.upload.prefix]
+			.filter(Boolean)
+			.join("/");
+	if (source.crawler?.sitemapUrl) {
+		try {
+			return new URL(source.crawler.sitemapUrl).host;
+		} catch {
+			return source.crawler.sitemapUrl;
+		}
+	}
+	return "";
+}
+
+// UNSPECIFIED (an older host) maps to nothing: "we could not tell" is not
+// "no credential", and only one of them may be shown.
+const credentialModeNames: Partial<
+	Record<DatasourceCredentialMode, DatasourceCredentialModeName>
+> = {
+	[DatasourceCredentialMode.STATIC_SECRET]: "token",
+	[DatasourceCredentialMode.ORG_APP]: "app",
+	[DatasourceCredentialMode.USER_OAUTH]: "personal",
+	[DatasourceCredentialMode.NONE]: "public",
 };
 
 const statusNames: Partial<Record<DatasourceStatus, DatasourceStatusName>> = {
@@ -663,7 +710,7 @@ function toDatasourceView(source: Datasource): DatasourceView {
 		id: source.id,
 		orgId: source.orgId,
 		provider: providerNames[source.provider] ?? "unknown",
-		repo: source.github?.repo ?? "",
+		repo: sourceName(source),
 		paths: source.github ? [...source.github.paths] : [],
 		fileExtensions: source.github ? [...source.github.fileExtensions] : [],
 		branch: source.github?.branch ?? "",
@@ -679,6 +726,7 @@ function toDatasourceView(source: Datasource): DatasourceView {
 			? Number(source.reconcileInterval.seconds)
 			: undefined,
 		status: statusNames[source.status] ?? "unknown",
+		credentialMode: credentialModeNames[source.credentialMode],
 		statusReason: source.statusReason || undefined,
 		// Keyed on the gap, which is never empty for a non-conformant source: an
 		// older host sends neither field, and a missing bool decodes as false,

@@ -1,5 +1,5 @@
 import { timestampDate } from "@bufbuild/protobuf/wkt";
-import { ConnectError } from "@connectrpc/connect";
+import { Code, ConnectError } from "@connectrpc/connect";
 import type { ComponentProps } from "react";
 import type { CollectionReadGrant } from "@/gen/saas/accounts/v1/authorization_pb";
 import type { Role } from "@/gen/saas/accounts/v1/common_pb";
@@ -275,12 +275,30 @@ export function roleOptionLabel(role: Role): string {
 	return `${role.name} — ${permits}`;
 }
 
+// The codes under which the host answers in words meant for a person. These
+// mirror the set `@/shared/lib/failure-text` keeps for acts; it does not export
+// it, so the two are kept in step by hand until it does.
+const WORDED: ReadonlySet<Code> = new Set([
+	Code.PermissionDenied,
+	Code.FailedPrecondition,
+	Code.InvalidArgument,
+	Code.AlreadyExists,
+	Code.NotFound,
+	Code.ResourceExhausted,
+]);
+
 /**
- * The host's own words for why it refused a write. A refusal is shown as the
- * host phrased it — never replaced with a generic "failed", and never with a
- * success the host did not grant.
+ * The host's own words for why it refused. A refusal is shown as the host
+ * phrased it, never replaced with a generic "failed", and never with a
+ * success the host did not grant. Anything that is not a refusal (a transport
+ * failure, a timeout, a defect) is said plainly instead: its text names
+ * internals and is for an engineer, not for the page.
  */
 export function hostRefusal(error: unknown): string {
-	const message = ConnectError.from(error).rawMessage.trim();
-	return message || "The host refused without giving a reason.";
+	const refusal = ConnectError.from(error);
+	if (!WORDED.has(refusal.code))
+		return "The request did not complete. Try again; if it keeps failing, tell your administrator.";
+	return (
+		refusal.rawMessage.trim() || "The host refused without giving a reason."
+	);
 }

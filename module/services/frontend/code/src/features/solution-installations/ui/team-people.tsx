@@ -1,13 +1,14 @@
 "use client";
 
 import type { SetupSubject } from "@codefly-dev/saas-ui/solution";
+import { List, ListItem } from "@codefly-dev/ui/layout";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { UserPicker } from "@/components/user-picker";
 import { fromTeamRole } from "@/features/teams/model/types";
 import { teamMutations } from "@/features/teams/service/mutations";
 import { teamQueries } from "@/features/teams/service/queries";
-import { Button } from "@/shared/ui";
+import { Button, ConfirmDialog, ErrorState } from "@/shared/ui";
 import { hostRefusal } from "../model/installations";
 
 /**
@@ -28,6 +29,11 @@ export function TeamPeople({
 	const [open, setOpen] = useState(false);
 	const [person, setPerson] = useState("");
 	const [picker, setPicker] = useState(0);
+	// The person an administrator asked to remove, until they confirm.
+	const [removing, setRemoving] = useState<{
+		userId: string;
+		name: string;
+	} | null>(null);
 	const refresh = () =>
 		void queryClient.invalidateQueries({ queryKey: ["team-members", team.id] });
 	const change = useMutation({
@@ -50,7 +56,7 @@ export function TeamPeople({
 			? "People could not be read"
 			: "…";
 	return (
-		<div className="space-y-2 text-sm">
+		<div className="space-y-2 text-sm text-foreground">
 			<div className="flex flex-wrap items-center gap-2">
 				<span className="text-muted-foreground">{count}</span>
 				<Button
@@ -66,31 +72,36 @@ export function TeamPeople({
 			</div>
 			{open && (
 				<div className="space-y-2 rounded-md border bg-background p-2">
-					<ul aria-label={`People in ${team.label}`} className="space-y-1">
+					<List label={`People in ${team.label}`} className="gap-1">
 						{people.length === 0 && (
-							<li className="text-muted-foreground">Nobody yet.</li>
+							<ListItem className="text-muted-foreground">Nobody yet.</ListItem>
 						)}
 						{people.map((member) => (
-							<li
+							<ListItem
 								key={member.userId}
-								className="flex items-center justify-between gap-2"
+								className="items-center"
+								actions={
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										disabled={change.isPending}
+										aria-label={`Remove ${member.userEmail || member.userId} from ${team.label}`}
+										onClick={() =>
+											setRemoving({
+												userId: member.userId,
+												name: member.userEmail || member.userId,
+											})
+										}
+									>
+										Remove
+									</Button>
+								}
 							>
-								<span>{member.userEmail || member.userId}</span>
-								<Button
-									type="button"
-									variant="outline"
-									size="sm"
-									disabled={change.isPending}
-									aria-label={`Remove ${member.userEmail || member.userId} from ${team.label}`}
-									onClick={() =>
-										change.mutate({ add: false, userId: member.userId })
-									}
-								>
-									Remove
-								</Button>
-							</li>
+								{member.userEmail || member.userId}
+							</ListItem>
 						))}
-					</ul>
+					</List>
 					<div className="flex flex-wrap items-end gap-2">
 						<UserPicker
 							key={picker}
@@ -109,12 +120,29 @@ export function TeamPeople({
 						</Button>
 					</div>
 					{change.isError && (
-						<p role="alert" className="text-destructive">
-							{hostRefusal(change.error)}
-						</p>
+						<ErrorState
+							title={`${team.label}'s people were not changed`}
+							detail={hostRefusal(change.error)}
+						/>
 					)}
 				</div>
 			)}
+			<ConfirmDialog
+				open={removing !== null}
+				onOpenChange={(next) => !next && setRemoving(null)}
+				title={`Remove ${removing?.name ?? ""} from ${team.label}?`}
+				description={`They lose every role ${team.label} has at once. What they hold another way stays, and you can add them again.`}
+				confirmLabel="Remove from team"
+				pendingLabel="Removing…"
+				isPending={change.isPending}
+				onConfirm={() => {
+					if (!removing) return;
+					change.mutate(
+						{ add: false, userId: removing.userId },
+						{ onSettled: () => setRemoving(null) },
+					);
+				}}
+			/>
 		</div>
 	);
 }

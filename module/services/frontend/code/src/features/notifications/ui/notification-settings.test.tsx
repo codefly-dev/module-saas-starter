@@ -58,7 +58,7 @@ describe("NotificationSettings", () => {
 		await waitFor(() => {
 			expect(inApp.getAttribute("aria-checked")).toBe("false");
 		});
-		fireEvent.click(screen.getByRole("button", { name: "Save Preferences" }));
+		fireEvent.click(screen.getByRole("button", { name: "Save preferences" }));
 
 		await waitFor(() =>
 			expect(mocks.update).toHaveBeenCalledWith({

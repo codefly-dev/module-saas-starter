@@ -21,7 +21,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	corescope "github.com/codefly-dev/authority/libraries/authority-core/go/scope"
-	"github.com/codefly-dev/core/solutionhost"
+	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
 	"github.com/codefly-dev/core/wool"
 
 	compositionv1 "accounts/pkg/gen/host/composition/v1"

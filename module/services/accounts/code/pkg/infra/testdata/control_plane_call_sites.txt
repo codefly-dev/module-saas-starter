@@ -130,6 +130,7 @@ pkg/business/privacy_jobs.go: (*Service).runPrivacyWorkflow: WithControlPlane
 pkg/business/privacy_jobs.go: (*Service).runPrivacyWorkflow: WithControlPlane
 pkg/business/privacy_jobs.go: (*Service).runPrivacyWorkflow: WithControlPlane
 pkg/business/provider_signout.go: (*Service).BackchannelLogout: WithControlPlane
+pkg/business/provider_signout.go: (*Service).revokeInvalidatedSessionAccess: WithControlPlane
 pkg/business/retention.go: (*Service).PurgeExpiredWorkContextReplays: WithControlPlane
 pkg/business/retention.go: (*Service).RunRetention: WithControlPlane
 pkg/business/retention.go: (*Service).RunRetention: WithControlPlane
@@ -144,6 +145,10 @@ pkg/business/service.go: (*Service).RegisterUser: WithControlPlane
 pkg/business/service.go: (*Service).RegisterUser: WithControlPlane
 pkg/business/service.go: (*Service).VerifyEventWiring: WithControlPlane
 pkg/business/service.go: (*Service).createOrganization: WithControlPlane
+pkg/business/session_end.go: (*Service).CheckCapabilitySession: WithControlPlane
+pkg/business/session_end.go: (*Service).EndSession: WithControlPlane
+pkg/business/session_end.go: (*Service).ReconcileSessionRevocations: WithControlPlane
+pkg/business/session_end.go: (*Service).SessionEndsAt: WithControlPlane
 pkg/business/solution_audit_events.go: (*Service).AuditEventTypes: WithControlPlane
 pkg/business/solution_audit_events.go: (*Service).lookupDeclaredAuditEventType: WithControlPlane
 pkg/business/solution_delivery.go: (*DeliveredSolutionHostBindings).Documents: WithControlPlane

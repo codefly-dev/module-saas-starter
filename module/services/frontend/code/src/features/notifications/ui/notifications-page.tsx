@@ -1,11 +1,22 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
 import { CheckCheck, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { toast } from "sonner";
-import { Badge, Button, Card, CardContent, Skeleton } from "@/shared/ui";
+import { failureText } from "@/shared/lib/failure-text";
+import {
+	Badge,
+	Button,
+	Card,
+	CardContent,
+	ErrorState,
+	Page as PageBody,
+	PageHeader,
+	Panel,
+	Skeleton,
+} from "@/shared/ui";
 import { formatNotificationType, timeAgo } from "../model/transforms";
 import { notificationMutations } from "../service/mutations";
 import { notificationQueries } from "../service/queries";
@@ -14,7 +25,7 @@ export function NotificationsPage() {
 	const queryClient = useQueryClient();
 	const router = useRouter();
 	const [pages, setPages] = useState<string[]>([""]);
-	const { data, isLoading, error } = useQuery(
+	const { data, isLoading, isError } = useQuery(
 		notificationQueries.list(50, { pageToken: pages[pages.length - 1] }),
 	);
 	const notifications = data?.notifications ?? [];
@@ -31,7 +42,8 @@ export function NotificationsPage() {
 			toast.success("All notifications marked as read");
 			queryClient.invalidateQueries({ queryKey: ["notifications"] });
 		},
-		onError: () => toast.error("Failed to mark all as read"),
+		onError: (error) =>
+			toast.error(failureText("mark your notifications as read", error)),
 	});
 
 	// Marking read is part of following the link, so it happens only once the
@@ -55,28 +67,37 @@ export function NotificationsPage() {
 			toast.success("Notification deleted");
 			queryClient.invalidateQueries({ queryKey: ["notifications"] });
 		},
-		onError: () => toast.error("Failed to delete notification"),
+		onError: (error) =>
+			toast.error(failureText("delete the notification", error)),
 	});
 
 	return (
-		<div className="space-y-6">
-			<div className="flex items-center justify-between">
-				<h2 data-slot="page-title" className="type-page-title">Notifications</h2>
-				<Button
-					variant="outline"
-					size="sm"
-					onClick={() => markAllReadMutation.mutate()}
-					disabled={markAllReadMutation.isPending}
-				>
-					<CheckCheck className="mr-2 h-4 w-4" />
-					Mark all read
-				</Button>
-			</div>
+		<PageBody>
+			<PageHeader
+				title="Notifications"
+				description="Invitations, security messages and updates sent to you."
+				actions={
+					<Button
+						variant="outline"
+						onClick={() => markAllReadMutation.mutate()}
+						disabled={markAllReadMutation.isPending}
+					>
+						<CheckCheck />
+						Mark all read
+					</Button>
+				}
+			/>
 
-			{error && (
-				<p role="alert">Could not load notifications. Please try again.</p>
-			)}
-			{isLoading ? (
+			{/* A failed read is reported on its own: "No notifications yet" beside
+			    it would answer a question the page could not ask. */}
+			{isError ? (
+				<Panel>
+					<ErrorState
+						title="Couldn't load your notifications"
+						detail="Whether you have any is unknown. Reload the page; if it keeps failing, tell your administrator."
+					/>
+				</Panel>
+			) : isLoading ? (
 				<div className="space-y-3">
 					{Array.from({ length: 5 }).map((_, i) => (
 						<Skeleton key={i} className="h-20 w-full" />
@@ -97,10 +118,10 @@ export function NotificationsPage() {
 								!notification.read ? "border-primary/30 bg-muted/20" : ""
 							}
 						>
-							<CardContent className="flex items-start justify-between py-4">
-								<button
-									type="button"
-									className="flex-1 text-left"
+							<CardContent className="flex items-start justify-between gap-2">
+								<Button
+									variant="ghost"
+									className="h-auto flex-1 flex-col items-start justify-start gap-0 whitespace-normal px-2 py-1 text-left font-normal"
 									onClick={() => {
 										if (notification.hasAction) {
 											resolveActionMutation.mutate({
@@ -114,31 +135,35 @@ export function NotificationsPage() {
 										}
 									}}
 								>
-									<div className="flex items-center gap-2 mb-1">
+									<span className="mb-1 flex items-center gap-2">
 										{!notification.read && (
-											<span className="h-2 w-2 rounded-full bg-primary" />
+											<span
+												aria-hidden="true"
+												className="size-2 rounded-full bg-primary"
+											/>
 										)}
 										<span className="text-sm font-medium">
 											{notification.title}
 										</span>
-										<Badge variant="outline" className="text-xs">
+										<Badge variant="outline">
 											{formatNotificationType(notification.type)}
 										</Badge>
-									</div>
-									<p className="text-sm text-muted-foreground">
+									</span>
+									<span className="block text-sm text-muted-foreground">
 										{notification.body}
-									</p>
-									<p className="mt-1 text-xs text-muted-foreground">
+									</span>
+									<span className="mt-1 block text-xs text-muted-foreground">
 										{timeAgo(notification.createdAt)}
-									</p>
-								</button>
+									</span>
+								</Button>
 								<Button
 									variant="ghost"
-									size="sm"
-									className="h-8 w-8 p-0 shrink-0"
+									size="icon-sm"
+									className="shrink-0"
+									aria-label="Delete notification"
 									onClick={() => deleteMutation.mutate(notification.id)}
 								>
-									<Trash2 className="h-4 w-4" />
+									<Trash2 />
 								</Button>
 							</CardContent>
 						</Card>
@@ -165,6 +190,6 @@ export function NotificationsPage() {
 					</Button>
 				)}
 			</div>
-		</div>
+		</PageBody>
 	);
 }

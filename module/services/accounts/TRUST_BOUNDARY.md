@@ -95,7 +95,11 @@ Connect and gRPC interceptors check it on every RPC, before any handler, so it
 covers the REST routes too, which reach accounts through the Connect listener:
 
 - an RPC that declares no scope has not been opened to API keys and refuses
-  every key, whatever the key carries;
+  every key, whatever the key carries. The one exception is the host
+  interface's `Issue`, which a key carrying any scope reaches: the gateway asks
+  it for the capability a solution is handed in the key's place, and what is
+  issued carries the key's scopes within what its owner holds at that solution
+  ([HOST_INTERFACE.md](./HOST_INTERFACE.md#a-stated-credential-is-issued-its-own-grants-at-one-solution));
 - a key is admitted to an RPC when one of its scopes covers one the RPC
   declares, with `*` matching either segment (`invitations:*`, `*:write`,
   `*:*`);

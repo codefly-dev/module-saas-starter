@@ -6,6 +6,7 @@ import {
 	ConnectObjectStorageForm,
 	type DatasourceClient,
 	DatasourcesPanel,
+	DatasourceSyncSchedule,
 	type DatasourceView,
 	DeclaredSourceCard,
 	type DeclaredSource,
@@ -104,6 +105,28 @@ export const Empty = { render: () => <Preview state="empty" /> };
 export const Loading = { render: () => <Preview state="loading" /> };
 export const ProviderError = { render: () => <Preview state="error" /> };
 export const Degraded = { render: () => <Preview state="degraded" /> };
+export const SyncSchedule = {
+	render: function SyncScheduleStory() {
+		const [queryClient] = useState(() => new QueryClient());
+		const [client] = useState<DatasourceClient>(() => ({
+			listSources: async () => [
+				{ ...source, reconcileIntervalSeconds: 21600, liveDelivery: "app_webhook" },
+				{ ...degradedSource, repo: "example/specs", reconcileIntervalSeconds: 0 },
+			],
+			addGitHubSource: async () => {},
+			reconcileSource: async () => {
+				throw new Error("Synchronization is unavailable in this preview.");
+			},
+			lookupReconcileSource: async () => undefined,
+			deleteSource: async () => {},
+		}));
+		return (
+			<QueryClientProvider client={queryClient}>
+				<DatasourceSyncSchedule client={client} orgId="example-org" />
+			</QueryClientProvider>
+		);
+	},
+};
 export const ConnectionValidation = {
 	render: function ConnectionValidationStory() {
 		const [message, setMessage] = useState<string>();

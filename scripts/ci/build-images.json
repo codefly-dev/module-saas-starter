@@ -17,10 +17,10 @@
   "nextjs": {
     "source": "https://github.com/codefly-dev/service-nextjs/blob/main/builder.go",
     "images": [
-      "node:24.17.0-alpine3.23@sha256:7c70d1235c0b4c2bc9eeed5393d19f1bbdde6885ba0d58ba62bb385d7b0f3ff1"
+      "node:24.22.1-alpine3.24@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53"
     ],
     "watch": [
-      "node:24-alpine3.23",
+      "node:24-alpine3.24",
       "node:alpine"
     ]
   },

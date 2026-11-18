@@ -6,6 +6,17 @@ disagree, the linked doc wins. Area depth lives in nested `AGENTS.md` files
 (closest file to the one you are editing wins, like `.gitignore`); procedures live
 in `.claude/skills/`. See [Where the depth lives](#where-the-depth-lives).
 
+## How you build here
+
+1. What a person exercises is a composed service started by `codefly run
+   service`, never a hand-written server or a launcher.
+2. Code generated from a contract comes from `codefly generate`.
+3. Never hardcode an address, port, DSN, credential or host name; the SDK and
+   the CLI resolve each one.
+4. Local first, from the lowest level, and no pull request until the change is
+   validated on an environment.
+5. No test starts a Kubernetes cluster.
+
 ## What this repo is
 
 `saas-starter` is a Codefly **module**: a multi-tenant SaaS backend
@@ -81,10 +92,7 @@ tells you are reinventing: what you are writing re-answers a question an
 existing seam answered, and your reason for its placement is that a convenient
 loop was already there rather than that the responsibility belongs to it.
 
-**Build the simplest thing that works; size is the signal.** A coding task's
-budget is about **500 hand-written lines** — generated output does not count,
-tests count apart — and past **2,000** the change has become a second system,
-so **stop and ask the user** instead of finishing it. Two tells, checkable
+**Build the simplest thing that works.** Two tells that a change is not it, checkable
 before the code exists: you cannot name the one responsibility the change adds,
 and it is growing to make the end goal pass rather than to put a behaviour
 where it belongs. Wanting it to work licenses no means to get there.

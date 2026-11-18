@@ -4,6 +4,15 @@ import { Key } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { OrgSelector } from "@/components/org-selector";
 import { useAuth } from "@/lib/auth";
+import { readOutcome } from "@/shared/lib/read-outcome";
+import {
+	Button,
+	ErrorState,
+	Page as PageBody,
+	PageHeader,
+	Panel,
+	Stack,
+} from "@/shared/ui";
 import type { APIKey } from "../model/types";
 import { useAPIKeys } from "../service/queries";
 import { APIKeyForm } from "./api-key-form";
@@ -15,42 +24,53 @@ export function APIKeysPage() {
 		data: keys = [],
 		isLoading,
 		isError,
+		error,
 		refetch,
 	} = useAPIKeys(orgId || null);
+	// A refusal is not cured by asking again, so only a read that did not come
+	// back offers the retry.
+	const refused = readOutcome(isError, error) === "forbidden";
 
 	return (
-		<div className="space-y-6">
-			<div className="flex items-center justify-between">
-				<div>
-					<h1 data-slot="page-title" className="type-page-title">
-						API Keys
-					</h1>
-					<p className="text-muted-foreground">
-						Manage API keys for programmatic access.
-					</p>
-				</div>
-				<div className="flex items-center gap-3">
-					<APIKeyForm key={orgId} orgId={orgId} />
-					<OrgSelector />
-				</div>
-			</div>
+		<PageBody>
+			<PageHeader
+				title="API keys"
+				description="Create and revoke the keys other programs use to reach this organization."
+				actions={
+					<>
+						<APIKeyForm key={orgId} orgId={orgId} />
+						<OrgSelector />
+					</>
+				}
+			/>
 
 			{!orgId ? (
 				<EmptyState
 					icon={Key}
 					title="Select an organization to view API keys"
-					description="API keys are scoped to one tenant at a time. Pick an org from the selector above to see (or create) its keys."
+					description="Each key belongs to one organization. Pick an organization from the selector above to see or create its keys."
 				/>
 			) : isError ? (
-				<div role="alert">
-					Couldn&apos;t load API keys.{" "}
-					<button type="button" className="underline" onClick={() => refetch()}>
-						Try again
-					</button>
-				</div>
+				<Panel>
+					<Stack gap={3} align="start">
+						<ErrorState
+							title="Couldn't load the API keys"
+							detail={
+								refused
+									? "You don't have permission to see this organization's API keys. Ask one of its administrators for access."
+									: "Whether this organization has any is unknown. Try again; if it keeps failing, tell your administrator."
+							}
+						/>
+						{!refused && (
+							<Button variant="outline" size="sm" onClick={() => refetch()}>
+								Try again
+							</Button>
+						)}
+					</Stack>
+				</Panel>
 			) : (
 				<APIKeysTable keys={keys as APIKey[]} isLoading={isLoading} />
 			)}
-		</div>
+		</PageBody>
 	);
 }

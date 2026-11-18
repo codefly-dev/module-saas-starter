@@ -1,6 +1,6 @@
 /**
  * Where the host grants read access to a collection: its data-sources admin
- * page, whose "Collection access" section lists every collection and who may
+ * page, where each source and collection says who may
  * read it. A path of the host that renders this kit, so it is same-origin for
  * every remote the host mounts.
  */
@@ -56,7 +56,7 @@ export function NoReadableCollection({
 					{grantsOnThisPage ? (
 						<>
 							Grant read access to a collection to yourself, a member or a team
-							in Collection access, below.
+							under Who can read it, below.
 						</>
 					) : (
 						<>
@@ -66,8 +66,7 @@ export function NoReadableCollection({
 							>
 								Grant read access to a collection
 							</a>{" "}
-							to yourself, a member or a team in Data sources → Collection
-							access.
+							to yourself, a member or a team in Admin → Data sources.
 						</>
 					)}
 				</p>
@@ -76,8 +75,8 @@ export function NoReadableCollection({
 					Ask an organization administrator to grant you read access to a
 					collection. Administrators grant it in{" "}
 					{grantsOnThisPage
-						? "Collection access, below."
-						: "Admin → Data sources → Collection access."}
+						? "Who can read it, below."
+						: "Admin → Data sources."}
 				</p>
 			)}
 		</div>

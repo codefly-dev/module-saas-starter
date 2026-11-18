@@ -419,7 +419,13 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		solutionID, isSolutionPath := solutionIDFromPath(path)
 		switch {
 		case isSolutionPath && resourceAudienceAdmits(resource, solutionID, s.publicBase):
-			// The solution its own resource names. Admitted, as before.
+			// The solution its own resource names. Admitted, and said: the
+			// proxy forwards no bearer to a solution, and states this value
+			// to the authority when it asks for the Work Context the solution
+			// receives instead, so what is issued is held to the solution the
+			// resource names (forwardUpstreamCredential). It reads which
+			// credential it holds from this value, never from a second parse.
+			resourceConfined = resource
 		case isWorkContextMintPath(path):
 			// THE ONE HOST ROUTE (isWorkContextMintPath carries the reasoning).
 			//
@@ -488,11 +494,11 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		hdr("x-credential-kind", credentialKindSession),
 	}
 	if resourceConfined != "" {
-		// The resource this credential was issued for, stamped on the path where
+		// The resource this credential was issued for, stamped on the paths where
 		// a resource-bound credential is admitted AS a confined one: the
-		// delegation mint. A solution's own paths do NOT
-		// stamp it — there the resource and the path already agree, and the
-		// upstream is the consumer the resource names.
+		// delegation mint, and the routes of the solution the resource names,
+		// where the proxy states it to the authority for the Work Context that
+		// solution is handed.
 		//
 		// At the mint, accounts reads it as the ceiling: it resolves the installed
 		// consumer the resource names and refuses an organization other than this

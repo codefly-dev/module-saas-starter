@@ -1,8 +1,10 @@
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import {
 	type LegalContentConfig,
 	legalContentConfigured,
 } from "@/lib/legal-config";
+import { Button, Page as PageBody, PageHeader, Panel } from "@/shared/ui";
 
 export function LegalDocument({
 	kind,
@@ -13,47 +15,40 @@ export function LegalDocument({
 }) {
 	const configured = legalContentConfigured(legal);
 	const content = kind === "terms" ? legal.termsContent : legal.privacyContent;
+	const title = kind === "terms" ? "Terms of Service" : "Privacy Policy";
 
 	return (
-		<main className="mx-auto min-h-screen max-w-3xl px-5 py-12 sm:py-20">
-			<Link
-				href="/"
-				className="text-sm text-muted-foreground hover:text-foreground"
-			>
-				← Back
-			</Link>
-			<h1 data-slot="page-title" className="type-page-title mt-8">
-				{kind === "terms" ? "Terms of Service" : "Privacy Policy"}
-			</h1>
-			<p className="mt-3 text-sm text-muted-foreground">
-				Starter policy version: 2026-07-28
-			</p>
-			{!configured ? (
-				<section className="mt-8 rounded-xl border border-destructive/40 bg-destructive/5 p-5">
-					<h2 className="font-semibold">Legal content is not configured</h2>
-					<p className="mt-2 text-sm leading-6">
-						This starter cannot supply production legal terms. Set the
-						<code className="mx-1">legal</code> Codefly configuration group for
-						this environment (
-						<code className="mx-1">configurations/&lt;env&gt;/legal.env</code>,
-						or the per-environment config in your fleet repo) with{" "}
-						<code className="mx-1">NEXT_PUBLIC_LEGAL_ENTITY_NAME</code>,
-						<code className="mx-1">NEXT_PUBLIC_LEGAL_CONTACT_EMAIL</code>,
-						<code className="mx-1">NEXT_PUBLIC_LEGAL_TERMS_CONTENT</code>, and
-						<code className="mx-1">NEXT_PUBLIC_LEGAL_PRIVACY_CONTENT</code>, and
-						obtain jurisdiction-specific legal review before launch.
-					</p>
-				</section>
-			) : (
-				<div className="mt-8 space-y-8 leading-7">
-					<div className="whitespace-pre-wrap">{content}</div>
-					<p className="border-t pt-5 text-sm text-muted-foreground">
-						This content was supplied by {legal.entityName}.
-						Jurisdiction-specific legal review remains the operator&apos;s
-						responsibility. Questions may be sent to {legal.contactEmail}.
-					</p>
-				</div>
-			)}
+		<main className="mx-auto min-h-screen w-full max-w-3xl px-4 py-12">
+			<PageBody>
+				<Button
+					variant="ghost"
+					size="sm"
+					nativeButton={false}
+					render={<Link href="/" />}
+				>
+					<ArrowLeft />
+					Back
+				</Button>
+				<PageHeader title={title} />
+				{/* This page is public. A visitor can do nothing about a document
+				    that has not been published, so that is all it says. */}
+				{!configured ? (
+					<Panel>
+						<p className="font-medium">This document is not available yet.</p>
+						<p className="mt-1 text-sm text-muted-foreground">
+							The {title} has not been published. Please check back later.
+						</p>
+					</Panel>
+				) : (
+					<>
+						<div className="whitespace-pre-wrap leading-7">{content}</div>
+						<p className="border-t pt-4 text-sm text-muted-foreground">
+							Provided by {legal.entityName}. Questions about this document can
+							be sent to {legal.contactEmail}.
+						</p>
+					</>
+				)}
+			</PageBody>
 		</main>
 	);
 }

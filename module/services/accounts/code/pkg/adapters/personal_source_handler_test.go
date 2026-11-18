@@ -25,8 +25,8 @@ func TestAMemberDeclaresOnTheirOwnPersonalSourceWhereTheyMayCallIt(t *testing.T)
 	}{
 		{name: "their own, where they may call it", owner: member, allowed: true},
 		{name: "their own, where they may not call it", owner: member, want: connect.CodePermissionDenied, reason: "you do not hold datasource:invoke on scope node boundary"},
-		{name: "another member's", owner: other, allowed: true, want: connect.CodePermissionDenied, reason: "requires organization administrator or owner role"},
-		{name: "the organization's own", allowed: true, want: connect.CodePermissionDenied, reason: "requires organization administrator or owner role"},
+		{name: "another member's", owner: other, allowed: true, want: connect.CodePermissionDenied, reason: "requires an administrator of organization"},
+		{name: "the organization's own", allowed: true, want: connect.CodePermissionDenied, reason: "requires an administrator of organization"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			store := &sourceWireStore{allowed: c.allowed, role: gen.OrgRole_ORG_ROLE_MEMBER,

@@ -17,7 +17,7 @@ import (
 
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
 
-	"github.com/codefly-dev/core/solutionhost"
+	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
 )
 
 // ErrSolutionHostTrustRootUnavailable reports that the platform-owned anchor

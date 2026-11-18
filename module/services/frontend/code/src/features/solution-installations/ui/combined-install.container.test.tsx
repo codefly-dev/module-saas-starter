@@ -15,7 +15,10 @@ import { setToken } from "@/lib/connect/token-store";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock("next/navigation", () => ({
+	useRouter: () => ({ push: vi.fn() }),
+	useSearchParams: () => new URLSearchParams(),
+}));
 vi.mock("@/lib/auth", () => ({
 	useAuth: () => ({
 		organizationId: "org-1",
@@ -304,15 +307,16 @@ describe("combined reviewed installation", () => {
 				within(access).getByRole("region", { name: `Role ${role}` }),
 			).getByRole("checkbox", {
 				name: "Add me to this team",
-			}) as HTMLInputElement;
-		expect(me("admin").checked).toBe(true);
-		expect(me("user").checked).toBe(true);
+			});
+		const ticked = (role: string) => me(role).getAttribute("aria-checked");
+		expect(ticked("admin")).toBe("true");
+		expect(ticked("user")).toBe("true");
 		expect(
 			within(access).getByText(/example-solution-admin will be created/),
 		).toBeTruthy();
 		fireEvent.click(me("user"));
-		expect(me("user").checked).toBe(false);
-		expect(me("admin").checked).toBe(true);
+		expect(ticked("user")).toBe("false");
+		expect(ticked("admin")).toBe("true");
 		// Nothing is picked: approving is all Install waits on.
 		fireEvent.click(
 			within(dialog).getByRole("checkbox", { name: /I approve this solution/ }),

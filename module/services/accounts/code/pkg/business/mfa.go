@@ -265,6 +265,9 @@ func (s *Service) RevokeMFADevice(ctx context.Context, userID, deviceID string) 
 	}); err != nil {
 		return w.Wrapf(err, "cannot delete MFA device")
 	}
+	// Removing a verified factor revokes the account's sessions, and with them
+	// the access tokens issued while it stood.
+	s.revokeInvalidatedSessionAccess(ctx, userID)
 	return nil
 }
 

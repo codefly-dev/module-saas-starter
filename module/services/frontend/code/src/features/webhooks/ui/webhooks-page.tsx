@@ -2,7 +2,6 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-	AlertTriangle,
 	Clipboard,
 	ClipboardCheck,
 	Plus,
@@ -21,7 +20,17 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { useAuth } from "@/lib/auth";
-import { Button } from "@/shared/ui";
+import { failureText } from "@/shared/lib/failure-text";
+import { readOutcome } from "@/shared/lib/read-outcome";
+import {
+	Banner,
+	Button,
+	ErrorState,
+	Page as PageBody,
+	PageHeader,
+	Panel,
+	Stack,
+} from "@/shared/ui";
 import { toWebhookSubscription } from "../model/transforms";
 import type { WebhookSubscription } from "../model/types";
 import { webhookMutations } from "../service/mutations";
@@ -42,10 +51,19 @@ function WebhooksPageForOrganization({ orgId }: { orgId: string }) {
 		useState<WebhookSubscription | null>(null);
 	const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
 
-	const { data: raw, isLoading } = useQuery({
+	const {
+		data: raw,
+		isLoading,
+		isError,
+		error,
+		refetch,
+	} = useQuery({
 		...webhookQueries.subscriptions(orgId),
 		enabled: !!orgId,
 	});
+	// A refusal is not cured by asking again, so only a read that did not come
+	// back offers the retry.
+	const refused = readOutcome(isError, error) === "forbidden";
 	const subscriptions: WebhookSubscription[] = (raw?.subscriptions ?? []).map(
 		toWebhookSubscription,
 	);
@@ -66,7 +84,7 @@ function WebhooksPageForOrganization({ orgId }: { orgId: string }) {
 			setShowCreate(false);
 			if (created.secret) setRevealedSecret(created.secret);
 		},
-		onError: () => toast.error("Failed to create webhook"),
+		onError: (error) => toast.error(failureText("create the webhook", error)),
 	});
 
 	const deleteMutation = useMutation({
@@ -76,13 +94,14 @@ function WebhooksPageForOrganization({ orgId }: { orgId: string }) {
 			queryClient.invalidateQueries({ queryKey: ["webhooks"] });
 			setSelectedWebhook(null);
 		},
-		onError: () => toast.error("Failed to delete webhook"),
+		onError: (error) => toast.error(failureText("delete the webhook", error)),
 	});
 
 	const testMutation = useMutation({
 		mutationFn: (id: string) => webhookMutations.test(id),
 		onSuccess: () => toast.success("Test delivery queued"),
-		onError: () => toast.error("Failed to queue test delivery"),
+		onError: (error) =>
+			toast.error(failureText("send the test delivery", error)),
 	});
 
 	const rotateMutation = useMutation({
@@ -90,8 +109,8 @@ function WebhooksPageForOrganization({ orgId }: { orgId: string }) {
 		onSuccess: (resp: { secret?: string }) => {
 			if (resp.secret) setRevealedSecret(resp.secret);
 		},
-		onError: (err) =>
-			toast.error("Couldn't rotate secret", { description: err.message }),
+		onError: (error) =>
+			toast.error(failureText("rotate the signing secret", error)),
 	});
 
 	const handleTest = useCallback(
@@ -117,26 +136,51 @@ function WebhooksPageForOrganization({ orgId }: { orgId: string }) {
 	);
 
 	return (
-		<div className="space-y-6">
-			<div className="flex items-center justify-between">
-				<h2 data-slot="page-title" className="type-page-title">Webhooks</h2>
-				<div className="flex items-center gap-3">
-					<OrgSelector />
-					{orgId && (
-						<Button onClick={() => setShowCreate(true)}>
-							<Plus className="mr-2 h-4 w-4" />
-							Create Webhook
-						</Button>
-					)}
-				</div>
-			</div>
+		<PageBody>
+			<PageHeader
+				title="Webhooks"
+				description="Send this organization's events to your own systems as they happen."
+				actions={
+					<>
+						<OrgSelector />
+						{orgId && (
+							<Button onClick={() => setShowCreate(true)}>
+								<Plus className="mr-2 h-4 w-4" />
+								Create Webhook
+							</Button>
+						)}
+					</>
+				}
+			/>
 
 			{!orgId ? (
 				<EmptyState
 					icon={WebhookIcon}
 					title="Select an organization to view webhooks"
-					description="Webhooks are scoped to one tenant at a time. Pick an org from the selector above to see (or create) its subscriptions."
+					description="Each webhook belongs to one organization. Pick an organization from the selector above to see or create its webhooks."
 				/>
+			) : isError ? (
+				<Panel>
+					<Stack gap={3} align="start">
+						<ErrorState
+							title="Couldn't load the webhooks"
+							detail={
+								refused
+									? "You don't have permission to see this organization's webhooks. Ask one of its administrators for access."
+									: "Whether this organization has any is unknown. Try again; if it keeps failing, tell your administrator."
+							}
+						/>
+						{!refused && (
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() => void refetch()}
+							>
+								Try again
+							</Button>
+						)}
+					</Stack>
+				</Panel>
 			) : (
 				<WebhooksTable
 					data={subscriptions}
@@ -170,7 +214,7 @@ function WebhooksPageForOrganization({ orgId }: { orgId: string }) {
 					isPending={createMutation.isPending}
 				/>
 			)}
-		</div>
+		</PageBody>
 	);
 }
 
@@ -216,13 +260,10 @@ function RotatedSecretDialog({
 					{secret}
 				</div>
 
-				<div className="flex items-start gap-2 rounded-md bg-amber-500/10 border border-amber-500/30 p-3 text-xs text-amber-900 dark:text-amber-200">
-					<AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-					<span>
-						Update your endpoint to verify with this secret before deploying —
-						incoming events are signed with it as of right now.
-					</span>
-				</div>
+				<Banner tone="warning">
+					Update your endpoint to verify with this secret before deploying —
+					incoming events are signed with it as of right now.
+				</Banner>
 
 				<DialogFooter>
 					<Button variant="outline" onClick={copy}>

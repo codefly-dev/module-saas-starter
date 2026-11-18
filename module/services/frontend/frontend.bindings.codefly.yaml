@@ -146,18 +146,6 @@ navigation:
       - plugin_registry
       - sidebar
     order: 205
-  - id: admin-feature-flags
-    plugin: platform-admin
-    label: Feature Flags
-    path: /admin/platform/feature-flags
-    icon: Flag
-    group: Platform
-    access: super_admin
-    surfaces:
-      - command_palette
-      - plugin_registry
-      - sidebar
-    order: 210
   - id: admin-waitlist
     plugin: platform-admin
     label: Waitlist
@@ -253,17 +241,6 @@ navigation:
       - command_palette
       - plugin_registry
     order: 242
-  - id: admin-plugin-transport
-    plugin: platform-admin
-    label: Plugin Transport
-    path: /admin/platform/plugin-transport
-    icon: Globe
-    group: Platform
-    access: super_admin
-    surfaces:
-      - command_palette
-      - plugin_registry
-    order: 243
   - id: admin-unattended-work
     plugin: platform-admin
     label: Unattended Work
@@ -312,18 +289,6 @@ navigation:
       - plugin_registry
       - sidebar
     order: 405
-  - id: admin-modules
-    plugin: core-users
-    label: Supporting Modules
-    path: /admin/modules
-    icon: Layers
-    group: Integrations
-    access: admin
-    permission: roles:write
-    surfaces:
-      - command_palette
-      - plugin_registry
-    order: 406
   - id: admin-datasources
     plugin: core-users
     label: Data sources
@@ -357,26 +322,6 @@ navigation:
       - plugin_registry
       - sidebar
     order: 500
-  - id: sdks
-    plugin: audit
-    label: SDKs
-    path: /docs/sdks
-    icon: FileText
-    group: Developer
-    access: admin
-    surfaces:
-      - plugin_registry
-    order: 510
-  - id: compliance
-    plugin: audit
-    label: Compliance
-    path: /docs/compliance
-    icon: ShieldCheck
-    group: Developer
-    access: admin
-    surfaces:
-      - plugin_registry
-    order: 520
   - id: settings
     plugin: core-users
     label: Settings

@@ -149,6 +149,7 @@ func (s *Service) LeaveOrganization(ctx context.Context, userID string, req *gen
 		return w.Wrapf(err, "cannot leave organization")
 	}
 	_ = s.invalidateMembership(ctx, orgID, userID)
+	s.revokeInvalidatedSessionAccess(ctx, userID)
 	return nil
 }
 
@@ -235,6 +236,8 @@ func (s *Service) DeleteOrganization(ctx context.Context, actorID string, req *g
 	for _, memberID := range members {
 		_ = s.invalidateMembership(ctx, orgID, memberID)
 	}
+	// Every membership went, and with each the sessions bound to it.
+	s.revokeInvalidatedSessionAccess(ctx, members...)
 	return nil
 }
 

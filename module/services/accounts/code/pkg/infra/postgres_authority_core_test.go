@@ -23,8 +23,8 @@ import (
 // host's store meets (codefly-dev/authority storetest), against a real
 // database: one transaction is all or nothing, every record reads back as
 // written, revisions only grow, and identity is read from accounts' own
-// relations: memberships, teams, and organization roles synthesized from role
-// assignments with or without a resource scope.
+// relations: memberships, teams, and the organisation role a member
+// administers by.
 func TestTheAuthorityCoreStoreMeetsTheStoreContract(t *testing.T) {
 	storetest.Run(t, func(t *testing.T, id storetest.Identity) authority.Store {
 		seedAuthorityIdentity(t, id)
@@ -34,8 +34,7 @@ func TestTheAuthorityCoreStoreMeetsTheStoreContract(t *testing.T) {
 
 // seedAuthorityIdentity writes id into accounts' relations as accounts'
 // own paths would: an organization with its owner, members with their
-// membership role, teams, and one role per member whose permissions are the
-// member's scopes, assigned with the resource each names (or none).
+// membership role, and teams.
 func seedAuthorityIdentity(t *testing.T, id storetest.Identity) {
 	t.Helper()
 	owners := map[string]string{}
@@ -96,33 +95,16 @@ func seedAuthorityIdentity(t *testing.T, id storetest.Identity) {
 					return err
 				}
 			}
-			for _, sc := range m.Scopes {
-				roleID := uuid.NewString()
-				if _, err := q.Exec(ctx, `INSERT INTO roles (id, org_id, name, description) VALUES ($1, $2, $3, '')`, roleID, m.Organization, "storetest "+roleID[:8]); err != nil {
-					return err
-				}
-				for _, action := range sc.Actions {
-					if _, err := q.Exec(ctx, `INSERT INTO role_permissions (role_id, resource, action) VALUES ($1, $2, $3)`, roleID, sc.Kind, action); err != nil {
-						return err
-					}
-				}
-				var resource *string
-				if len(sc.Resources) > 0 {
-					resource = &sc.Resources[0].ID
-				}
-				if _, err := q.Exec(ctx, `INSERT INTO role_assignments (subject_id, subject_kind, role_id, org_id, scope) VALUES ($1, 'principal', $2, $3, $4)`,
-					m.Person, roleID, m.Organization, resource); err != nil {
-					return err
-				}
-			}
 		}
 		return nil
 	}))
 }
 
-// An organization administrator administers and holds no data scope by that
-// role, and a person's roles through a team are theirs while they are on it.
-func TestTheAuthorityCoreStoreReadsAccountsRBAC(t *testing.T) {
+// An organisation role decides administration only. The core reads the name a
+// member administers by ("admin", "owner") and nothing else: a role accounts'
+// RBAC assigns a member, directly or through a team, is this host's own and is
+// never handed to the core as something a person holds at a module.
+func TestTheAuthorityCoreStoreHandsTheCoreNoOrganisationRoleButAdministration(t *testing.T) {
 	org, admin, member, team := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
 	seedAuthorityIdentity(t, storetest.Identity{
 		Organizations: []domain.Organization{{ID: org, Name: "RBAC " + org[:8]}},
@@ -131,47 +113,33 @@ func TestTheAuthorityCoreStoreReadsAccountsRBAC(t *testing.T) {
 			{Organization: org, Person: member, Teams: []string{team}},
 		},
 	})
-	roleID := uuid.NewString()
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 		q := storetx.Tx(ctx)
-		if _, err := q.Exec(ctx, `INSERT INTO roles (id, org_id, name, description) VALUES ($1, $2, 'team reader', '')`, roleID, org); err != nil {
-			return err
+		for subject, kind := range map[string]string{team: "team", member: "principal", admin: "principal"} {
+			roleID := uuid.NewString()
+			if _, err := q.Exec(ctx, `INSERT INTO roles (id, org_id, name, description) VALUES ($1, $2, $3, '')`, roleID, org, "reader "+roleID[:8]); err != nil {
+				return err
+			}
+			if _, err := q.Exec(ctx, `INSERT INTO role_permissions (role_id, resource, action) VALUES ($1, 'rbac.item', 'read')`, roleID); err != nil {
+				return err
+			}
+			if _, err := q.Exec(ctx, `INSERT INTO role_assignments (subject_id, subject_kind, role_id, org_id) VALUES ($1, $2, $3, $4)`, subject, kind, roleID, org); err != nil {
+				return err
+			}
 		}
-		if _, err := q.Exec(ctx, `INSERT INTO role_permissions (role_id, resource, action) VALUES ($1, 'rbac.item', 'read')`, roleID); err != nil {
-			return err
-		}
-		_, err := q.Exec(ctx, `INSERT INTO role_assignments (subject_id, subject_kind, role_id, org_id) VALUES ($1, 'team', $2, $3)`, team, roleID, org)
-		return err
+		return nil
 	}))
 	require.NoError(t, testStore.AuthorityCore().Read(testCtx, func(tx authority.Tx) error {
 		a, err := tx.Member(org, admin)
 		require.NoError(t, err)
-		require.Contains(t, a.Roles, "admin")
-		role, err := tx.OrgRole(org, "admin")
-		require.NoError(t, err)
-		require.Empty(t, role.Scopes, "the administrator role names who administers; it holds no scope")
+		require.Equal(t, []string{"admin"}, a.Roles, "an administrator is named as one and holds no other organisation role at the core")
+		require.True(t, decide.IsAdministrator(a))
 
 		m, err := tx.Member(org, member)
 		require.NoError(t, err)
 		require.Equal(t, []string{team}, m.Teams)
-		var held []domain.RoleScope
-		for _, name := range m.Roles {
-			r, err := tx.OrgRole(org, name)
-			require.NoError(t, err)
-			held = append(held, r.Scopes...)
-		}
-		require.Equal(t, []domain.RoleScope{{Kind: "rbac.item", Actions: []string{"read"}}}, held, "the team's role is the member's")
-		return nil
-	}))
-	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		_, err := storetx.Tx(ctx).Exec(ctx, `DELETE FROM team_members WHERE team_id = $1 AND user_id = $2`, team, member)
-		return err
-	}))
-	require.NoError(t, testStore.AuthorityCore().Read(testCtx, func(tx authority.Tx) error {
-		m, err := tx.Member(org, member)
-		require.NoError(t, err)
-		require.Empty(t, m.Teams)
-		require.Empty(t, m.Roles, "a person off the team holds none of its roles")
+		require.Empty(t, m.Roles, "a role assigned to a member or their team is no organisation role the core reads")
+		require.False(t, decide.IsAdministrator(m))
 		return nil
 	}))
 }

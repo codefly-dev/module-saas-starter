@@ -8,7 +8,6 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -54,7 +53,7 @@ type operationBindingProjection struct {
 //
 // Through a module that declares no roles, what the person holds at the target
 // is what their own session holds there, as the core reads a binding
-// (throughSolutions): at a target that checks owners, none of its owned kinds
+// (throughSolutions): nothing at a target that declares no roles
 // (ownSessionRule). Through a role-gated module the core reads its roles,
 // which this mint does not, so that projection is left as it was.
 func (s *WorkContextAuthorityServer) withOperationBindingScopes(ctx context.Context, orgID, audience string, asked []*gen.WorkContextScope, names []string) (*operationBindingProjection, error) {
@@ -158,16 +157,17 @@ func (s *WorkContextAuthorityServer) heldBindingScope(ctx context.Context, orgID
 	return out, nil
 }
 
-// heldProjection is parts of a binding's scope narrowed to what the core's
-// owner rule holds at the binding's audience: a part of a kind it owns is not
-// held, so it is not projected, and a binding that holds nothing is refused by
-// its own name.
+// heldProjection is parts of a binding's scope narrowed to what a person's own
+// session holds at the binding's audience: nothing at a module that declares
+// no roles, so nothing is projected and the binding is refused by its own
+// name.
 func heldProjection(ctx context.Context, audience string, parts []*gen.WorkContextScope) ([]*gen.WorkContextScope, error) {
 	target, composed, err := composedAudience(ctx, audience)
 	if err != nil || !composed {
 		return parts, err
 	}
-	return slices.DeleteFunc(parts, func(part *gen.WorkContextScope) bool {
-		return ownSessionRule(target, []*basev0.WorkScopeV1{{ResourceKind: part.ResourceKind, Actions: part.Actions}}) != nil
-	}), nil
+	if ownSessionRule(target) != nil {
+		return nil, nil
+	}
+	return parts, nil
 }

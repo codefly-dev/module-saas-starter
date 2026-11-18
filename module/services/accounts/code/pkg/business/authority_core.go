@@ -206,6 +206,8 @@ func (s *Service) newAuthorityCore(issuer, keyID string, key ed25519.PrivateKey)
 	return authority.New(store.AuthorityCoreWithConsent(s.moduleConsent), authority.Config{
 		Issuer: issuer, KeyID: keyID, Signer: key, Keys: staticKeys{keyID: public},
 		Replay: store.AuthorityCoreReplay(), MaxTTL: WorkContextMaxTTL, Journal: s.journalAuthority,
+		Decisions:           s.recordAuthorityDecision,
+		CheckSession:        s.CheckCapabilitySession,
 		HostInstallsModules: true,
 	})
 }

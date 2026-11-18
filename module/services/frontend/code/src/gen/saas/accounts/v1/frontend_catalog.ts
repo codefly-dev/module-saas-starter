@@ -87,7 +87,7 @@ export const PERMISSION_DEFINITIONS: Readonly<Record<Permission, PermissionDefin
   [PERMISSIONS.AUDIT_READ]: { resource: "audit", action: "read", description: "Read and export audit events.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
   [PERMISSIONS.BILLING_READ]: { resource: "billing", action: "read", description: "View billing state and invoices.", builtInRoles: ["admin (via *:*)", "editor"], apiKeyScope: true },
   [PERMISSIONS.BILLING_WRITE]: { resource: "billing", action: "write", description: "Open checkout and billing portal sessions.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
-  [PERMISSIONS.DASHBOARDS_READ]: { resource: "dashboards", action: "read", description: "List and open own and org-shared dashboards.", builtInRoles: ["admin (via *:*)", "editor", "viewer"], apiKeyScope: false },
+  [PERMISSIONS.DASHBOARDS_READ]: { resource: "dashboards", action: "read", description: "List and open own and org-shared dashboards.", builtInRoles: ["admin (via *:*)", "editor", "member (via membership)", "viewer"], apiKeyScope: false },
   [PERMISSIONS.DASHBOARDS_SHARE]: { resource: "dashboards", action: "share", description: "Promote a dashboard to org-shared visibility.", builtInRoles: ["admin (via *:*)"], apiKeyScope: false },
   [PERMISSIONS.DASHBOARDS_WRITE]: { resource: "dashboards", action: "write", description: "Create, rename, edit, and delete own dashboards.", builtInRoles: ["admin (via *:*)", "editor", "viewer"], apiKeyScope: false },
   [PERMISSIONS.DATASOURCE_INVOKE]: { resource: "datasource", action: "invoke", description: "Invoke declared operations on a source boundary.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },

@@ -36,7 +36,6 @@ func TestAppliedPrincipalAddressesTheRealAuthority(t *testing.T) {
 	store := memstore.New()
 	store.PutOrganization(domain.Organization{ID: "acme", Name: "Acme"})
 	store.PutPerson(domain.Person{ID: "admin", Organization: "acme", Roles: []string{"admin"}})
-	store.PutOrgRole(domain.OrgRole{Organization: "acme", Name: "admin"})
 	svc, err := authority.New(store, authority.Config{Issuer: "https://authority.example.test", KeyID: "test", Signer: private, Keys: principalWitnessKeys{"test": public}, Replay: workcontext.NewMemoryReplayStore()})
 	require.NoError(t, err)
 	scopes := []*basev0.WorkScopeV1{{ResourceKind: "example.note", Actions: []string{"read"}}}

@@ -15,6 +15,7 @@ import { ManageMemberRolesDialog } from "@/features/roles/ui/manage-member-roles
 import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
 import { useAuth } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
+import { failureText } from "@/shared/lib/failure-text";
 import { truncateUUID } from "@/shared/lib/utils";
 import {
 	Badge,
@@ -139,7 +140,7 @@ function UserDetail({
 														onSuccess: () => toast.success("Role revoked"),
 														onError: (error) =>
 															toast.error(
-																`Failed to revoke: ${(error as Error).message}`,
+																failureText("revoke the role", error),
 															),
 													},
 												)

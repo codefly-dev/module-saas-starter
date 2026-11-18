@@ -383,7 +383,12 @@ control) is the kit's `@codefly-dev/saas-ui/casting`, the same component a
 module playground mounts in front of the local authority's edge. This host
 supplies only its adapter (`src/features/role-view/team-casting.tsx`,
 `HostCasting`): the session interface through `apiTransport`, the cast's bearer
-adopted with `enterRoleView`, `exitRoleView` as the way back. The teams it
+adopted with `enterRoleView`, `exitRoleView` as the way back. The way back
+ends the cast on the host under the cast's own bearer (`SessionService.End`),
+and a sign-out ends the person's own session the same way before
+`/v1/auth/logout`, which ends no cast; an End the host could not perform is an
+incomplete sign-out, and a way back not taken. A bearer is held no longer than
+the `expires_at_unix` the host stated for its session. The teams it
 offers are the host's `SessionService.ListCastableTeams`, listed by the rule
 that decides `OpenTeamCast`.
 

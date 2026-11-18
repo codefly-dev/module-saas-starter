@@ -13,8 +13,8 @@ import (
 
 	coredelivered "github.com/codefly-dev/authority/libraries/authority-core/go/delivered"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
+	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/core/solutionhost"
 	"github.com/codefly-dev/core/wool"
 	"google.golang.org/protobuf/proto"
 
@@ -60,7 +60,11 @@ func documentOf(in *compositionv1.AuthorityManifestV1) *coredelivered.Document {
 	}
 	doc.SharedKinds = append(doc.SharedKinds, in.GetSharedKinds()...)
 	for _, m := range in.GetMethods() {
-		doc.Methods = append(doc.Methods, coredelivered.Method{Method: m.GetMethod(), Requires: wireScopes(m.GetRequires()), AnyCheckedCaller: m.GetAnyCheckedCaller()})
+		doc.Methods = append(doc.Methods, coredelivered.Method{Method: m.GetMethod(), Requires: wireScopes(m.GetRequires()), AnyCheckedCaller: m.GetAnyCheckedCaller(),
+			// What a method carries is the core's to hold to what the module
+			// serves: dropped here, a delivery carrying a permission no
+			// handler will ever be handed is composed as if it carried none.
+			Carries: wireScopes(m.GetCarries())})
 	}
 	for _, r := range in.GetRoles() {
 		role := coredelivered.Role{Name: r.GetName(), Scopes: wireScopes(r.GetScopes()), InstallationOwned: wireScopes(r.GetInstallationOwnedScopes())}
@@ -154,7 +158,12 @@ func (s *Service) applyCoreModule(ctx context.Context, manifest *solutionhost.Mo
 	// The core decides a replay of the generation it holds on its own
 	// transaction (ApplyModule): read here first, a slower path was refused
 	// the generation a faster one had just composed.
-	return core.ApplyModule(ctx, m)
+	ids, err := core.ApplyModule(ctx, m)
+	if held, herr := core.Composed(ctx, m.Name); err == nil && herr == nil && needsRedelivery(manifest.Binding, held) == "" {
+		// What the core holds now reads: a redelivery answered the reason.
+		s.clearNeedsRedelivery(manifest.Binding)
+	}
+	return ids, err
 }
 
 // coreUnconfiguredYet is the answer of a host whose core is not built yet: not
@@ -268,6 +277,12 @@ func (s *Service) rereadHeldGeneration(ctx context.Context, record *SolutionHost
 	m, err := coreModuleOf(again, delivered.Payload, signedAuthorityOf(delivered))
 	if err != nil {
 		return true, err
+	}
+	// A held generation the core refuses to read again by its role names is
+	// left as the core holds it and reported as needing redelivery, never a
+	// failure of the boot reconciliation (authority_core_redelivery.go).
+	if reason := needsRedelivery(record.BindingID, m); reason != "" {
+		return true, s.markNeedsRedelivery(ctx, record.BindingID, reason)
 	}
 	reread, err := core.RereadModule(ctx, m)
 	if reread {

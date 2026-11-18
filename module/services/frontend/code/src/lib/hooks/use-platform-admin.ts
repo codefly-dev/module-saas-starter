@@ -61,12 +61,3 @@ export function useOverrideEntitlement() {
 			queryClient.invalidateQueries({ queryKey: ["entitlements"] }),
 	});
 }
-
-export function useFeatureFlags() {
-	const svc = usePlatformAdminService();
-	return useQuery({
-		queryKey: ["feature-flags"],
-		queryFn: () => svc.listFeatureFlags({}),
-		select: (data) => data.flags,
-	});
-}

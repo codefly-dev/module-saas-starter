@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GET } from "@/app/api/openapi/route";
 
-// The route reads ../../api/openapi/user.swagger.json relative to the process
+// The route reads ../../accounts/openapi/api.swagger.json relative to the process
 // cwd. Point cwd at a scratch tree so the real read is exercised without
 // touching the repo — the fs builtin cannot be mocked in this runtime.
 let root: string;
@@ -20,9 +20,9 @@ function withCwdTree(specContents?: string): string {
 	const cwd = join(root, "services", "frontend", "code");
 	mkdirSync(cwd, { recursive: true });
 	if (specContents !== undefined) {
-		const specDir = resolve(cwd, "../../api/openapi");
+		const specDir = resolve(cwd, "../../accounts/openapi");
 		mkdirSync(specDir, { recursive: true });
-		writeFileSync(join(specDir, "user.swagger.json"), specContents);
+		writeFileSync(join(specDir, "api.swagger.json"), specContents);
 	}
 	vi.spyOn(process, "cwd").mockReturnValue(cwd);
 	return cwd;

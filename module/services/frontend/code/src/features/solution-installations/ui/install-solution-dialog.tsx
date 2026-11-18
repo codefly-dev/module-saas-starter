@@ -3,7 +3,7 @@
 import { roleAbilities } from "@codefly-dev/saas-ui/solution";
 import { createClient } from "@connectrpc/connect";
 import { useQuery } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { teamQueries } from "@/features/teams/service/queries";
 import { OfferService } from "@/gen/host/installation/v1/installation_pb";
 import type {
@@ -15,6 +15,7 @@ import { apiTransport } from "@/lib/connect/transport";
 import { useInstallationService } from "@/lib/hooks/use-api-client";
 import {
 	Button,
+	Checkbox,
 	DelayedLoading,
 	Dialog,
 	DialogContent,
@@ -22,10 +23,13 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
+	ErrorState,
+	Label,
 } from "@/shared/ui";
 import {
 	assertMatchingOffer,
 	moduleConsentText,
+	reviewFailure,
 } from "../model/install-review";
 import { hostRefusal, releaseText } from "../model/installations";
 import {
@@ -77,6 +81,7 @@ export function InstallSolutionDialog({
 		useTargetTitles().get(solution.routeAlias) ?? solution.routeAlias;
 	const { user } = useAuth();
 	const top = useRef<HTMLDivElement>(null);
+	const approveId = useId();
 	const [chosen, setChosen] = useState<Record<string, string>>({});
 	const [untaken, setUntaken] = useState<ReadonlySet<string>>(new Set());
 	const [approved, setApproved] = useState(false);
@@ -146,7 +151,12 @@ export function InstallSolutionDialog({
 					active={review.isFetching}
 					label="Preparing required access"
 				/>
-				{review.isError && <p role="alert">{hostRefusal(review.error)}</p>}
+				{review.isError && (
+					<ErrorState
+						title="Couldn't prepare this review"
+						detail={reviewFailure(review.error, hostRefusal)}
+					/>
+				)}
 				{data && (
 					<div className="space-y-4 text-sm">
 						{upgrade && (
@@ -195,24 +205,27 @@ export function InstallSolutionDialog({
 							modules={data.modules.map(({ module }) => module)}
 						/>
 						<TechnicalAccess offer={data.offer} modules={data.modules} />
-						<label className="flex items-start gap-2">
-							<input
-								type="checkbox"
+						<div className="flex items-start gap-2">
+							<Checkbox
+								id={approveId}
+								className="mt-0.5"
 								checked={approved}
-								onChange={(event) => setApproved(event.target.checked)}
+								onCheckedChange={(checked) => setApproved(checked === true)}
 								disabled={isPending}
 							/>
-							I approve this {upgrade ? "release" : "solution"} and the access
-							it and its supporting modules require, including the technical
-							details.
-						</label>
+							<Label htmlFor={approveId} className="leading-normal">
+								I approve this {upgrade ? "release" : "solution"} and the access
+								it and its supporting modules require, including the technical
+								details.
+							</Label>
+						</div>
 					</div>
 				)}
 				{error && (
-					<p role="alert">
-						{error} The original review is retained. Retry it after a temporary
-						failure, or review again if access has changed.
-					</p>
+					<ErrorState
+						title={upgrade ? "It was not updated" : "It was not installed"}
+						detail={`${error} The original review is retained. Retry it after a temporary failure, or review again if access has changed.`}
+					/>
 				)}
 				<DialogFooter>
 					<Button variant="outline" onClick={onClose}>

@@ -1,13 +1,6 @@
 "use client";
 
-import {
-	AlertCircle,
-	Building2,
-	Loader2,
-	LogIn,
-	ShieldCheck,
-	Sparkles,
-} from "lucide-react";
+import { Loader2, LogIn } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { BrandMark } from "@/components/brand-mark";
@@ -26,10 +19,40 @@ import {
 } from "@/lib/auth";
 import type { FixtureUser } from "@/lib/fixtures/types";
 import { publicHandoffDestination } from "@/lib/public-handoff";
+import {
+	Avatar,
+	AvatarFallback,
+	Badge,
+	Button,
+	Card,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	ErrorState,
+} from "@/shared/ui";
+
+const SIGN_IN_FAILED =
+	"Couldn't sign you in. Try again; if it keeps failing, tell your administrator.";
 
 interface FixtureResponse {
 	name: string;
 	users: FixtureUser[];
+}
+
+/**
+ * What to show when a sign-in step fails. The sign-in calls refuse with a
+ * sentence written for the person (a plain `Error`, or an `AuthError`), and
+ * that sentence is passed on. Anything else that can be thrown here — a request
+ * that never left the browser, a response that could not be read, a browser
+ * exception — carries text written for developers, so `fallback` is said
+ * instead. Told apart by the error's kind, never by its text.
+ */
+export function signInFailureText(error: unknown, fallback: string): string {
+	return error instanceof Error &&
+		(error.name === "Error" || error.name === "AuthError") &&
+		error.message
+		? error.message
+		: fallback;
 }
 
 export function LoginPage({ identity }: { identity: IdentityConfig }) {
@@ -87,9 +110,10 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 				if (cancelled) return;
 				forgetClientAuthorization();
 				setClientRefusal(
-					err instanceof Error
-						? err.message
-						: "This application cannot sign in here.",
+					signInFailureText(
+						err,
+						"Couldn't check the application that sent you here. Go back to it and start again.",
+					),
 				);
 			});
 		return () => {
@@ -122,7 +146,7 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 			})
 			.catch((err) => {
 				if (!cancelled) {
-					setError(err instanceof Error ? err.message : "Login failed");
+					setError(signInFailureText(err, SIGN_IN_FAILED));
 				}
 			});
 		return () => {
@@ -154,256 +178,156 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 			// FE and api are on different ports, e.g. the e2e direct-to-api setup).
 			if (authenticated) router.push(destination);
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Login failed");
+			setError(signInFailureText(err, SIGN_IN_FAILED));
 			setLoading(null);
 		}
 	}
 
 	return (
-		<div className="min-h-screen grid lg:grid-cols-2 bg-background">
-			{/* ──────────────────────────────────────────────────────────
-          LEFT — marketing / value-prop panel.
-          Hidden on mobile (lg:flex) so the form stays the focus on
-          phones; on desktop, this is the difference between "looks
-          like a template" and "looks like a product".
-          ────────────────────────────────────────────────────────── */}
-			<div
-				className="hidden lg:flex relative overflow-hidden text-primary-foreground"
-				style={{
-					background:
-						"linear-gradient(135deg, var(--primary), color-mix(in oklab, var(--primary) 72%, var(--foreground)))",
-				}}
-			>
-				{/* Soft radial glow — depth without an image asset. */}
-				<div
-					aria-hidden
-					className="pointer-events-none absolute inset-0 opacity-40"
-					style={{
-						background:
-							"radial-gradient(60rem 30rem at 20% 0%, color-mix(in oklab, currentColor 25%, transparent), transparent 50%), radial-gradient(50rem 25rem at 80% 100%, color-mix(in oklab, currentColor 15%, transparent), transparent 50%)",
-					}}
-				/>
-				{/* Grid pattern overlay — modern Vercel/Linear vibe. */}
-				<div
-					aria-hidden
-					className="pointer-events-none absolute inset-0 opacity-[0.07]"
-					style={{
-						backgroundImage:
-							"linear-gradient(to right, currentColor 1px, transparent 1px), linear-gradient(to bottom, currentColor 1px, transparent 1px)",
-						backgroundSize: "32px 32px",
-					}}
-				/>
-
-				<div className="relative z-10 flex flex-col justify-between p-12 w-full">
-					<div className="flex items-center gap-3">
-						<BrandMark
-							className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-primary-foreground/15 text-lg font-bold ring-1 ring-primary-foreground/30 backdrop-blur-sm"
-							imageClassName="p-1"
-						/>
-						<span className="text-xl font-semibold tracking-tight">
-							{branding.name}
-						</span>
-					</div>
-
-					<div className="my-auto space-y-8 max-w-md">
-						<div>
-							<h2 className="text-4xl font-bold tracking-tight leading-tight">
-								Welcome back to {branding.name}.
-							</h2>
-							<p className="mt-4 text-lg text-primary-foreground/80 leading-relaxed">
-								Sign in to pick up where you left off.
-							</p>
-						</div>
-
-						<ul className="space-y-3 text-sm">
-							<li className="flex items-start gap-3">
-								<ShieldCheck className="h-5 w-5 mt-0.5 text-primary-foreground/90 shrink-0" />
-								<span className="text-primary-foreground/90">
-									<span className="font-medium">
-										Access that follows your role
-									</span>{" "}
-									— you see what your organization has given you, and nothing
-									more.
-								</span>
-							</li>
-							<li className="flex items-start gap-3">
-								<Building2 className="h-5 w-5 mt-0.5 text-primary-foreground/90 shrink-0" />
-								<span className="text-primary-foreground/90">
-									<span className="font-medium">
-										One place per organization
-									</span>{" "}
-									— switch organizations and everything follows.
-								</span>
-							</li>
-							<li className="flex items-start gap-3">
-								<Sparkles className="h-5 w-5 mt-0.5 text-primary-foreground/90 shrink-0" />
-								<span className="text-primary-foreground/90">
-									<span className="font-medium">Every request checked</span> —
-									each action is checked again against what you may do.
-								</span>
-							</li>
-						</ul>
-					</div>
+		<div className="flex min-h-screen w-full items-center justify-center p-4">
+			<div className="w-full max-w-md space-y-6">
+				<div className="flex items-center justify-center gap-3">
+					<BrandMark
+						className="flex size-10 items-center justify-center overflow-hidden rounded-xl bg-primary text-lg font-bold text-primary-foreground"
+						imageClassName="p-1"
+					/>
+					<span className="text-xl font-semibold tracking-tight">
+						{branding.name}
+					</span>
 				</div>
-			</div>
 
-			{/* ──────────────────────────────────────────────────────────
-          RIGHT — form. Centred on its own column on desktop, full
-          width on mobile.
-          ────────────────────────────────────────────────────────── */}
-			<div className="flex items-center justify-center px-4 py-12">
-				<div className="w-full max-w-sm">
-					{/* Mobile-only logo (hidden on desktop where the left panel has it) */}
-					<div className="flex lg:hidden justify-center mb-8">
-						<div className="flex items-center gap-3">
-							<BrandMark
-								className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-primary text-lg font-bold text-primary-foreground shadow-lg shadow-primary/25"
-								imageClassName="p-1"
-							/>
-							<span className="text-xl font-semibold tracking-tight">
-								{branding.name}
-							</span>
-						</div>
-					</div>
+				<Card>
+					<CardHeader>
+						<h1 data-slot="page-title" className="type-page-title">
+							{stepUp ? "Confirm your passkey" : "Sign in"}
+						</h1>
+						<CardDescription>
+							{stepUp
+								? "That change needs your second factor confirmed within the last 15 minutes. Sign in again and you will be taken back to where you were."
+								: clientName
+									? `to continue to ${clientName}`
+									: "Choose a method to continue."}
+						</CardDescription>
+					</CardHeader>
+					<CardContent className="space-y-4">
+						{/* A client the host does not recognise is refused here, before
+						    any sign-in method is offered. */}
+						{clientRefusal && <ErrorState title={clientRefusal} />}
 
-					<div className="rounded-2xl border bg-card text-card-foreground shadow-xl shadow-black/5 dark:shadow-black/20">
-						<div className="p-8 space-y-6">
-							<div className="space-y-1.5">
-								<h1 data-slot="page-title" className="type-page-title">
-									{stepUp ? "Confirm your passkey" : "Sign in"}
-								</h1>
-								<p className="text-sm text-muted-foreground">
-									{stepUp
-										? "That change needs your second factor confirmed within the last 15 minutes. Sign in again and you will be taken back to where you were."
-										: clientName
-											? `to continue to ${clientName}`
-											: "Choose a method to continue."}
-								</p>
+						{clientPending && (
+							<p
+								role="status"
+								className="flex items-center gap-2 text-sm text-muted-foreground"
+							>
+								<Loader2 className="size-4 shrink-0 animate-spin" />
+								Checking the application…
+							</p>
+						)}
+
+						{error && <ErrorState title={error} />}
+
+						{/* Header-injected identity — no button, exchange in progress */}
+						{headerInjected && !error && !clientPending && !clientRefusal && (
+							<p
+								role="status"
+								className="flex items-center gap-2 text-sm text-muted-foreground"
+							>
+								<Loader2 className="size-4 shrink-0 animate-spin" />
+								Signing you in…
+							</p>
+						)}
+
+						{/* OAuth providers */}
+						{providers.length > 0 && !clientPending && !clientRefusal && (
+							<div className="space-y-2">
+								{providers.map((p) => (
+									<Button
+										key={p.id}
+										variant="outline"
+										size="lg"
+										className="w-full"
+										onClick={async () => {
+											setError(null);
+											try {
+												await signInWith(p, destination);
+											} catch (err) {
+												// A failed `begin` leaves the button on-screen with no
+												// redirect, so the click otherwise looks dead. Log the
+												// status for operators; show the user a real message.
+												console.error("Sign-in could not be started", err);
+												setError(
+													"Sign-in is temporarily misconfigured. Please try again in a few minutes.",
+												);
+											}
+										}}
+									>
+										<LogIn />
+										Continue with {p.displayName}
+									</Button>
+								))}
 							</div>
-							{/* A client the host does not recognise is refused here, before
-							    any sign-in method is offered. */}
-							{clientRefusal && (
-								<div className="flex items-start gap-2 rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
-									<AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-									<span>{clientRefusal}</span>
-								</div>
-							)}
+						)}
 
-							{clientPending && (
-								<div className="flex items-center gap-3 rounded-lg border bg-background p-4 text-sm text-muted-foreground">
-									<Loader2 className="h-5 w-5 animate-spin shrink-0" />
-									<span>Checking the application…</span>
-								</div>
-							)}
-
-							{error && (
-								<div className="flex items-center gap-2 rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
-									<AlertCircle className="h-4 w-4 shrink-0" />
-									<span>{error}</span>
-								</div>
-							)}
-
-							{/* Header-injected identity — no button, exchange in progress */}
-							{headerInjected && !error && !clientPending && !clientRefusal && (
-								<div className="flex items-center gap-3 rounded-lg border bg-background p-4 text-sm text-muted-foreground">
-									<Loader2 className="h-5 w-5 animate-spin shrink-0" />
-									<span>Signing you in…</span>
-								</div>
-							)}
-
-							{/* OAuth providers */}
-							{providers.length > 0 && !clientPending && !clientRefusal && (
-								<div className="space-y-2.5">
-									{providers.map((p) => (
-										<button
-											type="button"
-											key={p.id}
-											onClick={async () => {
-												setError(null);
-												try {
-													await signInWith(p, destination);
-												} catch (err) {
-													// A failed `begin` leaves the button on-screen with no
-													// redirect, so the click otherwise looks dead. Log the
-													// status for operators; show the user a real message.
-													console.error("Sign-in could not be started", err);
-													setError(
-														"Sign-in is temporarily misconfigured. Please try again in a few minutes.",
-													);
-												}
-											}}
-											className="w-full flex items-center justify-center gap-2.5 h-11 rounded-lg border bg-background hover:bg-accent/50 text-sm font-medium transition-colors"
-										>
-											<LogIn className="h-4 w-4" />
-											Continue with {p.displayName}
-										</button>
-									))}
-								</div>
-							)}
-
-							{/* Fixture users — dev mode */}
-							{devMode &&
-								fixtureUsers.length > 0 &&
-								!clientPending &&
-								!clientRefusal && (
-									<div className="space-y-2.5">
-										<p className="text-xs font-medium text-muted-foreground text-center uppercase tracking-wider">
-											Dev — select a user
-										</p>
-										{fixtureUsers.map((u) => (
-											<button
-												type="button"
-												key={u.fixture_token ?? u.provider_id}
+						{/* Fixture users — dev mode */}
+						{devMode &&
+							fixtureUsers.length > 0 &&
+							!clientPending &&
+							!clientRefusal && (
+								<div className="space-y-2">
+									<p className="text-xs font-medium text-muted-foreground">
+										Development sign-in — choose a person
+									</p>
+									{fixtureUsers.map((u) => {
+										const token = u.fixture_token ?? u.provider_id;
+										return (
+											<Button
+												key={token}
+												variant="outline"
+												className="h-auto w-full justify-start gap-3 px-3 py-2 text-left"
 												onClick={() => handleFixtureLogin(u)}
-												disabled={
-													loading === (u.fixture_token ?? u.provider_id)
-												}
-												className="w-full flex items-center gap-3 h-14 px-4 rounded-lg border bg-background hover:bg-accent/50 text-left transition-colors disabled:opacity-50"
+												disabled={loading === token}
 											>
-												{loading === (u.fixture_token ?? u.provider_id) ? (
-													<Loader2 className="h-5 w-5 animate-spin text-muted-foreground shrink-0" />
+												{loading === token ? (
+													<Loader2 className="size-8 shrink-0 animate-spin p-1.5 text-muted-foreground" />
 												) : (
-													<div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center shrink-0">
-														<span className="text-xs font-bold text-white">
+													<Avatar>
+														<AvatarFallback>
 															{u.name
 																.split(" ")
 																.map((n) => n[0])
 																.join("")}
-														</span>
-													</div>
+														</AvatarFallback>
+													</Avatar>
 												)}
-												<div className="min-w-0">
-													<div className="text-sm font-medium truncate">
+												<span className="min-w-0 flex-1">
+													<span className="block truncate text-sm font-medium">
 														{u.name}
-													</div>
-													<div className="text-xs text-muted-foreground truncate">
+													</span>
+													<span className="block truncate text-xs font-normal text-muted-foreground">
 														{u.email}
-														<span className="ml-1.5 inline-flex items-center rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-medium">
-															{u.role}
-														</span>
-													</div>
-												</div>
-											</button>
-										))}
-									</div>
-								)}
-						</div>
-					</div>
+													</span>
+												</span>
+												<Badge variant="secondary">{u.role}</Badge>
+											</Button>
+										);
+									})}
+								</div>
+							)}
+					</CardContent>
+				</Card>
 
-					{/* Footer */}
-					<p className="text-center text-xs text-muted-foreground mt-6">
-						Continuing starts authentication. You will review and accept the
-						current{" "}
-						<a href="/legal/terms" className="underline">
-							Terms of Service
-						</a>{" "}
-						separately. See our{" "}
-						<a href="/legal/privacy" className="underline">
-							Privacy Policy
-						</a>
-						.
-					</p>
-				</div>
+				<p className="text-center text-xs text-muted-foreground">
+					Continuing starts authentication. You will review and accept the
+					current{" "}
+					<a href="/legal/terms" className="underline">
+						Terms of Service
+					</a>{" "}
+					separately. See our{" "}
+					<a href="/legal/privacy" className="underline">
+						Privacy Policy
+					</a>
+					.
+				</p>
 			</div>
 		</div>
 	);

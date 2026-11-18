@@ -3,7 +3,7 @@
 accounts implements the host interfaces published by `codefly-dev/authority`:
 `codefly.dev/artifact@0.1.0`, `codefly.dev/authority@0.3.6`,
 `codefly.dev/composition@0.2.1`, `codefly.dev/installation@0.5.0` and
-`codefly.dev/session@0.5.0`, as `module/module.codefly.yaml` declares them. The
+`codefly.dev/session@0.6.0`, as `module/module.codefly.yaml` declares them. The
 local authority implements the same five on a laptop. The shared conformance
 suite (`libraries/conformance/go`) proves that the two agree, and the
 declaration gate (`module-package verify-host-interfaces`, under Proof below)
@@ -27,12 +27,12 @@ What accounts adds, and where:
 |---|---|
 | The core's records: modules, tombstones, the installations of every solution (a module's is accounts' own record), each consent's approved declaration per generation and offer digest (migrations 68, 78), role grants, delegations, epochs, owner-aware revisions, consumed nonces | migration 56 (`authority_core_*`, control-plane relations), migrations 68 and 78 (`authority_core_approved_modules`) and `pkg/infra/postgres_authority_core.go` |
 | A module declaring no roles is installed by this host's own consent and its installation is accounts' own record (`installations`, kind `module`): an administrator's install, or a closure's, within the module envelope, retired by an uninstall or by a ceiling that no longer allows the organization. The core is configured with `HostInstallsModules`, so it installs no such module itself and reads those records live, with what each consent allows: an installation whose consent allows no capability is not active for the core, and the bindings it allows (the module's grant within the envelope, intersected with the consent, as the native mint reads it) bound every issue through them (`Installation.Bindings`). The revision the core seals to is accounts' own revision, plus the core's raise when a redelivery narrows the module or a detachment ends a grant (`authority_core_module_revisions`, which also keeps what the core attached to the installation, migration 71), plus the committed envelope revision, so a narrowed consent and an envelope write each end what was issued before them | `pkg/infra/postgres_authority_core.go` (`moduleInstallations`), `pkg/business/authority_core_consent.go` |
-| Identity, read only: organizations, memberships, teams, and the organization roles a member holds, from accounts' RBAC (role assignments and live scope grants, directly or through a team, and the membership's administrator role) | `pkg/infra/postgres_authority_core.go` (`Member`, `OrgRole`) |
+| Identity, read only: organizations, memberships, teams, and the name of the organisation role a member administers by (`admin`, `owner`) and nothing else. An organisation role decides administration only and reaches no module, so accounts' RBAC (role assignments, scope grants) is never handed to the core: a person reaches a module only through a role on an installation | `pkg/infra/postgres_authority_core.go` (`Member`, `memberRoles`) |
 | Revocation levers shared with the product: the organization's authorization revision is accounts' own, and a person's epoch includes their principal revisions | same file |
 | Who the caller is: the session the perimeter verified (`signedInPerson`), or a workload credential the execution reviewer reviewed (`workload`), bound to the organization the module envelope pins the module to | `pkg/adapters/host_interface.go` |
 | The signing key the core signs with, the Work Context key `Keys` publishes | `pkg/business/authority_core.go` (`ConfigureAuthorityCore`) |
 | Delivery: the signed carrier and the authority document are verified and recorded by accounts' delivery owner, then composed in the core through the core's `delivered` package; every applied delivery is composed again when the core is configured | `pkg/business/authority_delivery.go`, `pkg/business/authority_core_delivery.go` |
-| Audit: each change the core journals is recorded in the core's own transaction (`saas.authority.*`, `saas.module_delegation.*`); each issue is recorded before it is handed out | `pkg/business/authority_core_audit.go` |
+| Audit: each change the core journals is recorded in the core's own transaction (`saas.authority.*`, `saas.module_delegation.*`); each decision the core makes for a caller is told to this host before the caller is answered (`authority.Config.Decisions`), which records issues and refusals and nothing else ([the authority's decisions](#the-authoritys-decisions-are-rows-of-the-audit-journal)) | `pkg/business/authority_core_audit.go` |
 | The hop's admission keys: leased rows judged by the database's clock, published apart from the Work Context key; each registration proves its key once (its nonce is kept in `hop_admission_proofs`), and one key is pinned per hop instance (its pod) while its registration holds | migrations 55 and 58, `pkg/business/hop_admission_keys.go`, `pkg/adapters/host_interface_admission.go` |
 | Tenancy at the perimeter: a member or an administrator of the organization a call names, before the core decides | `pkg/adapters/host_interface.go` (`requireOrgMember`, `requireOrgAdmin`) |
 
@@ -96,9 +96,11 @@ behavior-preserving rollback.
 
 ## The interfaces, method by method
 
-- **authority**: `Issue` for a person (the signed-in session), a workload, an
-  installation acting for itself, a parent token (a module's hop through its
-  binding), or a delegation; `Check`, with a named method held to the audience's
+- **authority**: `Issue` for a person (the signed-in session, or a credential
+  the gateway validated and states for one solution:
+  [stated credentials](#a-stated-credential-is-issued-its-own-grants-at-one-solution)),
+  a workload, an installation acting for itself, a parent token (a module's
+  hop through its binding), or a delegation; `Check`, with a named method held to the audience's
   delivered method policy (advisory answers the refusal beside the context);
   `ListResources`; `Delegate`, `RevokeDelegation`, `GetDelegation`;
   `AttachResource`, `DetachResource`, `AuthorizeTransfer`; `Keys`;
@@ -161,12 +163,126 @@ behavior-preserving rollback.
   (migration 61). The same content can have independent approvals under two
   policies; neither approval authorizes or revokes the other. An omitted
   artifact identity is rejected by the core as malformed.
-- **session**: `SignIn` (fixture sign-in), `Current`, `ListFixturePeople`:
+- **session** (0.6.0): `SignIn` (fixture sign-in), `Current`, `End`,
+  `OpenRoleView`, `OpenTeamCast`, `ListCastableTeams`, `ListFixturePeople`:
   accounts' own sessions. Fixture listing names the selected organization from
   its current stored record through the same scoped read as sign-in. It opens
   no session; disabled fixture authentication reads and lists nobody, and an
   organization read failure refuses the listing rather than returning a partial
   list or an empty display name.
+  - **Expiry.** Every `Session` answered states `expires_at_unix`: the
+    absolute expiry of the session's row (`sessions.expires_at`), which a
+    refresh never slides; a role view's or a cast's is its own row's, which is
+    its token's. No access token is signed past it (`auth.Identity.NotAfter`),
+    so a role view or a cast ends no later than the session it was opened
+    from, and a refresh near the absolute lifetime signs a shorter token.
+  - **An ended or expired session is refused wherever a session is read.**
+    `Current`, a person's `Issue` and every other call that acts as the
+    signed-in person read the session from this host's own record
+    (`requireOpenSession`, `business.Service.SessionEndsAt`), not from the
+    bearer alone, so a revoked row or one past its expiry is `Unauthenticated`
+    whatever the perimeter's revocation markers still say. One revocation is
+    not an end: a member's role change in the organisation revokes the row
+    (`organization_membership_changed`, so it is never refreshed) and leaves
+    the session standing, answered by the membership read live, as the shared
+    suite requires of a host (`Lifecycle.SetAdministrator`). A removal from
+    the organisation, a platform-role or factor change, a suspension and a
+    sign-out end it.
+  - **End** revokes every standing row of the session's family and of every
+    session opened from it, transitively (the core's role-view records name
+    each view's parent), records `saas.authority.session_ended` in the same
+    transaction, then writes the access-revocation markers. A marker that
+    cannot be written is answered `Unavailable`, never as an ended session.
+    The callers `OpenRoleView` refuses (an API key, an impersonated session,
+    a resource-confined credential) are refused here.
+  - **Grant epoch.** `grant_epoch` is a digest of what the core answers the
+    session holds now, the derivation the local authority states: the person
+    (organisation role, teams, cast), each installation the session holds a
+    role on with its revision, its target's generation and the roles held, and
+    each installation by composition of a module declaring no roles. It is
+    read in one snapshot on every `Session` answered; this host keeps no
+    counter that moves on every one of those changes (a role grant moves no
+    revision).
+
+## The authority's decisions are rows of the audit journal
+
+The core keeps no record of what it decides. It tells this host each decision
+it makes for a caller (`authority.Config.Decisions`, wired in
+`newAuthorityCore`), once per call, after the decision and before the caller is
+answered, and `recordAuthorityDecision` (`pkg/business/authority_core_audit.go`)
+makes it a row of the journal the host already keeps:
+
+- **An admitted check or resource listing is not recorded.** Every served call
+  makes one.
+- **An admitted issue** is the record it always was: `saas.work_context.task_started`,
+  or `saas.work_context.child_session_started` for one more hop on a presented
+  capability and for a page's call through its target's binding, written in the
+  organization it was issued in. It is written before the capability is handed
+  out: an issue the journal does not take answers `Unavailable` and hands out
+  nothing. The adapter no longer records it a second time.
+- **A refusal** (of an issue, a check or a resource listing) is
+  `saas.authority.decision_refused` in the organization it was decided in, as
+  the person who asked when a person did, with the decision's kind, its code and
+  reason, and whatever of owner, actor, audience, binding, operation, method,
+  installation, task and delegation was known. It is an observation: the
+  refusal stands whether or not its row could be written.
+- **A capability that did not verify proves nothing it says.** A refusal the
+  core marks `Claimed` (an expired, revoked or misaddressed capability) is filed
+  under no organization, recorded as nobody's, with the organization and actor
+  it claims in the payload beside `claimed: true`. So is a refusal naming no
+  organization of this host. No tenant reads a row filed on a claim.
+- **A probe is no decision.** Where this host asks the core a question whose
+  answer it discards (a legacy mint held to what the core would issue, a
+  source's governing scope, the whole holding a key is cut to), the context is
+  marked `business.AuthorityProbe` and nothing is recorded: the operation that
+  asked records what it did.
+
+`pkg/business/authority_decisions_test.go` holds each of these.
+
+**The hop's own refusals are rows too.** What the hop's front door refuses
+itself never reaches the core: a call with no Work Context, a module the hop
+does not stand in front of, a method no route serves, an authority that did not
+answer in time, an admission that cannot be signed, a module that did not
+answer. The hop library hands each to a sink (`forward.Config.Refused`). In a
+cell the hop is the gateway, which keeps no journal, so its sink calls
+`WorkContextService/RecordHopRefusal` (internal tier, the cluster-internal
+credential, `pkg/adapters/hop_refusal.go`), and the refusal is the same
+`saas.authority.decision_refused` row with `decision: hop`: in the organization
+of a call whose identity the authority had checked, under no organization for
+one read from a Work Context nobody verified or carrying none. A refusal the
+authority made and the hop passed on is not sent: it is recorded above. What a
+module refuses after the hop forwarded the call is the module's own.
+
+## A stated credential is issued its own grants at one solution
+
+No caller credential is forwarded to a solution. For an API key and for a token
+an authorization grant bound to one solution's resource, the gateway states
+what it verified under its own credential and asks `Issue` for the capability
+the solution is handed instead
+([../auth-gateway/AGENTS.md](../auth-gateway/AGENTS.md#what-a-runtime-registered-upstream-receives-and-what-it-does-not)).
+`issueForStatedCredential` (`pkg/adapters/host_interface_stated.go`) decides
+it, and the core issues it as for a person:
+
+- **An API key** carries its scopes within what its owner holds at the
+  solution through their role on the installation: each `<kind>:<action>` of
+  the key, wildcards honoured, keeps that action of that kind. A scope the
+  owner does not hold adds nothing, and a key whose scopes hold nothing there
+  is refused. An ask naming scopes is held to what the key carries. Admission
+  lets a key reach `Issue` and no other method of the interface
+  (`enforceAPIKeyScopePolicy`): this is the one operation that holds a key to
+  its scopes in what it answers.
+- **A resource-bound token** is issued what the person holds at the solution
+  its resource names, on its own open session, and at no other audience. It
+  must arrive with the installation the perimeter admitted it under.
+- **Both are issued at a solution alone**: never at a module (reached through
+  the hop, by a person present), never for a page's call or through a binding.
+- **An impersonated session, and an identity acting on someone's behalf, stay
+  refused**, whatever credential carries them. Every other method that reads a
+  person (`signedInPerson`) still refuses a key and a confined credential.
+
+A refusal this host makes itself here, before the core is asked, is recorded
+as the core's own would be. `pkg/adapters/host_interface_stated_credential_test.go`
+holds the rules against the real core.
 
 ## Proof
 

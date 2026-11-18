@@ -554,10 +554,10 @@ func signTokenWithIssuer(t *testing.T, priv ed25519.PrivateKey, issuer string) s
 	return signed
 }
 
-// An MCP token is a session credential, which is what lets the solution SDK
-// mint the viewer's Work Context from it. The identity headers the runtime
-// receives are the same ones every other authenticated route gets — this is
-// the assertion that "the runtime changes nothing for auth" is true.
+// An MCP token is a person's session credential confined to one resource. The
+// identity headers the runtime receives are the same ones every other
+// authenticated route gets. The token itself is not among what it receives:
+// like every credential, it stops at the gateway (forwardUpstreamCredential).
 func TestGateway_MCPToken_StampsTheSameSessionIdentityHeaders(t *testing.T) {
 	withPublicBase(t, testPublicBase)
 	gw, _, _, priv := newGatewayHarness(t)
@@ -581,8 +581,10 @@ func TestGateway_MCPToken_StampsTheSameSessionIdentityHeaders(t *testing.T) {
 	// The client the person came through, so audit reads "person, via client".
 	require.Equal(t, "https://claude.ai/oauth/claude-code-client-metadata",
 		example.lastHeaders.Get("x-client-id"))
-	// The caller's bearer is preserved so the runtime can call the host as them.
-	require.Equal(t, "Bearer "+token, example.lastHeaders.Get("authorization"))
+	// The caller's bearer stops here. It used to be preserved so the runtime
+	// could call the host as them; the runtime is handed a Work Context
+	// addressed to it instead, when its delivery declares a principal.
+	require.Empty(t, example.lastHeaders.Get("authorization"))
 }
 
 // The audience classification, directly. Three outcomes, never two:

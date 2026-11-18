@@ -13,6 +13,7 @@ package adapters
 import (
 	"cmp"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -59,6 +60,11 @@ func coreStatus(err error) error {
 	if err == nil {
 		return nil
 	}
+	if errors.Is(err, business.ErrAuthorityDecisionUnrecorded) {
+		// An admitted issue the journal did not take: nothing was handed
+		// out, and the caller asks again.
+		return status.Error(codes.Unavailable, business.ErrAuthorityDecisionUnrecorded.Error())
+	}
 	if _, ok := status.FromError(err); ok {
 		return err
 	}
@@ -73,6 +79,8 @@ func coreStatus(err error) error {
 		return status.Error(codes.NotFound, err.Error())
 	case errors.Is(err, workcontext.ErrRevoked), errors.Is(err, workcontext.ErrNoSeal):
 		return status.Error(codes.PermissionDenied, err.Error())
+	case errors.Is(err, business.ErrNoOpenSession):
+		return status.Error(codes.Unauthenticated, err.Error())
 	case errors.Is(err, workcontext.ErrInvalid), errors.Is(err, workcontext.ErrNotACoreToken), errors.Is(err, workcontext.ErrReplayed):
 		return status.Error(codes.Unauthenticated, err.Error())
 	case errors.Is(err, authority.ErrConflict):
@@ -84,10 +92,13 @@ func coreStatus(err error) error {
 }
 
 // signedInPerson is the person a session bearer authenticates, as the core
-// takes them: their id, the organization the session is at, the session.
+// takes them: their id, the organization the session is at, the session,
+// which is open (openSessionDeadline).
 // Only an interactive session acts as a person here: never a credential
 // confined to one consumer's ceiling, an identity acting on someone's behalf
 // (X-Act), an administrator viewing as someone (impersonation) or an API key.
+// Issue alone admits two of those, each held to its own grants at one
+// solution (issueForStatedCredential); every other method refuses them here.
 func signedInPerson(ctx context.Context, what string) (authority.Person, error) {
 	identity, ok := accountsauth.VerifiedRequestIdentity(ctx)
 	if !ok || identity.EffectiveSubject == uuid.Nil {
@@ -112,7 +123,31 @@ func signedInPerson(ctx context.Context, what string) (authority.Person, error) 
 	if identity.OrgID != uuid.Nil {
 		person.Organization = identity.OrgID.String()
 	}
+	// The session is read from this host's own record, not from the bearer
+	// alone: one that was ended (End, a sign-out, a revocation) or is past the
+	// moment it ends on its own is unauthenticated here, whatever the
+	// perimeter's revocation markers still say.
+	end, err := openSessionDeadline(ctx, person.SessionID)
+	if err != nil {
+		return authority.Person{}, err
+	}
+	person.ExpiresAt = end
 	return person, nil
+}
+
+// openSessionDeadline states the deadline of an open host session.
+func openSessionDeadline(ctx context.Context, sessionID string) (time.Time, error) {
+	if service == nil {
+		return time.Time{}, status.Error(codes.Unavailable, "this host reads no sessions")
+	}
+	end, err := service.SessionEndsAt(ctx, sessionID)
+	if errors.Is(err, business.ErrNoOpenSession) {
+		return time.Time{}, status.Error(codes.Unauthenticated, err.Error())
+	}
+	if err != nil {
+		return time.Time{}, status.Errorf(codes.Unavailable, "cannot read whether the session is open: %v", err)
+	}
+	return end, nil
 }
 
 // workload is the composed module a workload credential proves, reviewed by
@@ -209,8 +244,10 @@ func (s *HostAuthorityServer) Check(ctx context.Context, req *authorityv1.CheckR
 }
 
 // Issue signs a capability for one owner shape. Each shape is authenticated
-// first (the session, the workload credential, the actor's credential), and
-// its issue is recorded before the capability is handed out.
+// first (the session, the workload credential, the actor's credential). The
+// core tells this host's journal what it decided before it answers
+// (business's decision hook): an admitted issue is recorded before the
+// capability is handed out, and a refused one with what was asked and why.
 func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueRequest) (*authorityv1.IssueResponse, error) {
 	core, err := authorityCore()
 	if err != nil {
@@ -222,9 +259,17 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 	r := authority.IssueRequest{Audience: req.GetAudience(), Binding: req.GetOperationBindingId(), Operation: req.GetOperation(),
 		Organization: req.GetOrganizationId(), Scopes: scopesFromWire(req.GetScopes()), TTL: time.Duration(req.GetTtlSeconds()) * time.Second}
 	var out authority.Issued
-	child := false
 	switch as := req.GetAs().(type) {
 	case *authorityv1.IssueRequest_Person:
+		// A credential the gateway validated and states (an API key, a token
+		// confined to one solution's resource) is issued from its own grants
+		// at that solution alone (host_interface_stated.go).
+		if stated, sout, serr := issueForStatedCredential(ctx, core, req, r); stated {
+			if serr != nil {
+				return nil, coreStatus(serr)
+			}
+			return s.issued(sout)
+		}
 		person, perr := signedInPerson(ctx, "be issued a capability")
 		if perr != nil {
 			return nil, perr
@@ -241,9 +286,9 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 				}
 				return nil, credentialRefusal(ctx, err, "the actor", req.GetActor().GetCredential())
 			}
+			// Through a binding it is the target's hop, which the journal
+			// records as a child.
 			err = oneRead(ctx, func(ctx context.Context) (err error) { out, err = core.IssueForPage(ctx, person, page, r); return err })
-			// Through a binding it is the target's hop, recorded as a child.
-			child = err == nil && len(out.Context.GetActorChain()) > 0
 		} else {
 			err = oneRead(ctx, func(ctx context.Context) (err error) { out, err = core.IssueForPerson(ctx, person, r); return err })
 		}
@@ -271,7 +316,6 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 			out, err = core.IssueChild(ctx, as.ParentToken, w, r)
 			return err
 		})
-		child = true
 	case *authorityv1.IssueRequest_Delegation:
 		w, werr := workload(ctx, req.GetActor().GetCredential(), "actor")
 		if werr != nil {
@@ -287,19 +331,14 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 	if err != nil {
 		return nil, coreStatus(err)
 	}
-	return s.issued(ctx, out, child)
+	return s.issued(out)
 }
 
-// issued records the issue in the organization it was issued in and answers it.
-func (s *HostAuthorityServer) issued(ctx context.Context, out authority.Issued, child bool) (*authorityv1.IssueResponse, error) {
+// issued answers an issue the core admitted. It is recorded already: the core
+// told this host's journal before it answered (business's decision hook), and
+// an issue the journal did not take never reaches here.
+func (s *HostAuthorityServer) issued(out authority.Issued) (*authorityv1.IssueResponse, error) {
 	wc := out.Context
-	actor := wc.GetOwnerPrincipalId()
-	if chain := wc.GetActorChain(); len(chain) > 0 {
-		actor = chain[len(chain)-1].GetPrincipalId()
-	}
-	if err := service.RecordAuthorityIssue(ctx, wc.GetTenantId(), actor, child, wc.GetTaskId()); err != nil {
-		return nil, status.Errorf(codes.Unavailable, "the issue could not be recorded, so it is not handed out: %v", err)
-	}
 	wire, err := workContextToWire(wc)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -857,7 +896,105 @@ func (s *HostSessionServer) SignIn(ctx context.Context, req *sessionv1.SignInReq
 			return nil, err
 		}
 	}
-	return session, nil
+	return session, s.lifetime(ctx, session)
+}
+
+// lifetime states, on session, the two things a caller that keeps anything for
+// it reads: when it ends on its own, and the grant epoch of what it holds now.
+// A session that is not open (ended, or past that moment) is unauthenticated:
+// this is the one read of a session's lifetime, so an ended or expired bearer
+// is refused wherever a session is answered.
+func (s *HostSessionServer) lifetime(ctx context.Context, session *sessionv1.Session) error {
+	endsAt, err := s.service.SessionEndsAt(ctx, session.GetSessionId())
+	if errors.Is(err, business.ErrNoOpenSession) {
+		return status.Error(codes.Unauthenticated, err.Error())
+	}
+	if err != nil {
+		return status.Errorf(codes.Unavailable, "cannot read when the session ends: %v", err)
+	}
+	session.ExpiresAtUnix = endsAt.Unix()
+	session.GrantEpoch, err = grantEpoch(ctx, session)
+	return err
+}
+
+// grantEpoch is the grant epoch of who session acts as: a digest of what the
+// authority core answers that session holds now, the derivation the local
+// authority states. It covers the person as this host reads them (the
+// organisation role they administer by, their teams), each installation the
+// session holds a role on (through its role view or cast) with its revision,
+// its target's delivered generation and the roles held, and each installation
+// by composition of a module that declares no roles. So it differs whenever a
+// role is granted or revoked to the person, a team of theirs or the team a
+// cast acts as, when they leave a team, and when an installation is made,
+// upgraded or ended, and is the same while none of that changed. A session
+// the core refuses to read (a cast that no longer holds) holds nothing, and
+// its epoch says so. It is opaque and compared for equality only.
+//
+// It is read, not kept: this host has no single counter that moves on every
+// one of those changes (a role grant moves no revision), so the epoch is
+// derived from the records themselves, in one snapshot.
+func grantEpoch(ctx context.Context, session *sessionv1.Session) (string, error) {
+	h := sha256.New()
+	_, _ = fmt.Fprintf(h, "person %q at %q roles %q teams %q cast %q\n", session.GetPersonId(), session.GetOrganizationId(),
+		slices.Sorted(slices.Values(session.GetRoles())), slices.Sorted(slices.Values(session.GetTeamIds())), session.GetCastTeamId())
+	digest := func() string { return fmt.Sprintf("sha256:%x", h.Sum(nil)) }
+	core, err := authorityCore()
+	if err != nil || session.GetOrganizationId() == "" {
+		// No core, or a session in no organisation: it holds nothing on any
+		// installation, and its epoch is who it is.
+		return digest(), nil
+	}
+	caller := authority.Person{ID: session.GetPersonId(), Organization: session.GetOrganizationId(), SessionID: session.GetSessionId()}
+	err = oneRead(ctx, func(ctx context.Context) error {
+		generation := func(target string) uint64 {
+			m, _ := core.Composed(ctx, target)
+			return m.Generation
+		}
+		held, err := core.HeldInstallations(ctx, caller, caller.Organization)
+		if _, refused := domain.CodeOf(err); refused {
+			_, _ = fmt.Fprintf(h, "refused\n")
+			return nil
+		} else if err != nil {
+			return err
+		}
+		for _, i := range held {
+			_, _ = fmt.Fprintf(h, "held %q revision %d generation %d roles %q\n", i.Installation.ID, i.Installation.Revision, generation(i.Installation.Target), i.Roles)
+		}
+		composed, err := core.ComposedInstallations(ctx, caller, caller.Organization)
+		if _, refused := domain.CodeOf(err); err != nil && !refused {
+			return err
+		}
+		for _, i := range composed {
+			_, _ = fmt.Fprintf(h, "composed %q revision %d generation %d\n", i.ID, i.Revision, generation(i.Target))
+		}
+		return nil
+	})
+	if err != nil {
+		return "", status.Errorf(codes.Unavailable, "cannot read what the session holds to state its grant epoch: %v", err)
+	}
+	return digest(), nil
+}
+
+// End ends the session the caller's bearer belongs to and every role view and
+// cast opened from it: each of those bearers is unauthenticated from then on,
+// wherever a session is read. It is a sign-out, and the way back from a cast,
+// whose parent session is untouched. Only an interactive session of a person
+// calls (signedInPerson), as OpenRoleView.
+func (s *HostSessionServer) End(ctx context.Context, _ *sessionv1.EndRequest) (*sessionv1.EndResponse, error) {
+	person, err := signedInPerson(ctx, "end a session")
+	if err != nil {
+		return nil, err
+	}
+	err = s.service.EndSession(ctx, person.ID, person.Organization, person.SessionID)
+	switch {
+	case errors.Is(err, business.ErrNoOpenSession):
+		return nil, status.Error(codes.Unauthenticated, err.Error())
+	case errors.Is(err, business.ErrSessionEndIncomplete):
+		return nil, status.Error(codes.Unavailable, err.Error())
+	case err != nil:
+		return nil, status.Errorf(codes.Unavailable, "the session could not be ended: %v", err)
+	}
+	return &sessionv1.EndResponse{}, nil
 }
 
 // teamsOf names, on session, the teams its person belongs to in its
@@ -905,7 +1042,7 @@ func (s *HostSessionServer) Current(ctx context.Context, _ *sessionv1.CurrentReq
 		if err := s.nameForDisplay(ctx, session, false); err != nil {
 			return nil, err
 		}
-		return session, nil
+		return session, s.lifetime(ctx, session)
 	}
 	session.OrganizationId = identity.OrgID.String()
 	return session, s.describe(ctx, session)
@@ -1026,8 +1163,8 @@ func (s *HostSessionServer) ListCastableTeams(ctx context.Context, _ *sessionv1.
 }
 
 // describe names, on session, what Current and OpenRoleView answer of the
-// organisation it is in: the person's role, display names, teams, and the role
-// view it was opened with.
+// organisation it is in: the person's role, display names, teams, the role
+// view it was opened with, when it ends on its own and its grant epoch.
 func (s *HostSessionServer) describe(ctx context.Context, session *sessionv1.Session) error {
 	role, err := lookupMembership(ctx, session.OrganizationId, session.PersonId)
 	if err != nil {
@@ -1045,6 +1182,14 @@ func (s *HostSessionServer) describe(ctx context.Context, session *sessionv1.Ses
 	if err := s.teamsOf(ctx, session); err != nil {
 		return err
 	}
+	if err := s.roleViewOf(ctx, session); err != nil {
+		return err
+	}
+	return s.lifetime(ctx, session)
+}
+
+// roleViewOf names, on session, the role view or the cast it was opened with.
+func (s *HostSessionServer) roleViewOf(ctx context.Context, session *sessionv1.Session) error {
 	core, err := authorityCore()
 	if err != nil {
 		return nil // no core, no role views to state

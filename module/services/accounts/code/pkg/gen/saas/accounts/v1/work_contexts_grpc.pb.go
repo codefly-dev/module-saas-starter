@@ -25,6 +25,7 @@ const (
 	WorkContextService_AuthorizeEvidenceRead_FullMethodName      = "/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead"
 	WorkContextService_ConsumeSingleUse_FullMethodName           = "/saas.accounts.v1.WorkContextService/ConsumeSingleUse"
 	WorkContextService_AdmitWorkloadOperation_FullMethodName     = "/saas.accounts.v1.WorkContextService/AdmitWorkloadOperation"
+	WorkContextService_RecordHopRefusal_FullMethodName           = "/saas.accounts.v1.WorkContextService/RecordHopRefusal"
 	WorkContextService_StartTask_FullMethodName                  = "/saas.accounts.v1.WorkContextService/StartTask"
 	WorkContextService_StartInstallationTask_FullMethodName      = "/saas.accounts.v1.WorkContextService/StartInstallationTask"
 	WorkContextService_StartRootSession_FullMethodName           = "/saas.accounts.v1.WorkContextService/StartRootSession"
@@ -71,6 +72,15 @@ type WorkContextServiceClient interface {
 	// verifies at full strength. Internal-tier: the tenant it answers about is
 	// the one the capability names.
 	AdmitWorkloadOperation(ctx context.Context, in *AdmitWorkloadOperationRequest, opts ...grpc.CallOption) (*AdmitWorkloadOperationResponse, error)
+	// RecordHopRefusal records one call the hop's front door refused itself in
+	// the audit journal (saas.authority.decision_refused, decision "hop"). The
+	// auth-gateway, which is the hop in a cell and keeps no journal, is its
+	// caller: the hop's own refusals reach the authority from nobody else. A
+	// refusal whose identity the authority checked is filed in its
+	// organization; one read from an unverified Work Context, or naming none,
+	// is filed under no organization. Internal-tier: the caller is trusted to
+	// say what it refused, and nothing is decided or returned.
+	RecordHopRefusal(ctx context.Context, in *RecordHopRefusalRequest, opts ...grpc.CallOption) (*RecordHopRefusalResponse, error)
 	StartTask(ctx context.Context, in *StartTaskWorkContextRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error)
 	// StartInstallationTask is the headless mint. Unlike StartTask it opens with a
 	// service credential rather than a bearer: it resolves the installation's owner
@@ -137,6 +147,16 @@ func (c *workContextServiceClient) AdmitWorkloadOperation(ctx context.Context, i
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AdmitWorkloadOperationResponse)
 	err := c.cc.Invoke(ctx, WorkContextService_AdmitWorkloadOperation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workContextServiceClient) RecordHopRefusal(ctx context.Context, in *RecordHopRefusalRequest, opts ...grpc.CallOption) (*RecordHopRefusalResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RecordHopRefusalResponse)
+	err := c.cc.Invoke(ctx, WorkContextService_RecordHopRefusal_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -241,6 +261,15 @@ type WorkContextServiceServer interface {
 	// verifies at full strength. Internal-tier: the tenant it answers about is
 	// the one the capability names.
 	AdmitWorkloadOperation(context.Context, *AdmitWorkloadOperationRequest) (*AdmitWorkloadOperationResponse, error)
+	// RecordHopRefusal records one call the hop's front door refused itself in
+	// the audit journal (saas.authority.decision_refused, decision "hop"). The
+	// auth-gateway, which is the hop in a cell and keeps no journal, is its
+	// caller: the hop's own refusals reach the authority from nobody else. A
+	// refusal whose identity the authority checked is filed in its
+	// organization; one read from an unverified Work Context, or naming none,
+	// is filed under no organization. Internal-tier: the caller is trusted to
+	// say what it refused, and nothing is decided or returned.
+	RecordHopRefusal(context.Context, *RecordHopRefusalRequest) (*RecordHopRefusalResponse, error)
 	StartTask(context.Context, *StartTaskWorkContextRequest) (*IssuedWorkContext, error)
 	// StartInstallationTask is the headless mint. Unlike StartTask it opens with a
 	// service credential rather than a bearer: it resolves the installation's owner
@@ -284,6 +313,9 @@ func (UnimplementedWorkContextServiceServer) ConsumeSingleUse(context.Context, *
 }
 func (UnimplementedWorkContextServiceServer) AdmitWorkloadOperation(context.Context, *AdmitWorkloadOperationRequest) (*AdmitWorkloadOperationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AdmitWorkloadOperation not implemented")
+}
+func (UnimplementedWorkContextServiceServer) RecordHopRefusal(context.Context, *RecordHopRefusalRequest) (*RecordHopRefusalResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RecordHopRefusal not implemented")
 }
 func (UnimplementedWorkContextServiceServer) StartTask(context.Context, *StartTaskWorkContextRequest) (*IssuedWorkContext, error) {
 	return nil, status.Error(codes.Unimplemented, "method StartTask not implemented")
@@ -392,6 +424,24 @@ func _WorkContextService_AdmitWorkloadOperation_Handler(srv interface{}, ctx con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(WorkContextServiceServer).AdmitWorkloadOperation(ctx, req.(*AdmitWorkloadOperationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkContextService_RecordHopRefusal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecordHopRefusalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkContextServiceServer).RecordHopRefusal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkContextService_RecordHopRefusal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkContextServiceServer).RecordHopRefusal(ctx, req.(*RecordHopRefusalRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -526,6 +576,10 @@ var WorkContextService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AdmitWorkloadOperation",
 			Handler:    _WorkContextService_AdmitWorkloadOperation_Handler,
+		},
+		{
+			MethodName: "RecordHopRefusal",
+			Handler:    _WorkContextService_RecordHopRefusal_Handler,
 		},
 		{
 			MethodName: "StartTask",

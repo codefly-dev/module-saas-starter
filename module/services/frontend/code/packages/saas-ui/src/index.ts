@@ -60,6 +60,7 @@ export {
 	useMyAccountLinks,
 } from "./datasources/directory.js";
 export { EditSourceForm } from "./datasources/edit-source-form.js";
+export { DatasourceSyncSchedule } from "./datasources/sync-schedule.js";
 export {
 	createDatasourceClient,
 	datasourceClientOverTransport,
@@ -138,6 +139,7 @@ export type {
 	DatasourceCredential,
 	DatasourceDirectoryView,
 	DatasourceProviderName,
+	DatasourceCredentialModeName,
 	DatasourceProviderView,
 	DatasourceStatusName,
 	DatasourceView,

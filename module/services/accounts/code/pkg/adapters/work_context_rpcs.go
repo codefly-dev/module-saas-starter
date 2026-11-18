@@ -627,10 +627,12 @@ func (s *WorkContextAuthorityServer) StartTask(
 	if err != nil {
 		return nil, err
 	}
-	// A person's own session: what it carries at the audience, asked or
-	// projected through a binding, is held to the core's owner rule there.
+	// A person's own session at a composed module is held to what the core
+	// would issue them there: nothing at a module that declares no roles, and
+	// at a role-gated one what their role on its installation holds. An
+	// organisation role reaches neither.
 	if req.GetActorPrincipalId() == "" {
-		if err := holdOwnSession(ctx, req.GetAudience(), scopes); err != nil {
+		if err := holdOwnSession(ctx, req.GetOrgId(), ownerID, req.GetAudience(), scopes); err != nil {
 			return nil, err
 		}
 	}
@@ -1371,10 +1373,10 @@ func (s *WorkContextAuthorityServer) StartRootSession(
 	if err := enforceActorAudience(ctx, actor, req.GetAudience()); err != nil {
 		return nil, err
 	}
-	// The owner's own session re-issued at a new audience carries every scope
-	// of the parent there, so it is held to the core's owner rule there.
+	// The owner's own session re-issued at a new audience is held to the
+	// core's rule for a person's own session there.
 	if ownSession(parent.Context()) {
-		if err := holdOwnSession(ctx, req.GetAudience(), parent.Context().GetAuthorityScopes()); err != nil {
+		if err := holdOwnSession(ctx, req.GetOrgId(), ownerID, req.GetAudience(), parent.Context().GetAuthorityScopes()); err != nil {
 			return nil, err
 		}
 	}

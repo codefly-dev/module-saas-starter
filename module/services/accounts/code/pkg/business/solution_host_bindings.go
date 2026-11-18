@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
-	"github.com/codefly-dev/core/solutionhost"
+	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
 	"github.com/codefly-dev/core/wool"
 	"gopkg.in/yaml.v3"
 )
@@ -361,6 +361,17 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 	// would read as one that started seconds ago — the reset
 	// recordSolutionHostBindingDesired documents refusing.
 	withheldAuthority := r.modulePrincipals.WithheldAuthorityReasons()
+	// A binding whose held generation needs redelivery says so on its row for
+	// as long as it does: a settled binding's reason is otherwise cleared by
+	// the pass after the start that found it.
+	if needs := r.service.RedeliveryReasons(); len(needs) > 0 {
+		if withheldAuthority == nil {
+			withheldAuthority = map[string]string{}
+		}
+		for binding, reason := range needs {
+			withheldAuthority[binding] = reason
+		}
+	}
 	var failures []error
 	for _, one := range verified {
 		document := one.Document

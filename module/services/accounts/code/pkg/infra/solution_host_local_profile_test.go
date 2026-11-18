@@ -27,7 +27,7 @@ import (
 	"accounts/internal/deliverytest"
 	"accounts/pkg/infra"
 
-	"github.com/codefly-dev/core/solutionhost"
+	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
 	"github.com/stretchr/testify/require"
 )
 

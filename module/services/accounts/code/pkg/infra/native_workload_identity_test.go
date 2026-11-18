@@ -8,9 +8,9 @@ import (
 	"accounts/pkg/business"
 	"accounts/pkg/infra"
 
-	"github.com/codefly-dev/core/solutionhost"
-	"github.com/codefly-dev/core/workloadidentity"
-	"github.com/codefly-dev/core/workloadidentity/native"
+	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
+	"github.com/codefly-dev/authority/libraries/solutionhost/go/workloadidentity"
+	"github.com/codefly-dev/authority/libraries/solutionhost/go/workloadidentity/native"
 	"github.com/stretchr/testify/require"
 )
 

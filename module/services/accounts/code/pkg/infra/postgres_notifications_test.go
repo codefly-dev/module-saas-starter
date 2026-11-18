@@ -76,6 +76,47 @@ func TestCreateNotificationRejectsConflictingIdempotentRetry(t *testing.T) {
 	}))
 }
 
+// An idempotency key reused for a second recipient resolves to the first
+// recipient's row, which the second cannot see. That is the conflict the
+// contract names (FailedPrecondition), never a row-security error: from
+// PostgreSQL 16.16 and 17.12 an ON CONFLICT DO UPDATE checks the conflicting
+// row against the UPDATE policy before the arm's WHERE, so the upsert this
+// used to be answered a policy violation, which a module's outbox retries
+// forever. The first recipient's row is untouched.
+func TestCreateNotificationRejectsAKeyReusedForAnotherRecipient(t *testing.T) {
+	first, second := seedUser(t), seedUser(t)
+	notification := &business.Notification{
+		ID: business.NewIDString(), UserID: first,
+		Title: "Report ready", Body: "Your report is ready.", Type: "info",
+	}
+	require.NoError(t, testStore.WithUserTx(testCtx, first, func(ctx context.Context) error {
+		return testStore.CreateNotification(ctx, notification)
+	}))
+
+	reused := *notification
+	reused.UserID = second
+	err := testStore.WithUserTx(testCtx, second, func(ctx context.Context) error {
+		return testStore.CreateNotification(ctx, &reused)
+	})
+	require.ErrorIs(t, err, business.ErrNotificationIdempotencyConflict)
+
+	require.NoError(t, testStore.WithUserTx(testCtx, second, func(ctx context.Context) error {
+		notifications, _, err := testStore.ListNotifications(ctx, second, 20, "")
+		require.NoError(t, err)
+		require.Empty(t, notifications, "the second recipient was written nothing")
+		return nil
+	}))
+	require.NoError(t, testStore.WithUserTx(testCtx, first, func(ctx context.Context) error {
+		// The first recipient's identical retry still converges on their row.
+		require.NoError(t, testStore.CreateNotification(ctx, notification))
+		notifications, _, err := testStore.ListNotifications(ctx, first, 20, "")
+		require.NoError(t, err)
+		require.Len(t, notifications, 1)
+		require.Equal(t, notification.Body, notifications[0].Body)
+		return nil
+	}))
+}
+
 func TestGetUnreadCount(t *testing.T) {
 	userID := seedUser(t)
 

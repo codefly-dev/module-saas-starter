@@ -127,7 +127,10 @@ func main() {
 		panic(fmt.Sprintf("cannot connect to accounts' authority interface at %s: %v", authorityTarget, err))
 	}
 	defer func() { _ = authorityConn.Close() }()
-	hopRole, front, err := standHop(ctx, authorityConn)
+	// What the hop's front door refuses itself is recorded in accounts'
+	// journal, over the internal connection, with the cluster-internal
+	// credential ext_authz presents too.
+	hopRole, front, err := standHop(ctx, authorityConn, &accountsHopRefusals{conn: internalAPIConn, internalToken: workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN")})
 	if err != nil {
 		panic(fmt.Sprintf("hop: %v", err))
 	}
@@ -275,6 +278,10 @@ func main() {
 		clientRegistry := &accountsClientRegistry{conn: internalAPIConn, internalToken: authz.internalToken}
 		gateway := NewGateway(authz, matcher, upstreams, rateLimiter, solutionRegistry, clientRegistry)
 		gateway.hop = hopRole
+		// What a solution receives in place of a person's session is the
+		// authority's Issue for that session at the solution, asked over the
+		// same connection the hop asks on.
+		gateway.personContexts = newPersonContexts(authorityConn)
 		frontendSource, err := frontendpayload.Configure(ctx, codefly.For(ctx), codefly.IsLocal(), os.Getenv("KUBERNETES_SERVICE_HOST") != "")
 		if err != nil {
 			panic(err)

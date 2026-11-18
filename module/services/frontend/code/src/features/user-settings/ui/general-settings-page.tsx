@@ -10,6 +10,7 @@ import { userProfileMutations } from "@/features/user-profile/service/mutations"
 import { userProfileQueries } from "@/features/user-profile/service/queries";
 import type { GetSelfResponse } from "@/gen/saas/accounts/v1/identity_pb";
 import type { UserSettings } from "@/gen/saas/accounts/v1/user_settings_pb";
+import { failureText } from "@/shared/lib/failure-text";
 import {
 	Avatar,
 	AvatarFallback,
@@ -21,8 +22,12 @@ import {
 	CardHeader,
 	CardTitle,
 	Checkbox,
+	ErrorState,
 	Input,
 	Label,
+	Page as PageBody,
+	PageHeader,
+	Panel,
 	Select,
 	SelectContent,
 	SelectItem,
@@ -37,6 +42,13 @@ import { userSettingsMutations } from "../service/mutations";
 import { userSettingsQueries } from "../service/queries";
 import { useThemePreference } from "./theme-preference-provider";
 
+const HEADER = (
+	<PageHeader
+		title="Preferences"
+		description="Your profile, appearance, time and email preferences. They follow you to every device you sign in on."
+	/>
+);
+
 /**
  * GeneralSettingsPage — the top-level /settings hub. Surfaces the
  * preferences blob (theme / locale / timezone / formats / email
@@ -48,18 +60,40 @@ import { useThemePreference } from "./theme-preference-provider";
  * the user's preference.
  */
 export function GeneralSettingsPage() {
-	const { data: settings, isLoading } = useQuery(userSettingsQueries.current());
-	const { data: self, isLoading: isProfileLoading } = useQuery(
-		userProfileQueries.current(),
-	);
+	const {
+		data: settings,
+		isLoading,
+		isError: settingsFailed,
+	} = useQuery(userSettingsQueries.current());
+	const {
+		data: self,
+		isLoading: isProfileLoading,
+		isError: profileFailed,
+	} = useQuery(userProfileQueries.current());
 	if (isLoading || isProfileLoading) {
 		return (
-			<div className="space-y-4 max-w-3xl">
+			<PageBody>
+				{HEADER}
 				<Skeleton className="h-64 w-full" />
 				<Skeleton className="h-48 w-full" />
 				<Skeleton className="h-48 w-full" />
 				<Skeleton className="h-48 w-full" />
-			</div>
+			</PageBody>
+		);
+	}
+	// A form filled with defaults because the read failed would look like the
+	// person's own choices, and saving it would overwrite them.
+	if (settingsFailed || profileFailed) {
+		return (
+			<PageBody>
+				{HEADER}
+				<Panel>
+					<ErrorState
+						title="Couldn't load your preferences"
+						detail="Nothing was changed. Reload the page; if it keeps failing, tell your administrator."
+					/>
+				</Panel>
+			</PageBody>
 		);
 	}
 	const formIdentity = JSON.stringify([
@@ -158,9 +192,7 @@ function GeneralSettingsForm({
 			toast.success(successMessage);
 			await queryClient.invalidateQueries({ queryKey: ["user-settings"] });
 		} catch (error) {
-			toast.error("Save failed", {
-				description: error instanceof Error ? error.message : "Try again.",
-			});
+			toast.error(failureText("save your changes", error));
 		}
 	}
 
@@ -205,15 +237,8 @@ function GeneralSettingsForm({
 	}
 
 	return (
-		<div className="space-y-6 max-w-3xl">
-			<div>
-				<h1 data-slot="page-title" className="type-page-title">
-					Preferences
-				</h1>
-				<p className="text-muted-foreground">
-					Theme, locale, and email preferences. Synced across all your devices.
-				</p>
-			</div>
+		<PageBody>
+			{HEADER}
 
 			{/* ── Profile ── */}
 			<Card>
@@ -326,7 +351,8 @@ function GeneralSettingsForm({
 				<CardHeader>
 					<CardTitle>Appearance</CardTitle>
 					<CardDescription>
-						Theme follows your OS by default. Pick a fixed theme to override.
+						The theme follows your device by default. Pick light or dark to keep
+						it fixed.
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-4">
@@ -397,14 +423,13 @@ function GeneralSettingsForm({
 				<CardHeader>
 					<CardTitle>Time & date</CardTitle>
 					<CardDescription>
-						How dates render across the product. Affects audit log, billing
-						cycles, webhook delivery timestamps.
+						How dates and times are shown to you across the product.
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-4">
 					<div className="grid grid-cols-3 gap-4">
 						<div className="space-y-2 col-span-2">
-							<Label htmlFor="tz">Time zone (IANA)</Label>
+							<Label htmlFor="tz">Time zone</Label>
 							<Input
 								id="tz"
 								placeholder="America/New_York"
@@ -463,61 +488,50 @@ function GeneralSettingsForm({
 				<CardHeader>
 					<CardTitle>Email preferences</CardTitle>
 					<CardDescription>
-						Invitation emails use the product setting. Other optional categories
-						apply when a matching workflow is configured. Billing lifecycle
-						messages are always on.
+						Choose which optional emails you receive. Invitations are sent with
+						product updates. Billing lifecycle messages are always on.
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-3">
-					<label
-						htmlFor="email-product"
-						className="flex items-start gap-3 cursor-pointer"
-					>
+					<div className="flex items-start gap-3">
 						<Checkbox
 							id="email-product"
 							checked={emailProduct}
 							onCheckedChange={(v) => setEmailProduct(v === true)}
 						/>
 						<div className="space-y-0.5">
-							<div className="font-medium text-sm">Product updates</div>
-							<div className="text-xs text-muted-foreground">
-								Invitations and configured product updates.
-							</div>
+							<Label htmlFor="email-product">Product updates</Label>
+							<p className="text-xs text-muted-foreground">
+								Invitations and news about the product.
+							</p>
 						</div>
-					</label>
-					<label
-						htmlFor="email-weekly-digest"
-						className="flex items-start gap-3 cursor-pointer"
-					>
+					</div>
+					<div className="flex items-start gap-3">
 						<Checkbox
 							id="email-weekly-digest"
 							checked={emailWeeklyDigest}
 							onCheckedChange={(v) => setEmailWeeklyDigest(v === true)}
 						/>
 						<div className="space-y-0.5">
-							<div className="font-medium text-sm">Weekly digest</div>
-							<div className="text-xs text-muted-foreground">
-								Applied when a digest workflow is configured.
-							</div>
+							<Label htmlFor="email-weekly-digest">Weekly digest</Label>
+							<p className="text-xs text-muted-foreground">
+								A weekly summary, when your organization has one set up.
+							</p>
 						</div>
-					</label>
-					<label
-						htmlFor="email-marketing"
-						className="flex items-start gap-3 cursor-pointer"
-					>
+					</div>
+					<div className="flex items-start gap-3">
 						<Checkbox
 							id="email-marketing"
 							checked={emailMarketing}
 							onCheckedChange={(v) => setEmailMarketing(v === true)}
 						/>
 						<div className="space-y-0.5">
-							<div className="font-medium text-sm">Marketing</div>
-							<div className="text-xs text-muted-foreground">
-								Applied to configured newsletters and promotions. Off by
-								default.
-							</div>
+							<Label htmlFor="email-marketing">Marketing</Label>
+							<p className="text-xs text-muted-foreground">
+								Newsletters and promotions. Off by default.
+							</p>
 						</div>
-					</label>
+					</div>
 					<div className="flex justify-end pt-2">
 						<Button onClick={saveEmail} disabled={save.isPending}>
 							{save.isPending ? "Saving…" : "Save email preferences"}
@@ -525,6 +539,6 @@ function GeneralSettingsForm({
 					</div>
 				</CardContent>
 			</Card>
-		</div>
+		</PageBody>
 	);
 }

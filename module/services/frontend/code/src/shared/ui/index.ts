@@ -157,3 +157,7 @@ export {
 
 export { Banner } from "@codefly-dev/ui/layout";
 export { Notice } from "@codefly-dev/ui/layout";
+// The one confirmation before an act that cannot be taken back: the kit's
+// AlertDialog with the wording contract fixed (see the file).
+export { ConfirmDialog } from "./confirm-dialog";
+export { EmptyState, type EmptyStateProps } from "@codefly-dev/ui/layout";

@@ -28,6 +28,35 @@ beforeEach(() => {
 });
 
 describe("APIKeysPage admin container", () => {
+	it("lists the keys past the first page by following the page token", async () => {
+		const asked: unknown[] = [];
+		server.use(
+			http.post(rpc("APIKeyService", "ListAPIKeys"), async ({ request }) => {
+				const body = (await request.json()) as { pageToken?: string };
+				asked.push(body.pageToken ?? "");
+				return HttpResponse.json(
+					body.pageToken === "after-newest"
+						? {
+								keys: [
+									{ id: "key-2", organizationId: "org-1", name: "Oldest key" },
+								],
+							}
+						: {
+								keys: [
+									{ id: "key-1", organizationId: "org-1", name: "Newest key" },
+								],
+								nextPageToken: "after-newest",
+							},
+				);
+			}),
+		);
+		renderInApp(<APIKeysPage />);
+		await screen.findByRole("button", { name: "Revoke Oldest key" });
+		expect(
+			screen.getByRole("button", { name: "Revoke Newest key" }),
+		).toBeTruthy();
+		expect(asked).toEqual(["", "after-newest"]);
+	});
 	it("revokes the key in its organization and refreshes the visible list", async () => {
 		let revoked = false;
 		let requestBody: unknown;
@@ -131,7 +160,7 @@ describe("APIKeysPage admin container", () => {
 		);
 		renderInApp(<APIKeysPage />);
 		expect((await screen.findByRole("alert")).textContent).toContain(
-			"Couldn't load API keys.",
+			"Couldn't load the API keys",
 		);
 	});
 	it("renders the API keys the service returns for the active org", async () => {

@@ -466,6 +466,7 @@ func (m *Minter) rotateRefresh(
 		if err != nil {
 			return nil, err
 		}
+		identity.NotAfter = rec.ExpiresAt
 
 		var next *auth.SessionRecord
 		pair, next, err = m.prepareMint(identity, rec.FamilyID)
@@ -483,6 +484,24 @@ func (m *Minter) rotateRefresh(
 		return next, err
 	})
 	if err != nil {
+		// A replayed refresh token revoked every session of the user. That
+		// ends refreshing; the access tokens those sessions issued — the
+		// thief's among them — are refused only from a marker, so one is
+		// written per revoked session and family. Best-effort, like every
+		// other access-marker write: the committed revocation is the
+		// authority, and a store outage bounds exposure to the access TTL.
+		var reuse *auth.RefreshReuseError
+		if errors.As(err, &reuse) {
+			seen := make(map[string]bool, len(reuse.RevokedSessionKeys))
+			for _, key := range reuse.RevokedSessionKeys {
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				_ = m.RevokeSessionAccess(ctx, key)
+			}
+			return nil, auth.ErrRefreshReuse
+		}
 		if errors.Is(err, auth.ErrRefreshRevoked) || errors.Is(err, auth.ErrRefreshReuse) ||
 			errors.Is(err, auth.ErrRefreshResourceMismatch) {
 			return nil, err
@@ -524,6 +543,7 @@ func (m *Minter) SwitchOrganization(
 		if err != nil {
 			return err
 		}
+		identity.NotAfter = current.ExpiresAt
 		accessToken, accessExpiresAt, err = m.signAccess(identity, current.ID, current.FamilyID, now)
 		return err
 	})
@@ -899,6 +919,11 @@ func (m *Minter) signAccess(
 		return "", time.Time{}, err
 	}
 	expiresAt := now.Add(m.accessTTL(identity))
+	// No bearer outlives its session: a token is never signed past the moment
+	// the session it belongs to ends on its own.
+	if !identity.NotAfter.IsZero() && expiresAt.After(identity.NotAfter) {
+		expiresAt = identity.NotAfter
+	}
 	// The host's own audience is always present, and a resource-bound token
 	// carries the RFC 8707 indicator beside it. Both, not one: the token is
 	// genuinely for two audiences — the named resource, and the host's own API
@@ -1061,6 +1086,8 @@ func (m *Minter) MintRoleView(ctx context.Context, userID, parentSessionID, view
 			return nil, err
 		}
 		identity.AccessOnly, identity.PlatformRole = true, ""
+		// A role view or a cast ends no later than the session it was opened from.
+		identity.NotAfter = current.ExpiresAt
 		var next *auth.SessionRecord
 		pair, next, err = m.prepareMint(identity, viewSessionID)
 		return next, err

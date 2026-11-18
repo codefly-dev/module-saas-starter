@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/codefly-dev/core/solutionhost"
+	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
 )
 
 // The DELIVERED module envelope: how the composition, rather than a person,

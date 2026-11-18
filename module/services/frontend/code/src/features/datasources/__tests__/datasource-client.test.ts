@@ -140,10 +140,15 @@ it("leaves read access unresolved when the composition declares no content resou
  await expect(createDatasourceClient(undefined).listAccessibleScopes!("org-1")).rejects.toThrow(/no collection content resource is declared/);
 });
 
-it("refuses to grant when the composition declares no content resource", async () => {
- await expect(
-  createDatasourceClient(undefined).grantCollectionRead!("org-1", "root.example", {id: "team-id", kind: "team", label: "Example Team"}),
- ).rejects.toThrow(/no collection content resource is declared/);
+it("offers no grant when the composition declares no content resource", () => {
+ // A host composed with no module that stores collection content (the host run
+ // on its own) has no read permission to grant. Offering the control would
+ // only collect a refusal, so the client carries no grant at all and the page
+ // offers none.
+ const client = createDatasourceClient(undefined);
+ expect(client.grantCollectionRead).toBeUndefined();
+ expect(client.revokeCollectionRead).toBeUndefined();
+ expect(createDatasourceClient("documents").grantCollectionRead).toBeTypeOf("function");
 });
 
 it("ignores a content resource inlined into the build", async () => {

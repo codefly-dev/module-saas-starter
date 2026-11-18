@@ -99,7 +99,7 @@ func TestRestrictedProceduresAreDeniedOnlyWhileImpersonating(t *testing.T) {
 	withoutCentralEnforcement(t)
 
 	restricted := restrictedProcedures(t)
-	require.Len(t, restricted, 74, "the declared restriction set changed; confirm it against AUTHZ_MATRIX.md") // +17: OpenTeamCast, ListCastableTeams, OpenRoleView, Issue, Delegate, RevokeDelegation, GetDelegation, Install, Review, GrantRole, RevokeRole, ListRoleGrants, List, ListHeld, Current, ListOffers, ReviewOffer of the implemented interfaces; Check and ListResources are public, authenticated by the token they check
+	require.Len(t, restricted, 90, "the declared restriction set changed; confirm it against AUTHZ_MATRIX.md") // +15: the durable grants of impersonation_durable_grant_test.go (installations, delegations, group bindings, ResendInvitation, CreateOrganization); +17: OpenTeamCast, ListCastableTeams, OpenRoleView, Issue, Delegate, RevokeDelegation, GetDelegation, Install, Review, GrantRole, RevokeRole, ListRoleGrants, List, ListHeld, Current, ListOffers, ReviewOffer of the implemented interfaces; Check and ListResources are public, authenticated by the token they check; +1: SessionService/End, refused to the callers OpenRoleView refuses
 
 	for _, procedure := range restricted {
 		t.Run(procedure, func(t *testing.T) {

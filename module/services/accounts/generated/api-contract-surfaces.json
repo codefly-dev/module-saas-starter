@@ -107,6 +107,7 @@
       "fullName": "host.session.v1.SessionService",
       "procedures": [
         "/host.session.v1.SessionService/Current",
+        "/host.session.v1.SessionService/End",
         "/host.session.v1.SessionService/ListCastableTeams",
         "/host.session.v1.SessionService/ListFixturePeople",
         "/host.session.v1.SessionService/OpenRoleView",
@@ -598,6 +599,7 @@
         "/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision",
         "/saas.accounts.v1.WorkContextService/ConsumeSingleUse",
         "/saas.accounts.v1.WorkContextService/ExchangeAudience",
+        "/saas.accounts.v1.WorkContextService/RecordHopRefusal",
         "/saas.accounts.v1.WorkContextService/RenewWorkContext",
         "/saas.accounts.v1.WorkContextService/StartChildSession",
         "/saas.accounts.v1.WorkContextService/StartInstallationTask",

@@ -536,8 +536,8 @@ refreshes sources, collection grants and readable boundaries. Preview stories
   recovery. A lookup answering `"unknown"` is **inconclusive**, never "it did
   not happen". The panel and `<DeclaredSourceCard>` render the outcome the
   operation returned — the identity, the status and the job.
-  `onSourceReconcileAdmitted((pass) => …)` hears each one, which is how a host
-  surface shows a person's pass beside the declared schedule's occurrences.
+  `onSourceReconcileAdmitted((pass) => …)` hears each one, for a host surface
+  that keeps its own record of the passes it admitted.
   There is **no `syncSource`**: it reached the same engines carrying no effect
   identity, so two presses were two passes, and it is deleted rather than
   deprecated.
@@ -769,7 +769,7 @@ readers — so an administrator can see a grant that this deployment's own
 
 The `dev-admin` fixture provisions an `Example Collection` and a `Collection reader`
 role via Accounts' registration/grant service paths. Only `admin@acme.com` and
-`bob@acme.com` receive that grant. Select this existing collection when connecting
+`maya@acme.test` receive that grant. Select this existing collection when connecting
 a demo source; other fixture viewers remain ungranted. Reseeding reconverges the
 declared grants, so test revocation without restarting the fixture runtime.
 

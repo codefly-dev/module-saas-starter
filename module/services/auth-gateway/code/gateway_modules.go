@@ -31,9 +31,8 @@ import (
 // goes through the hop (gateway_hop.go).
 //
 // The predicate has a second reader now: proxyTo withholds the caller's COOKIE
-// for exactly these routes (removeCallerCookie). The bearer still travels —
-// SA-F-BEARER is recorded open, for the reason given at
-// removePersonsSessionCredential in gateway.go.
+// for exactly these routes (removeCallerCookie). The person's bearer is
+// withheld where the solution is known (forwardUpstreamCredential).
 func isRuntimeRegisteredRoute(entry *RouteEntry) bool {
 	return entry != nil && strings.HasPrefix(entry.Service, solutionServicePrefix)
 }

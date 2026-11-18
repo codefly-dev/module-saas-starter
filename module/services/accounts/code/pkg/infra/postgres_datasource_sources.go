@@ -721,6 +721,20 @@ func (s *PostgresStore) UpdateDatasourceSourceCredential(ctx context.Context, or
 	return err
 }
 
+// ClearDatasourceSourceCredential deletes a GitHub source's sealed token and
+// webhook signing secret and sets the marker a public repository carries, in
+// the one write, so the row never holds a token beside the public marker.
+func (s *PostgresStore) ClearDatasourceSourceCredential(ctx context.Context, orgID, id string) error {
+	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
+		UPDATE datasource_sources
+		   SET credential_secret_ref = '',
+		       webhook_secret_ref = NULL,
+		       config = COALESCE(config, '{}'::jsonb) || '{"credential_kind": "public"}'::jsonb,
+		       updated_at = NOW()
+		 WHERE org_id = $1 AND id = $2 AND provider = 'github'`, orgID, id)
+	return err
+}
+
 // GetDatasourceSourceByID is the unauthenticated webhook-receipt lookup: no
 // tenant context, so it opens its own control-plane transaction (BYPASSRLS is a
 // database capability, not a client-settable GUC). Returns (nil, nil) on miss.

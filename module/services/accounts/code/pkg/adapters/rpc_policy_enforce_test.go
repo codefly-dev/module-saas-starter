@@ -17,10 +17,12 @@ const (
 	enforceActorID = "019f6bf7-5b1c-730d-9687-fe6d4aff31ed"
 	enforceOrgID   = "019f6bf7-5b4b-74e5-8c17-092259bb1661"
 
-	orgAdminMethod    = "/saas.accounts.v1.OrganizationService/AddMember"   // ORG_ADMIN, no permission
-	orgMemberMethod   = "/saas.accounts.v1.OrganizationService/ListMembers" // ORG_MEMBER, no permission
-	orgPermissionMeth = "/saas.accounts.v1.APIKeyService/CreateAPIKey"      // ORG_ADMIN + api_keys:write
-	ownedResourceMeth = "/saas.accounts.v1.InvitationService/RevokeInvitation"
+	orgAdminMethod    = "/saas.accounts.v1.OrganizationService/AddMember"    // ORG_ADMIN, no permission
+	orgMemberMethod   = "/saas.accounts.v1.OrganizationService/ListMembers"  // ORG_MEMBER, no permission
+	orgPermissionMeth = "/saas.accounts.v1.APIKeyService/CreateAPIKey"       // ORG_ADMIN + api_keys:write
+	ownedResourceMeth = "/saas.accounts.v1.PrincipalService/RevokePrincipal" // owned resource, no permission
+
+	ownedResourceWithPermissionMeth = "/saas.accounts.v1.InvitationService/RevokeInvitation" // owned resource + invitations:write
 )
 
 type enforceStore struct {
@@ -129,22 +131,36 @@ func TestEnforceAdmitsOrgMemberOnMemberMethod(t *testing.T) {
 	require.NoError(t, enforceCentralPolicy(enforceActorCtx(), orgMemberMethod))
 }
 
-// A method that declares an org permission on top of its tenant is deferred to
-// the handler: the permission may admit a non-admin who holds it, so central
-// enforcement must not deny it. A store with no membership would deny if the
-// interceptor evaluated the tenant, so the pass proves it deferred.
-func TestEnforceDefersPermissionScopedMethod(t *testing.T) {
+// A method that declares an org permission on top of its tenant is held to
+// that permission at admission: a host enforces every permission it declares.
+// The tenant beside it (ORG_ADMIN here) stays with the handler; the permission
+// does not, so a caller who is no member, or a member holding nothing, is
+// refused before the handler runs. rpc_policy_permission_test.go covers the
+// whole declared set.
+func TestEnforceHoldsAPermissionScopedMethodToItsPermission(t *testing.T) {
 	enableEnforcement(t)
 	installEnforceService(t, &enforceStore{})
-	require.NoError(t, enforceCentralPolicy(enforceActorCtx(), orgPermissionMeth))
+	err := enforceCentralPolicy(enforceActorCtx(), orgPermissionMeth)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+
+	installEnforceService(t, permissionMemberStore(gen.OrgRole_ORG_ROLE_MEMBER))
+	err = enforceCentralPolicy(enforceActorCtx(), orgPermissionMeth)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Contains(t, status.Convert(err).Message(), "api_keys:write")
 }
 
-// Owned-resource methods stay handler-enforced until an ownership resolver
-// exists; central enforcement defers them rather than denying.
+// An owned-resource binding stays handler-enforced until an ownership resolver
+// exists; central enforcement defers the binding rather than denying. The
+// permission declared beside one does not wait for that: it is held in the
+// caller's verified organization, which is the only organization the handler
+// would admit the resource from.
 func TestEnforceDefersOwnedResourceMethod(t *testing.T) {
 	enableEnforcement(t)
 	installEnforceService(t, &enforceStore{})
 	require.NoError(t, enforceCentralPolicy(enforceActorCtx(), ownedResourceMeth))
+
+	err := enforceCentralPolicy(enforceActorCtx(), ownedResourceWithPermissionMeth)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
 }
 
 // A caller with no verified organization cannot satisfy an org-scoped floor, and

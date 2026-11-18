@@ -50,13 +50,13 @@ func TestAPersonHoldsASolutionRoleAtItsInstallation(t *testing.T) {
 	require.Equal(t, "Module viewer", SolutionRoleOf("Module viewer"))
 }
 
-// STOPGAP (one release, with the core's domain.LegacyInstallerRole): a
-// delivery stored before the rename declares the admin role as "installer",
-// and its owner holds it still.
-func TestTheOwnerHoldsALegacyInstallerDeclarationAsAdmin(t *testing.T) {
+// Admin and user are the only role names. The one-release stopgap that read a
+// delivery declaring its admin role as "installer" went with the core's
+// helpers for it: such a declaration is no admin role, and its owner holds
+// nothing through it.
+func TestTheOwnerHoldsNothingThroughARoleUnderAnotherName(t *testing.T) {
 	a := exampleSolutionAuthority()
-	a.Roles[domain.LegacyInstallerRole] = a.Roles[domain.AdminRole]
+	a.Roles["installer"] = a.Roles[domain.AdminRole]
 	delete(a.Roles, domain.AdminRole)
-	require.Equal(t, a.Grants(domain.LegacyInstallerRole), a.HeldBy("alex", nil, SolutionRoleHolders{Owner: "alex"}))
-	require.NotEmpty(t, a.HeldBy("alex", nil, SolutionRoleHolders{Owner: "alex"}))
+	require.Empty(t, a.HeldBy("alex", nil, SolutionRoleHolders{Owner: "alex"}))
 }

@@ -24,13 +24,16 @@ import (
 
 	"github.com/codefly-dev/sdk-go/receipts"
 
-	"github.com/codefly-dev/core/solutionhost"
+	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
 	"github.com/codefly-dev/core/wool"
 	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 	"github.com/google/uuid"
 )
 
 type Service struct {
+	// redelivery are the bindings whose held generation the core refuses to
+	// read again and that wait for their publisher (authority_core_redelivery.go).
+	redelivery                redeliveryNeeds
 	sourceReceiptStore        receipts.Store
 	sourceReceiptGuard        *receipts.Interceptor
 	store                     Store
@@ -1245,6 +1248,11 @@ func (s *Service) AssignRole(ctx context.Context, req *gen.AssignRoleRequest) (*
 	}
 	if err != nil {
 		return nil, err
+	}
+	// A scoped role on a person revokes their sessions in the organization
+	// (invalidate_scoped_role_sessions); their issued access tokens end too.
+	if req.Scope != "" {
+		s.revokeInvalidatedSessionAccess(ctx, subjectID)
 	}
 	return &gen.AssignRoleResponse{Assignment: assignment}, nil
 }

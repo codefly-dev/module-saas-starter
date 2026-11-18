@@ -1,6 +1,11 @@
 "use client";
 
-import { Spinner, useLoadingPhase } from "@codefly-dev/ui/layout";
+import {
+	Button,
+	Label,
+	Spinner,
+	useLoadingPhase,
+} from "@codefly-dev/ui/layout";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, type ReactNode, useState } from "react";
 import { useAccessibleScopes } from "./queries.js";
@@ -138,7 +143,9 @@ export function CollectionGrants({
 		// exist yet, so concurrent grants would race to create one role whose
 		// name is unique per organization — the first would win and the rest
 		// would fail on a collision that says nothing about the grant.
-		mutationFn: async (chosen: CollectionGrantSubject[]): Promise<BulkGrantOutcome> => {
+		mutationFn: async (
+			chosen: CollectionGrantSubject[],
+		): Promise<BulkGrantOutcome> => {
 			const result: BulkGrantOutcome = { granted: [], failed: [] };
 			for (const subject of chosen) {
 				try {
@@ -193,92 +200,86 @@ export function CollectionGrants({
 	);
 	return (
 		<section
-			aria-label={`Read grants for ${collection.label}`}
-			className="space-y-3 rounded border p-4"
+			aria-label={`Who can read ${collection.label}`}
+			className="space-y-3 rounded-lg border p-4"
 		>
 			<div className="flex items-start justify-between gap-3">
-				<h3 className="font-medium">Who can read {collection.label}</h3>
+				<div className="space-y-1">
+					<h4 className="type-label">Who can read {collection.label}</h4>
+					<p className="type-caption-plain text-muted-foreground">
+						{connectedRepo
+							? `${connectedRepo} is connected. Connecting doesn't share anything; choose who can read it.`
+							: "Only the people and teams listed here can read it. Platform administrators can read every collection."}
+					</p>
+				</div>
 				{onDismiss && (
-					<button type="button" onClick={onDismiss}>
-						Not now
-					</button>
+					<Button type="button" variant="ghost" size="sm" onClick={onDismiss}>
+						{connectedRepo ? "Not now" : "Done"}
+					</Button>
 				)}
 			</div>
-			{connectedRepo ? (
-				<p className="type-body">
-					{connectedRepo} is connected and syncing into {collection.label}.
-					Nobody can read it yet — connecting grants no access, not even to
-					you. Grant the members and teams who need it now, or later from
-					Manage read grants on the source.
-				</p>
-			) : (
-				<p className="text-sm">
-					Connecting a source grants no access to its creator or a default team.
-					An administrator explicitly grants read access to a member or team.
-					Platform administrators read every collection without a grant.
-				</p>
-			)}
-			{collection.grants.length === 0 ? (
-				<p>
-					No collection read grants. Ingestion can proceed, but viewers other
-					than platform administrators need a grant to read this collection.
-				</p>
-			) : (
-				<ul>
+			{collection.grants.length > 0 && (
+				<ul aria-label="Readers" className="divide-y rounded-md border">
 					{collection.grants.map((grant) => (
-						<li key={grant.id} className="space-x-2">
-							<span>
-								{grant.subjectLabel} ({grant.subjectKind}) · {grant.roleName} ·
-								Granted by {grant.actorLabel}
+						<li
+							key={grant.id}
+							className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
+						>
+							<span className="type-body">
+								{grant.subjectLabel}
+								<span className="type-caption-plain text-muted-foreground">
+									{" · "}
+									{grant.subjectKind === "team" ? "Team" : "Person"}
+									{grant.scopePath !== collection.scopePath &&
+										" · from a wider grant"}
+								</span>
 							</span>
-							{grant.scopePath !== collection.scopePath && (
-								<span>Inherited from {grant.scopePath}</span>
-							)}
-							<button
+							<Button
 								type="button"
+								variant="ghost"
+								size="sm"
 								disabled={busy}
+								aria-label={`Remove ${grant.subjectLabel}`}
 								onClick={() => {
 									if (
 										window.confirm(
-											`Revoke ${grant.roleName} from ${grant.subjectLabel}? This removes every permission in this role at ${grant.scopePath} and its descendants.`,
+											`Stop ${grant.subjectLabel} reading ${collection.label}?`,
 										)
 									)
 										revoke.mutate(grant);
 								}}
 							>
-								Revoke grant
-							</button>
+								Remove
+							</Button>
 						</li>
 					))}
 				</ul>
 			)}
 			{subjects.isError ? (
-				<p role="alert">Couldn’t load members and teams.</p>
+				<p role="alert" className="type-body text-destructive">
+					Couldn’t load this organization’s people and teams.
+				</p>
 			) : subjectsPhase.indicator ? (
-				<Spinner label="Loading members and teams…" />
-			) : subjectsPhase.quiet || subjects.isPending ? (
-				// The read is outstanding and inside the pre-delay window: render
-				// nothing at all rather than falling through to the branches below,
-				// either of which would answer a question nobody has an answer to
-				// yet — "nobody to grant to", or a picker with no names in it.
-				null
-			) : subjects.data && subjects.data.length === 0 ? (
-				<p role="status">
-					This organization has no members or teams to grant read access to.
+				<Spinner label="Loading people and teams" />
+			) : subjectsPhase.quiet || subjects.isPending ? null : subjects.data &&
+				subjects.data.length === 0 ? (
+				<p role="status" className="type-body text-muted-foreground">
+					This organization has no people or teams to share it with yet.
 				</p>
 			) : (
-				<>
-					<label htmlFor={`grant-subjects-${collection.nodeId}`}>
-						Grant read access to
-					</label>
+				<div className="space-y-2">
+					<Label htmlFor={`grant-subjects-${collection.nodeId}`}>
+						Add people or teams
+					</Label>
 					{/* A native multiple select: granting is one press for however many
-					    subjects were picked, rather than the same four steps repeated
-					    once per person. */}
+					    subjects were picked, rather than the same steps repeated once
+					    per person. */}
 					<select
 						id={`grant-subjects-${collection.nodeId}`}
-						aria-label="Grant read access to"
+						aria-label="People and teams"
 						multiple
-						size={Math.min(8, Math.max(3, subjects.data?.length ?? 3))}
+						className="w-full rounded-lg border border-input bg-transparent p-1 type-body dark:bg-input/30"
+						size={Math.min(6, Math.max(3, subjects.data?.length ?? 3))}
 						value={selected}
 						onChange={(event) => {
 							setOutcome(null);
@@ -291,13 +292,18 @@ export function CollectionGrants({
 							<option
 								key={`${subject.kind}:${subject.id}`}
 								value={`${subject.kind}:${subject.id}`}
+								className="rounded px-2 py-1"
 							>
 								{subject.label}
 							</option>
 						))}
 					</select>
-					<button
+					<p className="type-caption-plain text-muted-foreground">
+						Hold Ctrl or ⌘ to pick several.
+					</p>
+					<Button
 						type="button"
+						size="sm"
 						disabled={chosen.length === 0 || busy}
 						aria-busy={grant.isPending}
 						onClick={() => {
@@ -306,43 +312,47 @@ export function CollectionGrants({
 						}}
 					>
 						{chosen.length > 1
-							? `Grant read access to ${chosen.length} subjects`
-							: "Grant read access"}
-					</button>
-				</>
+							? `Let ${chosen.length} read it`
+							: "Let them read it"}
+					</Button>
+				</div>
 			)}
 			{/* Per subject, because the loop's outcome is per subject: a run that
-			    granted six of eight is neither a success nor a failure, and saying
-			    only one of those sends an administrator to redo work that landed or
-			    to walk away from work that did not. */}
+			    granted six of eight is neither a success nor a failure. */}
 			{outcome && outcome.granted.length > 0 && (
-				<p role="status">
-					Granted read access to {outcome.granted.join(", ")}.
+				<p role="status" className="type-body">
+					{outcome.granted.join(", ")} can now read {collection.label}.
 				</p>
 			)}
 			{outcome?.failed.map((failure) => (
-				<p role="alert" key={failure.label}>
+				<p
+					role="alert"
+					key={failure.label}
+					className="type-body text-destructive"
+				>
 					{needsRecentFactor(failure.message) ? (
 						<>
-							Couldn’t grant read access to {failure.label}: this needs your
-							passkey confirmed within the last 15 minutes.{" "}
-							<a href={stepUpHref()}>Confirm passkey</a> and grant again.
+							Couldn’t share with {failure.label}: confirm your passkey (it
+							lasts 15 minutes), then try again.{" "}
+							<a href={stepUpHref()} className="underline">
+								Confirm passkey
+							</a>
 						</>
 					) : (
 						<>
-							Couldn’t grant read access to {failure.label}: {failure.message}
+							Couldn’t share with {failure.label}: {failure.message}
 						</>
 					)}
 				</p>
 			))}
 			{grant.isError && (
-				<p role="alert">
-					Couldn’t change collection grants: {grant.error.message}
+				<p role="alert" className="type-body text-destructive">
+					Couldn’t change who can read it: {grant.error.message}
 				</p>
 			)}
 			{revoke.isError && (
-				<p role="alert">
-					Couldn’t change collection grants: {revoke.error.message}
+				<p role="alert" className="type-body text-destructive">
+					Couldn’t change who can read it: {revoke.error.message}
 				</p>
 			)}
 		</section>

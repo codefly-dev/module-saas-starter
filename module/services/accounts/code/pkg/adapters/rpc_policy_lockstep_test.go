@@ -17,11 +17,11 @@ package adapters
 // and either may hold the enforcement, so the gate unions the capabilities of
 // both. Enforcement reached through an intra-package wrapper (a plain function
 // such as requireRoleScope, or a same-receiver method such as authorizeOwner)
-// is followed via the call graph. Permissions and scopes are intentionally out
-// of scope: an org permission is subsumed by the tenant gate that establishes
-// membership, and the API-key scope ceiling is a separate requireScope concern,
-// neither of which maps to a distinct require* site the way the
-// tenant/platform-role/MFA floor does.
+// is followed via the call graph. Permissions and scopes are out of scope
+// here because neither is a handler's to remember: every declared permission is
+// enforced at admission (enforceCentralPolicy, held to the declared set by
+// TestEveryDeclaredPermissionIsEnforcedOrNamesItsRule), and the API-key scope
+// ceiling by enforceAPIKeyScopePolicy.
 
 import (
 	"encoding/json"

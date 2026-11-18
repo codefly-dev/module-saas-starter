@@ -82,6 +82,7 @@ spec:
               - /saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead
               - /saas.accounts.v1.WorkContextService/CheckAuthorizationRevision
               - /saas.accounts.v1.WorkContextService/ConsumeSingleUse
+              - /saas.accounts.v1.WorkContextService/RecordHopRefusal
               - /saas.accounts.v1.WorkContextService/StartInstallationTask
 ---
 apiVersion: security.istio.io/v1

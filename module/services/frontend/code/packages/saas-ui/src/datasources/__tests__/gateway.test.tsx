@@ -177,6 +177,8 @@ describe("createDatasourceClient", () => {
 				client.reconcileSource("org-1", "ds-1", "effect-1"),
 			lookupReconcileSource: () => client.lookupReconcileSource("effect-1"),
 			reconnectSource: () => client.reconnectSource!("org-1", "ds-1"),
+			removeSourceCredential: () =>
+				client.removeSourceCredential!("org-1", "ds-1"),
 			getSourceSync: () => client.getSourceSync!("org-1", "ds-1"),
 			updateSource: () =>
 				client.updateSource!({
@@ -629,12 +631,14 @@ describe("DatasourcesPanel gateway binding", () => {
 			);
 			await screen.findByText("codefly-dev/module-saas-starter");
 			if (manages)
-				await screen.findByRole("button", { name: "Connect GitHub" });
-			expect(!!screen.queryByRole("button", { name: "Connect GitHub" })).toBe(
+				await screen.findByRole("region", { name: "Connect a source" });
+			expect(!!screen.queryByRole("region", { name: "Connect a source" })).toBe(
 				manages,
 			);
-			expect(!!screen.queryByRole("button", { name: "Sync" })).toBe(manages);
-			expect(!!screen.queryByRole("button", { name: /More actions for/ })).toBe(
+			expect(!!screen.queryByRole("button", { name: /^Sync now / })).toBe(
+				manages,
+			);
+			expect(!!screen.queryByRole("button", { name: /^Remove / })).toBe(
 				manages,
 			);
 		},
@@ -673,7 +677,7 @@ describe("DatasourcesPanel gateway binding", () => {
 		);
 
 		await waitFor(() =>
-			expect(screen.getByText(/no data sources connected/i)).toBeTruthy(),
+			expect(screen.getByText("No sources yet")).toBeTruthy(),
 		);
 	});
 });
@@ -843,9 +847,7 @@ it("never tells an undeclared deployment's viewer they were refused", async () =
 	expect(
 		await screen.findByText("codefly-dev/module-saas-starter"),
 	).toBeTruthy();
-	await waitFor(() =>
-		expect(screen.getByText(/Read permission unresolved/)).toBeTruthy(),
-	);
+	expect(screen.queryByText(/can’t read any collection/)).toBeNull();
 	expect(screen.queryByText(/No readable collection/)).toBeNull();
 	expect(screen.queryByText("No access")).toBeNull();
 	expect(
@@ -1023,7 +1025,8 @@ describe("generic OAuth api sources", () => {
 			oauth2Grant: undefined,
 		});
 		expect(refresh.api?.oauth2Grant).toBe("refresh_token");
-		expect(crawler.provider).toBe("unknown");
+		// Named as the catalog keys it, so the row can say which provider it is.
+		expect(crawler.provider).toBe("crawler");
 		expect(crawler.api).toBeUndefined();
 	});
 
@@ -1091,4 +1094,54 @@ describe("generic OAuth api sources", () => {
 			],
 		});
 	});
+});
+
+// Removing a token is the reconnect that carries none and says so, and a
+// source's credential mode arrives as the word the page uses.
+it("removes a source's token through the reconnect, and reads how each source authenticates", async () => {
+	const { calls } = stubFetchSequence([
+		reply({ jobId: "job-3" }),
+		reply({
+			datasources: [
+				{
+					...oneSource.datasources[0],
+					credentialMode: "DATASOURCE_CREDENTIAL_MODE_STATIC_SECRET",
+				},
+				{
+					...oneSource.datasources[0],
+					id: "ds-2",
+					credentialMode: "DATASOURCE_CREDENTIAL_MODE_ORG_APP",
+				},
+				{
+					...oneSource.datasources[0],
+					id: "ds-3",
+					credentialMode: "DATASOURCE_CREDENTIAL_MODE_NONE",
+				},
+				{ ...oneSource.datasources[0], id: "ds-4" },
+			],
+		}),
+	]);
+	const client = createDatasourceClient({
+		apiBase: "http://example.test",
+		getAccessToken: () => "viewer",
+	});
+	await expect(
+		client.removeSourceCredential!("org-1", "source-1"),
+	).resolves.toBe("job-3");
+	expect(calls[0].url).toContain(
+		"saas.accounts.v1.DatasourceService/SyncSource",
+	);
+	expect(calls[0].body).toEqual({
+		orgId: "org-1",
+		id: "source-1",
+		reconnect: true,
+		removeCredential: true,
+	});
+	const sources = await client.listSources("org-1");
+	expect(sources.map((source) => source.credentialMode)).toEqual([
+		"token",
+		"app",
+		"public",
+		undefined,
+	]);
 });

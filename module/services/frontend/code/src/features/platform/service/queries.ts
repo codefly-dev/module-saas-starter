@@ -11,15 +11,6 @@ export function usePlatformAdmins() {
 	});
 }
 
-export function useFeatureFlags() {
-	const svc = usePlatformAdminService();
-	return useQuery({
-		queryKey: ["feature-flags"],
-		queryFn: () => svc.listFeatureFlags({}),
-		select: (data) => data.flags,
-	});
-}
-
 export function useActiveSessions(userId?: string) {
 	const svc = usePlatformAdminService();
 	return useQuery({

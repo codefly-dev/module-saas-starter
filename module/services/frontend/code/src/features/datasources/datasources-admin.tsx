@@ -3,18 +3,28 @@
 import {
 	DatasourceAccountLinks,
 	DatasourceDirectoryPanel,
+	DatasourceSyncSchedule,
 	DatasourcesPanel,
 } from "@codefly-dev/saas-ui";
+import { Disclosure } from "@codefly-dev/ui/layout";
 import { HardDriveDownload } from "lucide-react";
-import { useMemo } from "react";
-import { toast } from "sonner";
+import { type ReactNode, useMemo } from "react";
 import { EmptyState } from "@/components/empty-state";
 import { OrgSelector } from "@/components/org-selector";
-import { SourceTriggerSchedules } from "@/features/unattended-work";
 import { useAuth } from "@/lib/auth";
 import { usePublicRuntimeConfig } from "@/lib/public-runtime-config-provider";
+import { Page as PageBody, PageHeader } from "@/shared/ui";
 import { createDatasourceClient } from "./datasource-client";
 
+/**
+ * Admin → Data sources: the organization's sources first, then how to connect
+ * another, each with who can read it; what most organizations never change
+ * waits, collapsed, under Advanced.
+ *
+ * The declared reconcile trigger behind each schedule — its cron, operation
+ * and identity — is an operator's view and lives on Platform → Unattended
+ * work; here a schedule is one plain sentence per source.
+ */
 export function DatasourcesAdmin() {
 	const { organizationId: orgId = "", orgRole, platformRole } = useAuth();
 	// The tier DatasourceService requires to connect, sync or remove a source and
@@ -31,11 +41,12 @@ export function DatasourcesAdmin() {
 	);
 
 	return (
-		<div className="space-y-6">
-			<div className="flex items-center justify-between">
-				<h2 data-slot="page-title" className="type-page-title">Data sources</h2>
-				<OrgSelector />
-			</div>
+		<PageBody className="space-y-8">
+			<PageHeader
+				title="Data sources"
+				description="Bring content in from the tools your organization uses, and choose who can read it."
+				actions={<OrgSelector />}
+			/>
 
 			{orgId ? (
 				<>
@@ -44,27 +55,52 @@ export function DatasourcesAdmin() {
 						client={client}
 						orgId={orgId}
 						canManage={canManage}
-						onSyncEnqueued={(jobId) =>
-							toast.success("Sync enqueued", { description: `Job ${jobId}` })
-						}
 					/>
-					{/* Who a shared item is readable by: the explicit mappings a
-					    source's per-item access lists are translated through. */}
-					<DatasourceAccountLinks key={`links-${orgId}`} client={client} orgId={orgId} />
-					<DatasourceDirectoryPanel key={`directory-${orgId}`} client={client} orgId={orgId} />
-					{/* What keeps each source current, as the trigger it declares
-					    rather than as a queue this host sweeps. The panel is the
-					    host's own: the source list above is the published kit's,
-					    and a schedule is not a fact the kit's client carries. */}
-					<SourceTriggerSchedules key={`schedules-${orgId}`} orgId={orgId} />
+					<Disclosure title="Advanced" key={`advanced-${orgId}`}>
+						<div className="space-y-8 pt-2">
+							<p className="type-body text-muted-foreground">
+								Settings most organizations never need to change.
+							</p>
+							<AdvancedSection
+								title="Sync schedule"
+								description="How often each source refreshes on its own."
+							>
+								<DatasourceSyncSchedule client={client} orgId={orgId} />
+							</AdvancedSection>
+							{/* Who a shared item is readable by: the explicit mappings a
+							    source's per-item access lists are translated through. */}
+							<DatasourceAccountLinks client={client} orgId={orgId} />
+							{canManage && (
+								<DatasourceDirectoryPanel client={client} orgId={orgId} />
+							)}
+						</div>
+					</Disclosure>
 				</>
 			) : (
 				<EmptyState
 					icon={HardDriveDownload}
-					title="Select an organization to view data sources"
-					description="Data sources are scoped to one tenant at a time. Pick an org from the selector above to see (or connect) its sources."
+					title="Select an organization to see its data sources"
+					description="Pick an organization from the selector above."
 				/>
 			)}
-		</div>
+		</PageBody>
+	);
+}
+
+function AdvancedSection({
+	title,
+	description,
+	children,
+}: {
+	title: string;
+	description: string;
+	children: ReactNode;
+}) {
+	return (
+		<section aria-label={title} className="space-y-2">
+			<h4 className="type-label">{title}</h4>
+			<p className="type-caption-plain text-muted-foreground">{description}</p>
+			{children}
+		</section>
 	);
 }

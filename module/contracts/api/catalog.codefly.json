@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/authority/contract.binpb",
-      "digest": "sha256:05319b8502414f05d5dc43ebc5f2832c9321a2e8a8f52ed5c40392c885db814e",
+      "digest": "sha256:6e379b84a56ba1dbcaf3093e95d37182d21dd00ff3432460f93af2f7d9c6e24d",
       "services": [
         {
           "name": "ModuleCapabilitiesService",
@@ -66,7 +66,7 @@
       "kind": "protobuf",
       "package": "",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:05319b8502414f05d5dc43ebc5f2832c9321a2e8a8f52ed5c40392c885db814e",
+      "digest": "sha256:6e379b84a56ba1dbcaf3093e95d37182d21dd00ff3432460f93af2f7d9c6e24d",
       "services": [
         {
           "name": "ArtifactService",
@@ -128,6 +128,7 @@
           "fullName": "host.session.v1.SessionService",
           "procedures": [
             "/host.session.v1.SessionService/Current",
+            "/host.session.v1.SessionService/End",
             "/host.session.v1.SessionService/ListCastableTeams",
             "/host.session.v1.SessionService/ListFixturePeople",
             "/host.session.v1.SessionService/OpenRoleView",
@@ -619,6 +620,7 @@
             "/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision",
             "/saas.accounts.v1.WorkContextService/ConsumeSingleUse",
             "/saas.accounts.v1.WorkContextService/ExchangeAudience",
+            "/saas.accounts.v1.WorkContextService/RecordHopRefusal",
             "/saas.accounts.v1.WorkContextService/RenewWorkContext",
             "/saas.accounts.v1.WorkContextService/StartChildSession",
             "/saas.accounts.v1.WorkContextService/StartInstallationTask",
@@ -635,7 +637,7 @@
       "kind": "protobuf",
       "package": "saas.gateway.auth.v1",
       "path": "contracts/api/auth-gateway/grpc/contract.binpb",
-      "digest": "sha256:0902a43c9d086a4a416772086f74b2034240659591525bd529db49c57c8c4724",
+      "digest": "sha256:282ea58a486eba8600712c96474142beabe8a614bc67ba00222c9118e3e1dabe",
       "services": [
         {
           "name": "AuthGatewayService",

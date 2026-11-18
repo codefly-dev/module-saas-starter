@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -136,31 +137,63 @@ func (s *PostgresStore) RevokeSessionFamily(ctx context.Context, familyID string
 	return err
 }
 
-// RevokeAllUserSessions revokes every live session of one user and returns the
-// ids it revoked. The ids are what lets a caller kill the access half as well:
+// RevokeAllUserSessions revokes every live session of one user and returns
+// what it revoked. The ids are what lets a caller kill the access half as well:
 // revoking the rows ends refreshing, but an already-minted access token stays
-// valid until its natural TTL unless a per-session revocation marker is
-// written, exactly as RevokeSession's caller does. Returning nothing was the
-// shape that made a whole-user sign-out quietly weaker than a single-family
-// one.
-func (s *PostgresStore) RevokeAllUserSessions(ctx context.Context, userID string, reason string) ([]string, error) {
+// valid until its natural TTL unless a revocation marker is written, exactly as
+// RevokeSession's caller does. Returning nothing was the shape that made a
+// whole-user sign-out quietly weaker than a single-family one.
+//
+// Each row is returned with its family, because an access token carries both
+// and they cover different tokens: the row id is the current session's and
+// changes on every refresh, so the token minted before the last refresh matches
+// only the family.
+func (s *PostgresStore) RevokeAllUserSessions(ctx context.Context, userID string, reason string) ([]business.RevokedSession, error) {
 	q := s.getQueryExecutor(ctx)
 	rows, err := q.Query(ctx,
-		`UPDATE sessions SET revoked_at = NOW(), revoked_reason = $2 WHERE user_id = $1 AND revoked_at IS NULL RETURNING id`,
+		`UPDATE sessions SET revoked_at = NOW(), revoked_reason = $2 WHERE user_id = $1 AND revoked_at IS NULL RETURNING id, family_id`,
 		userID, reason)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var ids []string
+	var revoked []business.RevokedSession
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var session business.RevokedSession
+		if err := rows.Scan(&session.ID, &session.FamilyID); err != nil {
 			return nil, err
 		}
-		ids = append(ids, id)
+		revoked = append(revoked, session)
 	}
-	return ids, rows.Err()
+	return revoked, rows.Err()
+}
+
+// InvalidatedUserSessions returns the revoked sessions of one user whose access
+// tokens may still be unexpired. A row a refresh rotated is left out: its
+// successor carries the same family, and the family's marker reaches the token
+// minted before the rotation.
+func (s *PostgresStore) InvalidatedUserSessions(ctx context.Context, userID string) ([]business.RevokedSession, error) {
+	q := s.getQueryExecutor(ctx)
+	rows, err := q.Query(ctx,
+		`SELECT id, family_id FROM sessions
+		  WHERE user_id = $1
+		    AND revoked_at IS NOT NULL
+		    AND revoked_reason IS DISTINCT FROM 'rotated'
+		    AND expires_at > NOW()`,
+		userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var revoked []business.RevokedSession
+	for rows.Next() {
+		var session business.RevokedSession
+		if err := rows.Scan(&session.ID, &session.FamilyID); err != nil {
+			return nil, err
+		}
+		revoked = append(revoked, session)
+	}
+	return revoked, rows.Err()
 }
 
 func (s *PostgresStore) UpdateSessionActivity(ctx context.Context, sessionID string) error {
@@ -169,4 +202,120 @@ func (s *PostgresStore) UpdateSessionActivity(ctx context.Context, sessionID str
 		`UPDATE sessions SET last_active_at = NOW() WHERE id = $1`,
 		sessionID)
 	return err
+}
+
+// sessionStands is the SQL predicate, over the sessions row aliased %[1]s,
+// for a row that is still a session of this host: one never revoked, or one
+// the database revoked because its member's role in the organisation changed
+// (the invalidation trigger's organization_membership_changed). A role change
+// leaves the session standing: the revoked row ends refreshing, and the bearer
+// already issued is answered by the membership read live until it lapses or
+// is ended. Every other revocation (a sign-out, an End, a removal from the
+// organisation, a suspension, a factor or platform-role change) ends it.
+const sessionStands = `(%[1]s.revoked_at IS NULL OR %[1]s.revoked_reason = 'organization_membership_changed')`
+
+// SessionEndsAt implements business.SessionLifecycleStore. A row a refresh
+// rotated is still the session its last access token names, so it reads as the
+// standing row of its family (sessionStands); a row revoked for any other
+// reason, or whose family has no standing row, is not open.
+func (s *PostgresStore) SessionEndsAt(ctx context.Context, sessionID string) (time.Time, bool, error) {
+	id, ok := asUUID(sessionID)
+	if !ok {
+		return time.Time{}, false, nil
+	}
+	var endsAt time.Time
+	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
+		SELECT live.expires_at
+		  FROM sessions named
+		  JOIN sessions live ON live.family_id = named.family_id AND `+fmt.Sprintf(sessionStands, "live")+`
+		 WHERE named.id = $1 AND (`+fmt.Sprintf(sessionStands, "named")+` OR named.revoked_reason = 'rotated')
+		 ORDER BY live.created_at DESC
+		 LIMIT 1`, id).Scan(&endsAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return time.Time{}, false, nil
+	}
+	return endsAt, err == nil, err
+}
+
+// EndSessionTree implements business.SessionLifecycleStore. The sessions
+// opened from one are the authority core's role-view records naming any row of
+// its family as their parent (a view opened before a refresh names the row the
+// refresh rotated); each is a row and a family of its own.
+func (s *PostgresStore) EndSessionTree(ctx context.Context, sessionID, reason string) ([]business.RevokedSession, error) {
+	id, ok := asUUID(sessionID)
+	if !ok {
+		return nil, nil
+	}
+	rows, err := s.getQueryExecutor(ctx).Query(ctx, `
+		WITH RECURSIVE ended(id, family_id) AS (
+			SELECT member.id, member.family_id
+			  FROM sessions named
+			  JOIN sessions member ON member.family_id = named.family_id
+			 WHERE named.id = $1 AND (`+fmt.Sprintf(sessionStands, "named")+` OR named.revoked_reason = 'rotated')
+			UNION
+			SELECT child.id, child.family_id
+			  FROM ended
+			  JOIN public.authority_core_role_views v ON v.parent_session_id = ended.id::text
+			  JOIN sessions opened ON opened.id::text = v.session_id
+			  JOIN sessions child ON child.family_id = opened.family_id
+		)
+		UPDATE sessions SET revoked_at = NOW(), revoked_reason = $2
+		 WHERE id IN (SELECT id FROM ended) AND `+fmt.Sprintf(sessionStands, "sessions")+`
+		RETURNING id, family_id`, id, reason)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var revoked []business.RevokedSession
+	for rows.Next() {
+		var session business.RevokedSession
+		if err := rows.Scan(&session.ID, &session.FamilyID); err != nil {
+			return nil, err
+		}
+		revoked = append(revoked, session)
+	}
+	return revoked, rows.Err()
+}
+
+// CheckCapabilitySession checks interactive roots without treating generated
+// roots of API keys or durable delegations as interactive sessions.
+func (s *PostgresStore) CheckCapabilitySession(ctx context.Context, sessionID string) error {
+	id, ok := asUUID(sessionID)
+	if !ok {
+		return nil
+	}
+	var known bool
+	if err := s.getQueryExecutor(ctx).QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM sessions WHERE id=$1)`, id).Scan(&known); err != nil {
+		return err
+	}
+	if !known {
+		return nil
+	}
+	end, open, err := s.SessionEndsAt(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if !open || !time.Now().Before(end) {
+		return business.ErrNoOpenSession
+	}
+	return nil
+}
+
+// RevokedSessionMarkers reads durable revocations whose bearer markers may
+// still be needed. Replaying them is idempotent, including after a restart.
+func (s *PostgresStore) RevokedSessionMarkers(ctx context.Context) ([]business.RevokedSession, error) {
+	rows, err := s.getQueryExecutor(ctx).Query(ctx, `SELECT id, family_id FROM sessions WHERE revoked_at IS NOT NULL AND revoked_reason IS DISTINCT FROM 'rotated' AND revoked_reason IS DISTINCT FROM 'organization_membership_changed' AND expires_at > NOW()`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []business.RevokedSession
+	for rows.Next() {
+		var row business.RevokedSession
+		if err := rows.Scan(&row.ID, &row.FamilyID); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
 }

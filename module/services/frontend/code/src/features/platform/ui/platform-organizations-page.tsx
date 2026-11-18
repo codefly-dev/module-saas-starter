@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-table";
 import { Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { AccessDenied } from "@/components/access-denied";
 import { OrganizationDetail } from "@/features/organizations/ui/organization-detail";
 import { useAuth } from "@/lib/auth";
 import {
@@ -17,7 +18,15 @@ import {
 	staleReadNotice,
 } from "@/shared/lib/read-outcome";
 import { formatDate } from "@/shared/lib/utils";
-import { Badge, Button, Input, Label, Switch } from "@/shared/ui";
+import {
+	Badge,
+	Button,
+	Input,
+	Label,
+	Page as PageBody,
+	PageHeader,
+	Switch,
+} from "@/shared/ui";
 import { DataTable } from "@/shared/ui/data-table";
 import { useAllOrganizations } from "../service/queries";
 import { CreateOrganizationDialog } from "./create-organization-dialog";
@@ -93,13 +102,13 @@ export function PlatformOrganizationsPage() {
 			col.accessor("name", {
 				header: "Name",
 				cell: ({ row }) => (
-					<button
-						type="button"
-						className="font-medium underline-offset-4 hover:underline"
+					<Button
+						variant="link"
+						className="h-auto p-0 font-medium text-foreground"
 						onClick={() => setSelected(row.original)}
 					>
 						{row.original.name}
-					</button>
+					</Button>
 				),
 			}),
 			col.accessor("slug", {
@@ -138,36 +147,27 @@ export function PlatformOrganizationsPage() {
 	// writes are the server's to refuse, and it says why.
 	if (!platformRole) {
 		return (
-			<div className="rounded-lg border p-6">
-				<h1 data-slot="page-title" className="type-page-title">
-					Platform administrator required
-				</h1>
-				<p className="mt-2 text-sm text-muted-foreground">
-					The platform&apos;s organization list spans every tenant and is
-					restricted to platform administrators.
-				</p>
-			</div>
+			<AccessDenied
+				title="Platform administrator required"
+				description="The platform's organization list spans every tenant and is restricted to platform administrators."
+			/>
 		);
 	}
 
 	return (
-		<div className="space-y-6">
-			<div className="flex items-center justify-between">
-				<div>
-					<h1 data-slot="page-title" className="type-page-title">
-						Organizations
-					</h1>
-					<p className="text-muted-foreground">
-						Every organization on the platform, whether or not you belong to it.
-					</p>
-				</div>
-				{platformRole === "super_admin" && (
-					<Button onClick={() => setCreating(true)}>
-						<Plus className="mr-2 h-4 w-4" />
-						Create organization
-					</Button>
-				)}
-			</div>
+		<PageBody>
+			<PageHeader
+				title="Organizations"
+				description="Every organization on the platform, whether or not you belong to it."
+				actions={
+					platformRole === "super_admin" ? (
+						<Button onClick={() => setCreating(true)}>
+							<Plus className="mr-2 h-4 w-4" />
+							Create organization
+						</Button>
+					) : undefined
+				}
+			/>
 
 			<div className="flex flex-wrap items-center gap-4">
 				<Input
@@ -238,6 +238,6 @@ export function PlatformOrganizationsPage() {
 			)}
 
 			<CreateOrganizationDialog open={creating} onOpenChange={setCreating} />
-		</div>
+		</PageBody>
 	);
 }

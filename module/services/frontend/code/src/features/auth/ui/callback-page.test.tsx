@@ -28,7 +28,10 @@ beforeEach(() => {
 	h.completeOAuth.mockReturnValue(new Promise(() => {}));
 });
 
-afterEach(cleanup);
+afterEach(() => {
+	cleanup();
+	vi.restoreAllMocks();
+});
 
 describe("CallbackPage", () => {
 	it("redeems the authorization code once even when completeOAuth changes identity", () => {
@@ -60,7 +63,8 @@ describe("CallbackPage", () => {
 		).toBeTruthy();
 	});
 
-	it("surfaces a state/CSRF guard message with no reference line", async () => {
+	it("says a refused state check plainly, without the guard's own text or a reference line", async () => {
+		vi.spyOn(console, "error").mockImplementation(() => {});
 		h.completeOAuth.mockRejectedValue(
 			new Error("OAuth state mismatch — possible CSRF attack"),
 		);
@@ -68,12 +72,15 @@ describe("CallbackPage", () => {
 		render(<CallbackPage />);
 
 		await waitFor(() =>
-			expect(screen.getByText(/possible CSRF attack/)).toBeTruthy(),
+			expect(
+				screen.getByText(/could not be completed, and nothing was changed/),
+			).toBeTruthy(),
 		);
+		expect(screen.queryByText(/CSRF/)).toBeNull();
 		expect(screen.queryByText(/Reference:/)).toBeNull();
 	});
 
-	it("surfaces the identity provider's own error verbatim", () => {
+	it("says a provider refusal plainly and keeps the provider's own error as the reference", () => {
 		h.params = new URLSearchParams({
 			error: "access_denied",
 			error_description: "user cancelled",
@@ -81,7 +88,13 @@ describe("CallbackPage", () => {
 
 		render(<CallbackPage />);
 
-		expect(screen.getByText(/access_denied: user cancelled/)).toBeTruthy();
+		expect(
+			screen.getByText(/Your sign-in provider did not sign you in/),
+		).toBeTruthy();
+		// The provider's code and description are for whoever the person asks,
+		// so they sit on the reference line and nowhere else.
+		const reference = screen.getByText(/access_denied: user cancelled/);
+		expect(reference.className).toContain("font-mono");
 		expect(h.completeOAuth).not.toHaveBeenCalled();
 	});
 

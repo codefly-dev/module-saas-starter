@@ -127,7 +127,7 @@ func (s *Service) BackchannelLogout(ctx context.Context, rawToken string) (int, 
 			wool.Field("provider", token.Provider), wool.Field("jti", token.ID))
 		return 0, ErrProviderSessionNotResolvable
 	}
-	var revoked []string
+	var revoked []RevokedSession
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		// The provider subject is not the caller's own identity — there is no
 		// caller identity at all on this path — so the lookup and the write both
@@ -147,19 +147,88 @@ func (s *Service) BackchannelLogout(ctx context.Context, rawToken string) (int, 
 	}); err != nil {
 		return 0, w.Wrapf(err, "revoke sessions for a provider back-channel logout")
 	}
-	// Revoking the rows ends refreshing; the access half dies at its natural
-	// TTL unless each revoked session is marked. Best-effort for the same
-	// reason the platform-admin revoke is: the durable rows above are the
-	// authority, and a revocation-store outage must bound the residual exposure
-	// rather than discard a sign-out the provider already considers done.
-	if s.minter != nil {
-		for _, sessionID := range revoked {
-			if err := s.minter.RevokeSessionAccess(ctx, sessionID); err != nil {
-				w.Warn("RevokeSessionAccess failed (best-effort)", wool.ErrField(err))
-			}
-		}
-	}
+	// Revoking the rows ends refreshing; the access half is ended by the
+	// markers, which are written only now that the revocation has committed.
+	s.revokeSessionAccess(ctx, accessRevocationKeys(revoked))
 	w.Info("provider back-channel logout applied",
 		wool.Field("provider", token.Provider), wool.Field("sessions", len(revoked)))
 	return len(revoked), nil
+}
+
+// SessionRevokedUserNotActive is the reason recorded on the session rows of an
+// identity that is suspended or deleted. It is the value the status trigger
+// writes for any row left to it (invalidate_authorization_sessions), and the
+// one the refresh path reads back as auth.RefreshRejectionUserNotActive.
+const SessionRevokedUserNotActive = auth.RefreshRejectionUserNotActive
+
+// accessRevocationKeys lists the marker keys that end the access half of the
+// revoked sessions: each row's id and each family's, once each. Both, because a
+// token minted before its family's last refresh carries another session id and
+// matches only the family, while an access-only window (impersonation) carries
+// no family and matches only its row.
+func accessRevocationKeys(revoked []RevokedSession) []string {
+	keys := make([]string, 0, 2*len(revoked))
+	seen := make(map[string]bool, 2*len(revoked))
+	for _, session := range revoked {
+		for _, key := range []string{session.ID, session.FamilyID} {
+			if key != "" && !seen[key] {
+				seen[key] = true
+				keys = append(keys, key)
+			}
+		}
+	}
+	return keys
+}
+
+// revokeSessionAccess writes the access-revocation marker for each key, the
+// one write every path that ends somebody else's sessions makes after its
+// database revocation has committed. The gateway and VerifyAccess admit an
+// already-issued access token from these markers alone, so a path that revokes
+// rows and skips this leaves the token usable until it expires.
+//
+// Best-effort, and the same on every caller: the committed rows are the durable
+// authority, so a revocation-store outage is logged and bounds the residual
+// exposure to the access-token lifetime rather than failing — or rolling back —
+// the revocation that already happened.
+func (s *Service) revokeSessionAccess(ctx context.Context, keys []string) {
+	if s.minter == nil {
+		return
+	}
+	w := wool.Get(ctx).In("revokeSessionAccess")
+	for _, key := range keys {
+		if err := s.minter.RevokeSessionAccess(ctx, key); err != nil {
+			w.Warn("RevokeSessionAccess failed (best-effort)", wool.ErrField(err))
+		}
+	}
+}
+
+// revokeInvalidatedSessionAccess ends the access tokens of the sessions a
+// committed change of authority revoked for each user. The database revokes
+// those rows itself, from the invalidation triggers on memberships, platform
+// roles, second factors and scoped roles, and reports none of them, so this
+// reads them back once the change has committed and hands them to the one
+// marker write (revokeSessionAccess). Call it after the transaction, never
+// inside it: a marker for a change that rolled back would sign out somebody
+// whose authority did not move.
+//
+// Best-effort like the marker write itself. The revoked rows are the durable
+// authority and already end refreshing; a failed read bounds the residual
+// exposure to the access-token lifetime rather than failing a change that has
+// already happened.
+func (s *Service) revokeInvalidatedSessionAccess(ctx context.Context, userIDs ...string) {
+	if s.minter == nil {
+		return
+	}
+	w := wool.Get(ctx).In("revokeInvalidatedSessionAccess")
+	var revoked []RevokedSession
+	for _, userID := range userIDs {
+		if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+			sessions, err := s.store.InvalidatedUserSessions(ctx, userID)
+			revoked = append(revoked, sessions...)
+			return err
+		}); err != nil {
+			w.Warn("cannot read the sessions an authority change revoked (best-effort)", wool.ErrField(err))
+		}
+	}
+	s.revokeSessionAccess(ctx, accessRevocationKeys(revoked))
 }

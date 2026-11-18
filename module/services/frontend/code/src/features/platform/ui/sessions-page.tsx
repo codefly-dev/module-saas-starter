@@ -11,6 +11,8 @@ import { LogOut, MoreHorizontal } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { UserLabel } from "@/components/user-label";
+import { failureText } from "@/shared/lib/failure-text";
+import { readOutcome } from "@/shared/lib/read-outcome";
 import { formatDate } from "@/shared/lib/utils";
 import {
 	AlertDialog,
@@ -30,6 +32,11 @@ import {
 	DropdownMenuLabel,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
+	ErrorState,
+	Page as PageBody,
+	PageHeader,
+	Panel,
+	Stack,
 } from "@/shared/ui";
 import { DataTable } from "@/shared/ui/data-table";
 import type { SessionInfo } from "../model/types";
@@ -48,6 +55,7 @@ export function SessionsPage() {
 		data: sessions = NO_SESSIONS,
 		isLoading,
 		isError,
+		error,
 		refetch,
 	} = useActiveSessions();
 	const [revokeTarget, setRevokeTarget] = useState<SessionInfo | null>(null);
@@ -74,7 +82,7 @@ export function SessionsPage() {
 				},
 			}),
 			col.accessor("ipAddress", {
-				header: "IP Address",
+				header: "IP address",
 				cell: (info) => (
 					<span className="font-mono text-xs">{info.getValue() || "-"}</span>
 				),
@@ -94,7 +102,7 @@ export function SessionsPage() {
 				},
 			}),
 			col.accessor("lastActiveAt", {
-				header: "Last Active",
+				header: "Last active",
 				cell: (info) => (
 					<span className="text-muted-foreground">
 						{formatDate(info.getValue())}
@@ -157,21 +165,28 @@ export function SessionsPage() {
 	});
 
 	return (
-		<div className="space-y-6">
-			<div>
-				<h1 data-slot="page-title" className="type-page-title">
-					Active Sessions
-				</h1>
-				<p className="text-muted-foreground">
-					View and monitor active user sessions.
-				</p>
-			</div>
+		<PageBody>
+			<PageHeader
+				title="Active sessions"
+				description="View and monitor active user sessions."
+			/>
 
 			{isError ? (
-				<div role="alert">
-					Unable to load active sessions.{" "}
-					<Button onClick={() => void refetch()}>Retry</Button>
-				</div>
+				<Panel>
+					<Stack direction="row" gap={4} align="center" justify="between">
+						<ErrorState
+							title="Couldn't load the active sessions"
+							detail={
+								readOutcome(isError, error) === "forbidden"
+									? "Your account doesn't have the platform role this list needs."
+									: "If it keeps failing, tell your administrator."
+							}
+						/>
+						<Button variant="outline" onClick={() => void refetch()}>
+							Retry
+						</Button>
+					</Stack>
+				</Panel>
 			) : (
 				<DataTable
 					table={table}
@@ -204,12 +219,15 @@ export function SessionsPage() {
 												toast.success("Session revoked");
 												setRevokeTarget(null);
 											},
-											onError: () => toast.error("Failed to revoke session"),
+											onError: (failure) =>
+												toast.error(
+													failureText("sign this session out", failure),
+												),
 										},
 									)
 								}
 								disabled={revoke.isPending}
-								className="bg-destructive text-white hover:bg-destructive/90"
+								className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
 							>
 								{revoke.isPending ? "Revoking..." : "Force logout"}
 							</AlertDialogAction>
@@ -217,6 +235,6 @@ export function SessionsPage() {
 					</AlertDialogContent>
 				</AlertDialog>
 			)}
-		</div>
+		</PageBody>
 	);
 }

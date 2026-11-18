@@ -133,7 +133,7 @@ describe("UsersPage for an organization administrator", () => {
 		expect(await screen.findByText(/Members of/)).toBeTruthy();
 		expect(await screen.findByText("Acme Corp")).toBeTruthy();
 		expect(await screen.findByText("maya@acme.test")).toBeTruthy();
-		expect(screen.queryByText("Users could not be loaded")).toBeNull();
+		expect(screen.queryByText("Couldn't load the users")).toBeNull();
 		expect(searched).toBe(false);
 	});
 });

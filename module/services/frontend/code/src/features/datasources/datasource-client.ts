@@ -116,13 +116,18 @@ function hostCollectionAccess(
 				})),
 			];
 		},
+		// With no declared content resource there is no read permission to grant
+		// (the host composed with no module that stores collection content), so
+		// the client offers no grant and the page shows readers without a control.
+		...(contentResource ? grantsOn(contentResource) : {}),
+	};
+}
+
+function grantsOn(
+	resource: string,
+): Pick<DatasourceClient, "grantCollectionRead" | "revokeCollectionRead"> {
+	return {
 		async grantCollectionRead(orgId, scopePath, subject) {
-			const resource = contentResource;
-			if (!resource) {
-				throw new Error(
-					"no collection content resource is declared for this deployment, so there is no read permission to grant",
-				);
-			}
 			const { roles } = await permissions.listRoles({ orgId });
 			let role = roles.find(
 				(role) =>

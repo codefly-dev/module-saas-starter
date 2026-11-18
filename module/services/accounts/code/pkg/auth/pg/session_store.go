@@ -503,12 +503,17 @@ func (s *SessionStore) RotateRefresh(
 			if current.RevokedReason != "rotated" {
 				return auth.ErrRefreshRevoked
 			}
-			if err := revokeActiveUserSessions(ctx, tx, current.UserID, "refresh-reuse-all-sessions"); err != nil {
+			revoked, err := revokeActiveUserSessionsReturning(ctx, tx, current.UserID, "refresh-reuse-all-sessions")
+			if err != nil {
 				return err
 			}
 			// Returning nil from the transaction callback is intentional: replay
 			// revocation must commit before the caller receives the sentinel.
-			outcome = auth.ErrRefreshReuse
+			// It carries what was revoked, with the replayed token's own family,
+			// so the caller can end the access tokens those sessions issued.
+			outcome = &auth.RefreshReuseError{
+				RevokedSessionKeys: append(revoked, current.FamilyID.String()),
+			}
 			return nil
 		}
 
@@ -771,6 +776,34 @@ func revokeActiveUserSessions(ctx context.Context, tx pgx.Tx, userID uuid.UUID, 
 		   SET revoked_at = NOW(), revoked_reason = $2
 		 WHERE user_id = $1 AND revoked_at IS NULL`, userID, reason)
 	return err
+}
+
+// revokeActiveUserSessionsReturning revokes every live session of the user and
+// returns the keys their access tokens carry: each row's id and its family.
+func revokeActiveUserSessionsReturning(ctx context.Context, tx pgx.Tx, userID uuid.UUID, reason string) ([]string, error) {
+	rows, err := tx.Query(ctx, `
+		UPDATE sessions
+		   SET revoked_at = NOW(), revoked_reason = $2
+		 WHERE user_id = $1 AND revoked_at IS NULL
+		RETURNING id, family_id`, userID, reason)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var keys []string
+	for rows.Next() {
+		var id, family uuid.UUID
+		if err := rows.Scan(&id, &family); err != nil {
+			return nil, err
+		}
+		keys = append(keys, id.String())
+		// An access-only window has no refresh family, and no token carries
+		// the zero id for one (familyAccessClaim).
+		if family != uuid.Nil {
+			keys = append(keys, family.String())
+		}
+	}
+	return keys, rows.Err()
 }
 
 func revokeActiveFamily(ctx context.Context, tx pgx.Tx, familyID uuid.UUID, reason string) error {

@@ -227,7 +227,7 @@ func accountLinkToProto(l *business.DatasourceAccountLink) *gen.DatasourceAccoun
 	return &gen.DatasourceAccountLink{
 		Id: l.ID, OrgId: l.OrgID, UserId: l.UserID, Connector: l.Connector,
 		ProviderAccountId: l.ProviderAccountID, ProviderAccountLogin: l.ProviderAccountLogin,
-		CreatedAt: timestamppb.New(l.CreatedAt),
+		CreatedAt: timestamppb.New(l.CreatedAt), MemberLabel: l.MemberLabel,
 	}
 }
 

@@ -65,6 +65,14 @@ type Gateway struct {
 	// solution a viewer is currently using.
 	solutionEntitlements solutionEntitlementClient
 	workContext          *workContextVerifier
+	// personContexts mints what a solution receives in place of the person's
+	// session: their Work Context at that one solution, issued by the
+	// authority for their session and held until shortly before it lapses
+	// (forwardUpstreamCredential). It is the holder the hop's browser path
+	// uses for a module, standing on its issuer alone. Set after construction;
+	// nil mints nothing, and a solution that declares an authority principal
+	// is then refused rather than handed the session.
+	personContexts *hopRole
 }
 
 // NewGateway constructs a gateway with explicit route matching.
@@ -460,14 +468,10 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 		// present it back here — carrying the refresh credential's value to a
 		// third party for no purpose it could serve.
 		removeCallerCookie(r.Header)
-		// The bearer is a separate question, and SA-F-BEARER is recorded OPEN
-		// rather than closed here: see removePersonsSessionCredential and the PR
-		// body. What this route does enforce is confinement: ExtAuthz admits a
-		// resource-bound token at the solution its resource names, at the
-		// delegation mint, and at a declared module route only in the company of
-		// this person's verified capability for that module — three named places,
-		// so a credential an upstream receives cannot be replayed across the rest
-		// of this host.
+		// The bearer is a separate decision, made where the solution proxy
+		// knows which solution this is: forwardUpstreamCredential withholds the
+		// person's session and hands the solution a credential addressed to
+		// it alone.
 	}
 	if entry != nil && entry.UpstreamPath != "" {
 		r.URL.Path = entry.UpstreamPath
@@ -495,74 +499,23 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 	proxy.ServeHTTP(w, r)
 }
 
-// removePersonsSessionCredential strips the person's own session from a request
-// before it reaches a runtime-registered upstream — a composed module's federated
-// prefix, or a solution.
+// removePersonsSessionCredential strips the caller's own credential from a
+// request before it reaches a solution (SP-GW-07): the host access token
+// carries a host-wide audience and the person's full authority, an API key
+// lasts as long as the key does, and a resource-bound token is still admitted
+// at the delegation mint, so none is a credential any single upstream should
+// hold. The Cookie goes with it: the gateway has already resolved identity
+// from it, and it carries the refresh credential's value.
 //
-// NOTHING CALLS THIS ON THE PROXY PATH, and that is the recorded state of
-// SA-F-BEARER rather than an oversight. It is kept, with its tests, because the
-// finding is open and this is the shape of its fix.
+// The solution proxy calls it on every authenticated request it forwards
+// (forwardUpstreamCredential), which puts in its place a Work Context
+// addressed to that solution, and on the anonymous module-federation surface,
+// where no ext_authz runs. A solution still receives the identity ext_authz
+// stamped (the subject, the tenant, the session, the credential kind, the
+// scope ceiling), which names the caller without carrying their authority.
 //
-// Why it is not enabled here: a declared upstream authenticates the request BY
-// the forwarded bearer today, so withholding it makes every composed solution
-// answer 401 — the runtime's HTTP wrapper and its passthrough handler both
-// require `Authorization`. The replacement is a host-minted capability bound to
-// that upstream's own audience, and it does not exist on either side: this host
-// does not mint one for a session, and no consumer verifies one. Landing the
-// withholding first would break a working wire contract to close a finding, and
-// the thing that would make it safe lives in another repository.
-//
-// What this PR does instead, and what it does not:
-//   - The cookie is withheld unconditionally (removeCallerCookie). No upstream
-//     can authenticate with it — this perimeter refuses a cookie as a credential
-//     by name — so there is no contract to break.
-//   - A resource-bound token is CONFINED to the solution its resource names, on
-//     every path (ExtAuthz.Check). That removes the replay the forwarding makes
-//     possible: an upstream holding a credential the host delivered to it cannot
-//     act with it at this host's API, at another module's routes, or at the Work
-//     Context surface.
-//   - The person's host-wide session still reaches a declared upstream. That
-//     exposure is unchanged and is recorded OPEN in the PR body, with the
-//     cross-repo work it waits on.
-//
-// The invariant (SP-GW-07): a module or solution upstream never receives the
-// person's session credential or cookie. The host access token carries a host-wide
-// audience and the person's full authority, so it is not a credential any single
-// upstream should hold; the Cookie goes with it because the gateway has already
-// resolved identity from it by this point, so an upstream reading it learns nothing
-// it is not told.
-//
-// An upstream receives the identity headers ext_authz stamped — the subject, the
-// tenant, the session, the credential kind, the scope ceiling — which name the
-// person without carrying their authority.
-//
-// The ONE exception, and it is the invariant rather than a hole in it: a solution's
-// MCP tool endpoint. ext_authz refuses a host-wide token there outright
-// (`resourceUnbound` is a 401), so a request that reaches this point on a tool path
-// carries a token whose audience names THAT SOLUTION'S resource and nothing else —
-// which is exactly the audience-bound credential SP-GW-07's positive half asks for,
-// already minted and already confined by `resourceAudienceAdmits`. Stripping it would
-// not withhold the person's authority; it would break the one surface that is doing
-// the right thing, and the merged resource-indicator work depends on forwarding it so
-// the runtime can mint the viewer's Work Context from it.
-//
-// The binding is read off the PATH, not re-derived from the token: admission has
-// already proved it, and a second JWT parse here would be a second verifier to keep in
-// agreement with the first.
-//
-// For every other upstream path the host-wide session is still removed, and an upstream
-// that needs to act on the person's behalf there still needs a host-minted capability
-// bound to its own audience. **That remains unbuilt for a person: see the
-// audience-bound context note in services/auth-gateway/AGENTS.md.**
-//
-// A HEADLESS caller now gets exactly that capability. The declared module route's
-// bearer-less arm (gateway_workload_operation.go) forwards an operation context
-// accounts minted for the upstream's own audience, with no bearer, no cookie and
-// no identity header: the first path that meets SP-GW-07's positive half. The
-// person's path stays open.
-//
-// Catalog routes are untouched: accounts is the host's own API, where the session
-// is the credential.
+// Catalog routes are untouched: accounts is the host's own API, where the
+// session is the credential.
 func removePersonsSessionCredential(h http.Header) {
 	h.Del("Authorization")
 	h.Del("Cookie")

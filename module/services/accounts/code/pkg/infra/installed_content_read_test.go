@@ -9,17 +9,24 @@ import (
 	"encoding/json"
 	"testing"
 
+	"accounts/internal/deliverytest"
 	"accounts/pkg/adapters"
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	"accounts/pkg/business/executiontest"
+	authorityv1 "accounts/pkg/gen/host/authority/v1"
+	compositionv1 "accounts/pkg/gen/host/composition/v1"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/infra/storetx"
 
-	"github.com/codefly-dev/core/solutionhost"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
+	authoritydelivery "github.com/codefly-dev/authority/libraries/delivery/go"
+	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 )
 
 // Owner integration evidence, not native workload/composition qualification:
@@ -27,10 +34,54 @@ import (
 // supplies test signing/execution bindings. The module credential is created
 // directly by StartModuleTask. Registry, applied generations, installations,
 // human grants and authority reads use migrated PostgreSQL and owner adapters.
+//
+// The person whose task starts the read is seated through an installation
+// role: the origin is delivered as a module page declaring admin and user, as
+// the composition delivers one (its manifest and its signed authority
+// document), and the person holds user on the organization's installation of
+// it. Their collection grant is what the content read then carries.
 func TestInstalledContentReadPostgresRetainedBinding(t *testing.T) {
 	s := newRegistryScenario(t, "contentreader")
 	target := newRegistryBinding(t, "contenttarget")
 	svc := s.delivery.service
+	originPage, pageBundle := frontendFixture(t, "content reader")
+	svc.SetFrontendArtifactSource(frontendBlobSource{originPage.Payload.Digest: pageBundle})
+	svc.SetCompositionReconcile(s.reconciler.RunOnce)
+	pageKind := s.prefix + ".page"
+	// deliverOrigin delivers the origin as the CLI delivers a module page:
+	// core's manifest and, bound to it, the authority document that declares
+	// its roles. admin reads and writes the page; user reads it.
+	signer := deliverytest.Signer(t, productionPathSigner)
+	deliverOrigin := func(m *solutionhost.ModuleManifest) {
+		t.Helper()
+		raw, err := solutionhost.SignedPayload(m)
+		require.NoError(t, err)
+		scope := func(actions ...string) []*authorityv1.WorkScopeV1 {
+			return []*authorityv1.WorkScopeV1{{ResourceKind: pageKind, Actions: actions}}
+		}
+		doc, err := (proto.MarshalOptions{Deterministic: true}).Marshal(&compositionv1.AuthorityManifestV1{
+			Module: m.Alias, Generation: m.Generation, CoreManifestDigest: authoritydelivery.Digest(raw),
+			ScopeCeilings: scope("read", "write"), OwnerAware: true, InstallationRole: domain.NoInstallationRole,
+			Roles: []*compositionv1.RoleV1{{Name: domain.AdminRole, Scopes: scope("read", "write")}, {Name: domain.UserRole, Scopes: scope("read")}},
+		})
+		require.NoError(t, err)
+		envelope, err := authoritydelivery.Sign(doc, signer.KeyID(), signer.Sign)
+		require.NoError(t, err)
+		s.delivery.callerNamespace, s.delivery.callerAccount = productionPathNamespace(m.Alias), "delivery"
+		_, err = svc.ApplyComposition(testCtx, &compositionv1.ApplyManifestRequest{
+			Carrier:   &compositionv1.SignedManifestV1{Document: raw, Envelope: deliverytest.Envelope(t, raw, productionPathSigner)},
+			Authority: &compositionv1.SignedManifestV1{Document: doc, Envelope: envelope}, Credential: "projected-delivery-token",
+		})
+		require.NoError(t, err)
+	}
+	deliver := func(b *registryBinding, m *solutionhost.ModuleManifest) {
+		t.Helper()
+		if b == s.primary {
+			deliverOrigin(m)
+			return
+		}
+		requireDelivered(t, s.delivery.deliver(t, m))
+	}
 	manifests := map[string]*solutionhost.ModuleManifest{}
 	for _, b := range []*registryBinding{s.primary, target} {
 		m := productionPathManifest(t, b.solutionID, 1)
@@ -38,6 +89,9 @@ func TestInstalledContentReadPostgresRetainedBinding(t *testing.T) {
 		m.Authority = &solutionhost.Authority{Principal: b.solutionID}
 		if b == s.primary {
 			m.Authority.Bindings = []solutionhost.AuthorityBinding{{ID: "evidence", Audience: target.solutionID, Operations: map[string][]string{"invoke": {"documents:read"}, "lookup": {"documents:read"}}}}
+			// The origin has a page, and its page declares the two roles a
+			// person is seated through, on a kind of its own.
+			m.Frontend, m.Authority.ResourceKinds, m.Authority.InstallationRole = originPage, []string{pageKind}, domain.NoInstallationRole
 		} else {
 			m.Authority.ResourceKinds = []string{"documents"}
 		}
@@ -64,7 +118,7 @@ func TestInstalledContentReadPostgresRetainedBinding(t *testing.T) {
 	// First establish host ceiling, then deliver both signed owner declarations.
 	put()
 	for _, b := range []*registryBinding{s.primary, target} {
-		requireDelivered(t, s.delivery.deliver(t, manifests[b.solutionID]))
+		deliver(b, manifests[b.solutionID])
 	}
 	s.pass(t)
 	originInstall := s.install(t, s.tenant)
@@ -105,6 +159,19 @@ func TestInstalledContentReadPostgresRetainedBinding(t *testing.T) {
 	adapters.WithService(svc)
 	adapters.SetInternalToken(delegationExchangeInternalToken)
 	caller := auth.WithVerifiedDatabaseIdentity(testCtx, owner, s.tenant)
+	// The person is seated at the origin through its installation: they hold
+	// user, one of the two roles the origin's page declares, on the
+	// organization's installation of it. An organisation role reaches no
+	// module, and a module declaring no roles holds nothing for anybody's own
+	// session, so nothing less starts a person's task there.
+	core, err := svc.AuthorityCore()
+	require.NoError(t, err)
+	seat := func() {
+		t.Helper()
+		_, err := core.GrantRoleAsHost(testCtx, authority.RoleRequest{Organization: s.tenant, InstallationID: originInstall.Id, Role: domain.UserRole, PersonID: owner})
+		require.NoError(t, err)
+	}
+	seat()
 	root, err := issuer.StartTask(caller, &gen.StartTaskWorkContextRequest{OrgId: s.tenant, TaskId: business.NewIDString(), Audience: s.prefix, AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "documents", Actions: []string{"read"}}}})
 	require.NoError(t, err)
 	moduleToken, _, err := issuer.StartModuleTask(testCtx, business.ModuleWorkContextAuthority{PrincipalID: s.principalID(), Tenant: s.tenant, InstallationID: originInstall.Id})
@@ -169,6 +236,7 @@ func TestInstalledContentReadPostgresRetainedBinding(t *testing.T) {
 	// the served record check, not merely differ in a decoded binding string.
 	freshRead := func() string {
 		t.Helper()
+		seat()
 		root, err = issuer.StartTask(caller, &gen.StartTaskWorkContextRequest{OrgId: s.tenant, TaskId: business.NewIDString(), Audience: s.prefix, AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "documents", Actions: []string{"read"}}}})
 		require.NoError(t, err)
 		moduleToken, _, err = issuer.StartModuleTask(testCtx, business.ModuleWorkContextAuthority{PrincipalID: s.principalID(), Tenant: s.tenant, InstallationID: originInstall.Id})
@@ -228,7 +296,7 @@ func TestInstalledContentReadPostgresRetainedBinding(t *testing.T) {
 				}
 				m := manifests[b.solutionID]
 				m.Generation++
-				requireDelivered(t, s.delivery.deliver(t, m))
+				deliver(b, m)
 				s.pass(t)
 			case "target installation":
 				// A module's installation is retired by its lifecycle (its
@@ -249,6 +317,9 @@ func TestInstalledContentReadPostgresRetainedBinding(t *testing.T) {
 				}))
 				_, err = check(held)
 				require.Error(t, err)
+				// The origin's page selects no standing authority, so nobody
+				// installs it: composition does, at its next pass.
+				s.pass(t)
 				originInstall = s.install(t, s.tenant)
 			}
 			_, err = check(held)

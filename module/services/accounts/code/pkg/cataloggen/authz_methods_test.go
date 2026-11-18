@@ -47,11 +47,12 @@ func TestAuthorizationCatalogCompilationAndPolicyProjection(t *testing.T) {
 	// then -2 when MintModuleRegistration and MintSolutionRegistration were
 	// deleted with their secrets (#1056), and +1 for the live-authority read a
 	// callee's verifier asks (#1107), +1 for the issuer's admission of a
-	// bearer-less module route's capability (AdmitWorkloadOperation), and +1
-	// for the composition interface's ApplyManifest. Picking either side's
-	// number would be silently wrong, so this is read off the regenerated
-	// generated/authz-methods.json.
-	require.Equal(t, 55, internalCount)   // ApplyManifest now authenticates its signed carrier on the tenant listener
+	// bearer-less module route's capability (AdmitWorkloadOperation), +1
+	// for the composition interface's ApplyManifest, and +1 for the gateway's
+	// record of a call its hop refused (RecordHopRefusal). Picking either
+	// side's number would be silently wrong, so this is read off the
+	// regenerated generated/authz-methods.json.
+	require.Equal(t, 56, internalCount)   // ApplyManifest now authenticates its signed carrier on the tenant listener
 	require.Equal(t, 29, failClosedCount) // +1: AuthService/GetProviderSignOut, the provider's RP-initiated logout URL, rate-limited as authentication like every other pre-credential route and so fail-closed; +3: the artifact interface's Approve, Authorize and Revoke, authenticated by the module's workload credential; +1: signed composition delivery; +2: the session interface's SignIn and ListFixturePeople are rate-limited as authentication and fail closed; +4: the authority interface's workload-credential calls (RegisterAdmissionKey, AttachResource, DetachResource, AuthorizeTransfer); +1: the installation interface's Current, authenticated by the module's workload credential
 	require.Equal(t, 2, factorAttemptCount)
 	require.Equal(
@@ -184,5 +185,5 @@ func TestImpersonationRestrictionsMatchTheDescriptorsTheInterceptorReads(t *test
 	}
 
 	require.Equal(t, catalogued, enforced)
-	require.Len(t, enforced, 74) // 57 of the API package + OpenTeamCast, ListCastableTeams, OpenRoleView, Issue, Delegate, RevokeDelegation, GetDelegation, Install, Review, GrantRole, RevokeRole, ListRoleGrants, List, ListHeld, Current, ListOffers, ReviewOffer of the implemented interfaces; Check and ListResources are public, authenticated by the token they check
+	require.Len(t, enforced, 90) // 72 of the API package (57, and the 15 durable grants of impersonation_durable_grant_test.go) + OpenTeamCast, ListCastableTeams, OpenRoleView, Issue, Delegate, RevokeDelegation, GetDelegation, Install, Review, GrantRole, RevokeRole, ListRoleGrants, List, ListHeld, Current, ListOffers, ReviewOffer of the implemented interfaces; Check and ListResources are public, authenticated by the token they check, and End (session 0.6.0)
 }

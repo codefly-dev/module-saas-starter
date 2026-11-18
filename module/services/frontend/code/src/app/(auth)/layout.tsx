@@ -1,6 +1,6 @@
 /**
  * Auth layout — NO sidebar, NO nav. Just a centered card on a clean background.
- * Used for: /auth/login, /auth/callback, /auth/magic-link
+ * Used for: /auth/login, /auth/callback
  */
 export default function AuthLayout({
 	children,

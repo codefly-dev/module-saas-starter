@@ -246,30 +246,36 @@ func (g *Gateway) serveBrowser(w http.ResponseWriter, r *http.Request) bool {
 	g.rateLimitThenServe(w, r, entry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token, err := h.workContext(r.Context(), bearer, module, browserPage(r))
 		if err != nil {
-			code, httpStatus := status.Code(err), http.StatusForbidden
-			reason := "the authority refused this person at " + module + ": " + status.Convert(err).Message()
-			switch {
-			case code == codes.Unauthenticated:
-				httpStatus = http.StatusUnauthorized
-			case !isVerdict(code):
-				// Asked, but no answer: the person's request ended, the
-				// deadline passed, or the authority did not answer. Refused,
-				// and said as what it is.
-				//
-				// The authority's message for a failure can carry internal
-				// error text or a transport address, so the person is told the
-				// module and the code, and the message is logged here.
-				code, httpStatus = failureStatus(failureOf(r.Context(), err))
-				reason = "the authority gave no answer for this person at " + module + " (" + code.String() + ")"
-				log.Printf("WARN: hop: the authority gave no answer for a person at %s: code=%s reason=%q",
-					module, status.Code(err), status.Convert(err).Message())
-			}
+			httpStatus, code, reason := personContextRefusal(r.Context(), err, module)
 			hopBrowserError(w, r, httpStatus, code, reason)
 			return
 		}
 		h.face.ServeHTTP(w, withOnlyWorkContext(r, token))
 	}))
 	return true
+}
+
+// personContextRefusal is how a person's request is answered when the
+// authority issued them no Work Context at audience: its refusal by its own
+// reason (401 for a credential that is no session, 403 otherwise), or, when it
+// was asked and gave no answer (the person's request ended, the deadline
+// passed, the authority did not answer), that failure said as what it is. The
+// authority's message for a failure can carry internal error text or a
+// transport address, so the person is told the audience and the code, and the
+// message is logged here.
+func personContextRefusal(ctx context.Context, err error, audience string) (httpStatus int, code codes.Code, reason string) {
+	code, httpStatus = status.Code(err), http.StatusForbidden
+	reason = "the authority refused this person at " + audience + ": " + status.Convert(err).Message()
+	switch {
+	case code == codes.Unauthenticated:
+		httpStatus = http.StatusUnauthorized
+	case !isVerdict(code):
+		code, httpStatus = failureStatus(failureOf(ctx, err))
+		reason = "the authority gave no answer for this person at " + audience + " (" + code.String() + ")"
+		log.Printf("WARN: the authority gave no answer for a person at %s: code=%s reason=%q",
+			audience, status.Code(err), status.Convert(err).Message())
+	}
+	return httpStatus, code, reason
 }
 
 // Connect owns protocol error rendering. Require an explicit protocol signal
@@ -313,6 +319,19 @@ func withOnlyWorkContext(r *http.Request, token string) *http.Request {
 // binding to module when the target declares one (page_target). The hop's
 // Check narrows each call to what its method requires.
 func (h *hopRole) workContext(ctx context.Context, bearer, module, page string) (string, error) {
+	return h.workContextStated(ctx, bearer, module, page, nil)
+}
+
+// workContextStated is workContext for a credential the authority cannot
+// authenticate as a person's session by itself: an API key, which only this
+// perimeter validates, or a token confined to one resource, whose confinement
+// only this perimeter read. stated is then what this gateway verified about
+// the credential, under the gateway's own credential, and it is asked INSTEAD
+// of the bearer: the authority decides from who the credential acts as and
+// what bounds it, and the credential itself goes no further than here. The
+// bearer still keys what is held, so two credentials never share a context.
+// nil stated is the person's own session, presented as itself.
+func (h *hopRole) workContextStated(ctx context.Context, bearer, module, page string, stated metadata.MD) (string, error) {
 	key := sha256.Sum256([]byte(bearer + "\x00" + module + "\x00" + page))
 	now := h.clock()
 	h.mu.Lock()
@@ -326,7 +345,11 @@ func (h *hopRole) workContext(ctx context.Context, bearer, module, page string) 
 		return held.token, nil
 	}
 	h.mu.Unlock()
-	ask, cancel := context.WithTimeout(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+bearer), 10*time.Second)
+	presented := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+bearer)
+	if stated != nil {
+		presented = metadata.NewOutgoingContext(ctx, stated)
+	}
+	ask, cancel := context.WithTimeout(presented, 10*time.Second)
 	defer cancel()
 	req := &authorityv1.IssueRequest{
 		As:         &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}},
@@ -366,6 +389,14 @@ func (h *hopRole) workContext(ctx context.Context, bearer, module, page string) 
 	return held.token, nil
 }
 
+// newPersonContexts is the holder of people's Work Contexts on its own: the
+// authority's Issue over accounts and nothing of the hop's (no modules, no
+// faces, no workload credential, so it names no page). The solution proxy
+// mints with it whether or not this gateway stands as a hop.
+func newPersonContexts(accounts grpc.ClientConnInterface) *hopRole {
+	return &hopRole{issuer: authorityv1.NewAuthorityServiceClient(accounts)}
+}
+
 func (h *hopRole) clock() time.Time {
 	if h.now != nil {
 		return h.now()
@@ -377,10 +408,11 @@ func (h *hopRole) clock() time.Time {
 // for it (hop/MODULES), through the hop library's front door: the faces the
 // hop endpoint serves, and the browser path's in-process
 // face. accounts is the authority interface's connection (its Connect
-// listener, which serves the interface over gRPC too). No hop/MODULES is no
+// listener, which serves the interface over gRPC too), and refusals where the
+// front door's own refusals are recorded. No hop/MODULES is no
 // hop: nil, and nothing registered. A composition that names modules but whose
 // hop cannot stand is refused, by name, at boot.
-func standHop(ctx context.Context, accounts grpc.ClientConnInterface) (*hopRole, *forward.Front, error) {
+func standHop(ctx context.Context, accounts grpc.ClientConnInterface, refusals hopRefusalJournal) (*hopRole, *forward.Front, error) {
 	listed, _, err := codefly.For(ctx).WorkspaceValueIfSet("hop", "MODULES")
 	if err != nil {
 		return nil, nil, fmt.Errorf("hop/MODULES cannot be read: %w", err)
@@ -403,7 +435,7 @@ func standHop(ctx context.Context, accounts grpc.ClientConnInterface) (*hopRole,
 	}
 	// This instance registers its key as the workload the run attests
 	// (module-identity: true).
-	return newHopRole(ctx, hopAuthority{authorityv1.NewAuthorityServiceClient(accounts)}, hop.RunCredential, modules, raw, routes, enforcement)
+	return newHopRole(ctx, hopAuthority{authorityv1.NewAuthorityServiceClient(accounts)}, hop.RunCredential, modules, raw, routes, enforcement, hopRefusalSink(refusals))
 }
 
 // hopAuthorityClient is what the hop asks of the authority interface: Check
@@ -419,9 +451,10 @@ type hopAuthority struct {
 }
 
 // newHopRole builds the front door and the browser path over it, with a key
-// this instance generates.
+// this instance generates. refused receives each refusal either face makes
+// (gateway_hop_refusals.go); nil is the log line alone.
 func newHopRole(ctx context.Context, authority hopAuthorityClient, credential func() (string, error),
-	modules []string, raw string, routes *routing.Routing, enforcement string,
+	modules []string, raw string, routes *routing.Routing, enforcement string, refused forward.Sink,
 ) (*hopRole, *forward.Front, error) {
 	signer, err := newHopSigner()
 	if err != nil {
@@ -430,6 +463,7 @@ func newHopRole(ctx context.Context, authority hopAuthorityClient, credential fu
 	front, err := forward.New(ctx, forward.Config{
 		Signer: signer, Authority: authority, Credential: credential,
 		Modules: modules, Routes: raw, Enforcement: enforcement, Log: wool.Get(ctx).In("hop"),
+		Refused: refused,
 	})
 	if err != nil {
 		return nil, nil, err

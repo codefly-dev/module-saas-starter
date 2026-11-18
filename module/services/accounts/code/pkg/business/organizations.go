@@ -438,6 +438,9 @@ func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.
 	// now, so a failure here is reported, not raised: turning it into an error
 	// would tell the caller the removal did not happen when it did.
 	_ = s.invalidateMembership(ctx, orgID, memberID)
+	// The removal revoked the member's sessions; their issued access tokens
+	// end with it rather than at their expiry.
+	s.revokeInvalidatedSessionAccess(ctx, memberID)
 
 	return nil
 }

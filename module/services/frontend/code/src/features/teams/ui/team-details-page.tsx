@@ -1,8 +1,9 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import { OrgSelector } from "@/components/org-selector";
 import { ActAsTeam } from "@/features/role-view/role-view";
@@ -10,9 +11,20 @@ import type { Team } from "@/gen/saas/accounts/v1/common_pb";
 import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
 import { useAuth } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
+import { failureText } from "@/shared/lib/failure-text";
 import { readOutcome, readOutcomeMessage } from "@/shared/lib/read-outcome";
 import { formatDate } from "@/shared/lib/utils";
-import { Badge, Button, Spinner, useLoadingPhase } from "@/shared/ui";
+import {
+	Badge,
+	Button,
+	ErrorState,
+	Page as PageBody,
+	PageHeader,
+	Panel,
+	Spinner,
+	Stack,
+	useLoadingPhase,
+} from "@/shared/ui";
 import { roleLabel } from "../model/transforms";
 import { toTeamRole } from "../model/types";
 import { teamMutations } from "../service/mutations";
@@ -47,37 +59,92 @@ function TeamDetailsForOrganization({
 	const team = data?.teams.find(
 		(item) => item.id === teamId && item.orgId === orgId,
 	);
-	return (
-		<div className="space-y-6">
-			<div className="flex items-center justify-between gap-4">
-				<Link
-					href="/admin/teams"
-					className="text-sm text-primary hover:underline"
-				>
-					← All teams
-				</Link>
-				<OrgSelector />
-			</div>
-			{!orgId ? (
-				<p>Select an organization to view this team.</p>
-			) : quiet ? null : indicator ? (
+	const outcome = readOutcome(isError, error);
+	if (!orgId) {
+		return (
+			<PageBody>
+				<PageHeader
+					title="Team"
+					description="Select an organization to view this team."
+					actions={<TeamHeaderActions />}
+				/>
+			</PageBody>
+		);
+	}
+	// `quiet` renders nothing rather than falling through to "Team unavailable",
+	// which would flash over every load of a team that exists.
+	if (quiet) return null;
+	if (indicator) {
+		return (
+			<PageBody>
 				<Spinner label="Loading team" />
-			) : isError ? (
-				<div role="alert">
-					{readOutcomeMessage(readOutcome(true, error), "this team", "")}{" "}
-					<Button onClick={() => void refetch()}>Retry</Button>
-				</div>
-			) : !team ? (
-				<div role="alert">
-					<h1 className="text-2xl font-bold">Team unavailable</h1>
-					<p>
-						This team was deleted or isn&apos;t in your selected organization.
-					</p>
-				</div>
-			) : (
-				<TeamDetails team={team} />
-			)}
-		</div>
+			</PageBody>
+		);
+	}
+	if (isError) {
+		return (
+			<PageBody>
+				<PageHeader title="Team" actions={<TeamHeaderActions />} />
+				<Panel>
+					<Stack gap={3} align="start">
+						<ErrorState
+							title="Couldn't load this team"
+							detail={
+								outcome === "forbidden"
+									? "You don't have permission to see this organization's teams. Ask one of its administrators for access."
+									: "Try again; if it keeps failing, tell your administrator."
+							}
+						/>
+						{/* A refusal is not cured by asking again. */}
+						{outcome === "failed" && (
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() => void refetch()}
+							>
+								Try again
+							</Button>
+						)}
+					</Stack>
+				</Panel>
+			</PageBody>
+		);
+	}
+	if (!team) {
+		return (
+			<PageBody>
+				<PageHeader
+					role="alert"
+					title="Team unavailable"
+					description="This team was deleted or isn't in your selected organization."
+					actions={<TeamHeaderActions />}
+				/>
+			</PageBody>
+		);
+	}
+	return (
+		<PageBody>
+			<TeamDetails team={team} />
+		</PageBody>
+	);
+}
+
+// The organization selector and the way back, on every state of the page.
+function TeamHeaderActions({ children }: { children?: ReactNode }) {
+	return (
+		<>
+			<OrgSelector />
+			<Button
+				variant="outline"
+				size="sm"
+				nativeButton={false}
+				render={<Link href="/admin/teams" />}
+			>
+				<ArrowLeft className="mr-1 h-4 w-4" />
+				All teams
+			</Button>
+			{children}
+		</>
 	);
 }
 
@@ -118,26 +185,24 @@ function TeamDetails({ team }: { team: Team }) {
 	});
 	return (
 		<>
-			<div className="flex items-start justify-between gap-4">
-				<div className="space-y-2">
-					<h1 className="text-2xl font-bold">{team.name}</h1>
-					<p className="text-muted-foreground">
-						{team.description || "No description yet."}
-					</p>
-					<p className="text-sm text-muted-foreground">
-						Created {formatDate(team.createdAt)}
-					</p>
-				</div>
-				{canManage && (
-					<Button variant="outline" onClick={() => setEditing(true)}>
-						Edit team
-					</Button>
-				)}
-			</div>
-			<section
-				aria-label="Your team access"
-				className="space-y-2 rounded-lg border p-4"
+			<PageHeader
+				title={team.name}
+				description={team.description || "No description yet."}
+				actions={
+					<TeamHeaderActions>
+						{canManage && (
+							<Button variant="outline" onClick={() => setEditing(true)}>
+								Edit team
+							</Button>
+						)}
+					</TeamHeaderActions>
+				}
 			>
+				<p className="text-sm text-muted-foreground">
+					Created {formatDate(team.createdAt)}
+				</p>
+			</PageHeader>
+			<Panel role="region" aria-label="Your team access" className="space-y-2">
 				<h2 className="font-semibold">Your access</h2>
 				{accessQuiet ? null : accessIndicator ? (
 					<Spinner label="Checking your team role" />
@@ -193,7 +258,7 @@ function TeamDetails({ team }: { team: Team }) {
 						</p>
 					</>
 				)}
-			</section>
+			</Panel>
 			<ActAsTeam teamId={team.id} teamName={team.name} />
 			<TeamMembersPanel
 				orgId={team.orgId}
@@ -229,7 +294,7 @@ function TeamDetails({ team }: { team: Team }) {
 						isPending={update.isPending}
 						error={
 							update.isError
-								? `Couldn't update the team: ${update.error.message}`
+								? failureText("update the team", update.error)
 								: undefined
 						}
 					/>

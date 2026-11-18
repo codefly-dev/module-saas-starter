@@ -13,26 +13,51 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// CreateNotification writes n, or converges on the row an identical earlier
+// write left: the id is the idempotency key's, so a retry is the same id.
+//
+// It is an insert that does nothing on a conflict, then a read of the row the
+// caller may see, never an upsert. From PostgreSQL 16.16 and 17.12 an
+// ON CONFLICT DO UPDATE under row security checks the conflicting row against
+// the UPDATE policy before the arm's WHERE, so a key reused for a second
+// recipient (whose transaction cannot see the first recipient's row) raised a
+// policy violation instead of being skipped: an internal error, which a
+// module's outbox retries forever. DO NOTHING asks nothing of the row it
+// conflicts with, and the read is filtered by the policy as every read is. A
+// conflicting row that is not the caller's own identical one, another
+// recipient's or another payload, is the idempotency conflict the contract
+// names.
 func (s *PostgresStore) CreateNotification(ctx context.Context, n *business.Notification) error {
 	q := s.getQueryExecutor(ctx)
+	args := []any{n.ID, n.UserID, nilIfEmpty(n.OrgID), n.Title, n.Body, n.Type, nilIfEmpty(n.ActionURL),
+		nilIfEmpty(n.ResourceType), nilIfEmpty(n.ResourceID)}
 	result, err := q.Exec(ctx, `
 		INSERT INTO notifications (id, user_id, org_id, title, body, type, action_url, resource_type, resource_id)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		ON CONFLICT (id) DO UPDATE SET id = EXCLUDED.id
-		WHERE notifications.user_id = EXCLUDED.user_id
-		  AND notifications.org_id IS NOT DISTINCT FROM EXCLUDED.org_id
-		  AND notifications.title = EXCLUDED.title
-		  AND notifications.body = EXCLUDED.body
-		  AND notifications.type = EXCLUDED.type
-		  AND notifications.action_url IS NOT DISTINCT FROM EXCLUDED.action_url
-		  AND notifications.resource_type IS NOT DISTINCT FROM EXCLUDED.resource_type
-		  AND notifications.resource_id IS NOT DISTINCT FROM EXCLUDED.resource_id`,
-		n.ID, n.UserID, nilIfEmpty(n.OrgID), n.Title, n.Body, n.Type, nilIfEmpty(n.ActionURL),
-		nilIfEmpty(n.ResourceType), nilIfEmpty(n.ResourceID))
+		ON CONFLICT (id) DO NOTHING`, args...)
 	if err != nil {
 		return err
 	}
-	if result.RowsAffected() == 0 {
+	if result.RowsAffected() == 1 {
+		return nil
+	}
+	var identical bool
+	if err := q.QueryRow(ctx, `
+		SELECT EXISTS (
+		    SELECT 1 FROM notifications
+		    WHERE id = $1
+		      AND user_id = $2
+		      AND org_id IS NOT DISTINCT FROM $3
+		      AND title = $4
+		      AND body = $5
+		      AND type = $6
+		      AND action_url IS NOT DISTINCT FROM $7
+		      AND resource_type IS NOT DISTINCT FROM $8
+		      AND resource_id IS NOT DISTINCT FROM $9
+		)`, args...).Scan(&identical); err != nil {
+		return err
+	}
+	if !identical {
 		return business.ErrNotificationIdempotencyConflict
 	}
 	return nil
