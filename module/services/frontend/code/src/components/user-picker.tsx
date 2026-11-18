@@ -52,11 +52,13 @@ export function UserPicker({
 	onChange,
 	orgId,
 	exclude = [],
+	disabled = false,
 }: {
 	value: string;
 	onChange: (id: string) => void;
 	orgId?: string;
 	exclude?: string[];
+	disabled?: boolean;
 }) {
 	const [search, setSearch] = useState("");
 	const [query, setQuery] = useState("");
@@ -123,16 +125,21 @@ export function UserPicker({
 
 	if (value) {
 		const chosen =
-			found.find((user) => user.id === value)?.label ?? (search || value);
+			found.find((user) => user.id === value)?.label ??
+			(search || "Selected person");
 		return (
 			<div className="w-full max-w-sm space-y-2">
 				<p className="text-sm font-medium">User</p>
 				<Chip
-					onRemove={() => {
-						onChange("");
-						setSearch("");
-					}}
-					removeLabel={`Choose someone other than ${chosen}`}
+					{...(disabled
+						? { onRemove: undefined, removeLabel: undefined }
+						: {
+								onRemove: () => {
+									onChange("");
+									setSearch("");
+								},
+								removeLabel: `Choose someone other than ${chosen}`,
+							})}
 				>
 					{chosen}
 				</Chip>
@@ -154,6 +161,7 @@ export function UserPicker({
 				{(control) => (
 					<Command value={search} onValueChange={setSearch}>
 						<CommandInput
+							disabled={disabled}
 							{...control}
 							placeholder={
 								orgId ? "Search members by email…" : "Search by name or email…"
@@ -169,8 +177,10 @@ export function UserPicker({
 									options.map((user) => (
 										<CommandItem
 											key={user.id}
+											disabled={disabled}
 											value={user.id}
 											onSelect={() => {
+												if (disabled) return;
 												setSearch(user.label);
 												onChange(user.id);
 											}}

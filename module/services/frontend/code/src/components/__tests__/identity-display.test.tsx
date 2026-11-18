@@ -123,3 +123,14 @@ describe("human-readable identity", () => {
 		expect(screen.queryByText(userId)).toBeNull();
 	});
 });
+
+it("locks a selected person while saving and never exposes their identifier", () => {
+	const changed = vi.fn();
+	renderInApp(<UserPicker value={userId} onChange={changed} disabled />);
+	expect(screen.getByText("Selected person")).toBeTruthy();
+	expect(screen.queryByText(userId)).toBeNull();
+	expect(
+		screen.queryByRole("button", { name: /Choose someone other/ }),
+	).toBeNull();
+	expect(changed).not.toHaveBeenCalled();
+});
