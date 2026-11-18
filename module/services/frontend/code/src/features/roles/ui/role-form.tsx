@@ -3,7 +3,7 @@
 import { Plus, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { ConnectError } from "@connectrpc/connect";
+import { failureText } from "@/shared/lib/failure-text";
 import {
 	Badge,
 	Button,
@@ -81,7 +81,7 @@ export function RoleForm({ orgId }: { orgId: string }) {
 					reset();
 					setOpen(false);
 				},
-				onError: (cause) => setError(ConnectError.from(cause).rawMessage),
+				onError: (cause) => setError(failureText("create this role", cause)),
 			},
 		);
 	}
@@ -97,11 +97,11 @@ export function RoleForm({ orgId }: { orgId: string }) {
 		>
 			<DialogTrigger render={<Button />}>
 				<Plus className="mr-2 h-4 w-4" />
-				Create Role
+				Create role
 			</DialogTrigger>
 			<DialogContent className="sm:max-w-lg">
 				<DialogHeader>
-					<DialogTitle>Create Role</DialogTitle>
+					<DialogTitle>Create role</DialogTitle>
 					<DialogDescription>
 						{orgId
 							? "Define a role for the selected organization."

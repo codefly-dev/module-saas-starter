@@ -33,7 +33,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 async function openDraft(name = "Example editor") {
-	fireEvent.click(screen.getByRole("button", { name: "Create Role" }));
+	fireEvent.click(screen.getByRole("button", { name: "Create role" }));
 	await screen.findByRole("dialog");
 	fireEvent.change(screen.getByLabelText("Name"), { target: { value: name } });
 }
@@ -126,7 +126,7 @@ describe("RolesPage admin container", () => {
 		(auth) => {
 			Object.assign(session, auth);
 			renderInApp(<RolesPage />);
-			expect(screen.queryByRole("button", { name: "Create Role" })).toBeNull();
+			expect(screen.queryByRole("button", { name: "Create role" })).toBeNull();
 		},
 	);
 
@@ -190,7 +190,7 @@ describe("RolesPage admin container", () => {
 		await waitFor(() =>
 			expect(listedScopes).toContainEqual({ orgId: "org-2" }),
 		);
-		fireEvent.click(screen.getByRole("button", { name: "Create Role" }));
+		fireEvent.click(screen.getByRole("button", { name: "Create role" }));
 		await screen.findByRole("dialog");
 		expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("");
 		expect(screen.queryByText("content:write")).toBeNull();
@@ -282,4 +282,18 @@ describe("RolesPage admin container", () => {
 			]),
 		);
 	});
+});
+
+it("does not offer deletion to a member who can only read roles", async () => {
+	session.orgRole = "member";
+	server.use(
+		http.post(rpc("PermissionService", "ListRoles"), () =>
+			HttpResponse.json({
+				roles: [{ id: "role-a", name: "Reviewer", builtIn: false }],
+			}),
+		),
+	);
+	renderInApp(<RolesPage />);
+	expect(await screen.findByText("Reviewer")).toBeTruthy();
+	expect(screen.queryByRole("button", { name: "Delete Reviewer" })).toBeNull();
 });

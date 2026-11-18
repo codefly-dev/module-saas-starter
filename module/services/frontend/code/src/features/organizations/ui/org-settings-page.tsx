@@ -80,7 +80,6 @@ export function OrgSettingsPage() {
 						key={`identity-${organizationId}`}
 						orgId={organizationId}
 					/>
-					<OrgSettingsForm key={organizationId} orgId={organizationId} />
 				</>
 			) : (
 				<EmptyState
@@ -130,6 +129,7 @@ function OrganizationIdentity({ orgId }: { orgId: string }) {
 			{(isAdministrator || platformRole === "super_admin") && (
 				<OrganizationProfileForm organization={identity} />
 			)}
+			<OrgSettingsForm key={orgId} orgId={orgId} />
 			<OrganizationLifecycleCard
 				organization={identity}
 				canLeave

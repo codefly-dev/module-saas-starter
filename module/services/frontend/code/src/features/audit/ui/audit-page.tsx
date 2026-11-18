@@ -426,7 +426,7 @@ export function AuditPage() {
 					}
 				}}
 			>
-				<SelectTrigger className="w-[160px]">
+				<SelectTrigger aria-label="Event category" className="w-full sm:w-40">
 					<SelectValue placeholder="Category" />
 				</SelectTrigger>
 				<SelectContent>
@@ -441,7 +441,7 @@ export function AuditPage() {
 			<Select
 				value={namespaceFilter}
 				items={[
-					{ value: "all", label: "All namespaces" },
+					{ value: "all", label: "All sources" },
 					...namespaces.map((n) => ({ value: n, label: n })),
 				]}
 				onValueChange={(v) => {
@@ -452,11 +452,11 @@ export function AuditPage() {
 					}
 				}}
 			>
-				<SelectTrigger className="w-[160px]">
-					<SelectValue placeholder="Namespace" />
+				<SelectTrigger aria-label="Event source" className="w-full sm:w-40">
+					<SelectValue placeholder="Source" />
 				</SelectTrigger>
 				<SelectContent>
-					<SelectItem value="all">All namespaces</SelectItem>
+					<SelectItem value="all">All sources</SelectItem>
 					{namespaces.map((n) => (
 						<SelectItem key={n} value={n}>
 							{n}
@@ -480,7 +480,7 @@ export function AuditPage() {
 					}
 				}}
 			>
-				<SelectTrigger className="w-[220px]">
+				<SelectTrigger aria-label="Event type" className="w-full sm:w-56">
 					<SelectValue placeholder="Filter by event type" />
 				</SelectTrigger>
 				<SelectContent>
@@ -496,7 +496,7 @@ export function AuditPage() {
 	);
 
 	const dashboard: DashboardData = {
-		title: "Audit Log",
+		title: "Audit log",
 		// When a set filter is on, say so here. Every dropdown still reads "all"
 		// — none of them can express a set — so without this the table, the
 		// series and the breakdowns would all be narrowed with nothing on the

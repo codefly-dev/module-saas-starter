@@ -1,7 +1,16 @@
 "use client";
 
+import { ShieldCheck } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import {
+	createColumnHelper,
+	getCoreRowModel,
+	useReactTable,
+} from "@tanstack/react-table";
+import { DataTable } from "@/shared/ui/data-table";
+import { failureText } from "@/shared/lib/failure-text";
+import { EmptyState } from "@/components/empty-state";
 import { OrgSelector } from "@/components/org-selector";
 import { UserPicker } from "@/components/user-picker";
 import { useEffectivePermissions } from "@/features/permissions/service/effective";
@@ -12,6 +21,8 @@ import { readOutcome, readOutcomeMessage } from "@/shared/lib/read-outcome";
 import {
 	Badge,
 	Input,
+	Field,
+	ErrorState,
 	Page as PageBody,
 	PageHeader,
 	Panel,
@@ -23,12 +34,6 @@ import {
 	SelectValue,
 	Spinner,
 	Stack,
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
 	useLoadingPhase,
 } from "@/shared/ui";
 import {
@@ -56,6 +61,7 @@ function PermissionsBrowser({ orgId }: { orgId: string }) {
 	} = useQuery(permissionQueries.serviceInfo());
 	const {
 		data: roles = [],
+		isLoading: rolesLoading,
 		isError: rolesFailed,
 		error: rolesError,
 	} = useRoles(orgId);
@@ -82,7 +88,7 @@ function PermissionsBrowser({ orgId }: { orgId: string }) {
 		<PageBody>
 			<PageHeader
 				title="Permissions"
-				description="The vocabulary the service declares, and which roles grant each entry in this organization."
+				description="See what people can do and which roles provide access."
 				actions={<OrgSelector />}
 			/>
 
@@ -102,69 +108,97 @@ function PermissionsBrowser({ orgId }: { orgId: string }) {
 						)}
 					</span>
 				</Panel>
+			) : groups.length === 0 ? (
+				<EmptyState
+					icon={ShieldCheck}
+					title="No access rules available"
+					description="Access rules appear here when applications provide them."
+				/>
 			) : (
 				groups.map((group) => (
-					<Section key={group.resource} title={group.resource}>
-						<Panel>
-							<Table>
-								<TableHeader>
-									<TableRow>
-										<TableHead>Permission</TableHead>
-										<TableHead>What it allows</TableHead>
-										<TableHead>Granted by</TableHead>
-									</TableRow>
-								</TableHeader>
-								<TableBody>
-									{group.permissions.map((permission) => {
-										const label = permissionLabel(permission);
-										const granting = rolesGranting(permission, roles);
-										return (
-											<TableRow key={label}>
-												<TableCell className="font-mono text-xs">
-													{label}
-												</TableCell>
-												<TableCell className="text-sm text-muted-foreground">
-													{descriptions.get(label) || "—"}
-												</TableCell>
-												<TableCell>
-													{granting.length === 0 ? (
-														<span
-															className="text-sm text-muted-foreground"
-															{...(rolesFailed
-																? { role: "alert" as const }
-																: {})}
-														>
-															{rolesOutcome === "forbidden"
-																? "Not visible to you"
-																: rolesOutcome === "failed"
-																	? "Unknown"
-																	: "No role"}
-														</span>
-													) : (
-														<Stack
-															direction="row"
-															gap={2}
-															className="flex-wrap"
-														>
-															{granting.map((role) => (
-																<Badge key={role.id} variant="secondary">
-																	{role.name}
-																</Badge>
-															))}
-														</Stack>
-													)}
-												</TableCell>
-											</TableRow>
-										);
-									})}
-								</TableBody>
-							</Table>
-						</Panel>
+					<Section
+						key={group.resource}
+						title={
+							group.resource === "*"
+								? "All areas"
+								: group.resource
+										.replace(/[-_]/g, " ")
+										.replace(/^./, (c) => c.toUpperCase())
+						}
+					>
+						<PermissionTable
+							permissions={group.permissions}
+							descriptions={descriptions}
+							roles={roles}
+							rolesLoading={rolesLoading}
+							rolesOutcome={rolesOutcome}
+						/>
 					</Section>
 				))
 			)}
 		</PageBody>
 	);
+}
+
+const permissionColumn = createColumnHelper<Permission>();
+
+function PermissionTable({
+	permissions,
+	descriptions,
+	roles,
+	rolesLoading,
+	rolesOutcome,
+}: {
+	permissions: readonly Permission[];
+	descriptions: Map<string, string>;
+	roles: Parameters<typeof rolesGranting>[1];
+	rolesLoading: boolean;
+	rolesOutcome: ReturnType<typeof readOutcome>;
+}) {
+	const columns = useMemo(
+		() => [
+			permissionColumn.display({
+				id: "activity",
+				header: "Activity",
+				cell: ({ row }) =>
+					descriptions.get(permissionLabel(row.original)) ||
+					"Description unavailable",
+			}),
+			permissionColumn.display({
+				id: "access",
+				header: "Roles with access",
+				cell: ({ row }) => {
+					if (rolesLoading) return <Spinner label="Loading roles" size="sm" />;
+					if (rolesOutcome !== "empty") {
+						// A failed read cannot establish that no role grants access.
+						if (rolesOutcome === "forbidden")
+							return <span>Not visible to you</span>;
+						if (rolesOutcome === "failed") return <span>Unknown</span>;
+					}
+					const granting = rolesGranting(row.original, roles);
+					return granting.length ? (
+						<Stack direction="row" gap={2} className="flex-wrap">
+							{granting.map((role) => (
+								<Badge key={role.id} variant="secondary">
+									{role.name}
+								</Badge>
+							))}
+						</Stack>
+					) : (
+						<span className="text-muted-foreground">No role</span>
+					);
+				},
+			}),
+		],
+		[descriptions, roles, rolesLoading, rolesOutcome],
+	);
+	const rows = useMemo(() => [...permissions], [permissions]);
+	const table = useReactTable({
+		data: rows,
+		columns,
+		getCoreRowModel: getCoreRowModel(),
+	});
+	return <DataTable table={table} />;
 }
 
 // "Does this person hold this permission, and by which path" — the verdict
@@ -193,7 +227,11 @@ function CheckAGrant({ orgId }: { orgId: string }) {
 	// trailing whitespace alone would read as an unasked question forever.
 	const pending = scopeDraft.trim() !== scope;
 	const { data: info } = useQuery(permissionQueries.serviceInfo());
-	const { permissions } = useEffectivePermissions(orgId, subjectId);
+	const {
+		permissions,
+		isError: sourcesFailed,
+		isLoading: sourcesLoading,
+	} = useEffectivePermissions(orgId, subjectId);
 
 	const wanted: Permission | undefined = (() => {
 		const separator = permission.indexOf(":");
@@ -211,12 +249,12 @@ function CheckAGrant({ orgId }: { orgId: string }) {
 
 	return (
 		<Section
-			title="Check a grant"
-			description="The authorization service's own decision, with the assignments in this organization that explain it."
+			title="Check someone’s access"
+			description="Choose a person and an activity to check their current access."
 		>
 			<Panel>
 				<Stack gap={4}>
-					<Stack direction="row" gap={4} className="flex-wrap">
+					<div className="grid gap-4 lg:grid-cols-3">
 						{/* The same picker every other surface chooses a person with: a
 						    scroll list of every member is unusable past a few dozen, and
 						    two ways to pick a user is one too many. */}
@@ -225,40 +263,53 @@ function CheckAGrant({ orgId }: { orgId: string }) {
 							value={subjectId}
 							onChange={setSubjectId}
 						/>
-						<Select
-							value={permission}
-							items={(info?.capabilities?.permissions ?? []).map((entry) => ({
-								value: permissionLabel(entry),
-								label: permissionLabel(entry),
-							}))}
-							onValueChange={(value) => setPermission(value ?? "")}
+						<Field label="Activity">
+							{(control) => (
+								<Select
+									value={permission}
+									items={(info?.capabilities?.permissions ?? []).map(
+										(entry) => ({
+											value: permissionLabel(entry),
+											label: entry.description || "Description unavailable",
+										}),
+									)}
+									onValueChange={(value) => setPermission(value ?? "")}
+								>
+									<SelectTrigger {...control} className="w-full">
+										<SelectValue placeholder="Choose an activity…" />
+									</SelectTrigger>
+									<SelectContent>
+										{(info?.capabilities?.permissions ?? []).map((entry) => (
+											<SelectItem
+												key={permissionLabel(entry)}
+												value={permissionLabel(entry)}
+											>
+												{entry.description || "Description unavailable"}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							)}
+						</Field>
+						<Field
+							label="Limit to (optional)"
+							description="Leave blank to check access across the organization."
 						>
-							<SelectTrigger className="w-72">
-								<SelectValue placeholder="Pick a permission…" />
-							</SelectTrigger>
-							<SelectContent>
-								{(info?.capabilities?.permissions ?? []).map((entry) => (
-									<SelectItem
-										key={permissionLabel(entry)}
-										value={permissionLabel(entry)}
-									>
-										{permissionLabel(entry)}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-						<Input
-							className="w-72"
-							value={scopeDraft}
-							onChange={(event) => setScopeDraft(event.target.value)}
-							onBlur={commitScope}
-							onKeyDown={(event) => {
-								if (event.key === "Enter") commitScope();
-							}}
-							placeholder="Scope (empty asks organization-wide)"
-							aria-label="Scope"
-						/>
-					</Stack>
+							{(control) => (
+								<Input
+									{...control}
+									className="w-full"
+									value={scopeDraft}
+									onChange={(event) => setScopeDraft(event.target.value)}
+									onBlur={commitScope}
+									onKeyDown={(event) => {
+										if (event.key === "Enter") commitScope();
+									}}
+									placeholder="Resource identifier"
+								/>
+							)}
+						</Field>
+					</div>
 					{subjectId &&
 						wanted &&
 						(pending ? (
@@ -269,7 +320,12 @@ function CheckAGrant({ orgId }: { orgId: string }) {
 								{scopeDraft.trim() || "the whole organization"}.
 							</span>
 						) : (
-							<Verdict decision={decision} scope={scope} sources={sources} />
+							<Verdict
+								decision={decision}
+								scope={scope}
+								sources={sources}
+								sourcesUnavailable={sourcesFailed || sourcesLoading}
+							/>
 						))}
 				</Stack>
 			</Panel>
@@ -278,10 +334,12 @@ function CheckAGrant({ orgId }: { orgId: string }) {
 }
 
 function Verdict({
+	sourcesUnavailable,
 	decision,
 	scope,
 	sources,
 }: {
+	sourcesUnavailable: boolean;
 	decision: ReturnType<typeof useExplainPermission>;
 	scope: string;
 	sources: readonly GrantSource[];
@@ -294,14 +352,14 @@ function Verdict({
 	// refusal to answer into an answer.
 	if (decision.isError || !decision.data) {
 		return (
-			<span className="text-sm text-destructive">
-				The authorization service did not answer:{" "}
-				{decision.error?.message ?? "unknown error"}
-			</span>
+			<ErrorState
+				title="Couldn't check access"
+				detail={failureText("check this person's access", decision.error)}
+			/>
 		);
 	}
 
-	const { allowed, reason, grantingScopes } = decision.data;
+	const { allowed, grantingScopes } = decision.data;
 	// Asked org-wide, the scoped assignments are additional reach. Asked at a
 	// scope, a denial beside them is the case the contract warns about: the
 	// subject is entitled, elsewhere.
@@ -314,9 +372,6 @@ function Verdict({
 					{allowed ? "Allowed" : "Not allowed"}
 					{scope ? ` in ${scope}` : " organization-wide"}
 				</Badge>
-				{reason && (
-					<span className="text-sm text-muted-foreground">{reason}</span>
-				)}
 			</Stack>
 
 			{elsewhere.length > 0 && (
@@ -333,7 +388,11 @@ function Verdict({
 			)}
 
 			<Stack direction="row" gap={2} align="center" className="flex-wrap">
-				{sources.length > 0 ? (
+				{sourcesUnavailable ? (
+					<p className="text-sm text-muted-foreground">
+						The roles behind this access could not be verified yet.
+					</p>
+				) : sources.length > 0 ? (
 					<>
 						{/* Only an allowed verdict is explained by these paths. Scope
 						    filtering keeps a grant from another scope out, so a path

@@ -65,7 +65,10 @@ export function useEffectivePermissions(orgId: string, subjectId: string) {
 		teams: memberTeams.map((team) => ({ id: team.id, name: team.name })),
 	});
 
+	const failed = [roles, direct, teams, ...teamGrants].find((query) => query.isError);
 	return {
+		isError: Boolean(failed),
+		error: failed?.error,
 		permissions,
 		teams: memberTeams,
 		roles: roles.data ?? [],

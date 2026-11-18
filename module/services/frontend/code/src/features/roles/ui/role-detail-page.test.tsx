@@ -128,7 +128,7 @@ describe("RoleDetailPage", () => {
 
 		expect(await screen.findByText("platform")).toBeTruthy();
 		expect(screen.getByText("Team")).toBeTruthy();
-		expect(screen.getByText("Principal")).toBeTruthy();
+		expect(screen.getByText("Person")).toBeTruthy();
 	});
 
 	it("says so rather than rendering an empty shell when the role is not visible", async () => {
@@ -212,7 +212,7 @@ describe("RoleDetailPage", () => {
 		);
 
 		const { client } = renderInApp(<RoleDetailPage roleId="role-1" />);
-		expect(await screen.findByText("Principal")).toBeTruthy();
+		expect(await screen.findByText("Person")).toBeTruthy();
 
 		denied = true;
 		await client.refetchQueries({ queryKey: ["role-assignments"] });
@@ -222,6 +222,6 @@ describe("RoleDetailPage", () => {
 				screen.getByText(/don't have permission to see who holds this role/),
 			).toBeTruthy(),
 		);
-		expect(screen.queryByText("Principal")).toBeNull();
+		expect(screen.queryByText("Person")).toBeNull();
 	});
 });

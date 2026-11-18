@@ -73,3 +73,21 @@ describe.each<{ name: string; method?: string; page: () => ReactElement }>([
 		expect(commits - settled).toBe(0);
 	});
 });
+
+it("explains denied session access without offering retry or an empty list", async () => {
+	server.use(
+		http.post(rpc("PlatformAdminService", "ListActiveSessions"), () =>
+			HttpResponse.json(
+				{ code: "permission_denied", message: "raw-internal-message" },
+				{ status: 403 },
+			),
+		),
+	);
+	renderInApp(<SessionsPage />);
+	expect(
+		await screen.findByText(/Ask a platform administrator to grant access/),
+	).toBeTruthy();
+	expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+	expect(screen.queryByText(/No one is signed in/)).toBeNull();
+	expect(screen.queryByText("raw-internal-message")).toBeNull();
+});

@@ -17,6 +17,7 @@ import {
 	type Metric,
 	MetricAreaChart,
 } from "@codefly-dev/ui/dashboard";
+import { Page, PageHeader } from "@codefly-dev/ui/layout";
 import type { ReactNode } from "react";
 import { Sparkline } from "@/components/sparkline";
 import {
@@ -235,23 +236,15 @@ function Widget({ widget }: { widget: DashboardWidget }) {
 export function Dashboard({ data }: { data: DashboardData }) {
 	const hasHeader = data.title || data.description || data.actions;
 	return (
-		<div className="space-y-6">
+		<Page>
 			{hasHeader && (
-				<div className="flex items-center justify-between">
-					<div>
-						{data.title && (
-							<h1 data-slot="page-title" className="type-page-title">
-								{data.title}
-							</h1>
-						)}
-						{data.description && (
-							<p className="text-muted-foreground">{data.description}</p>
-						)}
-					</div>
+				<PageHeader title={data.title} description={data.description}>
 					{data.actions && (
-						<div className="flex items-center gap-2">{data.actions}</div>
+						<div className="flex flex-wrap items-center gap-2 pt-3">
+							{data.actions}
+						</div>
 					)}
-				</div>
+				</PageHeader>
 			)}
 
 			<div className="grid gap-4 md:grid-cols-2">
@@ -259,6 +252,6 @@ export function Dashboard({ data }: { data: DashboardData }) {
 					<Widget key={widget.id} widget={widget} />
 				))}
 			</div>
-		</div>
+		</Page>
 	);
 }

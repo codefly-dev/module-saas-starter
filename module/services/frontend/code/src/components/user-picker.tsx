@@ -6,6 +6,7 @@ import {
 	useOrganizationService,
 	usePlatformAdminService,
 } from "@/lib/hooks/use-api-client";
+import { failureText } from "@/shared/lib/failure-text";
 import {
 	Chip,
 	Command,
@@ -146,7 +147,7 @@ export function UserPicker({
 				description={tooShort ?? truncated}
 				error={
 					result.isError
-						? "Couldn't read the directory. Edit the search to ask again."
+						? failureText("load the people you can choose", result.error)
 						: undefined
 				}
 			>
@@ -158,8 +159,8 @@ export function UserPicker({
 								orgId ? "Search members by email…" : "Search by name or email…"
 							}
 						/>
-						{!tooShort && (
-							<CommandList>
+						{!tooShort && !result.isError && (
+							<CommandList className="max-h-40">
 								{result.isPending || !settled ? (
 									<CommandEmpty>Searching…</CommandEmpty>
 								) : options.length === 0 ? (

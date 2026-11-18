@@ -135,3 +135,13 @@ The remote CI run `34650423895` passed every mandatory gate, including Immutable
 module package and the aggregate Release gates. Publication jobs were skipped
 for this draft PR. This supersedes the earlier remote API-rate-limit failure;
 the local service readiness limitations above remain separate.
+
+### Administration usability follow-up
+
+Administration dashboards now compose the kit PageHeader; dense filters live in a wrapping row beneath the title. PageHeader and Section wrap actions to preserve readable headings. The kit preview stylesheet includes these layouts.
+
+Permissions and team-member lists use DataTable. Access checks show declared activity descriptions, and failed user-directory or assignment reads cannot masquerade as empty results. User details explicitly describe access from assigned roles rather than claiming to enumerate organization and platform authority.
+
+Role removal from user details, role holders, team roles, and the member-roles dialog composes the kit AlertDialog through the role feature. Confirmation names the subject and role, preserves the assignment restriction, and disables controls while submitting. Read-only role viewers have no delete control. Session rows summarize browsers and operating systems, and denied reads explain who can grant access without offering retry. The checkout-return page offers billing verification without claiming a completed payment.
+
+This is an incremental migration: remaining route/dialog coverage and live-fixture limitations are recorded in the workspace UI inventory. A successful source migration is not evidence that every route has passed a visual audit.

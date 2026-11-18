@@ -1,6 +1,7 @@
 "use client";
+import { RevokeRoleButton } from "./revoke-role-button";
 
-import { Plus, X } from "lucide-react";
+import { Plus } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -29,7 +30,7 @@ import {
 	Spinner,
 	useLoadingPhase,
 } from "@/shared/ui";
-import { useAssignRole, useRevokeRole } from "../service/mutations";
+import { useAssignRole } from "../service/mutations";
 import { useRoleAssignments, useRoles } from "../service/queries";
 
 interface ManageMemberRolesDialogProps {
@@ -46,7 +47,7 @@ interface ManageMemberRolesDialogProps {
 // Visible roles = built-ins (org_id IS NULL) + this org's custom
 // roles, courtesy of the polymorphic RLS policy on `roles` (Phase 2E).
 // Assignments shown are filtered by subjectId so the picker shows
-// only this user's grants in this org.
+// only this user's grants in this organization.
 export function ManageMemberRolesDialog({
 	orgId,
 	userId,
@@ -80,7 +81,6 @@ export function ManageMemberRolesDialog({
 	const rolesOutcome = readOutcome(rolesFailed, rolesError);
 
 	const assignRole = useAssignRole();
-	const revokeRole = useRevokeRole();
 
 	// Roles already granted to this user — disable in the picker so
 	// users can't double-assign (the backend's ON CONFLICT DO NOTHING
@@ -101,19 +101,7 @@ export function ManageMemberRolesDialog({
 					toast.success(`Role assigned to ${userLabel}`);
 					setPicked("");
 				},
-				onError: (e) =>
-					toast.error(failureText("assign this role", e)),
-			},
-		);
-	}
-
-	function handleRevoke(roleId: string) {
-		revokeRole.mutate(
-			{ subjectId: userId, roleId, orgId },
-			{
-				onSuccess: () => toast.success("Role revoked"),
-				onError: (e) =>
-					toast.error(failureText("revoke this role", e)),
+				onError: (e) => toast.error(failureText("assign this role", e)),
 			},
 		);
 	}
@@ -128,7 +116,8 @@ export function ManageMemberRolesDialog({
 					<DialogTitle>Manage roles</DialogTitle>
 					<DialogDescription>
 						Roles assigned to{" "}
-						<span className="font-mono text-xs">{userLabel}</span> in this org.
+						<span className="font-mono text-xs">{userLabel}</span> in this
+						organization.
 					</DialogDescription>
 				</DialogHeader>
 
@@ -163,15 +152,14 @@ export function ManageMemberRolesDialog({
 											className="font-mono text-xs gap-1"
 										>
 											{roleNameById.get(a.roleId) ?? "Role unavailable"}
-											<button
-												type="button"
-												onClick={() => handleRevoke(a.roleId)}
-												disabled={revokeRole.isPending}
-												className="ml-1 hover:text-destructive disabled:opacity-50"
-												aria-label="Revoke"
-											>
-												<X className="h-3 w-3" />
-											</button>
+											<RevokeRoleButton
+												subjectId={userId}
+												subjectLabel={userLabel}
+												roleId={a.roleId}
+												roleName={roleNameById.get(a.roleId) || "this role"}
+												orgId={orgId}
+												scope={a.scope}
+											/>
 										</Badge>
 									))}
 								</div>

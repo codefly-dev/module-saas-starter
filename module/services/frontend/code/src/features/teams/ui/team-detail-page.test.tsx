@@ -125,7 +125,10 @@ describe("TeamDetailsPage (org-selection and access states)", () => {
 
 		renderInApp(<TeamDetailsPage teamId="team-1" />);
 
-		fireEvent.click(await screen.findByLabelText("Revoke"));
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Remove Editor" }),
+		);
+		fireEvent.click(await screen.findByRole("button", { name: "Remove role" }));
 
 		await waitFor(() => expect(revocations).toHaveLength(1));
 		expect(revocations[0]).toEqual({

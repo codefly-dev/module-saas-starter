@@ -1063,7 +1063,7 @@
       ],
       "owner": "@codefly-dev/ui",
       "disposition": "already canonical",
-      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode — every caller here has a real phase to name.",
+      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode \u2014 every caller here has a real phase to name.",
       "stories": [
         {
           "file": "packages/codefly-ui/stories/foundations.stories.tsx",
@@ -5824,6 +5824,20 @@
       ],
       "coverage": "owner stories and unit tests; browser/skin verification pending",
       "remaining": "Verify explorer rendering and visual baselines under external skins."
+    },
+    {
+      "source": "src/features/roles/ui/revoke-role-button.tsx",
+      "imports": [
+        "react",
+        "@/shared/ui",
+        "../service/mutations"
+      ],
+      "owner": "roles feature",
+      "disposition": "keep feature-local",
+      "reason": "Business-specific role removal composes kit AlertDialog and Button; preserves assignment identity and pending/error behavior.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Interaction coverage in user-detail-page.test.tsx; standalone story and keyboard/browser review remain."
     }
   ],
   "publicEntrypoints": {

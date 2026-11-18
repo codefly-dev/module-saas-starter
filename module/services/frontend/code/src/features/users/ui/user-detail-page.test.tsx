@@ -135,7 +135,15 @@ describe("UserDetailPage", () => {
 
 		renderInApp(<UserDetailPage userId="user-1" />);
 
-		fireEvent.click((await screen.findAllByLabelText("Revoke"))[0]);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Remove Editor" }),
+		);
+		expect(await screen.findByRole("alertdialog")).toBeTruthy();
+		expect(revocations).toHaveLength(0);
+		fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+		expect(revocations).toHaveLength(0);
+		fireEvent.click(screen.getByRole("button", { name: "Remove Editor" }));
+		fireEvent.click(await screen.findByRole("button", { name: "Remove role" }));
 
 		await waitFor(() => expect(revocations).toHaveLength(1));
 		expect(revocations[0]).toEqual({
@@ -161,4 +169,27 @@ describe("UserDetailPage", () => {
 			new Set(["user-1", "team-1"]),
 		);
 	});
+});
+
+it("does not report no access when an assignment read is refused", async () => {
+	serveGrants();
+	server.use(
+		http.post(rpc("PermissionService", "ListRoleAssignments"), () =>
+			HttpResponse.json(
+				{ code: "permission_denied", message: "internal-grant-rule" },
+				{ status: 403 },
+			),
+		),
+	);
+	renderInApp(<UserDetailPage userId="user-1" />);
+	expect(
+		await screen.findByText("Couldn't load this person's access"),
+	).toBeTruthy();
+	expect(screen.queryByText("No roles are assigned directly.")).toBeNull();
+	expect(
+		screen.queryByText(
+			"No additional access from assigned roles in this organization.",
+		),
+	).toBeNull();
+	expect(screen.queryByText("internal-grant-rule")).toBeNull();
 });

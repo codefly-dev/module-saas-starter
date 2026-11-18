@@ -76,8 +76,8 @@ describe("PermissionsPage", () => {
 
 		renderInApp(<PermissionsPage />);
 
-		expect(await screen.findByRole("heading", { name: "audit" })).toBeTruthy();
-		expect(screen.getByRole("heading", { name: "users" })).toBeTruthy();
+		expect(await screen.findByRole("heading", { name: "Audit" })).toBeTruthy();
+		expect(screen.getByRole("heading", { name: "Users" })).toBeTruthy();
 		expect(screen.getByText("Read audit events.")).toBeTruthy();
 	});
 
@@ -88,11 +88,13 @@ describe("PermissionsPage", () => {
 
 		renderInApp(<PermissionsPage />);
 
-		const auditRow = (await screen.findByText("audit:read")).closest("tr");
+		const auditRow = (await screen.findByText("Read audit events.")).closest(
+			"tr",
+		);
 		expect(auditRow?.textContent).toContain("admin");
 		expect(auditRow?.textContent).toContain("auditor");
 
-		const usersRow = screen.getByText("users:read").closest("tr");
+		const usersRow = screen.getByText("List users.").closest("tr");
 		expect(usersRow?.textContent).toContain("admin");
 		expect(usersRow?.textContent).not.toContain("auditor");
 	});
@@ -150,9 +152,9 @@ describe("PermissionsPage — check a grant", () => {
 
 	async function ask(scope?: string) {
 		await pickMember(MEMBER_EMAIL);
-		await pick("Pick a permission…", "audit:read");
+		await pick("Choose an activity…", "Read audit events.");
 		if (scope !== undefined) {
-			const box = screen.getByLabelText("Scope");
+			const box = screen.getByLabelText("Limit to (optional)");
 			fireEvent.change(box, { target: { value: scope } });
 			// The question is asked on submit, not on every keystroke.
 			fireEvent.keyDown(box, { key: "Enter" });
@@ -173,7 +175,8 @@ describe("PermissionsPage — check a grant", () => {
 		renderInApp(<PermissionsPage />);
 		await ask();
 
-		expect(await screen.findByText("granted via role: auditor")).toBeTruthy();
+		expect(await screen.findByText("Allowed organization-wide")).toBeTruthy();
+		expect(screen.queryByText("granted via role: auditor")).toBeNull();
 		expect(screen.getByText("Allowed organization-wide")).toBeTruthy();
 		// SubjectKind.PRINCIPAL — the contract rejects the unspecified value
 		// rather than guessing which of the two kinds holds the id. It goes on
@@ -218,9 +221,7 @@ describe("PermissionsPage — check a grant", () => {
 		renderInApp(<PermissionsPage />);
 		await ask();
 
-		expect(
-			await screen.findByText(/authorization service did not answer/),
-		).toBeTruthy();
+		expect(await screen.findByText("Couldn't check access")).toBeTruthy();
 		expect(screen.queryByText(/^Not allowed/)).toBeNull();
 	});
 
@@ -297,7 +298,7 @@ describe("PermissionsPage — the scope a question carries", () => {
 			target: { value: MEMBER_EMAIL },
 		});
 		fireEvent.click(await screen.findByRole("option", { name: MEMBER_EMAIL }));
-		await open("Pick a permission…", "audit:read");
+		await open("Choose an activity…", "Read audit events.");
 	}
 
 	// Without this, the scope box could be wired to nothing at all: the badge
@@ -309,7 +310,7 @@ describe("PermissionsPage — the scope a question carries", () => {
 
 		renderInApp(<PermissionsPage />);
 		await choose();
-		const box = screen.getByLabelText("Scope");
+		const box = screen.getByLabelText("Limit to (optional)");
 		fireEvent.change(box, { target: { value: "project-42" } });
 		fireEvent.keyDown(box, { key: "Enter" });
 
@@ -329,7 +330,7 @@ describe("PermissionsPage — the scope a question carries", () => {
 		await screen.findByText("Not allowed organization-wide");
 		const before = asked.length;
 
-		const box = screen.getByLabelText("Scope");
+		const box = screen.getByLabelText("Limit to (optional)");
 		for (const value of ["p", "pr", "pro", "proj", "project-42"]) {
 			fireEvent.change(box, { target: { value } });
 		}
@@ -350,7 +351,7 @@ describe("PermissionsPage — the scope a question carries", () => {
 
 		renderInApp(<PermissionsPage />);
 		await choose();
-		const box = screen.getByLabelText("Scope");
+		const box = screen.getByLabelText("Limit to (optional)");
 		fireEvent.change(box, { target: { value: "  project-42\n" } });
 		fireEvent.keyDown(box, { key: "Enter" });
 
@@ -399,7 +400,7 @@ describe("PermissionsPage — the scope a question carries", () => {
 
 		renderInApp(<PermissionsPage />);
 
-		expect(await screen.findByText("users:read")).toBeTruthy();
+		expect(await screen.findByText("List users.")).toBeTruthy();
 		expect(screen.queryByText("No role")).toBeNull();
 		expect(screen.getAllByText("Not visible to you").length).toBeGreaterThan(0);
 	});
@@ -428,4 +429,22 @@ describe("PermissionsPage — the scope a question carries", () => {
 			),
 		).toBeTruthy();
 	});
+});
+
+it("does not present an unreadable directory as an empty search result", async () => {
+	serveVocabulary();
+	server.use(
+		http.post(rpc("OrganizationService", "ListMembers"), () =>
+			HttpResponse.json(
+				{ code: "permission_denied", message: "internal-role-denial" },
+				{ status: 403 },
+			),
+		),
+	);
+	renderInApp(<PermissionsPage />);
+	expect(
+		await screen.findByText(/Ask your organization administrator/),
+	).toBeTruthy();
+	expect(screen.queryByText("No matching users.")).toBeNull();
+	expect(screen.queryByText("internal-role-denial")).toBeNull();
 });

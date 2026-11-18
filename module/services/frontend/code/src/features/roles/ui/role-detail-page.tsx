@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Save, X } from "lucide-react";
+import { ArrowLeft, Save } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -44,7 +44,9 @@ import {
 	useLoadingPhase,
 } from "@/shared/ui";
 import type { Permission, Role } from "../model/types";
-import { useRevokeRole, useUpdateRole } from "../service/mutations";
+import { useUpdateRole } from "../service/mutations";
+import { RevokeRoleButton } from "./revoke-role-button";
+import { UserLabel } from "@/components/user-label";
 import { useRoleAssignments, useRoles } from "../service/queries";
 
 export function RoleDetailPage({ roleId }: { roleId: string }) {
@@ -306,7 +308,6 @@ function RoleHolders({
 	// request did not come back is worse than saying it may be out of date.
 	const withheld = !mayKeepRetainedRows(outcome);
 	const stale = staleReadNotice(outcome, "who holds this role");
-	const revokeRole = useRevokeRole();
 
 	const teamNameById = new Map(
 		(teams?.teams ?? []).map((team) => [team.id, team.name] as const),
@@ -323,7 +324,7 @@ function RoleHolders({
 	return (
 		<Section
 			title="Held by"
-			description="Every principal and team this role is assigned to in this organization."
+			description="People and teams assigned this role in the organization."
 		>
 			<Panel>
 				{quiet ? null : indicator ? (
@@ -383,7 +384,7 @@ function RoleHolders({
 											</TableCell>
 											<TableCell>
 												<Badge variant="outline">
-													{isTeam ? "Team" : "Principal"}
+													{isTeam ? "Team" : "Person"}
 												</Badge>
 												{assignment.scope ? (
 													<Badge variant="secondary" className="ml-2">
@@ -393,31 +394,20 @@ function RoleHolders({
 											</TableCell>
 											<TableCell>
 												{canWrite && (
-													<Button
-														variant="ghost"
-														size="sm"
-														disabled={revokeRole.isPending}
-														onClick={() =>
-															revokeRole.mutate(
-																{
-																	subjectId: assignment.subjectId,
-																	roleId: role.id,
-																	orgId,
-																	scope: assignment.scope,
-																},
-																{
-																	onSuccess: () =>
-																		toast.success("Role revoked"),
-																	onError: (error) =>
-																		toast.error(
-																			failureText("revoke the role", error),
-																		),
-																},
+													<RevokeRoleButton
+														subjectId={assignment.subjectId}
+														subjectLabel={
+															isTeam ? (
+																name
+															) : (
+																<UserLabel userId={assignment.subjectId} />
 															)
 														}
-													>
-														<X className="h-4 w-4 text-destructive" />
-													</Button>
+														roleId={role.id}
+														roleName={role.name}
+														orgId={orgId}
+														scope={assignment.scope}
+													/>
 												)}
 											</TableCell>
 										</TableRow>

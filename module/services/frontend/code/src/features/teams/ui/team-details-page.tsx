@@ -249,7 +249,7 @@ function TeamDetails({ team }: { team: Team }) {
 						</p>
 						<p className="text-sm text-muted-foreground">
 							{platformRole === "super_admin"
-								? "Your platform super-admin access also allows you to manage this team."
+								? "Your platform administrator access also allows you to manage this team."
 								: orgAdmin
 									? "Your organization admin access allows you to manage this team."
 									: teamAdmin
@@ -268,6 +268,7 @@ function TeamDetails({ team }: { team: Team }) {
 				currentUserId={user?.id}
 			/>
 			<TeamRoles
+				teamName={team.name}
 				teamId={team.id}
 				orgId={team.orgId}
 				canGrant={hasPermission(platformRole, orgRole, PERMISSIONS.ROLES_WRITE)}

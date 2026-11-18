@@ -12,7 +12,7 @@ vi.mock("@/lib/auth", () => ({
 afterEach(cleanup);
 
 describe("addMemberErrorMessage", () => {
-	it("shows the server's own words when the target is ineligible", () => {
+	it("explains an ineligible change without exposing server details", () => {
 		expect(
 			addMemberErrorMessage(
 				new ConnectError(
@@ -20,7 +20,9 @@ describe("addMemberErrorMessage", () => {
 					Code.FailedPrecondition,
 				),
 			),
-		).toBe("user is not a member of the team's organization");
+		).toBe(
+			"Couldn't add this member. The current state doesn't allow this change. Refresh the page to review it.",
+		);
 	});
 
 	it("does not put server internals in front of the user", () => {
@@ -31,12 +33,14 @@ describe("addMemberErrorMessage", () => {
 					Code.Internal,
 				),
 			),
-		).toBe("Failed to add member");
+		).toBe(
+			"Couldn't add this member. Try again; if it keeps failing, tell your administrator.",
+		);
 	});
 
 	it("falls back for an error that never reached the server", () => {
 		expect(addMemberErrorMessage(new Error("network down"))).toBe(
-			"Failed to add member",
+			"Couldn't add this member. Try again; if it keeps failing, tell your administrator.",
 		);
 	});
 });

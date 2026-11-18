@@ -1,16 +1,15 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, X } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import { toast } from "sonner";
 import { OrgSelector } from "@/components/org-selector";
 import { useEffectivePermissions } from "@/features/permissions/service/effective";
 import {
 	GrantSourceBadge,
 	sourceKey,
 } from "@/features/permissions/ui/grant-source";
-import { useRevokeRole } from "@/features/roles/service/mutations";
+import { RevokeRoleButton } from "@/features/roles/ui/revoke-role-button";
 import { ManageMemberRolesDialog } from "@/features/roles/ui/manage-member-roles-dialog";
 import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
 import { useAuth } from "@/lib/auth";
@@ -23,6 +22,8 @@ import {
 	Page as PageBody,
 	PageHeader,
 	Panel,
+	ErrorState,
+	Spinner,
 	Section,
 	Stack,
 	Table,
@@ -55,21 +56,60 @@ function UserDetail({
 	orgId: string;
 	canGrant: boolean;
 }) {
-	const { data: user } = useQuery(userQueries.detail(userId));
-	const { permissions, teams, roles, directAssignments, isLoading } =
-		useEffectivePermissions(orgId, userId);
+	const {
+		data: user,
+		isLoading: userLoading,
+		isError: userFailed,
+		error: userError,
+	} = useQuery(userQueries.detail(userId));
+	const {
+		permissions,
+		teams,
+		roles,
+		directAssignments,
+		isLoading,
+		isError,
+		error,
+	} = useEffectivePermissions(orgId, userId);
 
 	const roleNameById = new Map(
 		roles.map((role) => [role.id, role.name] as const),
 	);
 	const direct = directAssignments;
-	const revokeRole = useRevokeRole();
+
+	if (userFailed || isError) {
+		return (
+			<PageBody>
+				<PageHeader title="User access" />
+				<ErrorState
+					title="Couldn't load this person's access"
+					detail={failureText("view this person's access", userError || error)}
+				/>
+			</PageBody>
+		);
+	}
+	if (userLoading || isLoading)
+		return (
+			<PageBody>
+				<Spinner label="Loading this person's access" />
+			</PageBody>
+		);
+	if (!orgId)
+		return (
+			<PageBody>
+				<PageHeader
+					title="User access"
+					description="Select an organization to review this person's assigned roles."
+					actions={<OrgSelector />}
+				/>
+			</PageBody>
+		);
 
 	return (
 		<PageBody>
 			<PageHeader
-				title={user?.primaryEmail || truncateUUID(userId)}
-				description="Roles, teams, and the permissions they add up to in the selected organization."
+				title={user?.profile.name || user?.primaryEmail || "User access"}
+				description="Review this person’s assigned roles and team memberships."
 				actions={
 					<Stack direction="row" gap={2} align="center">
 						<OrgSelector />
@@ -92,14 +132,14 @@ function UserDetail({
 					</Stack>
 				}
 			>
-				<span className="select-all font-mono text-xs text-muted-foreground">
-					{userId}
-				</span>
+				{user?.profile.name && (
+					<p className="text-sm text-muted-foreground">{user.primaryEmail}</p>
+				)}
 			</PageHeader>
 
 			<Section
 				title="Direct role assignments"
-				description="Roles granted to this principal itself."
+				description="Roles assigned directly to this person."
 			>
 				<Panel>
 					{direct.length === 0 ? (
@@ -123,31 +163,20 @@ function UserDetail({
 										{assignment.scope ? ` in ${assignment.scope}` : ""}
 									</Link>
 									{canGrant && (
-										<button
-											type="button"
-											aria-label="Revoke"
-											disabled={revokeRole.isPending}
-											className="ml-1 hover:text-destructive disabled:opacity-50"
-											onClick={() =>
-												revokeRole.mutate(
-													{
-														subjectId: userId,
-														roleId: assignment.roleId,
-														orgId,
-														scope: assignment.scope,
-													},
-													{
-														onSuccess: () => toast.success("Role revoked"),
-														onError: (error) =>
-															toast.error(
-																failureText("revoke the role", error),
-															),
-													},
-												)
+										<RevokeRoleButton
+											subjectId={userId}
+											subjectLabel={
+												user?.profile.name ||
+												user?.primaryEmail ||
+												"this person"
 											}
-										>
-											<X className="h-3 w-3" />
-										</button>
+											roleId={assignment.roleId}
+											roleName={
+												roleNameById.get(assignment.roleId) || "this role"
+											}
+											orgId={orgId}
+											scope={assignment.scope}
+										/>
 									)}
 								</Badge>
 							))}
@@ -183,15 +212,15 @@ function UserDetail({
 			</Section>
 
 			<Section
-				title="Effective permissions"
-				description="Resolved from this organization's role assignments. A permission with two sources survives revoking either one."
+				title="Access from assigned roles"
+				description="Access provided by the roles and teams listed here. Organization membership and platform-wide access are not included."
 			>
 				<Panel>
 					{isLoading ? (
 						<span className="text-sm text-muted-foreground">Loading…</span>
 					) : permissions.length === 0 ? (
 						<span className="text-sm text-muted-foreground">
-							No permissions in this organization.
+							No additional access from assigned roles in this organization.
 						</span>
 					) : (
 						<Table>
