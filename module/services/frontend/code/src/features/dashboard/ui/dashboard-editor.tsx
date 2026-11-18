@@ -1,17 +1,34 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import type { AuditEventTypeInfo } from "@/features/audit";
-import { useAuth } from "@/lib/auth";
 import {
+	createColumnHelper,
+	getCoreRowModel,
+	useReactTable,
+} from "@tanstack/react-table";
+import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { AuditEventTypeInfo } from "@/features/audit";
+import { formatAuditAction } from "@/features/audit/model/transforms";
+import { useAuth } from "@/lib/auth";
+import { failureText } from "@/shared/lib/failure-text";
+import { readOutcome } from "@/shared/lib/read-outcome";
+import {
+	AlertDialog,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
 	Button,
 	Card,
 	CardContent,
 	CardHeader,
 	CardTitle,
+	DelayedLoading,
+	ErrorState,
+	Field,
 	Input,
-	Label,
 	Select,
 	SelectContent,
 	SelectItem,
@@ -19,6 +36,7 @@ import {
 	SelectValue,
 	Separator,
 } from "@/shared/ui";
+import { DataTable } from "@/shared/ui/data-table";
 import { metricIdentity } from "../model/identity";
 import type {
 	Bucket,
@@ -34,7 +52,6 @@ import {
 	useDashboardAuthoring,
 } from "../service/use-dashboard-authoring";
 import { Dashboard } from "./dashboard";
-import { formatAuditAction } from "@/features/audit/model/transforms";
 
 // The subset of group dimensions the structural editor offers. The spec permits
 // payload fields too, but those need a key the audit registry doesn't enumerate,
@@ -79,7 +96,10 @@ const DEFAULT_FORM: WidgetForm = {
 };
 
 function autoTitle(form: WidgetForm): string {
-	const subject = form.eventType === ALL_EVENTS ? "Events" : form.eventType;
+	const subject =
+		form.eventType === ALL_EVENTS
+			? "Events"
+			: formatAuditAction(form.eventType);
 	if (form.chart === "stat") return `Total ${subject}`;
 	const grouping = GROUP_BY_OPTIONS.find((o) => o.value === form.groupBy);
 	return `${subject} ${grouping?.label.toLowerCase() ?? form.groupBy}`;
@@ -134,6 +154,13 @@ export function DashboardEditor({
 	const { authoring, draft } = useDashboardAuthoring(scopedKey, initial, store);
 	const spec = draft.spec;
 
+	const [vocabularyError, setVocabularyError] = useState<unknown>();
+	const [vocabularyLoading, setVocabularyLoading] = useState(true);
+	const [reload, setReload] = useState(0);
+	const [working, setWorking] = useState(false);
+	const busy = useRef(false);
+	const [actionError, setActionError] = useState<string>();
+	const [removeTarget, setRemoveTarget] = useState<MetricDef | null>(null);
 	const [events, setEvents] = useState<AuditEventTypeInfo[]>([]);
 	const [form, setForm] = useState<WidgetForm>(DEFAULT_FORM);
 	const [errors, setErrors] = useState<FieldError[]>([]);
@@ -145,56 +172,88 @@ export function DashboardEditor({
 
 	useEffect(() => {
 		let active = true;
+		setVocabularyLoading(true);
+		setVocabularyError(undefined);
 		authoring
 			.listEventTypes()
 			.then((vocab) => {
-				if (active) setEvents(vocab.events);
+				if (active) {
+					setEvents(vocab.events);
+					setVocabularyLoading(false);
+				}
 			})
-			.catch(() => {
-				// A vocabulary read failure leaves the picker on "all events"; the
-				// commit path still validates, so it degrades rather than blocks.
+			.catch((error) => {
+				if (active) {
+					setVocabularyError(error);
+					setVocabularyLoading(false);
+				}
 			});
 		return () => {
 			active = false;
 		};
-	}, [authoring]);
+	}, [authoring, reload]);
 
 	// Commit a whole spec through the authoring contract so persistence and the
 	// vocabulary check share one path. Returns whether it committed, so a caller
 	// can clear its form only on success.
 	const commit = useCallback(
 		async (next: DashboardDef): Promise<boolean> => {
-			const result = await authoring.setDashboard(next);
-			if (!result.ok) {
-				setErrors(result.errors);
+			if (busy.current) return false;
+			busy.current = true;
+			setWorking(true);
+			setActionError(undefined);
+			try {
+				const result = await authoring.setDashboard(next);
+				if (!result.ok) {
+					setErrors(result.errors);
+					return false;
+				}
+				setErrors([]);
+				return true;
+			} catch (error) {
+				setActionError(failureText("save the dashboard", error));
 				return false;
+			} finally {
+				busy.current = false;
+				setWorking(false);
 			}
-			setErrors([]);
-			return true;
 		},
 		[authoring],
 	);
 
 	const onPreview = useCallback(async () => {
-		setPending(null);
-		const result = await authoring.previewMetric(metricFromForm(form));
-		if (result.ok) {
-			setErrors([]);
-			setPreview({
-				total: result.preview.total,
-				points: result.preview.points.length,
-			});
-			return;
+		if (busy.current || vocabularyLoading || vocabularyError) return;
+		busy.current = true;
+		setWorking(true);
+		setActionError(undefined);
+		try {
+			setPending(null);
+			const result = await authoring.previewMetric(metricFromForm(form));
+			if (result.ok) {
+				setErrors([]);
+				setPreview({
+					total: result.preview.total,
+					points: result.preview.points.length,
+				});
+				return;
+			}
+			setPreview(null);
+			if (result.kind === "pending") {
+				setPending("Select an organization to preview this widget.");
+				return;
+			}
+			setErrors(result.errors);
+		} catch (error) {
+			setPreview(null);
+			setActionError(failureText("preview the widget", error));
+		} finally {
+			busy.current = false;
+			setWorking(false);
 		}
-		setPreview(null);
-		if (result.kind === "pending") {
-			setPending(result.message);
-			return;
-		}
-		setErrors(result.errors);
-	}, [authoring, form]);
+	}, [authoring, form, vocabularyLoading, vocabularyError]);
 
 	const onAdd = useCallback(async () => {
+		if (busy.current || vocabularyLoading || vocabularyError) return;
 		setPending(null);
 		setPreview(null);
 		const metric = metricFromForm(form);
@@ -215,11 +274,11 @@ export function DashboardEditor({
 		if (await commit({ ...spec, metrics: [...spec.metrics, metric] })) {
 			setForm(DEFAULT_FORM);
 		}
-	}, [commit, form, spec]);
+	}, [commit, form, spec, vocabularyLoading, vocabularyError]);
 
 	const onRemove = useCallback(
 		async (index: number) => {
-			await commit({
+			return commit({
 				...spec,
 				metrics: spec.metrics.filter((_, i) => i !== index),
 			});
@@ -248,118 +307,166 @@ export function DashboardEditor({
 					<CardTitle>Add a widget</CardTitle>
 				</CardHeader>
 				<CardContent className="space-y-4">
-					<div className="space-y-2">
-						<Label htmlFor="widget-event">Event</Label>
-						<Select
-							value={form.eventType}
-							items={[
-								{ value: ALL_EVENTS, label: "All events" },
-								...events.map((entry) => ({
-									value: entry.name,
-									label: formatAuditAction(entry.name),
-								})),
-							]}
-							onValueChange={(value) =>
-								update("eventType", value ?? ALL_EVENTS)
-							}
-						>
-							<SelectTrigger id="widget-event" aria-label="Event">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value={ALL_EVENTS}>All events</SelectItem>
-								{events.map((entry) => (
-									<SelectItem key={entry.name} value={entry.name}>
-										{formatAuditAction(entry.name)}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
+					<DelayedLoading
+						active={vocabularyLoading}
+						label="Loading available events"
+					/>
+					{vocabularyError !== undefined && (
+						<ErrorState
+							title="Couldn’t load available events"
+							detail={failureText("load available events", vocabularyError)}
+						/>
+					)}
+					{vocabularyError !== undefined &&
+						readOutcome(true, vocabularyError) !== "forbidden" && (
+							<Button
+								variant="outline"
+								onClick={() => setReload((value) => value + 1)}
+							>
+								Try again
+							</Button>
+						)}
+					<Field label="Event">
+						{(control) => (
+							<>
+								<Select
+									disabled={working || vocabularyLoading || !!vocabularyError}
+									value={form.eventType}
+									items={[
+										{ value: ALL_EVENTS, label: "All events" },
+										...events.map((entry) => ({
+											value: entry.name,
+											label: formatAuditAction(entry.name),
+										})),
+									]}
+									onValueChange={(value) =>
+										update("eventType", value ?? ALL_EVENTS)
+									}
+								>
+									<SelectTrigger {...control} aria-label="Event">
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value={ALL_EVENTS}>All events</SelectItem>
+										{events.map((entry) => (
+											<SelectItem key={entry.name} value={entry.name}>
+												{formatAuditAction(entry.name)}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</>
+						)}
+					</Field>
 
-					<div className="space-y-2">
-						<Label htmlFor="widget-group">Group by</Label>
-						<Select
-							value={form.groupBy}
-							items={GROUP_BY_OPTIONS}
-							onValueChange={(value) => {
-								if (value) update("groupBy", value as Dimension);
-							}}
-						>
-							<SelectTrigger id="widget-group" aria-label="Group by">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								{GROUP_BY_OPTIONS.map((option) => (
-									<SelectItem key={option.value} value={option.value}>
-										{option.label}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
+					<Field label="Group by">
+						{(control) => (
+							<>
+								<Select
+									disabled={working || vocabularyLoading || !!vocabularyError}
+									value={form.groupBy}
+									items={GROUP_BY_OPTIONS}
+									onValueChange={(value) => {
+										if (value) update("groupBy", value as Dimension);
+									}}
+								>
+									<SelectTrigger {...control} aria-label="Group by">
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										{GROUP_BY_OPTIONS.map((option) => (
+											<SelectItem key={option.value} value={option.value}>
+												{option.label}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</>
+						)}
+					</Field>
 
 					{form.groupBy === "time" && (
-						<div className="space-y-2">
-							<Label htmlFor="widget-bucket">Interval</Label>
-							<Select
-								value={form.bucket}
-								items={BUCKET_OPTIONS}
-								onValueChange={(value) => {
-									if (value) update("bucket", value as Bucket);
-								}}
-							>
-								<SelectTrigger id="widget-bucket" aria-label="Interval">
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									{BUCKET_OPTIONS.map((option) => (
-										<SelectItem key={option.value} value={option.value}>
-											{option.label}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-						</div>
+						<Field label="Interval">
+							{(control) => (
+								<>
+									<Select
+										disabled={working || vocabularyLoading || !!vocabularyError}
+										value={form.bucket}
+										items={BUCKET_OPTIONS}
+										onValueChange={(value) => {
+											if (value) update("bucket", value as Bucket);
+										}}
+									>
+										<SelectTrigger {...control} aria-label="Interval">
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											{BUCKET_OPTIONS.map((option) => (
+												<SelectItem key={option.value} value={option.value}>
+													{option.label}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								</>
+							)}
+						</Field>
 					)}
 
-					<div className="space-y-2">
-						<Label htmlFor="widget-chart">Chart</Label>
-						<Select
-							value={form.chart}
-							items={CHART_OPTIONS}
-							onValueChange={(value) => {
-								if (value) update("chart", value as ChartKind);
-							}}
-						>
-							<SelectTrigger id="widget-chart" aria-label="Chart">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								{CHART_OPTIONS.map((option) => (
-									<SelectItem key={option.value} value={option.value}>
-										{option.label}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
+					<Field label="Chart">
+						{(control) => (
+							<>
+								<Select
+									disabled={working || vocabularyLoading || !!vocabularyError}
+									value={form.chart}
+									items={CHART_OPTIONS}
+									onValueChange={(value) => {
+										if (value) update("chart", value as ChartKind);
+									}}
+								>
+									<SelectTrigger {...control} aria-label="Chart">
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										{CHART_OPTIONS.map((option) => (
+											<SelectItem key={option.value} value={option.value}>
+												{option.label}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</>
+						)}
+					</Field>
 
-					<div className="space-y-2">
-						<Label htmlFor="widget-title">Title</Label>
-						<Input
-							id="widget-title"
-							value={form.title}
-							placeholder={autoTitle(form)}
-							onChange={(e) => update("title", e.target.value)}
-						/>
-					</div>
+					<Field label="Title">
+						{(control) => (
+							<>
+								<Input
+									disabled={working}
+									{...control}
+									value={form.title}
+									placeholder={autoTitle(form)}
+									onChange={(e) => update("title", e.target.value)}
+								/>
+							</>
+						)}
+					</Field>
 
 					<div className="flex gap-2">
-						<Button type="button" variant="outline" onClick={onPreview}>
+						<Button
+							type="button"
+							variant="outline"
+							onClick={onPreview}
+							disabled={working || vocabularyLoading || !!vocabularyError}
+						>
 							Preview
 						</Button>
-						<Button type="button" onClick={onAdd}>
+						<Button
+							type="button"
+							onClick={onAdd}
+							disabled={working || vocabularyLoading || !!vocabularyError}
+						>
 							Add widget
 						</Button>
 					</div>
@@ -376,15 +483,18 @@ export function DashboardEditor({
 							{pending}
 						</p>
 					)}
+					{actionError && (
+						<ErrorState title="Dashboard change failed" detail={actionError} />
+					)}
 					{(errors.length > 0 || draft.error) && (
-						<div className="space-y-1 text-sm text-destructive" role="alert">
-							{draft.error && <p>{draft.error.message}</p>}
-							{errors.map((error) => (
-								<p key={`${error.path ?? ""}:${error.message}`}>
-									{error.message}
-								</p>
-							))}
-						</div>
+						<ErrorState
+							title="Dashboard wasn’t saved"
+							detail={
+								errors.some((error) => error.code === "duplicate_metric")
+									? "This dashboard already shows that widget. Change the event or grouping to add a different one."
+									: "Review the widget settings and available events. Your saved dashboard has not been replaced."
+							}
+						/>
 					)}
 				</CardContent>
 			</Card>
@@ -395,58 +505,140 @@ export function DashboardEditor({
 						<CardTitle>Widgets</CardTitle>
 					</CardHeader>
 					<CardContent className="space-y-2">
-						{spec.metrics.length === 0 ? (
-							<p className="text-sm text-muted-foreground">
-								No widgets yet. Add one from the panel to start your dashboard.
-							</p>
-						) : (
-							spec.metrics.map((metric, index) => (
-								<div
-									key={metricIdentity(metric)}
-									className="flex items-center justify-between gap-2"
-								>
-									<span className="truncate text-sm">{metric.title}</span>
-									<div className="flex shrink-0 gap-1">
-										<Button
-											type="button"
-											variant="ghost"
-											size="icon"
-											aria-label={`Move "${metric.title}" up`}
-											disabled={index === 0}
-											onClick={() => onMove(index, -1)}
-										>
-											<ArrowUp className="size-4" />
-										</Button>
-										<Button
-											type="button"
-											variant="ghost"
-											size="icon"
-											aria-label={`Move "${metric.title}" down`}
-											disabled={index === spec.metrics.length - 1}
-											onClick={() => onMove(index, 1)}
-										>
-											<ArrowDown className="size-4" />
-										</Button>
-										<Button
-											type="button"
-											variant="ghost"
-											size="icon"
-											aria-label={`Remove "${metric.title}"`}
-											onClick={() => onRemove(index)}
-										>
-											<Trash2 className="size-4" />
-										</Button>
-									</div>
-								</div>
-							))
-						)}
+						<WidgetTable
+							metrics={spec.metrics}
+							working={working}
+							onMove={onMove}
+							onRemove={(metric) => {
+								setActionError(undefined);
+								setErrors([]);
+								setRemoveTarget(metric);
+							}}
+						/>
 					</CardContent>
 				</Card>
 
+				<AlertDialog
+					open={!!removeTarget}
+					onOpenChange={(next) => {
+						if (!next && !busy.current) setRemoveTarget(null);
+					}}
+				>
+					<AlertDialogContent>
+						<AlertDialogHeader>
+							<AlertDialogTitle>
+								Remove “{removeTarget?.title}”?
+							</AlertDialogTitle>
+							<AlertDialogDescription>
+								This removes the saved widget from this dashboard.
+							</AlertDialogDescription>
+						</AlertDialogHeader>
+						{(actionError || errors.length > 0) && (
+							<ErrorState
+								title="Widget wasn’t removed"
+								detail={
+									actionError ??
+									"The remaining widgets need attention. Review their event settings before saving this change."
+								}
+							/>
+						)}
+						<AlertDialogFooter>
+							<AlertDialogCancel disabled={working}>Cancel</AlertDialogCancel>
+							<Button
+								variant="destructive"
+								disabled={working}
+								onClick={async () => {
+									if (!removeTarget || busy.current) return;
+									const index = spec.metrics.findIndex(
+										(metric) =>
+											metricIdentity(metric) === metricIdentity(removeTarget),
+									);
+									if (index >= 0 && (await onRemove(index)))
+										setRemoveTarget(null);
+								}}
+							>
+								{working ? "Removing…" : "Remove widget"}
+							</Button>
+						</AlertDialogFooter>
+					</AlertDialogContent>
+				</AlertDialog>
 				<Separator />
 
 				<Dashboard data={spec} />
 			</div>
 		</div>
+	);
+}
+
+const widgetColumn = createColumnHelper<MetricDef>();
+function WidgetTable({
+	metrics,
+	working,
+	onMove,
+	onRemove,
+}: {
+	metrics: MetricDef[];
+	working: boolean;
+	onMove: (index: number, delta: -1 | 1) => Promise<void>;
+	onRemove: (metric: MetricDef) => void;
+}) {
+	const columns = useMemo(
+		() => [
+			widgetColumn.accessor("title", { header: "Widget" }),
+			widgetColumn.display({
+				id: "actions",
+				header: "",
+				cell: ({ row }) => {
+					const metric = row.original;
+					const index = row.index;
+					return (
+						<div className="flex shrink-0 gap-1">
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon"
+								aria-label={`Move "${metric.title}" up`}
+								disabled={working || index === 0}
+								onClick={() => onMove(index, -1)}
+							>
+								<ArrowUp className="size-4" />
+							</Button>
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon"
+								aria-label={`Move "${metric.title}" down`}
+								disabled={working || index === metrics.length - 1}
+								onClick={() => onMove(index, 1)}
+							>
+								<ArrowDown className="size-4" />
+							</Button>
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon"
+								aria-label={`Remove "${metric.title}"`}
+								disabled={working}
+								onClick={() => onRemove(metric)}
+							>
+								<Trash2 className="size-4" />
+							</Button>
+						</div>
+					);
+				},
+			}),
+		],
+		[metrics.length, working, onMove, onRemove],
+	);
+	const table = useReactTable({
+		data: metrics,
+		columns,
+		getCoreRowModel: getCoreRowModel(),
+	});
+	return (
+		<DataTable
+			table={table}
+			emptyMessage="No widgets yet. Add one from the panel to start your dashboard."
+		/>
 	);
 }

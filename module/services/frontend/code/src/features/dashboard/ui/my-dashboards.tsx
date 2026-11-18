@@ -36,8 +36,8 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 	ErrorState,
+	Field,
 	Input,
-	Label,
 } from "@/shared/ui";
 import { DataTable } from "@/shared/ui/data-table";
 import type { DashboardRecord } from "../model/record";
@@ -263,16 +263,17 @@ function CreateDashboardForm({
 						}
 					}}
 				>
-					<div className="flex-1 space-y-2">
-						<Label htmlFor="new-dashboard-name">Name</Label>
-						<Input
-							id="new-dashboard-name"
-							value={name}
-							disabled={disabled || pending}
-							placeholder="Weekly activity"
-							onChange={(event) => setName(event.target.value)}
-						/>
-					</div>
+					<Field label="Name" className="flex-1">
+						{(control) => (
+							<Input
+								{...control}
+								value={name}
+								disabled={disabled || pending}
+								placeholder="Weekly activity"
+								onChange={(event) => setName(event.target.value)}
+							/>
+						)}
+					</Field>
 					<Button type="submit" disabled={disabled || pending || !name.trim()}>
 						<Plus className="mr-1 size-4" />
 						{pending ? "Creating…" : "Create"}
@@ -393,15 +394,16 @@ function DashboardActions({
 								);
 						}}
 					>
-						<div className="space-y-2">
-							<Label htmlFor={`rename-${record.id}`}>Name</Label>
-							<Input
-								id={`rename-${record.id}`}
-								value={name}
-								disabled={pending}
-								onChange={(event) => setName(event.target.value)}
-							/>
-						</div>
+						<Field label="Name">
+							{(control) => (
+								<Input
+									{...control}
+									value={name}
+									disabled={pending}
+									onChange={(event) => setName(event.target.value)}
+								/>
+							)}
+						</Field>
 						{failure && <ErrorState title={failure} />}
 						<DialogFooter>
 							<Button
