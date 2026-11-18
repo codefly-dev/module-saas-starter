@@ -2,6 +2,7 @@ package business
 
 import (
 	"accounts/pkg/auth"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 	"context"
 	"errors"
 	"slices"
@@ -98,5 +99,58 @@ func TestSessionRevocationReconciliationRetriesDurableRows(t *testing.T) {
 	}
 	if len(markers.keys) != 0 {
 		t.Fatal("published after failed read")
+	}
+}
+
+// The public suspension path must report publication failure after the durable
+// change, and a retry must replay old rows even when it revokes no new row.
+type suspensionLedgerStore struct {
+	Store
+	rows   []RevokedSession
+	status string
+}
+
+func (s *suspensionLedgerStore) GetPlatformRole(context.Context, string) (string, error) {
+	return "super_admin", nil
+}
+func (s *suspensionLedgerStore) ListAdministeredOrganizations(context.Context, string) ([]OrgAdministration, error) {
+	return nil, nil
+}
+func (s *suspensionLedgerStore) WithControlPlane(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+func (s *suspensionLedgerStore) RevokeAllUserSessions(context.Context, string, string) ([]RevokedSession, error) {
+	if len(s.rows) > 0 {
+		return nil, nil
+	}
+	s.rows = []RevokedSession{{ID: "session", FamilyID: "family"}}
+	return s.rows, nil
+}
+func (s *suspensionLedgerStore) UpdateUserStatus(_ context.Context, _ string, status string) error {
+	s.status = status
+	return nil
+}
+func (s *suspensionLedgerStore) InvalidatedUserSessions(context.Context, string) ([]RevokedSession, error) {
+	return s.rows, nil
+}
+
+func TestSuspendUserReportsFailedPublicationAndRetriesExistingRevocations(t *testing.T) {
+	store := &suspensionLedgerStore{}
+	markers := &failingSessionMarkers{fail: true}
+	service := &Service{store: store, minter: markers}
+	request := &gen.SuspendUserRequest{UserId: "person", Reason: "contain account"}
+	if err := service.SuspendUser(context.Background(), "administrator", request); !errors.Is(err, ErrSessionEndIncomplete) {
+		t.Fatalf("suspension hid publication failure: %v", err)
+	}
+	if store.status != "suspended" || len(store.rows) == 0 {
+		t.Fatal("publication failure lost durable containment")
+	}
+	markers.fail = false
+	markers.keys = nil
+	if err := service.SuspendUser(context.Background(), "administrator", request); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(markers.keys, "session") || !slices.Contains(markers.keys, "family") {
+		t.Fatalf("repeated suspension omitted old revocations: %v", markers.keys)
 	}
 }

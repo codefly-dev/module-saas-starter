@@ -206,7 +206,7 @@ export function SSOAdminPage() {
 								title="Single sign-on isn't set up"
 							>
 								Set up SSO opens a guided setup where you enter your identity
-								provider's details. It takes about five minutes.
+								provider&apos;s details. It takes about five minutes.
 							</Banner>
 						)}
 

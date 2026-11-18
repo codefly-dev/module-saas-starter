@@ -191,7 +191,7 @@ async function proveSchemaValidation() {
  const accepted = await resolveConnection(connection, undefined, options);
  if (Object.keys(accepted.errors).length) throw new Error("Public connection rejected");
  const refused = await resolveConnection({ ...connection, method: "pat" }, undefined, options);
- if (refused.errors.accessToken?.message !== "Access token is required") throw new Error("Missing token field error");
+ if (refused.errors.accessToken?.message !== "Paste an access token, or choose another way to connect") throw new Error("Missing token field error");
  const bounded = await resolveScope({ paths: Array.from({ length: 65 }, (_, i) => "path" + i).join(",") }, undefined, options);
  if (!bounded.errors.paths) throw new Error("Oversized scope accepted");
  console.log("Registry consumer schema types and form validation passed");

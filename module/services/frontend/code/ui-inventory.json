@@ -1063,7 +1063,7 @@
       ],
       "owner": "@codefly-dev/ui",
       "disposition": "already canonical",
-      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode — every caller here has a real phase to name.",
+      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode \u2014 every caller here has a real phase to name.",
       "stories": [
         {
           "file": "packages/codefly-ui/stories/foundations.stories.tsx",
@@ -5381,41 +5381,6 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
-      "source": "src/features/unattended-work/ui/declaration-facts.tsx",
-      "imports": [
-        "@bufbuild/protobuf/wkt"
-      ],
-      "owner": "SaaS application",
-      "disposition": "keep feature-local",
-      "reason": "Owns the unattended-work workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
-    },
-    {
-      "source": "src/features/unattended-work/ui/unattended-work-playground.tsx",
-      "imports": [
-        "lucide-react",
-        "react",
-        "sonner",
-        "@/components/empty-state",
-        "@/components/org-selector",
-        "@/lib/auth",
-        "@/shared/lib/read-outcome",
-        "@/shared/ui",
-        "../model/source-label",
-        "../service/mutations",
-        "../service/queries",
-        "./declaration-facts"
-      ],
-      "owner": "SaaS application",
-      "disposition": "keep feature-local",
-      "reason": "Owns the unattended-work workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
-    },
-    {
       "source": "src/features/user-settings/ui/general-settings-page.tsx",
       "imports": [
         "@codefly-dev/saas-plugin-contract",
@@ -5824,6 +5789,703 @@
       ],
       "coverage": "owner stories and unit tests; browser/skin verification pending",
       "remaining": "Verify explorer rendering and visual baselines under external skins."
+    },
+    {
+      "source": "src/features/event-operations/ui/event-types-table.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "lucide-react",
+        "@/gen/saas/events/v1/operations_pb",
+        "@/shared/lib/read-outcome",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/event-labels",
+        "./read-failure"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes event subscription, event-type and delivery-state reads using the host event contracts and shared presentation controls.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/event-operations/ui/read-failure.tsx",
+      "imports": [
+        "@/shared/ui",
+        "../model/read-failure"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes event subscription, event-type and delivery-state reads using the host event contracts and shared presentation controls.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/event-operations/ui/subscriptions-table.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "lucide-react",
+        "@/gen/saas/events/v1/operations_pb",
+        "@/shared/lib/read-outcome",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/event-labels",
+        "./read-failure"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes event subscription, event-type and delivery-state reads using the host event contracts and shared presentation controls.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/event-operations/ui/undelivered-table.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "@/gen/saas/events/v1/operations_pb",
+        "@/shared/ui/data-table"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes event subscription, event-type and delivery-state reads using the host event contracts and shared presentation controls.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/job-operations/ui/job-attempts-table.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "lucide-react",
+        "@/gen/saas/jobs/v1/jobs_pb",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/job-failure",
+        "../model/job-state"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes job queue, attempt, history or replay state from host job contracts using shared presentation controls.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/job-operations/ui/job-detail-dialog.tsx",
+      "imports": [
+        "lucide-react",
+        "@/gen/saas/jobs/v1/jobs_pb",
+        "@/gen/saas/jobs/v1/jobs_pb",
+        "@/shared/ui",
+        "../service/queries",
+        "./job-attempts-table",
+        "./job-facts",
+        "./job-history-table",
+        "./read-failure"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes job queue, attempt, history or replay state from host job contracts using shared presentation controls.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/job-operations/ui/job-facts.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout",
+        "@/gen/saas/jobs/v1/jobs_pb",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "../model/job-failure",
+        "./job-scope-label",
+        "./job-state-badge"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes job queue, attempt, history or replay state from host job contracts using shared presentation controls.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/job-operations/ui/job-history-table.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "lucide-react",
+        "@/gen/saas/jobs/v1/jobs_pb",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/job-failure",
+        "../model/job-state"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes job queue, attempt, history or replay state from host job contracts using shared presentation controls.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/job-operations/ui/job-scope-label.tsx",
+      "imports": [
+        "@/components/resource-label",
+        "@/gen/saas/jobs/v1/jobs_pb"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes job queue, attempt, history or replay state from host job contracts using shared presentation controls.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/job-operations/ui/job-state-badge.tsx",
+      "imports": [
+        "@/gen/saas/jobs/v1/jobs_pb",
+        "@/shared/ui",
+        "../model/job-state"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes job queue, attempt, history or replay state from host job contracts using shared presentation controls.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/job-operations/ui/jobs-filters.tsx",
+      "imports": [
+        "react",
+        "@/gen/saas/jobs/v1/jobs_pb",
+        "@/shared/ui",
+        "../model/job-state"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes job queue, attempt, history or replay state from host job contracts using shared presentation controls.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/job-operations/ui/jobs-table.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "lucide-react",
+        "react",
+        "@/gen/saas/jobs/v1/jobs_pb",
+        "@/shared/lib/read-outcome",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/job-failure",
+        "./job-scope-label",
+        "./job-state-badge",
+        "./read-failure"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes job queue, attempt, history or replay state from host job contracts using shared presentation controls.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/job-operations/ui/queue-summary-tiles.tsx",
+      "imports": [
+        "@/shared/ui",
+        "../model/queue-totals"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes job queue, attempt, history or replay state from host job contracts using shared presentation controls.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/job-operations/ui/queues-table.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "lucide-react",
+        "@/gen/saas/jobs/v1/jobs_pb",
+        "@/shared/lib/read-outcome",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "./read-failure"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes job queue, attempt, history or replay state from host job contracts using shared presentation controls.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/job-operations/ui/read-failure.tsx",
+      "imports": [
+        "@/shared/ui",
+        "../model/read-failure"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes job queue, attempt, history or replay state from host job contracts using shared presentation controls.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/job-operations/ui/replay-job-dialog.tsx",
+      "imports": [
+        "sonner",
+        "@/gen/saas/jobs/v1/jobs_pb",
+        "@/shared/lib/failure-text",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "../service/mutations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes job queue, attempt, history or replay state from host job contracts using shared presentation controls.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/module-authority/ui/permissions-editor.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout",
+        "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Presents host module permission requests and their administrative decisions; contract and mutation ownership stay with the host.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/module-authority/ui/requests-table.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout",
+        "@tanstack/react-table",
+        "react",
+        "@/gen/saas/accounts/v1/platform_admin_pb",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/draft"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Presents host module permission requests and their administrative decisions; contract and mutation ownership stay with the host.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/platform-catalogue/ui/catalogue-facts.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout",
+        "@/gen/saas/accounts/v1/authorization_pb",
+        "@/shared/ui",
+        "../model/facts"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Presents the host delivery catalogue and its applied facts without owning generic table primitives.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/platform-catalogue/ui/catalogue-table.tsx",
+      "imports": [
+        "@bufbuild/protobuf/wkt",
+        "@tanstack/react-table",
+        "react",
+        "@/gen/saas/accounts/v1/platform_admin_pb",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/facts",
+        "./catalogue-facts"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Presents the host delivery catalogue and its applied facts without owning generic table primitives.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/catalogue-card.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "react",
+        "@/gen/saas/accounts/v1/installations_pb",
+        "@/shared/lib/read-outcome",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/installations",
+        "../model/listing",
+        "../service/queries",
+        "./catalogue-columns",
+        "./list-read-state",
+        "./target-name"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes host installation reviews, role holders, team exposure and read outcomes; authority answers remain host data.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/catalogue-columns.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "next/link",
+        "@/gen/saas/accounts/v1/installations_pb",
+        "@/shared/ui",
+        "../model/listing",
+        "./target-name"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes host installation reviews, role holders, team exposure and read outcomes; authority answers remain host data.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/fact.tsx",
+      "imports": [
+        "@/shared/ui",
+        "../model/installations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes host installation reviews, role holders, team exposure and read outcomes; authority answers remain host data.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/host-team-access-card.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout",
+        "react",
+        "sonner",
+        "@/gen/saas/accounts/v1/installations_pb",
+        "@/gen/saas/accounts/v1/installations_pb",
+        "@/shared/ui",
+        "../model/installations",
+        "../model/readiness",
+        "../service/mutations",
+        "./fact",
+        "./grant-team-dialog"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes host installation reviews, role holders, team exposure and read outcomes; authority answers remain host data.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/installed-card.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "react",
+        "@/gen/saas/accounts/v1/installations_pb",
+        "@/shared/lib/read-outcome",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/access",
+        "../model/installations",
+        "../service/queries",
+        "./grant-team-dialog",
+        "./installed-columns",
+        "./installed-confirmations",
+        "./list-read-state",
+        "./target-name",
+        "./use-installed-acts"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes host installation reviews, role holders, team exposure and read outcomes; authority answers remain host data.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/installed-columns.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "next/link",
+        "@/gen/saas/accounts/v1/installations_pb",
+        "@/gen/saas/accounts/v1/installations_pb",
+        "@/shared/lib/utils",
+        "../model/access",
+        "../model/installations",
+        "./fact",
+        "./installed-row-actions",
+        "./role-holders",
+        "./status-line",
+        "./target-name",
+        "./team-exposure"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes host installation reviews, role holders, team exposure and read outcomes; authority answers remain host data.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/installed-confirmations.tsx",
+      "imports": [
+        "@/shared/ui",
+        "../model/access",
+        "../model/installations",
+        "./use-installed-acts"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes host installation reviews, role holders, team exposure and read outcomes; authority answers remain host data.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/installed-row-actions.tsx",
+      "imports": [
+        "next/link",
+        "@/gen/saas/accounts/v1/installations_pb",
+        "@/gen/saas/accounts/v1/installations_pb",
+        "@/shared/ui",
+        "../model/installations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes host installation reviews, role holders, team exposure and read outcomes; authority answers remain host data.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/list-read-state.tsx",
+      "imports": [
+        "@/shared/lib/read-outcome",
+        "@/shared/ui",
+        "../model/installations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes host installation reviews, role holders, team exposure and read outcomes; authority answers remain host data.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/offers-read-banner.tsx",
+      "imports": [
+        "@/shared/lib/read-outcome",
+        "@/shared/ui",
+        "../model/installations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes host installation reviews, role holders, team exposure and read outcomes; authority answers remain host data.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/review-section.tsx",
+      "imports": [
+        "react",
+        "@/shared/lib/utils",
+        "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes host installation reviews, role holders, team exposure and read outcomes; authority answers remain host data.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/role-holders.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout",
+        "next/link",
+        "../model/access",
+        "../model/installations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes host installation reviews, role holders, team exposure and read outcomes; authority answers remain host data.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/status-line.tsx",
+      "imports": [
+        "next/link",
+        "@/shared/ui",
+        "../model/access",
+        "../model/installations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes host installation reviews, role holders, team exposure and read outcomes; authority answers remain host data.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/team-exposure.tsx",
+      "imports": [
+        "@/shared/ui",
+        "../model/installations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes host installation reviews, role holders, team exposure and read outcomes; authority answers remain host data.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/use-install-flow.tsx",
+      "imports": [
+        "next/navigation",
+        "react",
+        "sonner",
+        "@/gen/saas/accounts/v1/installations_pb",
+        "@/shared/lib/failure-text",
+        "../model/installations",
+        "../model/listing",
+        "../model/outcomes",
+        "../service/mutations",
+        "./install-solution-dialog",
+        "./set-up-module-page-dialog"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes host installation reviews, role holders, team exposure and read outcomes; authority answers remain host data.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/unattended-work/ui/access-section.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/components/user-label",
+        "@/gen/saas/accounts/v1/datasource_pb",
+        "@/shared/lib/failure-text",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/words",
+        "../service/mutations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes host unattended-work access, schedules and runs from the host contract and shared controls.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/unattended-work/ui/runs-section.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout",
+        "@tanstack/react-table",
+        "lucide-react",
+        "react",
+        "@/gen/saas/accounts/v1/datasource_pb",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/words"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes host unattended-work access, schedules and runs from the host contract and shared controls.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/unattended-work/ui/schedule-section.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout",
+        "lucide-react",
+        "next/link",
+        "@/gen/saas/accounts/v1/datasource_pb",
+        "@/shared/ui",
+        "../model/words"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes host unattended-work access, schedules and runs from the host contract and shared controls.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/unattended-work/ui/unattended-work-page.tsx",
+      "imports": [
+        "lucide-react",
+        "next/link",
+        "react",
+        "sonner",
+        "@/components/org-selector",
+        "@/gen/saas/accounts/v1/datasource_pb",
+        "@/lib/auth",
+        "@/shared/lib/failure-text",
+        "@/shared/lib/read-outcome",
+        "@/shared/ui",
+        "../model/source-label",
+        "../service/mutations",
+        "../service/queries",
+        "./access-section",
+        "./runs-section",
+        "./schedule-section"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Composes host unattended-work access, schedules and runs from the host contract and shared controls.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/shared/ui/confirm-dialog.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout",
+        "react"
+      ],
+      "owner": "SaaS application",
+      "disposition": "promote",
+      "reason": "Generic confirmation composition over the kit AlertDialog with pending-action protection; assess promotion to the shared kit after owner stories and public API qualification.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     }
   ],
   "publicEntrypoints": {

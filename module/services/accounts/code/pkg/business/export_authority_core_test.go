@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
-	"github.com/codefly-dev/authority/libraries/solutionhost/go"
+	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
 )
 
 // UnconfigureAuthorityCoreForTest returns the service to a host whose

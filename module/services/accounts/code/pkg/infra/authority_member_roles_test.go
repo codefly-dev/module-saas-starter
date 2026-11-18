@@ -1,9 +1,10 @@
 package infra
 
 import (
+	"testing"
+
 	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
-	"testing"
 )
 
 func TestHostMembershipMapsOnlyAdministratorsToCoreAdmin(t *testing.T) {

@@ -135,3 +135,11 @@ The remote CI run `34650423895` passed every mandatory gate, including Immutable
 module package and the aggregate Release gates. Publication jobs were skipped
 for this draft PR. This supersedes the earlier remote API-rate-limit failure;
 the local service readiness limitations above remain separate.
+
+### Host feature extraction inventory
+
+The inventory includes the extracted event, job, catalogue, installation, module
+authority and unattended-work components. Their owner stories remain marked
+missing. The shared confirmation composition is a promotion candidate, not a
+completed kit migration. Removed playground sources and obsolete MetricCard
+duplication exceptions no longer appear in the current-source inventory.
