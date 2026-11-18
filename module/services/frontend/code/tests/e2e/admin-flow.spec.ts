@@ -36,7 +36,7 @@ function resolveFrontendURL(): string | null {
 // Wait for the dashboard to render before exercising its controls.
 async function loginAs(page: Page, fixtureName: string) {
 	await signInForScenario(page, fixtureName);
-	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
+	await expect(page.getByRole("heading", { name: /^Welcome back/ })).toBeVisible({ timeout: 20000 });
 	await resolveConsentPrompt(page);
 }
 

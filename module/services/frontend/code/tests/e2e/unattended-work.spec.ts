@@ -12,7 +12,7 @@ import { resolveConsentPrompt } from "./consent";
 
 async function loginAsSuperAdmin(page: Page) {
 	await signInForScenario(page, "Sarah Chen");
-	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
+	await expect(page.getByRole("heading", { name: /^Welcome back/ })).toBeVisible({ timeout: 20000 });
 	await resolveConsentPrompt(page);
 }
 

@@ -8,7 +8,7 @@ import { resolveConsentPrompt } from "./consent";
 // resolve before the page is usable.
 async function loginAsSuperAdmin(page: import("@playwright/test").Page) {
 	await signInForScenario(page, "Sarah Chen");
-	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
+	await expect(page.getByRole("heading", { name: /^Welcome back/ })).toBeVisible({ timeout: 20000 });
 	await resolveConsentPrompt(page);
 }
 

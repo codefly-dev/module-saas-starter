@@ -13,7 +13,7 @@ import { resolveConsentPrompt } from "./consent";
 
 async function loginAs(page: Page, fixtureName: string) {
 	await signInForScenario(page, fixtureName);
-	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
+	await expect(page.getByRole("heading", { name: /^Welcome back/ })).toBeVisible({ timeout: 20000 });
 	await resolveConsentPrompt(page);
 }
 

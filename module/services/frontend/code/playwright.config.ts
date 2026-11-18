@@ -87,6 +87,8 @@ export default defineConfig({
 			// named explicitly — it is the same single product API path, not an
 			// alternate one.
 			PRODUCT_GATEWAY_INTERNAL: productGateway,
+			// The production build serves the origin Codefly allocated for this test.
+			CODEFLY__WORKSPACE_CONFIGURATION__APPLICATION__APP_BASE_URL: frontendUrl,
 			// Force the Codefly fixture identity adapter for this browser suite.
 			// The login page reads the `identity` group at request time.
 			CODEFLY__WORKSPACE_CONFIGURATION__IDENTITY__IDENTITY_PROVIDER: "fixture",

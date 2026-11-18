@@ -63,7 +63,7 @@ test.describe("Security headers", () => {
 		page,
 	}) => {
 		await signInForScenario(page, "Sarah Chen");
-		await expect(page.getByText("Welcome back")).toBeVisible({
+		await expect(page.getByRole("heading", { name: /^Welcome back/ })).toBeVisible({
 			timeout: 20000,
 		});
 		await resolveConsentPrompt(page);

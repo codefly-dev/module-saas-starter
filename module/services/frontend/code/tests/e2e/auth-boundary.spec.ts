@@ -34,7 +34,7 @@ const FRONTEND =
 
 async function loginAs(page: Page, fixtureName: string): Promise<string> {
 	await signInForScenario(page, fixtureName);
-	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
+	await expect(page.getByRole("heading", { name: /^Welcome back/ })).toBeVisible({ timeout: 20000 });
 	await expect
 		.poll(async () =>
 			(await page.context().cookies()).some(

@@ -4,7 +4,7 @@ import { resolveConsentPrompt } from "./consent";
 
 async function loginAs(page: Page, fixtureName: string): Promise<string> {
 	await signInForScenario(page, fixtureName);
-	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 15000 });
+	await expect(page.getByRole("heading", { name: /^Welcome back/ })).toBeVisible({ timeout: 15000 });
 	await resolveConsentPrompt(page);
 	const refresh = await page.request.post("/v1/auth/refresh", { data: {} });
 	expect(refresh.ok()).toBe(true);

@@ -29,7 +29,7 @@ async function loginAndGrabTokens(
 	fixtureName: string,
 ): Promise<{ accessToken: string; refreshToken: string }> {
 	await signInForScenario(page, fixtureName);
-	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
+	await expect(page.getByRole("heading", { name: /^Welcome back/ })).toBeVisible({ timeout: 20000 });
 
 	await expect
 		.poll(async () =>

@@ -280,8 +280,8 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 							fixtureUsers.length > 0 &&
 							!clientPending &&
 							!clientRefusal && (
-								<div className="space-y-2">
-									<p className="text-xs font-medium text-muted-foreground">
+								<div role="group" aria-labelledby="fixture-sign-in-heading" className="space-y-2">
+									<p id="fixture-sign-in-heading" className="text-xs font-medium text-muted-foreground">
 										Development sign-in — choose a person
 									</p>
 									{fixtureUsers.map((u) => {
