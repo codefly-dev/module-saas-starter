@@ -48,7 +48,7 @@ export function JobDetailDialog({
 				<DialogHeader>
 					<DialogTitle>Job details</DialogTitle>
 					<DialogDescription>
-						The job's history as it was recorded. What it carries is never
+						The job&apos;s history as it was recorded. What it carries is never
 						shown.
 					</DialogDescription>
 				</DialogHeader>

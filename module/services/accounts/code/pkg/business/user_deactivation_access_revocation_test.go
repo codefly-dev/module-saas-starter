@@ -172,9 +172,8 @@ func (s unwritableState) Set(context.Context, string, []byte, time.Duration) err
 	return errors.New("revocation store unreachable")
 }
 
-// The marker is best-effort, as on every other path that writes one: the status
-// change and the revoked rows are the durable authority, and a cache outage
-// must not be what keeps a compromised account active.
+// Suspension commits durable status and revoked rows even during a cache outage,
+// but reports incomplete bearer containment until the markers can be published.
 func TestSuspensionSurvivesAnUnwritableRevocationList(t *testing.T) {
 	clearData(t)
 	attempts := 0
@@ -185,8 +184,8 @@ func TestSuspensionSurvivesAnUnwritableRevocationList(t *testing.T) {
 	target := mustUser(t, "target@example.com", "example-target")
 	loginAndRefresh(t, target)
 
-	require.NoError(t, testService.SuspendUser(testCtx, adminID,
-		&gen.SuspendUserRequest{UserId: target, Reason: "test"}))
+	require.ErrorIs(t, testService.SuspendUser(testCtx, adminID,
+		&gen.SuspendUserRequest{UserId: target, Reason: "test"}), business.ErrSessionEndIncomplete)
 
 	require.Equal(t, "suspended", userStatus(t, target))
 	require.Empty(t, adminSessions(t, target), "refreshing ends whether or not the marker was written")

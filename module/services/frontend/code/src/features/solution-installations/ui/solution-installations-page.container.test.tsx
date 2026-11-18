@@ -19,7 +19,6 @@ import { server } from "@/test/setup";
 
 // Existing explicit module administration retains its owner form. Normal
 // solution installation is exercised in the combined-review tests.
-const renderInApp = renderApp;
 
 const session = vi.hoisted(() => ({
 	organizationId: "org-1",
@@ -36,13 +35,13 @@ vi.mock("next/navigation", () => ({
 }));
 
 // One route, two views: the address chooses which.
-function Page() {
+function renderModulesPage() {
 	view.current = "view=modules";
-	return <SolutionsRoutePage />;
+	return renderApp(<SolutionsRoutePage />);
 }
-function SolutionsPage() {
+function renderSolutionsPage() {
 	view.current = "";
-	return <SolutionsRoutePage />;
+	return renderApp(<SolutionsRoutePage />);
 }
 vi.mock("@/lib/auth", () => ({ useAuth: () => session }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -343,7 +342,7 @@ function refusal(message: string, code = "permission_denied") {
 describe("SolutionInstallationsPage admin container", () => {
 	it("lists what is available and what is installed, from the host's two reads", async () => {
 		serve();
-		renderInApp(<Page />);
+		renderModulesPage();
 
 		const availableTable = await findTable("Available modules and solutions");
 		const ledger = within(availableTable).getByText("ledger").closest("tr");
@@ -410,7 +409,7 @@ describe("SolutionInstallationsPage admin container", () => {
 				},
 			),
 		);
-		renderInApp(<Page />);
+		renderModulesPage();
 		await findTable("Installed modules and solutions");
 		expect(asked).toEqual({ orgId: "org-1", pageSize: 500 });
 	});
@@ -434,7 +433,7 @@ describe("SolutionInstallationsPage admin container", () => {
 				},
 			),
 		);
-		renderInApp(<SolutionsPage />);
+		renderSolutionsPage();
 
 		fireEvent.click(
 			await screen.findByRole("button", { name: "Uninstall expenses" }),
@@ -487,7 +486,7 @@ describe("SolutionInstallationsPage admin container", () => {
 				},
 			),
 		);
-		renderInApp(<SolutionsPage />);
+		renderSolutionsPage();
 
 		fireEvent.click(
 			await screen.findByRole("button", {
@@ -542,7 +541,7 @@ describe("SolutionInstallationsPage admin container", () => {
 				),
 			),
 		);
-		renderInApp(<SolutionsPage />);
+		renderSolutionsPage();
 		fireEvent.click(
 			await screen.findByRole("button", {
 				name: "Grant a team access to expenses",
@@ -578,7 +577,7 @@ describe("SolutionInstallationsPage admin container", () => {
 				},
 			),
 		);
-		renderInApp(<Page />);
+		renderModulesPage();
 
 		await removeFinance();
 
@@ -622,7 +621,7 @@ describe("SolutionInstallationsPage admin container", () => {
 					),
 			),
 		);
-		renderInApp(<Page />);
+		renderModulesPage();
 		expect(
 			await screen.findByText(
 				/You don't have permission to see the installed modules and solutions/,
@@ -641,7 +640,7 @@ describe("SolutionInstallationsPage admin container", () => {
 			availableBody: { solutions: [] },
 			installationsBody: { installations: [] },
 		});
-		renderInApp(<Page />);
+		renderModulesPage();
 		expect(
 			await screen.findByText(
 				"No module or solution is available to this organization. Ask your platform operator to make one available, then refresh this list.",
@@ -680,7 +679,7 @@ describe("organization administration boundary", () => {
 			expect(navigation?.requiredPermission).toBe("roles:write");
 			if (!navigation) throw new Error("Solutions navigation missing");
 			expect(canPresent(navigation, session)).toBe(allowed);
-			const { client } = renderInApp(<Page />);
+			const { client } = renderModulesPage();
 			if (allowed) {
 				await findTable("Installed modules and solutions");
 				expect(reads.available).toBe(1);
@@ -698,7 +697,7 @@ describe("organization administration boundary", () => {
 	it("does not read without an active organization", async () => {
 		session.organizationId = "";
 		const reads = serve();
-		renderInApp(<Page />);
+		renderModulesPage();
 		expect(
 			screen.getByText(
 				"Select an organization to manage its modules and solutions",
@@ -761,7 +760,7 @@ describe("organization administration boundary", () => {
 				},
 			),
 		);
-		renderInApp(<Page />);
+		renderModulesPage();
 		for (const name of [
 			"Available modules and solutions",
 			"Installed modules and solutions",
@@ -777,7 +776,7 @@ describe("organization administration boundary", () => {
 	it("discards the grant draft and scopes all reads and the next grant after an organization switch", async () => {
 		{
 			serve(solutionBodies());
-			const { client, rerender } = renderInApp(<SolutionsPage />);
+			const { client, rerender } = renderSolutionsPage();
 			await openGrant();
 
 			const secondAvailable = structuredClone(available);
@@ -827,7 +826,7 @@ describe("organization administration boundary", () => {
 			session.organizationId = "org-2";
 			rerender(
 				<QueryClientProvider client={client}>
-					<SolutionsPage />
+					<SolutionsRoutePage />
 				</QueryClientProvider>,
 			);
 			await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -870,7 +869,7 @@ describe("host read refusals and retained data", () => {
 				refusal("requires organization admin"),
 			),
 		);
-		renderInApp(<Page />);
+		renderModulesPage();
 		// Not allowed: the host's words, who can grant it, and no retry.
 		const refused = await screen.findByText(
 			/You don't have permission to see the available modules and solutions/,
@@ -906,7 +905,7 @@ describe("host read refusals and retained data", () => {
 				return HttpResponse.json({});
 			}),
 		);
-		renderInApp(<SolutionsPage />);
+		renderSolutionsPage();
 		fireEvent.click(
 			await screen.findByRole("button", { name: "Uninstall expenses" }),
 		);
@@ -943,7 +942,7 @@ describe("host read refusals and retained data", () => {
 					return refusal(reason);
 				}),
 			);
-			renderInApp(<Page />);
+			renderModulesPage();
 			expect((await screen.findByRole("alert")).textContent).toContain(reason);
 			expect(queryTable(table)).toBeNull();
 			expect(toast.success).not.toHaveBeenCalled();
@@ -954,7 +953,7 @@ describe("host read refusals and retained data", () => {
 		"handles both table refreshes ending in %s, with the host's reason for a refusal only",
 		async (code) => {
 			serve();
-			renderInApp(<Page />);
+			renderModulesPage();
 			await findTable("Available modules and solutions");
 			await findTable("Installed modules and solutions");
 			for (const method of [
@@ -1038,7 +1037,7 @@ describe("host read refusals and retained data", () => {
 					return refusal(`${method}: membership removed`);
 				}),
 			);
-			renderInApp(<SolutionsPage />);
+			renderSolutionsPage();
 			fireEvent.click(
 				await screen.findByRole("button", {
 					name:
@@ -1079,7 +1078,7 @@ describe("host read refusals and retained data", () => {
 					return HttpResponse.json({});
 				}),
 			);
-			const { client } = renderInApp(<SolutionsPage />);
+			const { client } = renderSolutionsPage();
 			const dialog = await openGrant();
 			server.use(
 				http.post(rpc(service, method), async ({ request }) => {
@@ -1120,7 +1119,7 @@ describe("host read refusals and retained data", () => {
 		"keeps $kind / $label options with a visible stale notice on transient failure",
 		async ({ label, service, method, key, selected }) => {
 			serve(solutionBodies());
-			const { client } = renderInApp(<SolutionsPage />);
+			const { client } = renderSolutionsPage();
 			const dialog = await openGrant();
 			server.use(
 				http.post(rpc(service, method), async ({ request }) => {
@@ -1176,7 +1175,7 @@ describe("mutation results belong to the page", () => {
 					},
 				),
 			);
-			renderInApp(<SolutionsPage />);
+			renderSolutionsPage();
 			const dialog = await openGrant();
 			fireEvent.click(
 				within(dialog).getByRole("button", {
@@ -1235,7 +1234,7 @@ describe("mutation results belong to the page", () => {
 				},
 			),
 		);
-		renderInApp(<Page />);
+		renderModulesPage();
 		await removeFinance();
 		await waitFor(() =>
 			expect(toast.success).toHaveBeenCalledExactlyOnceWith(
@@ -1273,7 +1272,7 @@ describe("mutation results belong to the page", () => {
 				},
 			),
 		);
-		renderInApp(<SolutionsPage />);
+		renderSolutionsPage();
 		fireEvent.click(
 			await screen.findByRole("button", { name: "Uninstall expenses" }),
 		);
@@ -1316,7 +1315,7 @@ describe("accessible validation and host text", () => {
 					return HttpResponse.json({});
 				}),
 			);
-			renderInApp(<SolutionsPage />);
+			renderSolutionsPage();
 			fireEvent.click(
 				await screen.findByRole("button", {
 					name:
@@ -1367,7 +1366,7 @@ describe("accessible validation and host text", () => {
 				roles: [{ id: READER_ROLE, orgId: "org-1", name: hostile }],
 			},
 		});
-		renderInApp(<Page />);
+		renderModulesPage();
 		expect(
 			within(await findTable("Available modules and solutions")).getByText(
 				hostile,
@@ -1432,7 +1431,7 @@ it("shows pending and failed installations and retries the failed step", async (
 			},
 		),
 	);
-	renderInApp(<Page />);
+	renderModulesPage();
 	expect(await screen.findByText("Example setup refused")).toBeTruthy();
 	expect(screen.queryByRole("button", { name: /grant.*team/i })).toBeNull();
 	fireEvent.click(screen.getByRole("button", { name: "Retry expenses" }));
@@ -1526,7 +1525,7 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 
 	it("lists solutions to install and module pages to set up, never a module page to install", async () => {
 		const reads = serveSolutions({ failsTimes: 1 });
-		renderInApp(<SolutionsPage />);
+		renderSolutionsPage();
 
 		const availableTable = await findTable("Available solutions");
 		// A module page needs no offer: it is set up, never installed, and it
@@ -1568,7 +1567,7 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 
 	it("a module page is set up from Admin in one click", async () => {
 		const reads = serveSolutions();
-		renderInApp(<SolutionsPage />);
+		renderSolutionsPage();
 		fireEvent.click(
 			await screen.findByRole("button", { name: "Set up access to ledger" }),
 		);
@@ -1660,7 +1659,7 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 				},
 			),
 		);
-		renderInApp(<SolutionsPage />);
+		renderSolutionsPage();
 		const availableTable = await findTable("Available solutions");
 		const row = (await within(availableTable).findByText("payroll")).closest(
 			"tr",
@@ -1719,7 +1718,7 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 					}),
 			),
 		);
-		renderInApp(<SolutionsPage />);
+		renderSolutionsPage();
 		const pagesTable = await findTable("Available module pages");
 		const directory = (
 			await within(pagesTable).findByText("directory")
@@ -1780,7 +1779,7 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 				});
 			}),
 		);
-		renderInApp(<Page />);
+		renderModulesPage();
 		await waitFor(() => {
 			expect(reads.available).toBe(1);
 			expect(reads.installed).toBe(1);
@@ -1921,7 +1920,7 @@ describe("an installation survives delivery: the host offers an update, and the 
 				},
 			),
 		);
-		renderInApp(<SolutionsPage />);
+		renderSolutionsPage();
 		const installedTable = await findTable("Installed solutions");
 		await within(installedTable).findByText("Update available");
 		expect(within(installedTable).getByText("Healthy")).toBeTruthy();
@@ -2046,7 +2045,7 @@ describe("an installation survives delivery: the host offers an update, and the 
 				},
 			),
 		);
-		renderInApp(<SolutionsPage />);
+		renderSolutionsPage();
 		const installedTable = await findTable("Installed solutions");
 		await within(installedTable).findByText("Update available");
 		// Beside its access, never an uninstall: composition retires it.
@@ -2087,7 +2086,7 @@ describe("an installation survives delivery: the host offers an update, and the 
 			availableBody: { solutions: [payroll] },
 			installationsBody: installedPayroll(false),
 		});
-		renderInApp(<SolutionsPage />);
+		renderSolutionsPage();
 		const installedTable = await findTable("Installed solutions");
 		await within(installedTable).findByText("payroll");
 		expect(within(installedTable).queryByText("Update available")).toBeNull();
