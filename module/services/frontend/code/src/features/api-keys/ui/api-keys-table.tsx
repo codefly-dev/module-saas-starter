@@ -35,9 +35,11 @@ const col = createColumnHelper<APIKey>();
 export function APIKeysTable({
 	keys,
 	isLoading,
+	canManage = false,
 }: {
 	keys: APIKey[];
 	isLoading: boolean;
+	canManage?: boolean;
 }) {
 	"use no memo";
 	// TanStack Table mutates a stable table instance when its data changes.
@@ -100,6 +102,7 @@ export function APIKeysTable({
 				header: "",
 				cell: ({ row }) => {
 					const key = row.original;
+					if (!canManage) return null;
 					if (key.revokedAt) {
 						return (
 							<Badge variant="destructive" className="text-xs">
@@ -123,7 +126,7 @@ export function APIKeysTable({
 				},
 			}),
 		],
-		[],
+		[canManage],
 	);
 
 	// Active keys first, revoked keys at the bottom — same end-state
@@ -149,7 +152,11 @@ export function APIKeysTable({
 				table={table}
 				isLoading={isLoading}
 				ariaLabel="API keys"
-				emptyMessage="No API keys yet. Create a key to connect an application."
+				emptyMessage={
+					canManage
+						? "No API keys yet. Create a key to connect an application."
+						: "No API keys yet. An organization administrator can create one."
+				}
 			/>
 			<AlertDialog
 				open={selectedKey !== null}
@@ -179,7 +186,7 @@ export function APIKeysTable({
 							disabled={revokeKey.isPending}
 							onClick={(event) => {
 								event.preventDefault();
-								if (!selectedKey || submitting.current) return;
+								if (!selectedKey || !canManage || submitting.current) return;
 								submitting.current = true;
 								setFailure(null);
 								revokeKey.mutate(

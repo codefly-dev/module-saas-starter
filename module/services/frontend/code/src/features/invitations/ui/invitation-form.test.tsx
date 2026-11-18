@@ -6,7 +6,6 @@ import {
 	within,
 } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
-import { toast } from "sonner";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
@@ -34,7 +33,7 @@ describe("invitation role labels", () => {
 describe("a refused invitation", () => {
 	// "Failed to create invitation" sent an administrator looking for an
 	// outage when the organization had simply used every seat it has.
-	it("shows the quota the host refused it with", async () => {
+	it("explains a usage limit beside the retained invitation", async () => {
 		server.use(
 			http.post(rpc("InvitationService", "CreateInvitation"), () =>
 				HttpResponse.json(
@@ -49,16 +48,72 @@ describe("a refused invitation", () => {
 		renderInApp(<InvitationForm orgId="org-example" />);
 		fireEvent.click(screen.getByRole("button", { name: "Invite" }));
 		const dialog = await screen.findByRole("dialog");
-		fireEvent.change(within(dialog).getByLabelText("Email"), {
+		fireEvent.change(within(dialog).getByRole("textbox", { name: "Email" }), {
 			target: { value: "sixth@example.com" },
 		});
 		fireEvent.click(
-			within(dialog).getByRole("button", { name: "Send Invite" }),
+			within(dialog).getByRole("button", { name: "Send invite" }),
 		);
-		await waitFor(() =>
-			expect(toast.error).toHaveBeenCalledWith(
-				"Couldn't make this change. A usage limit has been reached. Ask your organization administrator to review it.",
-			),
+		expect((await within(dialog).findByRole("alert")).textContent).toContain(
+			"A usage limit has been reached. Ask your organization administrator to review it.",
 		);
+		expect(
+			(
+				within(dialog).getByRole("textbox", {
+					name: "Email",
+				}) as HTMLInputElement
+			).value,
+		).toBe("sixth@example.com");
+	});
+});
+
+describe("invitation submission", () => {
+	it("validates the email beside its field before making a request", async () => {
+		const create = vi.fn(() => HttpResponse.json({}));
+		server.use(http.post(rpc("InvitationService", "CreateInvitation"), create));
+		renderInApp(<InvitationForm orgId="org-example" />);
+		fireEvent.click(screen.getByRole("button", { name: "Invite" }));
+		const dialog = await screen.findByRole("dialog");
+		const email = within(dialog).getByRole("textbox", { name: "Email" });
+		fireEvent.change(email, { target: { value: "invalid" } });
+		fireEvent.submit(
+			within(dialog).getByRole("form", { name: "Invite member" }),
+		);
+		expect(email.getAttribute("aria-invalid")).toBe("true");
+		expect(
+			document.getElementById(email.getAttribute("aria-describedby")!)
+				?.textContent,
+		).toBe("Enter a valid email address.");
+		expect(create).not.toHaveBeenCalled();
+	});
+	it("locks the draft and prevents dismissal or duplicate submission while sending", async () => {
+		let finish!: () => void;
+		const pending = new Promise<void>((resolve) => {
+			finish = resolve;
+		});
+		const create = vi.fn(async () => {
+			await pending;
+			return HttpResponse.json({});
+		});
+		server.use(http.post(rpc("InvitationService", "CreateInvitation"), create));
+		renderInApp(<InvitationForm orgId="org-example" />);
+		fireEvent.click(screen.getByRole("button", { name: "Invite" }));
+		const dialog = await screen.findByRole("dialog");
+		const email = within(dialog).getByRole("textbox", { name: "Email" });
+		fireEvent.change(email, { target: { value: "member@example.com" } });
+		const form = within(dialog).getByRole("form", { name: "Invite member" });
+		fireEvent.submit(form);
+		fireEvent.submit(form);
+		await waitFor(() => expect(create).toHaveBeenCalledOnce());
+		expect(email.hasAttribute("disabled")).toBe(true);
+		expect(
+			within(dialog)
+				.getByRole("button", { name: "Cancel" })
+				.hasAttribute("disabled"),
+		).toBe(true);
+		fireEvent.keyDown(dialog, { key: "Escape" });
+		expect(screen.getByRole("dialog")).toBeTruthy();
+		finish();
+		await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 	});
 });

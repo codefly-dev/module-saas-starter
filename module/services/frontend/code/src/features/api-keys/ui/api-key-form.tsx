@@ -16,6 +16,8 @@ import {
 	DialogHeader,
 	DialogTitle,
 	DialogTrigger,
+	ErrorState,
+	Field,
 	Input,
 	Label,
 	Select,
@@ -89,6 +91,7 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 	// State for showing the plaintext key after creation
 	const [plaintextKey, setPlaintextKey] = useState<string | null>(null);
 	const [copied, setCopied] = useState(false);
+	const [nameError, setNameError] = useState<string>();
 	const [error, setError] = useState<string | null>(null);
 
 	const createKey = useCreateAPIKey();
@@ -96,6 +99,7 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 
 	function reset() {
 		setKeyName("");
+		setNameError(undefined);
 		setEnvironment("1");
 		setScopePreset("read_only");
 		setPlaintextKey(null);
@@ -110,7 +114,7 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 			return;
 		}
 		if (!keyName.trim()) {
-			setError("Enter a name for your API key.");
+			setNameError("Enter a name for your API key.");
 			return;
 		}
 		setError(null);
@@ -183,7 +187,7 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 			<Button
 				type="submit"
 				form={formId}
-				disabled={createKey.isPending || !keyName.trim() || !orgId}
+				disabled={createKey.isPending || !orgId}
 			>
 				{createKey.isPending ? "Creating..." : "Create key"}
 			</Button>
@@ -253,6 +257,7 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 					<form
 						id={formId}
 						aria-label="Create API key"
+						noValidate
 						onSubmit={(event) => {
 							event.preventDefault();
 							handleSubmit();
@@ -272,45 +277,46 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 								<OrgSelector />
 							</div>
 						)}
-						{error && (
-							<p role="alert" className="text-sm text-destructive">
-								{error}
-							</p>
-						)}
+						{error && <ErrorState title="Key not created" detail={error} />}
 						<div className="space-y-4 py-4">
-							<div className="space-y-2">
-								<Label htmlFor="key-name">Name</Label>
-								<Input
-									id="key-name"
-									required
-									disabled={createKey.isPending}
-									placeholder="e.g. reporting integration"
-									value={keyName}
-									onChange={(e) => setKeyName(e.target.value)}
-								/>
-							</div>
+							<Field label="Name" required error={nameError}>
+								{(control) => (
+									<Input
+										{...control}
+										disabled={createKey.isPending}
+										placeholder="e.g. reporting integration"
+										value={keyName}
+										onChange={(event) => {
+											setKeyName(event.target.value);
+											setNameError(undefined);
+										}}
+									/>
+								)}
+							</Field>
 
-							<div className="space-y-2">
-								<Label>Environment</Label>
-								<Select
-									items={[
-										{ value: "1", label: "Live" },
-										{ value: "2", label: "Test" },
-									]}
-									value={environment}
-									onValueChange={(v) => {
-										if (v) setEnvironment(v);
-									}}
-								>
-									<SelectTrigger aria-label="Environment">
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										<SelectItem value="1">Live</SelectItem>
-										<SelectItem value="2">Test</SelectItem>
-									</SelectContent>
-								</Select>
-							</div>
+							<Field label="Environment">
+								{(control) => (
+									<Select
+										disabled={createKey.isPending}
+										items={[
+											{ value: "1", label: "Live" },
+											{ value: "2", label: "Test" },
+										]}
+										value={environment}
+										onValueChange={(v) => {
+											if (v) setEnvironment(v);
+										}}
+									>
+										<SelectTrigger {...control}>
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											<SelectItem value="1">Live</SelectItem>
+											<SelectItem value="2">Test</SelectItem>
+										</SelectContent>
+									</Select>
+								)}
+							</Field>
 
 							<div className="space-y-2">
 								<Label id={`${formId}-access-label`}>Access</Label>
