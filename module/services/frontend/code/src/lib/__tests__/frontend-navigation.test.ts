@@ -35,7 +35,7 @@ describe("generated frontend navigation", () => {
 			),
 		);
 		expect(groups.map((group) => group.group)).toEqual([
-			"Users & Access",
+			"Users & access",
 			"Platform",
 			"Billing",
 			"Integrations",

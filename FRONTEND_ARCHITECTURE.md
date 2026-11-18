@@ -228,6 +228,10 @@ paths, host adapters, feature orchestration and missing owner stories. Story cou
 do not establish complete component coverage. The host shares each public UI
 subpath as a federation singleton and compiles CSS from both UI owner packages.
 
+Navigation wording is authored in `frontend.bindings.codefly.yaml` and regenerated
+by the owning `frontend-plugins` generator. Sidebar, overview and command-palette
+labels use sentence case from that shared catalogue.
+
 ## Form and refusal presentation
 
 Product forms compose the published `@codefly-dev/ui` fields and controls.
