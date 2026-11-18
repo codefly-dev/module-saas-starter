@@ -129,7 +129,9 @@ export function EventOperationsPage() {
 
 			<Card>
 				<CardHeader>
-					<CardTitle className="text-base">Event types</CardTitle>
+					<CardTitle role="heading" aria-level={2} className="text-base">
+						Event types
+					</CardTitle>
 					<CardDescription>
 						Every declared event type with its counts. Types that were published
 						without being declared are listed too.
@@ -158,7 +160,9 @@ export function EventOperationsPage() {
 
 			<Card>
 				<CardHeader>
-					<CardTitle className="text-base">Subscriptions</CardTitle>
+					<CardTitle role="heading" aria-level={2} className="text-base">
+						Subscriptions
+					</CardTitle>
 					<CardDescription>
 						Every active subscription on the platform, with the number of events
 						its queue could not deliver.
@@ -190,7 +194,7 @@ export function EventOperationsPage() {
 			{!operations.isError && deadLetters.length > 0 && (
 				<Card>
 					<CardHeader>
-						<CardTitle className="text-base">
+						<CardTitle role="heading" aria-level={2} className="text-base">
 							Undelivered events by queue
 						</CardTitle>
 						<CardDescription>

@@ -429,26 +429,23 @@ export interface SolutionPageProps extends SaasUi.SolutionBinding {
  */
 class SolutionErrorBoundary extends Component<
 	{ noun: string; children: ReactNode },
-	{ failure: string | null }
+	{ failed: boolean }
 > {
-	state: { failure: string | null } = { failure: null };
+	state = { failed: false };
 
-	static getDerivedStateFromError(error: unknown): { failure: string } {
-		return {
-			failure:
-				error instanceof Error && error.message
-					? error.message
-					: "the remote gave no reason",
-		};
+	static getDerivedStateFromError(): { failed: boolean } {
+		return { failed: true };
 	}
 
 	render() {
-		if (this.state.failure !== null) {
+		if (this.state.failed) {
 			return (
-				<div role="alert" className="p-6 text-sm">
-					<p>This {this.props.noun} failed to load.</p>
-					<p className="opacity-70">Reason: {this.state.failure}</p>
-				</div>
+				<CodeflyLayout.Panel>
+					<CodeflyLayout.ErrorState
+						title={`This ${this.props.noun} failed to load.`}
+						detail="Ask your platform administrator to check that this page is available and compatible with the application."
+					/>
+				</CodeflyLayout.Panel>
 			);
 		}
 		return this.props.children;

@@ -82,7 +82,9 @@ export function ModulePageAccess({
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle className="text-base">Who has access to {target}</CardTitle>
+				<CardTitle role="heading" aria-level={2} className="text-base">
+					Who has access to {target}
+				</CardTitle>
 				<CardDescription>
 					{target} is part of the platform; its roles decide who can use it.
 					Each role goes to teams or people, and anyone in a team has it.

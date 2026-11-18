@@ -212,7 +212,9 @@ function OrgSettingsForm({
 		>
 			<Card>
 				<CardHeader>
-					<CardTitle>Branding</CardTitle>
+					<CardTitle role="heading" aria-level={2}>
+						Branding
+					</CardTitle>
 					<CardDescription>
 						Configure your organization&apos;s visual identity.
 					</CardDescription>
@@ -278,7 +280,9 @@ function OrgSettingsForm({
 				</CardContent>
 
 				<CardHeader>
-					<CardTitle>Domain</CardTitle>
+					<CardTitle role="heading" aria-level={2}>
+						Domain
+					</CardTitle>
 					<CardDescription>
 						Set up a custom domain for your organization.
 					</CardDescription>

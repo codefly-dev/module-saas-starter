@@ -164,7 +164,9 @@ function Notes({
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle className="text-base">{title}</CardTitle>
+				<CardTitle role="heading" aria-level={2} className="text-base">
+					{title}
+				</CardTitle>
 				<CardDescription>{description}</CardDescription>
 			</CardHeader>
 			<CardContent>

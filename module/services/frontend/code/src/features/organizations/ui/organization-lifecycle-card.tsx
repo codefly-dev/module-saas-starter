@@ -32,7 +32,9 @@ export function OrganizationLifecycleCard({
 	return (
 		<Card className="border-destructive/40">
 			<CardHeader>
-				<CardTitle>Danger zone</CardTitle>
+				<CardTitle role="heading" aria-level={2}>
+					Danger zone
+				</CardTitle>
 				<CardDescription>
 					Leaving or deleting {organization.name} ends access to it.
 				</CardDescription>

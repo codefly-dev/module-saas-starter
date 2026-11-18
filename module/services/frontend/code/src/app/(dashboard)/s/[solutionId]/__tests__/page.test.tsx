@@ -207,20 +207,17 @@ describe("the solution page", () => {
 	// A viewer the projection does not list is refused, and told so: the page
 	// is named, as what it is, and nothing it mounts is rendered. It is never
 	// the not-found state, which is for an address nothing is registered at.
-	it.each([
-		["solution", "solution"],
-		["module", "module page"],
-	] as const)(
+	it.each(["solution", "module"] as const)(
 		"tells a viewer the projection does not list that they are not admitted to the %s, never that it is not found",
-		async (kind, noun) => {
+		async (kind) => {
 			live.entitled = false;
 			findSolution.mockResolvedValue(solution(undefined, kind));
 			await renderPage();
 			const refusal = screen.getByRole("alert");
-			expect(refusal.textContent).toContain("You are not admitted to Example");
-			expect(refusal.textContent).toContain(
-				`Example is a ${noun} registered here, but you are not admitted to it`,
-			);
+			expect(refusal.textContent).toContain("You don't have access to Example");
+			expect(refusal.textContent).toContain("organization administrator");
+			if (kind === "module")
+				expect(refusal.textContent).not.toContain("installed");
 			expect(screen.queryByText(/not found/i)).toBeNull();
 			expect(screen.queryByTestId("remote")).toBeNull();
 			expect(

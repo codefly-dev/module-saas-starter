@@ -1,7 +1,5 @@
-import { ShieldAlert } from "lucide-react";
 import Link from "next/link";
-import { EmptyState } from "@/components/empty-state";
-import { buttonVariants } from "@/shared/ui";
+import { buttonVariants, ErrorState, Page, PageHeader } from "@/shared/ui";
 
 /**
  * A page that IS registered here, shown to a viewer the entitled projection
@@ -24,19 +22,20 @@ export function PageNotAdmitted({
 	title: string;
 	kind?: "module" | "solution";
 }) {
-	const noun = kind === "module" ? "module page" : "solution";
 	return (
-		<div className="p-6" role="alert">
-			<EmptyState
-				icon={ShieldAlert}
-				title={`You are not admitted to ${title}`}
-				description={`${title} is a ${noun} registered here, but you are not admitted to it: either your organization has not installed it, or you hold no role on it. An organization administrator can install it or grant you a role.`}
-				action={
-					<Link href="/" className={buttonVariants({ variant: "outline" })}>
-						Go to the dashboard
-					</Link>
+		<Page>
+			<PageHeader title={title} />
+			<ErrorState
+				title={`You don't have access to ${title}`}
+				detail={
+					kind === "module"
+						? "Ask your organization administrator to give you or your team access to this module page."
+						: "Ask your organization administrator to check that this solution is installed and give you or your team access."
 				}
 			/>
-		</div>
+			<Link href="/" className={buttonVariants({ variant: "outline" })}>
+				Go to the dashboard
+			</Link>
+		</Page>
 	);
 }

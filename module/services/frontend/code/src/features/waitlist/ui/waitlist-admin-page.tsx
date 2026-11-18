@@ -3,13 +3,12 @@
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { createClient } from "@connectrpc/connect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Mail, Search, X } from "lucide-react";
 import {
 	createColumnHelper,
 	getCoreRowModel,
 	useReactTable,
 } from "@tanstack/react-table";
-import { DataTable } from "@/shared/ui/data-table";
+import { Check, Mail, Search, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -22,13 +21,13 @@ import { failureText } from "@/shared/lib/failure-text";
 import { readOutcome } from "@/shared/lib/read-outcome";
 import {
 	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
 	AlertDialogContent,
-	AlertDialogHeader,
-	AlertDialogTitle,
 	AlertDialogDescription,
 	AlertDialogFooter,
-	AlertDialogCancel,
-	AlertDialogAction,
+	AlertDialogHeader,
+	AlertDialogTitle,
 	Badge,
 	Button,
 	Card,
@@ -47,6 +46,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/shared/ui";
+import { DataTable } from "@/shared/ui/data-table";
 
 const client = createClient(WaitlistService, apiTransport);
 
@@ -229,7 +229,9 @@ export function WaitlistAdminPage() {
 			/>
 			<Card>
 				<CardHeader>
-					<CardTitle>Access requests</CardTitle>
+					<CardTitle role="heading" aria-level={2}>
+						Access requests
+					</CardTitle>
 					<CardDescription>
 						Every approval and invitation is recorded in the audit log.
 					</CardDescription>

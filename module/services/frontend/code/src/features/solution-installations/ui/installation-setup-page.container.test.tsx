@@ -708,3 +708,45 @@ it("says what an update asks and what can't be reached, and reviews the update f
 	const dialog = await screen.findByRole("dialog");
 	expect(within(dialog).getByText("Update suite")).toBeTruthy();
 });
+
+it("shows a refused installation read without retry or an empty claim", async () => {
+	serve({ installations: [] });
+	server.use(
+		http.post(rpc("InstallationService", "ListOrganizationInstallations"), () =>
+			HttpResponse.json(
+				{ code: "permission_denied", message: "private backend diagnostic" },
+				{ status: 403 },
+			),
+		),
+	);
+	render();
+	expect(
+		await screen.findByText("This installation could not be read"),
+	).toBeTruthy();
+	expect(screen.queryByRole("button", { name: "Refresh" })).toBeNull();
+	expect(
+		screen.queryByText("This organization has no such installation"),
+	).toBeNull();
+	expect(screen.queryByText("private backend diagnostic")).toBeNull();
+});
+
+it("keeps recovery available after a temporary installation read failure", async () => {
+	serve({ installations: [] });
+	server.use(
+		http.post(rpc("InstallationService", "ListOrganizationInstallations"), () =>
+			HttpResponse.json(
+				{ code: "unavailable", message: "private backend diagnostic" },
+				{ status: 503 },
+			),
+		),
+	);
+	render();
+	expect(
+		await screen.findByText("This installation could not be read"),
+	).toBeTruthy();
+	serve({ installations: [] });
+	fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+	expect(
+		await screen.findByText("This organization has no such installation"),
+	).toBeTruthy();
+});

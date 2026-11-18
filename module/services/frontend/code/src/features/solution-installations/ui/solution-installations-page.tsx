@@ -49,6 +49,7 @@ import {
 	CardHeader,
 	CardTitle,
 	DelayedLoading,
+	ErrorState,
 	PageHeader,
 	Spinner,
 	Tabs,
@@ -716,26 +717,43 @@ function AvailableSection({
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle className="text-base">{title}</CardTitle>
+				<CardTitle role="heading" aria-level={2} className="text-base">
+					{title}
+				</CardTitle>
 				<CardDescription>{description}</CardDescription>
 			</CardHeader>
 			<CardContent>
 				{quiet ? null : indicator ? (
 					<Spinner label="Loading available modules and solutions" />
 				) : rows.length === 0 ? (
-					<p
-						className="py-6 text-center text-sm text-muted-foreground"
-						{...(query.isError ? { role: "alert" as const } : {})}
-					>
-						{readOutcomeMessage(
-							outcome,
-							"the available modules and solutions",
-							showModules
-								? "No module or solution is available to this organization. Ask your platform operator to make one available, then refresh this list."
-								: "No solution or module page is available to this organization. Ask your platform operator to make one available, then refresh this list.",
-						)}
-						{query.isError && ` ${hostRefusal(query.error)}`}
-					</p>
+					query.isError ? (
+						<ErrorState
+							title="Couldn't load available solutions"
+							detail={`${readOutcomeMessage(
+								outcome,
+								"the available modules and solutions",
+								showModules
+									? "No module or solution is available to this organization. Ask your platform operator to make one available, then refresh this list."
+									: "No solution or module page is available to this organization. Ask your platform operator to make one available, then refresh this list.",
+							)} ${hostRefusal(query.error)}`}
+						/>
+					) : (
+						<EmptyState
+							icon={Layers}
+							title={
+								showModules
+									? "No supporting modules available"
+									: "No solutions available"
+							}
+							description={readOutcomeMessage(
+								outcome,
+								"the available modules and solutions",
+								showModules
+									? "No module or solution is available to this organization. Ask your platform operator to make one available, then refresh this list."
+									: "No solution or module page is available to this organization. Ask your platform operator to make one available, then refresh this list.",
+							)}
+						/>
+					)
 				) : (
 					<>
 						{stale && (
@@ -1067,7 +1085,7 @@ function InstalledSection({
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle className="text-base">
+				<CardTitle role="heading" aria-level={2} className="text-base">
 					{unclassified ? "Installed modules" : "Installed"}
 				</CardTitle>
 				<CardDescription>
@@ -1089,19 +1107,34 @@ function InstalledSection({
 				{quiet ? null : indicator ? (
 					<Spinner label="Loading installed modules and solutions" />
 				) : rows.length === 0 ? (
-					<p
-						className="py-6 text-center text-sm text-muted-foreground"
-						{...(query.isError ? { role: "alert" as const } : {})}
-					>
-						{readOutcomeMessage(
-							outcome,
-							"the installed modules and solutions",
-							showModules
-								? "Nothing is installed in this organization. Once a module or solution is available above, choose it to install it."
-								: "Nothing is installed in this organization. Once a solution or module page is available above, choose it to install it.",
-						)}
-						{query.isError && ` ${hostRefusal(query.error)}`}
-					</p>
+					query.isError ? (
+						<ErrorState
+							title="Couldn't load installed solutions"
+							detail={`${readOutcomeMessage(
+								outcome,
+								"the installed modules and solutions",
+								showModules
+									? "No supporting modules are installed in this organization. Ask your platform operator to make them available."
+									: "Nothing is installed in this organization. Once a solution or module page is available above, choose it to install it.",
+							)} ${hostRefusal(query.error)}`}
+						/>
+					) : (
+						<EmptyState
+							icon={Layers}
+							title={
+								showModules
+									? "No supporting modules installed"
+									: "No solutions installed"
+							}
+							description={readOutcomeMessage(
+								outcome,
+								"the installed modules and solutions",
+								showModules
+									? "No supporting modules are installed in this organization. Ask your platform operator to make them available."
+									: "Nothing is installed in this organization. Once a solution or module page is available above, choose it to install it.",
+							)}
+						/>
+					)
 				) : (
 					<>
 						{stale && (

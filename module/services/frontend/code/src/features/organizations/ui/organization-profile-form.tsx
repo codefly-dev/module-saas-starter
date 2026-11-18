@@ -59,7 +59,9 @@ export function OrganizationProfileForm({
 				})}
 			>
 				<CardHeader>
-					<CardTitle>Organization</CardTitle>
+					<CardTitle role="heading" aria-level={2}>
+						Organization
+					</CardTitle>
 					<CardDescription>
 						The name members see and the address that identifies this
 						organization.

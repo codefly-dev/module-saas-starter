@@ -204,7 +204,9 @@ export function JobOperationsPage() {
 
 			<Card>
 				<CardHeader>
-					<CardTitle className="text-base">Queues</CardTitle>
+					<CardTitle role="heading" aria-level={2} className="text-base">
+						Queues
+					</CardTitle>
 					<CardDescription>
 						How many jobs each queue holds right now.
 					</CardDescription>
@@ -232,7 +234,9 @@ export function JobOperationsPage() {
 
 			<Card>
 				<CardHeader>
-					<CardTitle className="text-base">Jobs</CardTitle>
+					<CardTitle role="heading" aria-level={2} className="text-base">
+						Jobs
+					</CardTitle>
 					<CardDescription>
 						Where each job went, how many times it was tried and why it failed.
 						What a job carries is never shown.

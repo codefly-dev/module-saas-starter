@@ -241,3 +241,5 @@ than suggesting a retry. Authentication's refusal helper preserves the passkey
 confirmation action. Installation review uses `InstallReviewError` only for
 locally authored validation explanations, such as a changed offer requiring a
 fresh review. Arbitrary transport errors never enter that path.
+
+Hosted module and solution page transitions use the shared kit page, header, loading and error states. A remote render failure shows administrator guidance without its exception text. A module-page access refusal directs the reader to an organization administrator for access; it does not suggest installing a module.

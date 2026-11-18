@@ -674,7 +674,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		).toBeTruthy();
 		expect(
 			await screen.findByText(
-				"Nothing is installed in this organization. Once a module or solution is available above, choose it to install it.",
+				"No supporting modules are installed in this organization. Ask your platform operator to make them available.",
 			),
 		).toBeTruthy();
 	});

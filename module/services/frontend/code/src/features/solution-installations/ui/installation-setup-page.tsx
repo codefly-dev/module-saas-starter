@@ -12,6 +12,7 @@ import type {
 } from "@/gen/saas/accounts/v1/installations_pb";
 import { InstallationStatus } from "@/gen/saas/accounts/v1/installations_pb";
 import { useAuth } from "@/lib/auth";
+import { readOutcome } from "@/shared/lib/read-outcome";
 import {
 	Badge,
 	Banner,
@@ -21,6 +22,7 @@ import {
 	CardDescription,
 	CardHeader,
 	CardTitle,
+	ErrorState,
 	Page as PageBody,
 	PageHeader,
 	Spinner,
@@ -80,7 +82,8 @@ export function InstallationSetupPage({
 	const { organizationId: orgId = "" } = useAuth();
 	const query = useInstallations(orgId);
 	const { indicator, quiet } = useLoadingPhase(query.isLoading);
-	const row = (query.data ?? []).find(
+	const denied = readOutcome(query.isError, query.error) === "forbidden";
+	const row = (denied ? [] : (query.data ?? [])).find(
 		(entry) => entry.installation?.id === installationId,
 	);
 	// Where this installation is listed follows what it declares, not its
@@ -122,14 +125,16 @@ export function InstallationSetupPage({
 					</>
 				}
 				actions={
-					<Button
-						variant="outline"
-						onClick={() => void query.refetch()}
-						disabled={query.isFetching}
-					>
-						<RefreshCw className="h-4 w-4" />
-						Refresh
-					</Button>
+					denied ? undefined : (
+						<Button
+							variant="outline"
+							onClick={() => void query.refetch()}
+							disabled={query.isFetching}
+						>
+							<RefreshCw className="h-4 w-4" />
+							Refresh
+						</Button>
+					)
 				}
 			>
 				<Link
@@ -146,9 +151,10 @@ export function InstallationSetupPage({
 			{quiet ? null : indicator ? (
 				<Spinner label="Loading this installation" />
 			) : query.isError ? (
-				<Banner tone="danger" title="This installation could not be read">
-					{hostRefusal(query.error)}
-				</Banner>
+				<ErrorState
+					title="This installation could not be read"
+					detail={hostRefusal(query.error)}
+				/>
 			) : !row ? (
 				<EmptyState
 					icon={Layers}
@@ -306,7 +312,7 @@ function InstallationSetup({
 			{hasHostScopeRoot ? (
 				<Card>
 					<CardHeader>
-						<CardTitle className="text-base">
+						<CardTitle role="heading" aria-level={2} className="text-base">
 							Team access on this host
 						</CardTitle>
 						<CardDescription>
