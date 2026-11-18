@@ -11,6 +11,8 @@ import { failureText } from "@/shared/lib/failure-text";
 import { readOutcome } from "@/shared/lib/read-outcome";
 import { formatDate } from "@/shared/lib/utils";
 import {
+	AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
+	AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
 	Badge,
 	Banner,
 	Button,
@@ -45,6 +47,7 @@ export function SSOAdminPage() {
 	const queryClient = useQueryClient();
 	const { organizationId: orgId = "" } = useAuth();
 	const [redirecting, setRedirecting] = useState(false);
+	const [disableOrganization, setDisableOrganization] = useState<string | null>(null);
 
 	const {
 		data: cfg,
@@ -83,6 +86,7 @@ export function SSOAdminPage() {
 	const disable = useMutation({
 		mutationFn: () => ssoMutations.disable(orgId),
 		onSuccess: () => {
+			setDisableOrganization(null);
 			toast.success("SSO disabled");
 			void queryClient.invalidateQueries({
 				queryKey: ["sso", "status", orgId],
@@ -91,15 +95,6 @@ export function SSOAdminPage() {
 		onError: (error) => toast.error(failureText("disable SSO", error)),
 	});
 
-	function handleDisable() {
-		const ok = window.confirm(
-			"Disable SSO for this organization?\n\n" +
-				"People will sign in with a password or a social account instead. " +
-				"You can re-enable it later without setting up your identity " +
-				"provider again.",
-		);
-		if (ok) disable.mutate();
-	}
 
 	// status reads — the api returns "" for never-configured.
 	const status = cfg?.status ?? "";
@@ -238,7 +233,7 @@ export function SSOAdminPage() {
 							{(isActive || isLinked) && (
 								<Button
 									variant="outline"
-									onClick={handleDisable}
+									onClick={() => setDisableOrganization(orgId)}
 									disabled={disable.isPending}
 									className="text-destructive border-destructive/30 hover:bg-destructive/10"
 								>
@@ -250,6 +245,18 @@ export function SSOAdminPage() {
 					</CardContent>
 				</Card>
 			)}
+			<AlertDialog open={disableOrganization === orgId && !!orgId} onOpenChange={open => { if (!open && !disable.isPending) setDisableOrganization(null); }}>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Disable single sign-on for this organization?</AlertDialogTitle>
+						<AlertDialogDescription>People will sign in with a password or a social account instead. You can re-enable single sign-on later without setting up your identity provider again.</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel disabled={disable.isPending}>Cancel</AlertDialogCancel>
+						<AlertDialogAction variant="destructive" disabled={disable.isPending} onClick={() => disable.mutate()}>{disable.isPending ? "Disabling…" : "Disable single sign-on"}</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 		</PageBody>
 	);
 }
