@@ -12,16 +12,21 @@ import { server } from "@/test/setup";
 
 // The page scopes subscriptions to the active tenant from the session. Pin it
 // so the container renders the table (not the "select an organization" state).
+const auth = vi.hoisted(() => ({ orgRole: "admin" }));
 vi.mock("@/lib/auth", () => ({
 	useAuth: () => ({
 		organizationId: "org-1",
+		orgRole: auth.orgRole,
 		switchOrganization: async () => {},
 	}),
 }));
 
 import { WebhooksPage } from "./webhooks-page";
 
-afterEach(cleanup);
+afterEach(() => {
+	cleanup();
+	auth.orgRole = "admin";
+});
 
 describe("WebhooksPage admin container", () => {
 	it("renders the webhook subscriptions the service returns", async () => {
@@ -90,6 +95,9 @@ it.each([
 
 it("offers one first action when no webhooks exist", async () => {
 	server.use(
+		http.post(rpc("AuditService", "ListAuditEventTypes"), () =>
+			HttpResponse.json({ types: [] }),
+		),
 		http.post(rpc("WebhookService", "ListSubscriptions"), () =>
 			HttpResponse.json({ subscriptions: [] }),
 		),
@@ -101,4 +109,27 @@ it("offers one first action when no webhooks exist", async () => {
 	).toHaveLength(1);
 	fireEvent.click(screen.getByRole("button", { name: "Create webhook" }));
 	expect(await screen.findByRole("dialog")).toBeTruthy();
+});
+
+it("hides webhook mutation controls from a reader", async () => {
+	auth.orgRole = "member";
+	server.use(
+		http.post(rpc("WebhookService", "ListSubscriptions"), () =>
+			HttpResponse.json({
+				subscriptions: [
+					{
+						id: "wh-1",
+						orgId: "org-1",
+						url: "https://example.com/hooks",
+						events: [],
+						active: true,
+					},
+				],
+			}),
+		),
+	);
+	renderInApp(<WebhooksPage />);
+	await screen.findByText("https://example.com/hooks");
+	expect(screen.queryByRole("button", { name: "Create webhook" })).toBeNull();
+	expect(screen.queryByRole("button", { name: /Actions for/ })).toBeNull();
 });

@@ -19,7 +19,9 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
+import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
 import { useAuth } from "@/lib/auth";
+import { hasPermission } from "@/lib/permissions";
 import { failureText } from "@/shared/lib/failure-text";
 import { readOutcome } from "@/shared/lib/read-outcome";
 import {
@@ -54,6 +56,12 @@ export function WebhooksPage() {
 
 function WebhooksPageForOrganization({ orgId }: { orgId: string }) {
 	const queryClient = useQueryClient();
+	const { platformRole, orgRole } = useAuth();
+	const canManage = hasPermission(
+		platformRole,
+		orgRole,
+		PERMISSIONS.WEBHOOKS_WRITE,
+	);
 	const [showCreate, setShowCreate] = useState(false);
 	const [confirmation, setConfirmation] = useState<{
 		kind: "delete" | "rotate";
@@ -127,9 +135,12 @@ function WebhooksPageForOrganization({ orgId }: { orgId: string }) {
 			toast.error(failureText("rotate the signing secret", error)),
 	});
 
+	const { mutate: testWebhook } = testMutation;
 	const handleTest = useCallback(
-		(webhook: WebhookSubscription) => testMutation.mutate(webhook.id),
-		[testMutation],
+		(webhook: WebhookSubscription) => {
+			if (canManage) testWebhook(webhook.id);
+		},
+		[canManage, testWebhook],
 	);
 
 	const handleDelete = useCallback(
@@ -152,12 +163,20 @@ function WebhooksPageForOrganization({ orgId }: { orgId: string }) {
 				actions={
 					<>
 						<OrgSelector />
-						{orgId && (isLoading || subscriptions.length > 0) && !isError && (
-							<Button onClick={() => setShowCreate(true)}>
-								<Plus className="mr-2 h-4 w-4" />
-								Create webhook
-							</Button>
-						)}
+						{canManage &&
+							orgId &&
+							(isLoading || subscriptions.length > 0) &&
+							!isError && (
+								<Button
+									onClick={() => {
+										createMutation.reset();
+										setShowCreate(true);
+									}}
+								>
+									<Plus className="mr-2 h-4 w-4" />
+									Create webhook
+								</Button>
+							)}
 					</>
 				}
 			/>
@@ -194,13 +213,27 @@ function WebhooksPageForOrganization({ orgId }: { orgId: string }) {
 				<EmptyState
 					icon={WebhookIcon}
 					title="Connect your first webhook"
-					description="Send events to an endpoint you control. Create a webhook to choose which events it receives."
+					description={
+						canManage
+							? "Send events to an endpoint you control. Create a webhook to choose which events it receives."
+							: "No webhooks are configured. Ask your organization administrator to add one."
+					}
 					action={
-						<Button onClick={() => setShowCreate(true)}>Create webhook</Button>
+						canManage ? (
+							<Button
+								onClick={() => {
+									createMutation.reset();
+									setShowCreate(true);
+								}}
+							>
+								Create webhook
+							</Button>
+						) : undefined
 					}
 				/>
 			) : (
 				<WebhooksTable
+					canManage={canManage}
 					data={subscriptions}
 					isLoading={isLoading}
 					onTest={handleTest}
@@ -219,17 +252,23 @@ function WebhooksPageForOrganization({ orgId }: { orgId: string }) {
 
 			{selectedWebhook && (
 				<WebhookDeliveriesPanel
+					canManage={canManage}
 					subscription={selectedWebhook}
 					onClose={() => setSelectedWebhook(null)}
 				/>
 			)}
 
-			{showCreate && orgId && (
+			{canManage && showCreate && orgId && (
 				<WebhookForm
 					open
 					onSubmit={(vals) => createMutation.mutate(vals)}
 					onCancel={() => setShowCreate(false)}
 					isPending={createMutation.isPending}
+					error={
+						createMutation.isError
+							? failureText("create the webhook", createMutation.error)
+							: undefined
+					}
 				/>
 			)}
 			<AlertDialog

@@ -33,6 +33,7 @@ import { webhookQueries } from "../service/queries";
 interface WebhookDeliveriesPanelProps {
 	subscription: WebhookSubscription;
 	onClose: () => void;
+	canManage?: boolean;
 }
 
 /**
@@ -51,6 +52,7 @@ interface WebhookDeliveriesPanelProps {
 export function WebhookDeliveriesPanel({
 	subscription,
 	onClose,
+	canManage = false,
 }: WebhookDeliveriesPanelProps) {
 	const [expanded, setExpanded] = useState(true);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -168,8 +170,12 @@ export function WebhookDeliveriesPanel({
 							{/* RIGHT — detail */}
 							{selected ? (
 								<DeliveryDetail
+									canManage={canManage}
 									delivery={selected}
-									onReplay={() => replay.mutate(selected.id)}
+									onReplay={() => {
+										if (canManage && !replay.isPending)
+											replay.mutate(selected.id);
+									}}
 									isReplaying={replay.isPending}
 								/>
 							) : (
@@ -255,11 +261,13 @@ interface DetailDelivery extends RowDelivery {
 }
 
 function DeliveryDetail({
+	canManage,
 	delivery,
 	onReplay,
 	isReplaying,
 }: {
 	delivery: DetailDelivery;
+	canManage: boolean;
 	onReplay: () => void;
 	isReplaying: boolean;
 }) {
@@ -281,15 +289,17 @@ function DeliveryDetail({
 						</div>
 					</details>
 				</div>
-				<Button
-					size="sm"
-					variant="outline"
-					onClick={onReplay}
-					disabled={isReplaying}
-				>
-					<RotateCcw className="mr-2 h-3.5 w-3.5" />
-					{isReplaying ? "Replaying…" : "Replay"}
-				</Button>
+				{canManage && (
+					<Button
+						size="sm"
+						variant="outline"
+						onClick={onReplay}
+						disabled={isReplaying}
+					>
+						<RotateCcw className="mr-2 h-3.5 w-3.5" />
+						{isReplaying ? "Replaying…" : "Replay"}
+					</Button>
+				)}
 			</div>
 
 			{/* Quick facts */}
