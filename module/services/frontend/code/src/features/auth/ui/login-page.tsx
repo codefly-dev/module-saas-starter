@@ -17,6 +17,7 @@ import {
 	isHeaderInjectedProvider,
 	useAuth,
 } from "@/lib/auth";
+import { AuthError } from "@/lib/auth-errors";
 import type { FixtureUser } from "@/lib/fixtures/types";
 import { publicHandoffDestination } from "@/lib/public-handoff";
 import {
@@ -39,20 +40,14 @@ interface FixtureResponse {
 	users: FixtureUser[];
 }
 
-/**
- * What to show when a sign-in step fails. The sign-in calls refuse with a
- * sentence written for the person (a plain `Error`, or an `AuthError`), and
- * that sentence is passed on. Anything else that can be thrown here — a request
- * that never left the browser, a response that could not be read, a browser
- * exception — carries text written for developers, so `fallback` is said
- * instead. Told apart by the error's kind, never by its text.
- */
+/** Authentication responses can carry server diagnostics; use the action's safe copy. */
 export function signInFailureText(error: unknown, fallback: string): string {
-	return error instanceof Error &&
-		(error.name === "Error" || error.name === "AuthError") &&
-		error.message
-		? error.message
-		: fallback;
+	if (
+		error instanceof AuthError &&
+		(error.detail.status === 403 || error.detail.code === "permission_denied")
+	)
+		return "Your account does not have access. Ask your organization administrator to grant access.";
+	return fallback;
 }
 
 export function LoginPage({ identity }: { identity: IdentityConfig }) {

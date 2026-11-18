@@ -6,6 +6,7 @@ import {
 	waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthError } from "@/lib/auth-errors";
 
 const h = vi.hoisted(() => ({
 	headerInjected: false,
@@ -171,7 +172,7 @@ describe("LoginPage", () => {
 		render(<LoginPage identity={{}} />);
 
 		await waitFor(() =>
-			expect(screen.getByText(/not registered to sign in here/)).toBeTruthy(),
+			expect(screen.getByText(/Couldn't check the application/)).toBeTruthy(),
 		);
 		expect(
 			screen.queryByRole("button", { name: /Continue with Provider/ }),
@@ -188,7 +189,9 @@ describe("LoginPage", () => {
 
 		render(<LoginPage identity={{}} />);
 
-		await waitFor(() => expect(screen.getByText(/refused/)).toBeTruthy());
+		await waitFor(() =>
+			expect(screen.getByText(/Couldn't check the application/)).toBeTruthy(),
+		);
 		expect(h.loginWithHeaderInjected).not.toHaveBeenCalled();
 		expect(h.push).not.toHaveBeenCalled();
 	});
@@ -197,13 +200,18 @@ describe("LoginPage", () => {
 		h.headerInjected = true;
 		h.providers = [];
 		h.loginWithHeaderInjected.mockRejectedValue(
-			new Error("Access not granted for your account."),
+			new AuthError("private-server-message", {
+				status: 403,
+				code: "permission_denied",
+			}),
 		);
 
 		render(<LoginPage identity={{}} />);
 
 		await waitFor(() =>
-			expect(screen.getByText(/Access not granted/)).toBeTruthy(),
+			expect(
+				screen.getByText(/Ask your organization administrator to grant access/),
+			).toBeTruthy(),
 		);
 		expect(h.push).not.toHaveBeenCalled();
 	});

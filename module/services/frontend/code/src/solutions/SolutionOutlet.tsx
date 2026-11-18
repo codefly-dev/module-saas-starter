@@ -10,13 +10,13 @@ import * as SaasUi from "@codefly-dev/saas-ui";
 import * as SaasUiCasting from "@codefly-dev/saas-ui/casting";
 import * as SaasUiSolution from "@codefly-dev/saas-ui/solution";
 import * as CodeflyUi from "@codefly-dev/ui";
-import * as CodeflyLifecycle from "@codefly-dev/ui/lifecycle";
-import * as CodeflyPlayground from "@codefly-dev/ui/playground";
 import * as CodeflyBoard from "@codefly-dev/ui/board";
 import * as CodeflyChat from "@codefly-dev/ui/chat";
+import * as CodeflyContent from "@codefly-dev/ui/content";
 import * as CodeflyDashboard from "@codefly-dev/ui/dashboard";
 import * as CodeflyLayout from "@codefly-dev/ui/layout";
-import * as CodeflyContent from "@codefly-dev/ui/content";
+import * as CodeflyLifecycle from "@codefly-dev/ui/lifecycle";
+import * as CodeflyPlayground from "@codefly-dev/ui/playground";
 import * as CodeflyPluginHost from "@codefly-dev/ui/plugin-host";
 import * as CodeflyPluginRuntime from "@codefly-dev/ui/plugin-host/runtime";
 import * as CodeflyPluginUi from "@codefly-dev/ui/plugin-host/ui";
@@ -51,9 +51,9 @@ import {
 } from "@/lib/connect/token-store";
 import {
 	CODEFLY_KIT_VERSION,
-	CODEFLY_SAAS_SDK_VERSION,
 	CODEFLY_PLUGIN_CONTRACT_VERSION,
 	CODEFLY_PLUGIN_REACT_VERSION,
+	CODEFLY_SAAS_SDK_VERSION,
 } from "./host-runtime";
 
 // Sealed layers. A higher layer COMPOSES what a lower layer ships but cannot
@@ -473,47 +473,37 @@ function useInBrowser(): boolean {
 }
 
 function Loading({ noun }: { noun: string }) {
-	return <div className="p-6 text-sm opacity-70">Loading {noun}…</div>;
+	return <CodeflyLayout.DelayedLoading active label={`Loading ${noun}`} />;
 }
 
 /** What the host resolved about where, and for whom, the mounted page acts. */
-type SolutionPlacement = Pick<SolutionPageProps, "installationId" | "organizationId" | "viewerKey" | "reach">;
+type SolutionPlacement = Pick<
+	SolutionPageProps,
+	"installationId" | "organizationId" | "viewerKey" | "reach"
+>;
 
-/**
- * Why the host's projection route handed this page no placement, in the words
- * a person can act on, ending with the status and code the route answered so
- * an operator can find it. `status` 0 is a request that never got an answer.
- */
+/** Explain unavailable access without exposing server diagnostics. */
 export function placementRefusal(
 	noun: string,
 	status: number,
 	code: string,
 ): string {
-	const said = status === 0 ? code : `HTTP ${status}${code ? `, ${code}` : ""}`;
-	const why =
-		status === 0
-			? "the request did not reach the host"
-			: status === 401
-				? "your session was refused; sign in again"
-				: status === 403
-					? code === "no_organization"
-						? "your session names no organization"
-						: "the host refused to read your access"
-					: status === 404
-						? `the host found no installation of this ${noun} that admits you`
-						: status === 429
-							? "your organization's read budget is spent; try again shortly"
-							: status === 503
-								? "the host could not read its registry or its authority right now"
-								: status >= 200 && status < 300
-									? "the host answered without an installation"
-									: "the host refused";
-	return `${why} (${said})`;
+	if (status === 401)
+		return "Your sign-in has expired. Sign in again to continue.";
+	if (status === 403 && code === "no_organization")
+		return "Choose an organization to open this page.";
+	if (status === 403 || status === 404)
+		return `You don't have access to this ${noun}. Ask your organization administrator for access.`;
+	if (status === 429)
+		return "Too many requests. Wait a moment, then try again.";
+	if (status >= 200 && status < 300)
+		return "This page is not ready. Ask your organization administrator to check its setup.";
+	return `This ${noun} is temporarily unavailable. Try again shortly.`;
 }
 
 type PlacementState =
 	| { key: string; placement: SolutionPlacement }
-	| { key: string; refusal: string };
+	| { key: string; refusal: string; canRetry: boolean };
 
 /**
  * The viewer organization's installation of this page, the organization, the
@@ -526,7 +516,12 @@ type PlacementState =
 function useSolutionPlacement(
 	solutionId: string | null,
 	noun: string,
-): { placement: SolutionPlacement; refusal: string | null; retry: () => void } {
+): {
+	placement: SolutionPlacement;
+	refusal: string | null;
+	canRetry: boolean;
+	retry: () => void;
+} {
 	const [resolved, setResolved] = useState<PlacementState | null>(null);
 	const [attempt, setAttempt] = useState(0);
 	const key = `${solutionId}:${attempt}`;
@@ -534,18 +529,29 @@ function useSolutionPlacement(
 		if (!solutionId) return;
 		let live = true;
 		const refuse = (status: number, code: string) => {
-			if (live) setResolved({ key, refusal: placementRefusal(noun, status, code) });
+			if (live)
+				setResolved({
+					key,
+					refusal: placementRefusal(noun, status, code),
+					canRetry: status === 0 || status === 429 || status >= 500,
+				});
 		};
-		authedFetch(`/api/solutions/${encodeURIComponent(solutionId)}/installation`, { cache: "no-store" })
+		authedFetch(
+			`/api/solutions/${encodeURIComponent(solutionId)}/installation`,
+			{ cache: "no-store" },
+		)
 			.then(async (response) => {
-				const body = ((await response.json().catch(() => null)) ?? {}) as Record<string, unknown>;
+				const body = ((await response.json().catch(() => null)) ??
+					{}) as Record<string, unknown>;
 				if (!response.ok || !nonEmpty(body.installationId)) {
 					refuse(response.status, nonEmpty(body.error) ? body.error : "");
 					return;
 				}
 				if (live) setResolved({ key, placement: placementOf(body) });
 			})
-			.catch((error: unknown) => refuse(0, error instanceof Error ? error.message : "no answer"));
+			.catch((error: unknown) =>
+				refuse(0, error instanceof Error ? error.message : "no answer"),
+			);
 		return () => {
 			live = false;
 		};
@@ -554,6 +560,7 @@ function useSolutionPlacement(
 	return {
 		placement: current && "placement" in current ? current.placement : {},
 		refusal: current && "refusal" in current ? current.refusal : null,
+		canRetry: !!current && "refusal" in current && current.canRetry,
 		retry: () => setAttempt((n) => n + 1),
 	};
 }
@@ -567,13 +574,18 @@ function placementOf(body: Record<string, unknown>): SolutionPlacement {
 	const reach: Record<string, { installationId: string }> = {};
 	if (typeof body.reach === "object" && body.reach !== null) {
 		for (const [alias, entry] of Object.entries(body.reach)) {
-			const installationId = (entry as { installationId?: unknown } | null)?.installationId;
+			const installationId = (entry as { installationId?: unknown } | null)
+				?.installationId;
 			if (nonEmpty(installationId)) reach[alias] = { installationId };
 		}
 	}
 	return {
-		...(nonEmpty(body.installationId) ? { installationId: body.installationId } : {}),
-		...(nonEmpty(body.organizationId) ? { organizationId: body.organizationId } : {}),
+		...(nonEmpty(body.installationId)
+			? { installationId: body.installationId }
+			: {}),
+		...(nonEmpty(body.organizationId)
+			? { organizationId: body.organizationId }
+			: {}),
 		...(nonEmpty(body.viewerKey) ? { viewerKey: body.viewerKey } : {}),
 		...(typeof body.reach === "object" && body.reach !== null ? { reach } : {}),
 	};
@@ -605,27 +617,32 @@ export function SolutionOutlet({
 	// to load the failed remote a second time behind the error it already shows.
 	const { id, manifestUrl, exposedModule } = remote;
 	const Remote = useMemo(
-		() => (inBrowser ? remoteComponent({ id, manifestUrl, exposedModule }) : null),
+		() =>
+			inBrowser ? remoteComponent({ id, manifestUrl, exposedModule }) : null,
 		[inBrowser, id, manifestUrl, exposedModule],
 	);
-	const { placement, refusal, retry } = useSolutionPlacement(
+	const { placement, refusal, canRetry, retry } = useSolutionPlacement(
 		inBrowser ? pageProps.solutionId : null,
 		noun,
 	);
 	// The host resolved no placement for this viewer. The page would mount with
 	// no installation, no organization and no reach, and could only guess why;
 	// the host knows why, so it says so here and mounts nothing.
-	if (refusal !== null) {
+	if (refusal !== null)
 		return (
-			<div role="alert" className="flex flex-col items-start gap-2 p-6 text-sm">
-				<p>This {noun} cannot open for you.</p>
-				<p className="opacity-70">Reason: {refusal}</p>
-				<button type="button" className="underline" onClick={retry}>
-					Try again
-				</button>
+			<div className="space-y-3 p-6">
+				<CodeflyLayout.ErrorState
+					title={`This ${noun} cannot open for you.`}
+					detail={refusal}
+				/>
+				{canRetry && (
+					<CodeflyLayout.Button variant="outline" onClick={retry}>
+						Retry
+					</CodeflyLayout.Button>
+				)}
 			</div>
 		);
-	}
+	if (!placement.installationId) return <Loading noun={noun} />;
 
 	return (
 		<SolutionErrorBoundary
