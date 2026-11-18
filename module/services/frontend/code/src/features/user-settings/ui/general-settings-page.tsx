@@ -297,7 +297,9 @@ function GeneralSettingsForm({
 			{/* ── Profile ── */}
 			<Card>
 				<CardHeader>
-					<CardTitle>Profile</CardTitle>
+					<CardTitle role="heading" aria-level={2}>
+						Profile
+					</CardTitle>
 					<CardDescription>
 						Your public identity across organizations and team activity.
 					</CardDescription>
@@ -467,7 +469,9 @@ function GeneralSettingsForm({
 			{/* ── Appearance ── */}
 			<Card>
 				<CardHeader>
-					<CardTitle>Appearance</CardTitle>
+					<CardTitle role="heading" aria-level={2}>
+						Appearance
+					</CardTitle>
 					<CardDescription>
 						The theme follows your device by default. Pick light or dark to keep
 						it fixed.
@@ -558,7 +562,9 @@ function GeneralSettingsForm({
 			{/* ── Time & date ── */}
 			<Card>
 				<CardHeader>
-					<CardTitle>Time & date</CardTitle>
+					<CardTitle role="heading" aria-level={2}>
+						Time & date
+					</CardTitle>
 					<CardDescription>
 						How dates and times are shown to you across the product.
 					</CardDescription>
@@ -645,7 +651,9 @@ function GeneralSettingsForm({
 			{/* ── Email ── */}
 			<Card>
 				<CardHeader>
-					<CardTitle>Email preferences</CardTitle>
+					<CardTitle role="heading" aria-level={2}>
+						Email preferences
+					</CardTitle>
 					<CardDescription>
 						Choose which optional emails you receive. Invitations are sent with
 						product updates. Billing lifecycle messages are always on.

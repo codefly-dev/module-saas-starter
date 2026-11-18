@@ -67,7 +67,9 @@ export function MFASettingsPage() {
 
 			<Card>
 				<CardHeader>
-					<CardTitle>Security methods</CardTitle>
+					<CardTitle role="heading" aria-level={2}>
+						Security methods
+					</CardTitle>
 					<CardDescription>
 						{isError
 							? "Your security methods could not be loaded."

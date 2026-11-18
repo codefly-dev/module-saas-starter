@@ -81,7 +81,9 @@ export function DataPrivacyPage({
 						<div className="flex items-center gap-3">
 							<FileArchive className="size-5 text-muted-foreground" />
 							<div>
-								<CardTitle>Export my data</CardTitle>
+								<CardTitle role="heading" aria-level={2}>
+									Export my data
+								</CardTitle>
 								<CardDescription>
 									A copy of the data held about you.
 								</CardDescription>
@@ -131,7 +133,9 @@ export function DataPrivacyPage({
 						<div className="flex items-center gap-3">
 							<Trash2 className="size-5 text-destructive" />
 							<div>
-								<CardTitle>Delete my account</CardTitle>
+								<CardTitle role="heading" aria-level={2}>
+									Delete my account
+								</CardTitle>
 								<CardDescription>
 									Close your account and remove your data.
 								</CardDescription>

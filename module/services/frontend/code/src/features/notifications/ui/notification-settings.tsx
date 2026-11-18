@@ -62,7 +62,9 @@ export function NotificationSettings() {
 
 			<Card>
 				<CardHeader>
-					<CardTitle>In-app notifications</CardTitle>
+					<CardTitle role="heading" aria-level={2}>
+						In-app notifications
+					</CardTitle>
 					<CardDescription>
 						Push notifications and notification sounds are not available.
 					</CardDescription>

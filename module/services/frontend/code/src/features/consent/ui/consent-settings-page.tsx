@@ -135,7 +135,9 @@ export function ConsentSettingsPage() {
 			{HEADER}
 			<Card>
 				<CardHeader>
-					<CardTitle>Optional uses of your data</CardTitle>
+					<CardTitle role="heading" aria-level={2}>
+						Optional uses of your data
+					</CardTitle>
 					<CardDescription>Policy version {policyVersion}</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-5">
