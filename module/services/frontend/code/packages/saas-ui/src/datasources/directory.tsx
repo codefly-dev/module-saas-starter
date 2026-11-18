@@ -16,6 +16,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { apiSourceRefusal, sourceLinks } from "./api-source.js";
+import { messageOf } from "./errors.js";
 import type { DatasourceClient, DomainView } from "./types.js";
 
 /**
@@ -270,7 +271,7 @@ export function DatasourceAccountLinks({
 			)}
 			{completed.isError && (
 				<p role="alert" className="type-body text-destructive">
-					Couldn’t link the account: {completed.error.message}
+					Couldn’t link the account: {messageOf(completed.error)}
 				</p>
 			)}
 			{declined && (
@@ -316,12 +317,12 @@ export function DatasourceAccountLinks({
 			)}
 			{begin.isError && (
 				<p role="alert" className="type-body text-destructive">
-					Couldn’t start the link: {begin.error.message}
+					Couldn’t start the link: {messageOf(begin.error)}
 				</p>
 			)}
 			{remove.isError && (
 				<p role="alert" className="type-body text-destructive">
-					Couldn’t unlink: {remove.error.message}
+					Couldn’t unlink: {messageOf(remove.error)}
 				</p>
 			)}
 		</section>
@@ -416,7 +417,7 @@ export function DatasourceDirectoryPanel({
 		<div className="space-y-6">
 			{failure?.error && (
 				<p role="alert" className="type-body text-destructive">
-					{failure.error.message}
+					{messageOf(failure.error)}
 				</p>
 			)}
 

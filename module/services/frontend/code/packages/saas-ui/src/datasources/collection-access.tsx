@@ -11,12 +11,14 @@ import {
 	AlertDialogTitle,
 	Button,
 	Checkbox,
+	ErrorState,
 	Label,
 	Spinner,
 	useLoadingPhase,
 } from "@codefly-dev/ui/layout";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, type ReactNode, useState } from "react";
+import { messageOf } from "./errors.js";
 import { useAccessibleScopes } from "./queries.js";
 import type {
 	CollectionAccessView,
@@ -46,10 +48,14 @@ export function CollectionReadBoundary({
 	);
 	if (!client.listAccessibleScopes || scopes.isError)
 		return (
-			<p role="alert">
-				Couldn’t verify collection permissions. Retry when the permission
-				service is available.
-			</p>
+			<ErrorState
+				title="Couldn’t check collection access"
+				detail={
+					client.listAccessibleScopes
+						? messageOf(scopes.error)
+						: "This application cannot check collection access. Contact your administrator."
+				}
+			/>
 		);
 	if (quiet) return null;
 	if (indicator)

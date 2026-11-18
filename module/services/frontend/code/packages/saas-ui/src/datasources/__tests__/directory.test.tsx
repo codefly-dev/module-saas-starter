@@ -472,7 +472,9 @@ describe("DatasourceDirectoryPanel", () => {
 		fireEvent.click(
 			(await screen.findAllByRole("button", { name: "Remove" }))[0],
 		);
-		expect(await screen.findByText("group binding not found")).toBeTruthy();
+		expect(
+			await screen.findByText(/The request could not be completed/),
+		).toBeTruthy();
 	});
 
 	it("renders nothing for a client without the directory", () => {

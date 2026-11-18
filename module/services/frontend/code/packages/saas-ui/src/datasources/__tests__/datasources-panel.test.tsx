@@ -464,7 +464,7 @@ describe("DatasourcesPanel", () => {
 
 		const alert = await screen.findByRole("alert");
 		expect(alert.textContent).toContain("Couldn't sync");
-		expect(alert.textContent).toContain("gateway timeout");
+		expect(alert.textContent).toContain("The request could not be completed");
 		expect(alert.getAttribute("data-tone")).toBe("danger");
 
 		fireEvent.click(screen.getByRole("button", { name: "Dismiss the error" }));
@@ -620,7 +620,7 @@ it("shows a rejected credential as an actionable message", async () => {
 	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 	fireEvent.click(await screen.findByRole("button", { name: /^Sync now / }));
 	const text = (await screen.findByRole("alert")).textContent;
-	expect(text).toContain("GitHub rejected the access token (401)");
+	expect(text).toContain("Replace its saved token");
 	expect(text).not.toContain("rpc error");
 	expect(text).not.toContain("[failed_precondition]");
 });
@@ -683,7 +683,9 @@ it.each(["first", "second"])(
 				screen.queryAllByRole("button", { name: /^Syncing/ }),
 			).toHaveLength(0),
 		);
-		expect(screen.getByRole("alert").textContent).toContain("401");
+		expect(screen.getByRole("alert").textContent).toContain(
+			"Replace its saved token",
+		);
 		expect(screen.getByRole("status").textContent).toContain(secondSource.repo);
 		expect(onSyncEnqueued).toHaveBeenCalledExactlyOnceWith("job-2");
 	},
@@ -698,14 +700,18 @@ it("keeps Sync now, Edit and Remove on the row and the rest behind one menu", as
 	await screen.findByRole("button", { name: /^Sync now / });
 	expect(screen.getByRole("button", { name: /^Edit / })).toBeTruthy();
 	expect(screen.queryByRole("button", { name: "Replace token" })).toBeNull();
-	fireEvent.click(screen.getByRole("button", { name: `Remove ${sampleSource.repo}` }));
+	fireEvent.click(
+		screen.getByRole("button", { name: `Remove ${sampleSource.repo}` }),
+	);
 	expect(client.deleteSource).not.toHaveBeenCalled();
 	expect(screen.getByRole("alertdialog").textContent).toContain(
 		sampleSource.repo,
 	);
 	fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 	expect(client.deleteSource).not.toHaveBeenCalled();
-	fireEvent.click(screen.getByRole("button", { name: `Remove ${sampleSource.repo}` }));
+	fireEvent.click(
+		screen.getByRole("button", { name: `Remove ${sampleSource.repo}` }),
+	);
 	fireEvent.click(screen.getByRole("button", { name: "Remove source" }));
 	await waitFor(() =>
 		expect(client.deleteSource).toHaveBeenCalledWith("org-1", "ds-1"),
@@ -1036,7 +1042,7 @@ describe("GitHub App onboarding", () => {
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 
 		const alert = await screen.findByRole("alert");
-		expect(alert.textContent).toContain("already been used");
+		expect(alert.textContent).toContain("Start the GitHub connection again");
 		expect(screen.queryByRole("option", { name: /already-there/ })).toBeNull();
 	});
 
@@ -1095,7 +1101,9 @@ describe("GitHub App onboarding", () => {
 
 		const alert = await screen.findByRole("alert");
 		expect(alert.textContent).toContain(sampleSource.repo);
-		expect(alert.textContent).toContain("not connected to this organization");
+		expect(alert.textContent).toContain(
+			"Connect the GitHub app to this organization",
+		);
 	});
 
 	it("burns the return leg and names who must finish it when the viewer may not", async () => {
@@ -1449,7 +1457,9 @@ describe("DatasourcesPanel for a viewer who manages nothing", () => {
 			screen.queryByRole("region", { name: "Connect a source" }),
 		).toBeNull();
 		expect(screen.queryByRole("button", { name: /^Sync now / })).toBeNull();
-		expect(screen.queryByRole("button", { name: `Remove ${sampleSource.repo}` })).toBeNull();
+		expect(
+			screen.queryByRole("button", { name: `Remove ${sampleSource.repo}` }),
+		).toBeNull();
 		await openRowActions();
 		expect(screen.getByRole("menuitem", { name: "History" })).toBeTruthy();
 		expect(

@@ -1,3 +1,4 @@
+import { Code, ConnectError } from "@connectrpc/connect";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
 	cleanup,
@@ -6,15 +7,14 @@ import {
 	screen,
 	waitFor,
 } from "@testing-library/react";
-import { Code, ConnectError } from "@connectrpc/connect";
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiSourceCard } from "../api-source-card.js";
 import {
 	apiSourceRefusal,
 	matchPersonalApiSources,
 	sourceLinks,
 } from "../api-source.js";
+import { ApiSourceCard } from "../api-source-card.js";
 import type {
 	AccountLinkView,
 	DatasourceClient,
@@ -115,7 +115,9 @@ describe("ApiSourceCard", () => {
 		);
 
 		expect(await screen.findByText("Set up")).toBeTruthy();
-		fireEvent.click(screen.getByRole("button", { name: "Connect Example API" }));
+		fireEvent.click(
+			screen.getByRole("button", { name: "Connect Example API" }),
+		);
 
 		await waitFor(() =>
 			expect(assign).toHaveBeenCalledWith(
@@ -205,7 +207,11 @@ describe("ApiSourceCard", () => {
 		});
 		renderWithClient(<ApiSourceCard client={c} orgId="org-1" api={api} />);
 		expect(await screen.findByText("Signed in to Example API.")).toBeTruthy();
-		expect(c.completeAccountLink).toHaveBeenCalledWith("org-1", "dl.abc", "xyz");
+		expect(c.completeAccountLink).toHaveBeenCalledWith(
+			"org-1",
+			"dl.abc",
+			"xyz",
+		);
 		expect(window.location.search).toBe("");
 	});
 
@@ -311,9 +317,16 @@ describe("matchPersonalApiSources", () => {
 			id: "p",
 			api: { ...mine.api!, resourcePath: "/v1/records" },
 		});
-		const sources = [mine, withPath, apiSource({ id: "g", provider: "github" })];
+		const sources = [
+			mine,
+			withPath,
+			apiSource({ id: "g", provider: "github" }),
+		];
 		expect(
-			matchPersonalApiSources({ baseUrl: " https://api.example.com " }, sources),
+			matchPersonalApiSources(
+				{ baseUrl: " https://api.example.com " },
+				sources,
+			),
 		).toEqual([mine]);
 		expect(
 			matchPersonalApiSources(
@@ -329,10 +342,7 @@ describe("matchPersonalApiSources", () => {
 
 	it("finds a source's link by the account the host names after it", () => {
 		expect(
-			sourceLinks(
-				[link, { ...link, id: "x", connector: "github" }],
-				"ds-api",
-			),
+			sourceLinks([link, { ...link, id: "x", connector: "github" }], "ds-api"),
 		).toEqual([link]);
 	});
 });
@@ -344,7 +354,10 @@ describe("apiSourceRefusal", () => {
 			"This deployment cannot link api accounts: no sign-in with that provider is configured.",
 			/no sign-in configured for X/,
 		],
-		["requires org admin or owner role", /needs the administrator or owner role/],
+		[
+			"requires org admin or owner role",
+			/needs the administrator or owner role/,
+		],
 		[
 			"requires organization administrator or owner role",
 			/needs the administrator or owner role/,
@@ -369,12 +382,12 @@ describe("apiSourceRefusal", () => {
 		).toMatch(words);
 	});
 
-	it("keeps the host's own words for anything else, without the envelope", () => {
+	it("uses a safe fallback for unrecognized server errors", () => {
 		expect(
 			apiSourceRefusal(
 				new Error("rpc error: code = Unavailable desc = Retry shortly."),
 				"X",
 			),
-		).toBe("Retry shortly.");
+		).toContain("The request could not be completed");
 	});
 });

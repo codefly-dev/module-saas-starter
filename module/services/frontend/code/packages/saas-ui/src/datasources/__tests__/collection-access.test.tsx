@@ -99,7 +99,9 @@ describe("collection read access", () => {
 			expect(screen.queryByText("No indexed content yet.")).toBeNull();
 			expect(
 				await screen.findByText(
-					outcome === "failed" ? /Couldn’t verify/ : /don’t have read access/,
+					outcome === "failed"
+						? /Couldn’t check collection access/
+						: /don’t have read access/,
 				),
 			).toBeTruthy();
 			readable = true;
