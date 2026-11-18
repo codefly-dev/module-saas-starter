@@ -5,6 +5,7 @@ import {
 	createColumnHelper,
 	getCoreRowModel,
 	getPaginationRowModel,
+	getSortedRowModel,
 	useReactTable,
 } from "@tanstack/react-table";
 import { ArrowLeft } from "lucide-react";
@@ -24,9 +25,10 @@ import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
 import { useAuth } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { failureText } from "@/shared/lib/failure-text";
+import { readOutcome } from "@/shared/lib/read-outcome";
 import {
-	Badge,
 	Button,
+	EmptyState,
 	ErrorState,
 	Page as PageBody,
 	PageHeader,
@@ -64,6 +66,7 @@ function UserDetail({
 		isLoading: userLoading,
 		isError: userFailed,
 		error: userError,
+		refetch: refetchUser,
 	} = useQuery(userQueries.detail(userId));
 	const {
 		permissions,
@@ -73,12 +76,8 @@ function UserDetail({
 		isLoading,
 		isError,
 		error,
+		refetch: refetchAccess,
 	} = useEffectivePermissions(orgId, userId);
-
-	const roleNameById = new Map(
-		roles.map((role) => [role.id, role.name] as const),
-	);
-	const direct = directAssignments;
 
 	if (userFailed || isError) {
 		return (
@@ -88,12 +87,24 @@ function UserDetail({
 					title="Couldn't load this person's access"
 					detail={failureText("view this person's access", userError || error)}
 				/>
+				{readOutcome(true, userError || error) !== "forbidden" && (
+					<Button
+						variant="outline"
+						onClick={() => {
+							void refetchUser();
+							void refetchAccess();
+						}}
+					>
+						Try again
+					</Button>
+				)}
 			</PageBody>
 		);
 	}
 	if (userLoading || isLoading)
 		return (
 			<PageBody>
+				<PageHeader title="User access" />
 				<Spinner label="Loading this person's access" />
 			</PageBody>
 		);
@@ -145,45 +156,16 @@ function UserDetail({
 				description="Roles assigned directly to this person."
 			>
 				<Panel>
-					{direct.length === 0 ? (
-						<span className="text-sm text-muted-foreground">
-							No roles are assigned directly.
-						</span>
-					) : (
-						<Stack direction="row" gap={2} className="flex-wrap">
-							{direct.map((assignment) => (
-								<Badge
-									key={assignment.id}
-									variant="secondary"
-									className="gap-1 font-mono text-xs"
-								>
-									<Link
-										href={`/admin/roles/${assignment.roleId}`}
-										className="hover:underline"
-									>
-										{roleNameById.get(assignment.roleId) ?? "Role unavailable"}
-										{assignment.scope ? ` in ${assignment.scope}` : ""}
-									</Link>
-									{canGrant && (
-										<RevokeRoleButton
-											subjectId={userId}
-											subjectLabel={
-												user?.profile.name ||
-												user?.primaryEmail ||
-												"this person"
-											}
-											roleId={assignment.roleId}
-											roleName={
-												roleNameById.get(assignment.roleId) || "this role"
-											}
-											orgId={orgId}
-											scope={assignment.scope}
-										/>
-									)}
-								</Badge>
-							))}
-						</Stack>
-					)}
+					<DirectRolesTable
+						assignments={directAssignments}
+						roles={roles}
+						canGrant={canGrant}
+						userId={userId}
+						orgId={orgId}
+						userLabel={
+							user?.profile.name || user?.primaryEmail || "this person"
+						}
+					/>
 				</Panel>
 			</Section>
 
@@ -192,24 +174,7 @@ function UserDetail({
 				description="A team's roles reach every member, so these are part of what this person can do."
 			>
 				<Panel>
-					{teams.length === 0 ? (
-						<span className="text-sm text-muted-foreground">
-							Not a member of any team in this organization.
-						</span>
-					) : (
-						<Stack direction="row" gap={2} className="flex-wrap">
-							{teams.map((team) => (
-								<Badge key={team.id} variant="outline">
-									<Link
-										href={`/admin/teams/${team.id}`}
-										className="hover:underline"
-									>
-										{team.name}
-									</Link>
-								</Badge>
-							))}
-						</Stack>
-					)}
+					<MemberTeamsTable teams={teams} />
 				</Panel>
 			</Section>
 
@@ -218,12 +183,11 @@ function UserDetail({
 				description="Access provided by the roles and teams listed here. Organization membership and platform-wide access are not included."
 			>
 				<Panel>
-					{isLoading ? (
-						<span className="text-sm text-muted-foreground">Loading…</span>
-					) : permissions.length === 0 ? (
-						<span className="text-sm text-muted-foreground">
-							No additional access from assigned roles in this organization.
-						</span>
+					{permissions.length === 0 ? (
+						<EmptyState
+							heading="No additional assigned access"
+							description="Assign a role or add this person to a team to provide additional access. Organization membership and platform access are managed separately."
+						/>
 					) : (
 						<AssignedAccessTable permissions={permissions} />
 					)}
@@ -265,6 +229,111 @@ function AssignedAccessTable({
 		columns,
 		getCoreRowModel: getCoreRowModel(),
 		getPaginationRowModel: getPaginationRowModel(),
+		getSortedRowModel: getSortedRowModel(),
 	});
 	return <DataTable table={table} />;
+}
+
+type Access = ReturnType<typeof useEffectivePermissions>;
+const roleColumn = createColumnHelper<Access["directAssignments"][number]>();
+function DirectRolesTable({
+	assignments,
+	roles,
+	canGrant,
+	userId,
+	orgId,
+	userLabel,
+}: {
+	assignments: Access["directAssignments"];
+	roles: Access["roles"];
+	canGrant: boolean;
+	userId: string;
+	orgId: string;
+	userLabel: string;
+}) {
+	const columns = useMemo(() => {
+		const names = new Map(roles.map((role) => [role.id, role.name]));
+		return [
+			roleColumn.accessor(
+				(assignment) => names.get(assignment.roleId) || "Role unavailable",
+				{
+					id: "role",
+					header: "Assigned role",
+					cell: ({ row }) => (
+						<Link
+							className="font-medium underline-offset-4 hover:underline focus-visible:outline-ring"
+							href={`/admin/roles/${row.original.roleId}`}
+						>
+							{names.get(row.original.roleId) || "Role unavailable"}
+							{row.original.scope ? ` in ${row.original.scope}` : ""}
+						</Link>
+					),
+				},
+			),
+			...(canGrant
+				? [
+						roleColumn.display({
+							id: "actions",
+							header: "Actions",
+							cell: ({ row }) => (
+								<RevokeRoleButton
+									subjectId={userId}
+									subjectLabel={userLabel}
+									roleId={row.original.roleId}
+									roleName={names.get(row.original.roleId) || "this role"}
+									orgId={orgId}
+									scope={row.original.scope}
+								/>
+							),
+						}),
+					]
+				: []),
+		];
+	}, [roles, canGrant, userId, orgId, userLabel]);
+	const table = useReactTable({
+		data: assignments,
+		columns,
+		getCoreRowModel: getCoreRowModel(),
+		getPaginationRowModel: getPaginationRowModel(),
+		getSortedRowModel: getSortedRowModel(),
+	});
+	return (
+		<DataTable
+			table={table}
+			emptyMessage={
+				canGrant
+					? "No roles are assigned directly. Use Manage roles to assign the first role."
+					: "No roles are assigned directly. An organization administrator can assign a role."
+			}
+		/>
+	);
+}
+const teamColumn = createColumnHelper<Access["teams"][number]>();
+const teamColumns = [
+	teamColumn.accessor("name", {
+		header: "Team",
+		cell: ({ row }) => (
+			<Link
+				className="font-medium underline-offset-4 hover:underline focus-visible:outline-ring"
+				href={`/admin/teams/${row.original.id}`}
+			>
+				{row.original.name}
+			</Link>
+		),
+	}),
+];
+function MemberTeamsTable({ teams }: { teams: Access["teams"] }) {
+	const table = useReactTable({
+		data: teams,
+		columns: teamColumns,
+		getCoreRowModel: getCoreRowModel(),
+		getPaginationRowModel: getPaginationRowModel(),
+		getSortedRowModel: getSortedRowModel(),
+	});
+	return (
+		<DataTable
+			table={table}
+			emptyMessage="Not a member of any team in this organization. A team administrator can add this person from the team's page."
+		/>
+	);
 }

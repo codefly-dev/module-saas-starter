@@ -193,3 +193,41 @@ it("does not report no access when an assignment read is refused", async () => {
 	).toBeNull();
 	expect(screen.queryByText("internal-grant-rule")).toBeNull();
 });
+
+it("offers recovery for a failed read without treating it as empty access", async () => {
+	serveGrants();
+	server.use(
+		http.post(rpc("UserService", "GetUser"), () =>
+			HttpResponse.json(
+				{ code: "unavailable", message: "private upstream" },
+				{ status: 503 },
+			),
+		),
+	);
+	renderInApp(<UserDetailPage userId="user-1" />);
+	expect(
+		await screen.findByText("Couldn't load this person's access"),
+	).toBeTruthy();
+	expect(screen.queryByText("private upstream")).toBeNull();
+	serveGrants();
+	fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+	await screen.findByText("Additional assigned access");
+	expect(screen.getAllByRole("table")).toHaveLength(3);
+});
+
+it("does not offer retry or role controls after access is refused", async () => {
+	serveGrants();
+	server.use(
+		http.post(rpc("UserService", "GetUser"), () =>
+			HttpResponse.json(
+				{ code: "permission_denied", message: "private rule" },
+				{ status: 403 },
+			),
+		),
+	);
+	renderInApp(<UserDetailPage userId="user-1" />);
+	await screen.findByText("Couldn't load this person's access");
+	expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+	expect(screen.queryByRole("button", { name: "Manage roles" })).toBeNull();
+	expect(screen.queryByRole("table")).toBeNull();
+});
