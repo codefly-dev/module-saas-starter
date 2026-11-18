@@ -43,7 +43,6 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -53,7 +52,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -90,18 +88,6 @@ type hopRole struct {
 	face http.Handler
 	// front owns the signer's publication lease for both forwarding faces.
 	front *forward.Front
-	now   func() time.Time
-
-	mu   sync.Mutex
-	held map[[32]byte]heldWorkContext
-}
-
-// heldWorkContext is a person's Work Context at one module, held until shortly
-// before it lapses. The session that asked for it is re-authenticated on every
-// call before it is used.
-type heldWorkContext struct {
-	token string
-	renew time.Time
 }
 
 // newHopSigner is this instance's admission key, generated here and never
@@ -314,7 +300,7 @@ func withOnlyWorkContext(r *http.Request, token string) *http.Request {
 }
 
 // workContext is the person's Work Context at module, issued by the authority
-// for what the person holds there and held until shortly before it lapses.
+// for what the person holds there at the time of this request.
 // For a call a page made, the authority issues it through the page's target's
 // binding to module when the target declares one (page_target). The hop's
 // Check narrows each call to what its method requires.
@@ -329,22 +315,9 @@ func (h *hopRole) workContext(ctx context.Context, bearer, module, page string) 
 // the credential, under the gateway's own credential, and it is asked INSTEAD
 // of the bearer: the authority decides from who the credential acts as and
 // what bounds it, and the credential itself goes no further than here. The
-// bearer still keys what is held, so two credentials never share a context.
+// gateway asks again on each request so grant changes apply immediately.
 // nil stated is the person's own session, presented as itself.
 func (h *hopRole) workContextStated(ctx context.Context, bearer, module, page string, stated metadata.MD) (string, error) {
-	key := sha256.Sum256([]byte(bearer + "\x00" + module + "\x00" + page))
-	now := h.clock()
-	h.mu.Lock()
-	for k, held := range h.held {
-		if !now.Before(held.renew) {
-			delete(h.held, k)
-		}
-	}
-	if held, ok := h.held[key]; ok {
-		h.mu.Unlock()
-		return held.token, nil
-	}
-	h.mu.Unlock()
 	presented := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+bearer)
 	if stated != nil {
 		presented = metadata.NewOutgoingContext(ctx, stated)
@@ -375,18 +348,7 @@ func (h *hopRole) workContextStated(ctx context.Context, bearer, module, page st
 	if issued.GetToken() == "" {
 		return "", status.Error(codes.Internal, "the authority issued no Work Context")
 	}
-	expires := time.Unix(issued.GetExpiresAtUnix(), 0)
-	lead := min(expires.Sub(now)/2, 30*time.Second)
-	held := heldWorkContext{token: issued.GetToken(), renew: expires.Add(-lead)}
-	h.mu.Lock()
-	if h.held == nil {
-		h.held = map[[32]byte]heldWorkContext{}
-	}
-	if now.Before(held.renew) {
-		h.held[key] = held
-	}
-	h.mu.Unlock()
-	return held.token, nil
+	return issued.GetToken(), nil
 }
 
 // newPersonContexts is the holder of people's Work Contexts on its own: the
@@ -395,13 +357,6 @@ func (h *hopRole) workContextStated(ctx context.Context, bearer, module, page st
 // mints with it whether or not this gateway stands as a hop.
 func newPersonContexts(accounts grpc.ClientConnInterface) *hopRole {
 	return &hopRole{issuer: authorityv1.NewAuthorityServiceClient(accounts)}
-}
-
-func (h *hopRole) clock() time.Time {
-	if h.now != nil {
-		return h.now()
-	}
-	return time.Now()
 }
 
 // standHop stands this gateway as the hop when the composition names modules

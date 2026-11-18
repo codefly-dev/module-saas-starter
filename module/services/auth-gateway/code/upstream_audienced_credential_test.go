@@ -139,13 +139,16 @@ func TestWhatASolutionReceivesIsRefusedAtTheHostAPIAndAtAnotherSolution(t *testi
 	require.True(t, issuer.person, "the Work Context is the person's")
 	require.Equal(t, "Bearer "+session, issuer.bearer, "the authority authenticates the person by their own session")
 
-	// The same person at the same solution is not minted for again while it holds.
-	gw.ServeHTTP(httptest.NewRecorder(), func() *http.Request {
+	// A later call at the same solution must reflect the authority's current decision.
+	issuer.refuse = status.Error(codes.PermissionDenied, "grant ended")
+	second := httptest.NewRecorder()
+	gw.ServeHTTP(second, func() *http.Request {
 		r := httptest.NewRequest(http.MethodGet, "/solutions/audit/v1/audit/logs", nil)
 		r.Header.Set("Authorization", "Bearer "+session)
 		return r
 	}())
-	require.Equal(t, 1, issuer.calls)
+	require.Equal(t, http.StatusForbidden, second.Code)
+	require.Equal(t, 2, issuer.calls)
 }
 
 // The authority decides whether the person holds anything at the solution. Its
