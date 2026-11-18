@@ -12,6 +12,9 @@ import {
 } from "@/components/ui/select";
 import { useAuth } from "@/lib/auth";
 import { useOrganizations } from "@/lib/hooks";
+import { failureText } from "@/shared/lib/failure-text";
+import { readOutcome } from "@/shared/lib/read-outcome";
+import { Button, ErrorState } from "@/shared/ui";
 
 // OrgSelector changes the authenticated tenant for every admin surface. The
 // selected value comes from the signed access token, never page-local state.
@@ -24,7 +27,13 @@ import { useOrganizations } from "@/lib/hooks";
 //     pattern every other admin page already uses,
 //   - has no icon or rich content support per option.
 export function OrgSelector() {
-	const { data: orgs = [], isLoading } = useOrganizations();
+	const {
+		data: orgs = [],
+		isLoading,
+		isError,
+		error,
+		refetch,
+	} = useOrganizations();
 	const { organizationId, switchOrganization } = useAuth();
 	const [isSwitching, setIsSwitching] = useState(false);
 	const switchingRef = useRef(false);
@@ -42,7 +51,7 @@ export function OrgSelector() {
 			await switchOrganization(nextOrganizationId);
 		} catch (error) {
 			toast.error("Couldn't switch organization", {
-				description: error instanceof Error ? error.message : "Try again.",
+				description: failureText("switch organizations", error),
 			});
 		} finally {
 			switchingRef.current = false;
@@ -51,18 +60,34 @@ export function OrgSelector() {
 	}
 
 	const placeholder = isLoading
-		? "Loading orgs…"
+		? "Loading organizations…"
 		: isSwitching
 			? "Switching…"
-			: "Select organization…";
+			: orgs.length === 0
+				? "No organizations available"
+				: "Select organization…";
 
+	if (isError)
+		return (
+			<div className="max-w-sm space-y-2">
+				<ErrorState
+					title="Organizations unavailable"
+					detail={failureText("load your organizations", error)}
+				/>
+				{readOutcome(true, error) !== "forbidden" && (
+					<Button variant="outline" size="sm" onClick={() => void refetch()}>
+						Try again
+					</Button>
+				)}
+			</div>
+		);
 	return (
 		<Select
 			value={organizationId ?? null}
 			onValueChange={handleChange}
-			disabled={isLoading || isSwitching}
+			disabled={isLoading || isSwitching || orgs.length === 0}
 		>
-			<SelectTrigger className="w-[260px]">
+			<SelectTrigger aria-label="Organization" className="w-full sm:w-64">
 				<Building2 className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
 				<SelectValue placeholder={placeholder}>
 					{/* Resolve the label from the list rather than trusting item

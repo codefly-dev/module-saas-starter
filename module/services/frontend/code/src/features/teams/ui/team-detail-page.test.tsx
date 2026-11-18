@@ -194,7 +194,7 @@ describe("TeamDetailsPage (org-selection and access states)", () => {
 
 		const access = await screen.findByLabelText("Your team access");
 		expect(
-			await within(access).findByText(/Could not confirm what this session is/),
+			await within(access).findByText(/Could not confirm your access/),
 		).toBeTruthy();
 		expect(within(access).queryByText(/team administrator/)).toBeNull();
 	});
