@@ -145,3 +145,65 @@ describe("adding a member reports the write, not the read that follows it", () =
 		expect(screen.getByText("newbie@example.com")).toBeTruthy();
 	});
 });
+
+describe("pending membership changes", () => {
+	it("locks the selected person and role until adding completes", async () => {
+		let release = () => {};
+		server.use(
+			http.post(rpc("OrganizationService", "ListMembers"), () =>
+				HttpResponse.json({
+					members: [{ userId: "u-new", userEmail: "newbie@example.com" }],
+				}),
+			),
+			http.post(rpc("TeamService", "ListMembers"), () =>
+				HttpResponse.json({ members: [] }),
+			),
+			http.post(rpc("TeamService", "AddMember"), async () => {
+				await new Promise<void>((resolve) => {
+					release = resolve;
+				});
+				return HttpResponse.json({});
+			}),
+		);
+		renderInApp(
+			<TeamMembersPanel
+				orgId="org-example"
+				teamId="team-example"
+				teamName="Example team"
+				canManage
+			/>,
+		);
+		fireEvent.change(
+			await screen.findByPlaceholderText("Search members by email…"),
+			{ target: { value: "newbie" } },
+		);
+		fireEvent.click(
+			await screen.findByRole("option", { name: "newbie@example.com" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Add member" }));
+		try {
+			await waitFor(() =>
+				expect(
+					(screen.getByRole("button", { name: "Adding…" }) as HTMLButtonElement)
+						.disabled,
+				).toBe(true),
+			);
+			expect(
+				(
+					screen.getByRole("combobox", {
+						name: "Team role",
+					}) as HTMLButtonElement
+				).disabled,
+			).toBe(true);
+			expect(
+				screen.queryByRole("button", {
+					name: "Choose someone other than newbie@example.com",
+				}),
+			).toBeNull();
+			expect(screen.getByText("newbie@example.com")).toBeTruthy();
+		} finally {
+			release();
+		}
+		await screen.findByRole("button", { name: "Add member" });
+	});
+});

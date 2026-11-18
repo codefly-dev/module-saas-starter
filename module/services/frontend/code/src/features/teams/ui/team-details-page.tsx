@@ -217,10 +217,9 @@ function TeamDetails({ team }: { team: Team }) {
 				) : unconfirmed ? (
 					<p>
 						{sessionRead === "reading"
-							? "Confirming what this session is."
-							: "Could not confirm what this session is."}{" "}
-						Your access here is not shown until the host says; it decides every
-						action.
+							? "Checking your access."
+							: "Could not confirm your access."}{" "}
+						Your team access will appear once it is confirmed.
 					</p>
 				) : castTeamId ? (
 					<>

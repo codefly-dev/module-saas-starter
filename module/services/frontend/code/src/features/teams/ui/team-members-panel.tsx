@@ -1,6 +1,5 @@
 "use client";
 
-import { failureText } from "@/shared/lib/failure-text";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	createColumnHelper,
@@ -8,11 +7,11 @@ import {
 	getPaginationRowModel,
 	useReactTable,
 } from "@tanstack/react-table";
-import { DataTable } from "@/shared/ui/data-table";
 import { useState } from "react";
 import { toast } from "sonner";
 import { UserPicker } from "@/components/user-picker";
 import type { TeamMembership } from "@/gen/saas/accounts/v1/common_pb";
+import { failureText } from "@/shared/lib/failure-text";
 import { readOutcome, readOutcomeMessage } from "@/shared/lib/read-outcome";
 import { formatDate } from "@/shared/lib/utils";
 import {
@@ -24,18 +23,19 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
+	ErrorState,
+	Field,
 	Input,
-	Label,
+	Panel,
 	Select,
 	SelectContent,
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
 	Spinner,
-	Panel,
-	ErrorState,
 	useLoadingPhase,
 } from "@/shared/ui";
+import { DataTable } from "@/shared/ui/data-table";
 import { roleLabel } from "../model/transforms";
 import { fromTeamRole, type TeamRole, toTeamRole } from "../model/types";
 import { teamMutations } from "../service/mutations";
@@ -173,31 +173,35 @@ export function TeamMembersPanel({
 									orgId={orgId}
 									value={newUserId}
 									onChange={setNewUserId}
+									disabled={add.isPending || change.isPending}
 									exclude={members.map((member) => member.userId)}
 								/>
-								<div className="space-y-2">
-									<Label htmlFor="new-team-role">Team role</Label>
-									<Select
-										items={{ member: "Member", admin: "Admin" }}
-										value={newRole}
-										onValueChange={(value) => {
-											if (value === "member" || value === "admin")
-												setNewRole(value);
-										}}
-									>
-										<SelectTrigger id="new-team-role">
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											<SelectItem value="member">Member</SelectItem>
-											<SelectItem value="admin">Admin</SelectItem>
-										</SelectContent>
-									</Select>
-								</div>
+								<Field label="Team role">
+									{(control) => (
+										<Select
+											disabled={add.isPending || change.isPending}
+											items={{ member: "Member", admin: "Admin" }}
+											value={newRole}
+											onValueChange={(value) => {
+												if (value === "member" || value === "admin")
+													setNewRole(value);
+											}}
+										>
+											<SelectTrigger {...control}>
+												<SelectValue />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value="member">Member</SelectItem>
+												<SelectItem value="admin">Admin</SelectItem>
+											</SelectContent>
+										</Select>
+									)}
+								</Field>
 								<Button
 									disabled={!newUserId || add.isPending || change.isPending}
 									onClick={() => {
-										if (canManage) add.mutate();
+										if (canManage && !add.isPending && !change.isPending)
+											add.mutate();
 									}}
 								>
 									{add.isPending ? "Adding…" : "Add member"}
@@ -210,21 +214,22 @@ export function TeamMembersPanel({
 							)}
 						</Panel>
 					)}
-					<div className="space-y-2">
-						<Label htmlFor="team-member-search">Search members</Label>
-						<Input
-							id="team-member-search"
-							placeholder="Search by email…"
-							value={search}
-							onChange={(event) => setSearch(event.target.value)}
-							className="max-w-sm"
-						/>
-					</div>
+					<Field label="Search members">
+						{(control) => (
+							<Input
+								{...control}
+								placeholder="Search by email…"
+								value={search}
+								onChange={(event) => setSearch(event.target.value)}
+								className="max-w-sm"
+							/>
+						)}
+					</Field>
 					<MemberTable
 						members={visible}
 						currentUserId={currentUserId}
 						canManage={canManage}
-						pending={change.isPending}
+						pending={add.isPending || change.isPending}
 						onAction={confirm}
 						emptyMessage={
 							members.length
@@ -267,6 +272,7 @@ export function TeamMembersPanel({
 							Cancel
 						</Button>
 						<Button
+							variant={action?.role ? "default" : "destructive"}
 							disabled={change.isPending || !canManage}
 							onClick={() => {
 								if (action && canManage) change.mutate(action);

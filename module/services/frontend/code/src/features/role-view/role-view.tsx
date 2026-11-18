@@ -162,11 +162,10 @@ export function RoleViewBanner() {
 			>
 				<span className="font-bold">
 					{sessionRead === "reading"
-						? "Confirming what this session is"
-						: "Could not confirm what this session is"}
+						? "Checking your access"
+						: "Could not confirm your access"}
 				</span>{" "}
-				&mdash; it may be acting as less than you hold, so no administrator
-				access is offered until the host says. The host decides every action.
+				Administrator controls are unavailable until your access is confirmed.
 			</Banner>
 		);
 	return null;
