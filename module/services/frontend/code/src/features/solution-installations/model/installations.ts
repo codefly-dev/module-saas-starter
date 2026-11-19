@@ -1,6 +1,6 @@
 import { timestampDate } from "@bufbuild/protobuf/wkt";
-import { Code, ConnectError } from "@connectrpc/connect";
 import type { ComponentProps } from "react";
+import { activityLabel } from "@/features/permissions/model/activity-label";
 import type { CollectionReadGrant } from "@/gen/saas/accounts/v1/authorization_pb";
 import type { Role } from "@/gen/saas/accounts/v1/common_pb";
 import {
@@ -10,7 +10,10 @@ import {
 	InstallationStatus,
 	type OrganizationInstallation,
 } from "@/gen/saas/accounts/v1/installations_pb";
+import { failureText } from "@/shared/lib/failure-text";
 import type { Badge } from "@/shared/ui";
+
+
 
 type StatusTone = NonNullable<ComponentProps<typeof Badge>["tone"]>;
 
@@ -270,35 +273,11 @@ export function installedRows(
 export function roleOptionLabel(role: Role): string {
 	if (role.permissions.length === 0) return role.name;
 	const permits = role.permissions
-		.map((p) => `${p.resource}:${p.action}`)
+		.map((p) => activityLabel(p) ?? "An activity without a description")
 		.join(", ");
 	return `${role.name} — ${permits}`;
 }
 
-// The codes under which the host answers in words meant for a person. These
-// mirror the set `@/shared/lib/failure-text` keeps for acts; it does not export
-// it, so the two are kept in step by hand until it does.
-const WORDED: ReadonlySet<Code> = new Set([
-	Code.PermissionDenied,
-	Code.FailedPrecondition,
-	Code.InvalidArgument,
-	Code.AlreadyExists,
-	Code.NotFound,
-	Code.ResourceExhausted,
-]);
-
-/**
- * The host's own words for why it refused. A refusal is shown as the host
- * phrased it, never replaced with a generic "failed", and never with a
- * success the host did not grant. Anything that is not a refusal (a transport
- * failure, a timeout, a defect) is said plainly instead: its text names
- * internals and is for an engineer, not for the page.
- */
 export function hostRefusal(error: unknown): string {
-	const refusal = ConnectError.from(error);
-	if (!WORDED.has(refusal.code))
-		return "The request did not complete. Try again; if it keeps failing, tell your administrator.";
-	return (
-		refusal.rawMessage.trim() || "The host refused without giving a reason."
-	);
+	return failureText("complete this request", error);
 }

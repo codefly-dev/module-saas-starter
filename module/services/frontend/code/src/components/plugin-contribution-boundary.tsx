@@ -7,9 +7,9 @@ import {
 } from "@codefly-dev/ui/plugin-host/ui";
 import { AlertTriangle, CloudOff, RefreshCcw, Wrench } from "lucide-react";
 import { type ReactNode, Suspense, use } from "react";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { Button, ErrorState, Page, PageHeader, Panel } from "@/shared/ui";
 
 type PluginContributionKind = "route" | "widget";
 
@@ -34,7 +34,7 @@ const stateCopy = {
 	incompatible: {
 		title: "Extension update required",
 		description:
-			"This extension is not compatible with the current application.",
+			"Ask your administrator to update this extension to match the application.",
 		icon: Wrench,
 	},
 	failed: {
@@ -68,35 +68,43 @@ function PluginFailureState({
 }) {
 	const copy = stateCopy[failure.state as keyof typeof stateCopy];
 	const Icon = copy.icon;
-	return (
-		<div
-			role="alert"
+	const denied =
+		failure.code === "http_403" || failure.code === "permission_denied";
+	const content = (
+		<Panel
 			data-plugin-state={failure.state}
 			data-plugin-error-code={failure.code}
-			className={cn(
-				"flex rounded-xl border border-border bg-card text-card-foreground",
-				kind === "route"
-					? "min-h-64 flex-col items-center justify-center gap-4 p-8 text-center"
-					: "items-start gap-3 p-5",
-			)}
+			className="space-y-4"
 		>
-			<div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted">
-				<Icon className="size-5 text-muted-foreground" aria-hidden />
-			</div>
-			<div className={cn("space-y-1", kind === "widget" && "flex-1")}>
-				<p className="font-medium">{copy.title}</p>
-				<p className="text-sm text-muted-foreground">{copy.description}</p>
-				{failure.requestId ? (
-					<p className="pt-1 text-xs text-muted-foreground">
-						Request ID: <code>{failure.requestId}</code>
-					</p>
-				) : null}
-			</div>
-			<Button type="button" variant="outline" size="sm" onClick={retry}>
-				<RefreshCcw className="size-4" aria-hidden />
-				Try again
-			</Button>
-		</div>
+			<ErrorState
+				icon={<Icon aria-hidden />}
+				title={denied ? "Access is unavailable" : copy.title}
+				detail={
+					denied
+						? "You don't have access to this page. Ask your administrator to grant access."
+						: copy.description
+				}
+			/>
+			{failure.requestId ? (
+				<p className="text-xs text-muted-foreground">
+					Support reference: <code>{failure.requestId}</code>
+				</p>
+			) : null}
+			{!denied && failure.state !== "incompatible" && (
+				<Button type="button" variant="outline" size="sm" onClick={retry}>
+					<RefreshCcw className="size-4" aria-hidden />
+					Try again
+				</Button>
+			)}
+		</Panel>
+	);
+	return kind === "route" ? (
+		<Page>
+			<PageHeader title="Page unavailable" />
+			{content}
+		</Page>
+	) : (
+		content
 	);
 }
 

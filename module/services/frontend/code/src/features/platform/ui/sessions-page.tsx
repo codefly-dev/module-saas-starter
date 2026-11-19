@@ -8,7 +8,7 @@ import {
 	useReactTable,
 } from "@tanstack/react-table";
 import { LogOut, MoreHorizontal } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { UserLabel } from "@/components/user-label";
 import { failureText } from "@/shared/lib/failure-text";
@@ -39,6 +39,7 @@ import {
 	Stack,
 } from "@/shared/ui";
 import { DataTable } from "@/shared/ui/data-table";
+import { sessionDevice } from "../model/session-device";
 import type { SessionInfo } from "../model/types";
 import { useRevokeSession } from "../service/mutations";
 import { useActiveSessions } from "../service/queries";
@@ -60,6 +61,7 @@ export function SessionsPage() {
 	} = useActiveSessions();
 	const [revokeTarget, setRevokeTarget] = useState<SessionInfo | null>(null);
 	const revoke = useRevokeSession();
+	const pending = useRef(false);
 
 	const columns = useMemo(
 		() => [
@@ -89,17 +91,9 @@ export function SessionsPage() {
 			}),
 			col.accessor("deviceInfo", {
 				header: "Device",
-				cell: (info) => {
-					const device = info.getValue();
-					if (!device || Object.keys(device).length === 0) {
-						return <span className="text-muted-foreground">-</span>;
-					}
-					return (
-						<span className="text-xs text-muted-foreground">
-							{device.browser || device.os || Object.values(device)[0] || "-"}
-						</span>
-					);
-				},
+				cell: (info) => (
+					<span className="text-sm">{sessionDevice(info.getValue())}</span>
+				),
 			}),
 			col.accessor("lastActiveAt", {
 				header: "Last active",
@@ -110,7 +104,7 @@ export function SessionsPage() {
 				),
 			}),
 			col.accessor("idleExpiresAt", {
-				header: "Idle expiry",
+				header: "Signs out if inactive",
 				cell: (info) => (
 					<span className="text-muted-foreground">
 						{formatDate(info.getValue())}
@@ -118,7 +112,7 @@ export function SessionsPage() {
 				),
 			}),
 			col.accessor("expiresAt", {
-				header: "Absolute expiry",
+				header: "Session ends",
 				cell: (info) => (
 					<span className="text-muted-foreground">
 						{formatDate(info.getValue())}
@@ -131,7 +125,11 @@ export function SessionsPage() {
 					<DropdownMenu>
 						<DropdownMenuTrigger
 							render={
-								<Button variant="ghost" size="sm" className="h-8 w-8 p-0" />
+								<Button
+									aria-label="Session actions"
+									variant="ghost"
+									size="icon-sm"
+								/>
 							}
 						>
 							<MoreHorizontal className="h-4 w-4" />
@@ -141,7 +139,10 @@ export function SessionsPage() {
 								<DropdownMenuLabel>Actions</DropdownMenuLabel>
 								<DropdownMenuSeparator />
 								<DropdownMenuItem
-									onClick={() => setRevokeTarget(row.original)}
+									onClick={() => {
+										revoke.reset();
+										setRevokeTarget(row.original);
+									}}
 									className="text-destructive focus:text-destructive"
 								>
 									<LogOut className="mr-2 h-4 w-4" />
@@ -178,25 +179,30 @@ export function SessionsPage() {
 							title="Couldn't load the active sessions"
 							detail={
 								readOutcome(isError, error) === "forbidden"
-									? "Your account doesn't have the platform role this list needs."
+									? "You don't have access to active sessions. Ask a platform administrator to grant access."
 									: "If it keeps failing, tell your administrator."
 							}
 						/>
-						<Button variant="outline" onClick={() => void refetch()}>
-							Retry
-						</Button>
+						{readOutcome(isError, error) !== "forbidden" && (
+							<Button variant="outline" onClick={() => void refetch()}>
+								Try again
+							</Button>
+						)}
 					</Stack>
 				</Panel>
 			) : (
 				<DataTable
 					table={table}
 					isLoading={isLoading}
-					emptyMessage="No active sessions"
+					emptyMessage="No one is signed in. Sessions appear here when someone signs in."
 				/>
 			)}
 
 			{revokeTarget && (
-				<AlertDialog open onOpenChange={(o) => !o && setRevokeTarget(null)}>
+				<AlertDialog
+					open
+					onOpenChange={(o) => !o && !pending.current && setRevokeTarget(null)}
+				>
 					<AlertDialogContent>
 						<AlertDialogHeader>
 							<AlertDialogTitle>Force logout?</AlertDialogTitle>
@@ -206,28 +212,40 @@ export function SessionsPage() {
 								signed out on that device immediately.
 							</AlertDialogDescription>
 						</AlertDialogHeader>
+						{revoke.isError && (
+							<ErrorState
+								title="Couldn’t sign out this session"
+								detail={failureText("sign this session out", revoke.error)}
+							/>
+						)}
 						<AlertDialogFooter>
-							<AlertDialogCancel onClick={() => setRevokeTarget(null)}>
+							<AlertDialogCancel
+								disabled={revoke.isPending}
+								onClick={() => setRevokeTarget(null)}
+							>
 								Cancel
 							</AlertDialogCancel>
 							<AlertDialogAction
-								onClick={() =>
+								onClick={(event) => {
+									event.preventDefault();
+									if (pending.current) return;
+									pending.current = true;
 									revoke.mutate(
 										{ sessionId: revokeTarget.id, reason: "revoked_by_admin" },
 										{
 											onSuccess: () => {
+												pending.current = false;
 												toast.success("Session revoked");
 												setRevokeTarget(null);
 											},
-											onError: (failure) =>
-												toast.error(
-													failureText("sign this session out", failure),
-												),
+											onError: () => {
+												pending.current = false;
+											},
 										},
-									)
-								}
+									);
+								}}
 								disabled={revoke.isPending}
-								className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+								variant="destructive"
 							>
 								{revoke.isPending ? "Revoking..." : "Force logout"}
 							</AlertDialogAction>

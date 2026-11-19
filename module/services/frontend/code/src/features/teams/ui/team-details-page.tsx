@@ -217,10 +217,9 @@ function TeamDetails({ team }: { team: Team }) {
 				) : unconfirmed ? (
 					<p>
 						{sessionRead === "reading"
-							? "Confirming what this session is."
-							: "Could not confirm what this session is."}{" "}
-						Your access here is not shown until the host says; it decides every
-						action.
+							? "Checking your access."
+							: "Could not confirm your access."}{" "}
+						Your team access will appear once it is confirmed.
 					</p>
 				) : castTeamId ? (
 					<>
@@ -249,7 +248,7 @@ function TeamDetails({ team }: { team: Team }) {
 						</p>
 						<p className="text-sm text-muted-foreground">
 							{platformRole === "super_admin"
-								? "Your platform super-admin access also allows you to manage this team."
+								? "Your platform administrator access also allows you to manage this team."
 								: orgAdmin
 									? "Your organization admin access allows you to manage this team."
 									: teamAdmin
@@ -268,6 +267,7 @@ function TeamDetails({ team }: { team: Team }) {
 				currentUserId={user?.id}
 			/>
 			<TeamRoles
+				teamName={team.name}
 				teamId={team.id}
 				orgId={team.orgId}
 				canGrant={hasPermission(platformRole, orgRole, PERMISSIONS.ROLES_WRITE)}

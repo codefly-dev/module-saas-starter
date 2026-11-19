@@ -1,24 +1,26 @@
 import { Code, ConnectError } from "@connectrpc/connect";
+import { failureText } from "@/shared/lib/failure-text";
 
-// The organization lifecycle refusals the server words for the person in front
-// of the screen: the last administrator, the sole member, a taken slug, a
-// mistyped confirmation, a creation policy. Each is a rule they can act on, so
-// the server's sentence is shown as it is. Any other failure falls back to a
-// generic message — an internal error's text is a call path, not something to
-// render to a user.
-const ACTIONABLE = new Set([
-	Code.FailedPrecondition,
-	Code.AlreadyExists,
-	Code.PermissionDenied,
-	Code.InvalidArgument,
-	Code.NotFound,
-]);
-
+/** Keep organization failures actionable without rendering server diagnostics. */
 export function lifecycleErrorMessage(
 	error: unknown,
 	fallback: string,
 ): string {
 	if (!(error instanceof ConnectError)) return fallback;
-	if (!ACTIONABLE.has(error.code)) return fallback;
-	return error.rawMessage || fallback;
+	if (error.code === Code.FailedPrecondition) {
+		return "This change is not available in the organization's current state. Ask an organization administrator to review its members and settings.";
+	}
+	if (
+		[
+			Code.PermissionDenied,
+			Code.Unauthenticated,
+			Code.InvalidArgument,
+			Code.AlreadyExists,
+			Code.NotFound,
+			Code.ResourceExhausted,
+		].includes(error.code)
+	) {
+		return failureText("change this organization", error);
+	}
+	return fallback;
 }

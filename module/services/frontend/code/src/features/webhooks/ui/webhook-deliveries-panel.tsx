@@ -1,9 +1,15 @@
 "use client";
 
 import { Content } from "@codefly-dev/ui/content";
+import { EmptyState } from "@codefly-dev/ui/layout";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+	type ColumnDef,
+	getCoreRowModel,
+	useReactTable,
+} from "@tanstack/react-table";
 import { ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { failureText } from "@/shared/lib/failure-text";
 import { readOutcome } from "@/shared/lib/read-outcome";
@@ -18,6 +24,7 @@ import {
 	ErrorState,
 	Skeleton,
 } from "@/shared/ui";
+import { DataTable } from "@/shared/ui/data-table";
 import { formatDeliveryStatus, formatEventType } from "../model/transforms";
 import type { WebhookSubscription } from "../model/types";
 import { webhookMutations } from "../service/mutations";
@@ -26,6 +33,7 @@ import { webhookQueries } from "../service/queries";
 interface WebhookDeliveriesPanelProps {
 	subscription: WebhookSubscription;
 	onClose: () => void;
+	canManage?: boolean;
 }
 
 /**
@@ -44,12 +52,13 @@ interface WebhookDeliveriesPanelProps {
 export function WebhookDeliveriesPanel({
 	subscription,
 	onClose,
+	canManage = false,
 }: WebhookDeliveriesPanelProps) {
 	const [expanded, setExpanded] = useState(true);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const queryClient = useQueryClient();
 
-	const { data, isLoading, isError, error } = useQuery(
+	const { data, isLoading, isError, error, refetch } = useQuery(
 		webhookQueries.deliveries(subscription.id),
 	);
 
@@ -102,6 +111,8 @@ export function WebhookDeliveriesPanel({
 					<Button
 						variant="ghost"
 						size="sm"
+						aria-label={expanded ? "Collapse deliveries" : "Expand deliveries"}
+						aria-expanded={expanded}
 						onClick={() => setExpanded(!expanded)}
 					>
 						{expanded ? (
@@ -127,38 +138,44 @@ export function WebhookDeliveriesPanel({
 					) : isError ? (
 						// A failed read is not "no deliveries": whether any were
 						// attempted is unknown.
-						<ErrorState
-							title="Couldn't load the deliveries"
-							detail={
-								readOutcome(true, error) === "forbidden"
-									? "You don't have permission to see this webhook's deliveries. Ask an organization administrator for access."
-									: "Whether any were sent is unknown. Close this panel and open it again; if it keeps failing, tell your administrator."
-							}
-						/>
+						<div className="space-y-3">
+							<ErrorState
+								title="Couldn't load the deliveries"
+								detail={
+									readOutcome(true, error) === "forbidden"
+										? "You don't have permission to see this webhook's deliveries. Ask an organization administrator for access."
+										: "We couldn’t check recent deliveries. Try again in a moment."
+								}
+							/>
+							{readOutcome(true, error) !== "forbidden" && (
+								<Button variant="outline" onClick={() => void refetch()}>
+									Try again
+								</Button>
+							)}
+						</div>
 					) : deliveries.length === 0 ? (
-						<p className="text-sm text-muted-foreground py-8 text-center">
-							No deliveries yet. Use <span className="font-medium">Test</span>{" "}
-							on the subscription to fire a sample event.
-						</p>
+						<EmptyState
+							heading="No deliveries yet"
+							description="Send a test from the webhook’s actions menu to check that your endpoint receives events."
+						/>
 					) : (
-						<div className="grid gap-4 lg:grid-cols-[260px_1fr]">
+						<div className="grid gap-4 grid-cols-1 xl:grid-cols-2">
 							{/* LEFT — list */}
-							<div className="space-y-1.5 lg:max-h-[480px] lg:overflow-y-auto pr-1">
-								{deliveries.map((d) => (
-									<DeliveryRow
-										key={d.id}
-										delivery={d}
-										selected={selected?.id === d.id}
-										onClick={() => setSelectedId(d.id)}
-									/>
-								))}
-							</div>
+							<DeliveryTable
+								deliveries={deliveries}
+								selectedId={selected?.id}
+								onSelect={setSelectedId}
+							/>
 
 							{/* RIGHT — detail */}
 							{selected ? (
 								<DeliveryDetail
+									canManage={canManage}
 									delivery={selected}
-									onReplay={() => replay.mutate(selected.id)}
+									onReplay={() => {
+										if (canManage && !replay.isPending)
+											replay.mutate(selected.id);
+									}}
 									isReplaying={replay.isPending}
 								/>
 							) : (
@@ -183,50 +200,56 @@ interface RowDelivery {
 	createdAt?: { seconds: bigint };
 }
 
-function DeliveryRow({
-	delivery,
-	selected,
-	onClick,
+function DeliveryTable({
+	deliveries,
+	selectedId,
+	onSelect,
 }: {
-	delivery: RowDelivery;
-	selected: boolean;
-	onClick: () => void;
+	deliveries: RowDelivery[];
+	selectedId?: string;
+	onSelect: (id: string) => void;
 }) {
-	const status = statusFromProto(delivery.status);
-	const { label, variant } = formatDeliveryStatus(status);
-	return (
-		<button
-			type="button"
-			onClick={onClick}
-			aria-label={`Delivery: ${formatEventType(delivery.eventType)}`}
-			className={`w-full text-left rounded-md border p-2.5 text-xs transition-colors ${
-				selected ? "border-primary/60 bg-accent/40" : "hover:bg-accent/20"
-			}`}
-		>
-			<div className="flex items-center justify-between gap-2">
-				<Badge variant={variant} className="shrink-0 text-[10px]">
-					{label}
-				</Badge>
-				{delivery.httpStatus > 0 && (
-					<span
-						className={`font-mono ${
-							delivery.httpStatus >= 200 && delivery.httpStatus < 300
-								? "text-success"
-								: "text-destructive"
-						}`}
+	const columns = useMemo<ColumnDef<RowDelivery>[]>(
+		() => [
+			{
+				id: "event",
+				header: "Event",
+				cell: ({ row }) => (
+					<Button
+						variant="ghost"
+						size="sm"
+						aria-pressed={selectedId === row.original.id}
+						aria-label={`Delivery: ${formatEventType(row.original.eventType)}`}
+						onClick={() => onSelect(row.original.id)}
 					>
-						{delivery.httpStatus}
-					</span>
-				)}
-			</div>
-			<div className="mt-1 truncate font-medium">
-				{formatEventType(delivery.eventType)}
-			</div>
-			<div className="mt-0.5 text-muted-foreground">
-				{formatDate(timestampToISO(delivery.createdAt))}
-			</div>
-		</button>
+						{formatEventType(row.original.eventType)}
+					</Button>
+				),
+			},
+			{
+				id: "status",
+				header: "Status",
+				cell: ({ row }) => {
+					const { label, variant } = formatDeliveryStatus(
+						statusFromProto(row.original.status),
+					);
+					return <Badge variant={variant}>{label}</Badge>;
+				},
+			},
+			{
+				id: "created",
+				header: "Created",
+				cell: ({ row }) => formatDate(timestampToISO(row.original.createdAt)),
+			},
+		],
+		[selectedId, onSelect],
 	);
+	const table = useReactTable({
+		data: deliveries,
+		columns,
+		getCoreRowModel: getCoreRowModel(),
+	});
+	return <DataTable table={table} ariaLabel="Webhook deliveries" />;
 }
 
 interface DetailDelivery extends RowDelivery {
@@ -238,11 +261,13 @@ interface DetailDelivery extends RowDelivery {
 }
 
 function DeliveryDetail({
+	canManage,
 	delivery,
 	onReplay,
 	isReplaying,
 }: {
 	delivery: DetailDelivery;
+	canManage: boolean;
 	onReplay: () => void;
 	isReplaying: boolean;
 }) {
@@ -264,21 +289,23 @@ function DeliveryDetail({
 						</div>
 					</details>
 				</div>
-				<Button
-					size="sm"
-					variant="outline"
-					onClick={onReplay}
-					disabled={isReplaying}
-				>
-					<RotateCcw className="mr-2 h-3.5 w-3.5" />
-					{isReplaying ? "Replaying…" : "Replay"}
-				</Button>
+				{canManage && (
+					<Button
+						size="sm"
+						variant="outline"
+						onClick={onReplay}
+						disabled={isReplaying}
+					>
+						<RotateCcw className="mr-2 h-3.5 w-3.5" />
+						{isReplaying ? "Replaying…" : "Replay"}
+					</Button>
+				)}
 			</div>
 
 			{/* Quick facts */}
 			<dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
 				<dt className="text-muted-foreground">Event</dt>
-				<dd className="font-mono">{delivery.eventType}</dd>
+				<dd>{formatEventType(delivery.eventType)}</dd>
 				<dt className="text-muted-foreground">HTTP status</dt>
 				<dd className="font-mono">
 					{delivery.httpStatus || (
@@ -338,7 +365,7 @@ function PayloadBlock({
 
 	return (
 		<div>
-			<div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+			<div className="mb-1.5 text-xs font-medium text-muted-foreground">
 				{title}
 			</div>
 			{empty ? (

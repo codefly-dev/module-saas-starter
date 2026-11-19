@@ -8,8 +8,9 @@ import {
 	useReactTable,
 } from "@tanstack/react-table";
 import { Ban } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { failureText } from "@/shared/lib/failure-text";
 import { formatDate } from "@/shared/lib/utils";
 import {
 	AlertDialog,
@@ -20,9 +21,9 @@ import {
 	AlertDialogFooter,
 	AlertDialogHeader,
 	AlertDialogTitle,
-	AlertDialogTrigger,
 	Badge,
 	Button,
+	ErrorState,
 } from "@/shared/ui";
 import { DataTable } from "@/shared/ui/data-table";
 import { formatEnvironment, maskKeyPrefix } from "../model/transforms";
@@ -34,14 +35,19 @@ const col = createColumnHelper<APIKey>();
 export function APIKeysTable({
 	keys,
 	isLoading,
+	canManage = false,
 }: {
 	keys: APIKey[];
 	isLoading: boolean;
+	canManage?: boolean;
 }) {
 	"use no memo";
 	// TanStack Table mutates a stable table instance when its data changes.
 	// Compiler-cached JSX would otherwise keep rendering the previous key list.
 	const revokeKey = useRevokeAPIKey();
+	const [selectedKey, setSelectedKey] = useState<APIKey | null>(null);
+	const [failure, setFailure] = useState<string | null>(null);
+	const submitting = useRef(false);
 
 	const columns = useMemo(
 		() => [
@@ -66,7 +72,7 @@ export function APIKeysTable({
 				},
 			}),
 			col.accessor("lastUsedAt", {
-				header: "Last Used",
+				header: "Last used",
 				cell: (info) => {
 					const v = info.getValue();
 					// "Never" for keys that have been issued but not used yet —
@@ -96,6 +102,7 @@ export function APIKeysTable({
 				header: "",
 				cell: ({ row }) => {
 					const key = row.original;
+					if (!canManage) return null;
 					if (key.revokedAt) {
 						return (
 							<Badge variant="destructive" className="text-xs">
@@ -104,51 +111,22 @@ export function APIKeysTable({
 						);
 					}
 					return (
-						<AlertDialog>
-							<AlertDialogTrigger
-								render={
-									<Button
-										variant="ghost"
-										size="sm"
-										aria-label={`Revoke ${key.name}`}
-									/>
-								}
-							>
-								<Ban className="h-4 w-4 text-destructive" />
-							</AlertDialogTrigger>
-							<AlertDialogContent>
-								<AlertDialogHeader>
-									<AlertDialogTitle>Revoke API key</AlertDialogTitle>
-									<AlertDialogDescription>
-										This will permanently revoke the key &quot;{key.name}&quot;.
-										Any applications using this key will stop working
-										immediately.
-									</AlertDialogDescription>
-								</AlertDialogHeader>
-								<AlertDialogFooter>
-									<AlertDialogCancel>Cancel</AlertDialogCancel>
-									<AlertDialogAction
-										onClick={() =>
-											revokeKey.mutate(
-												{ id: key.id, organizationId: key.organizationId },
-												{
-													onSuccess: () =>
-														toast.success(`Key "${key.name}" revoked`),
-													onError: () => toast.error("Failed to revoke key"),
-												},
-											)
-										}
-									>
-										Revoke
-									</AlertDialogAction>
-								</AlertDialogFooter>
-							</AlertDialogContent>
-						</AlertDialog>
+						<Button
+							variant="ghost"
+							size="sm"
+							aria-label={`Revoke ${key.name}`}
+							onClick={() => {
+								setFailure(null);
+								setSelectedKey(key);
+							}}
+						>
+							<Ban className="h-4 w-4 text-destructive" />
+						</Button>
 					);
 				},
 			}),
 		],
-		[revokeKey],
+		[canManage],
 	);
 
 	// Active keys first, revoked keys at the bottom — same end-state
@@ -169,6 +147,67 @@ export function APIKeysTable({
 	});
 
 	return (
-		<DataTable table={table} isLoading={isLoading} emptyMessage="No API keys" />
+		<>
+			<DataTable
+				table={table}
+				isLoading={isLoading}
+				ariaLabel="API keys"
+			/>
+			<AlertDialog
+				open={selectedKey !== null}
+				onOpenChange={(open) => {
+					if (!open && !submitting.current) {
+						setSelectedKey(null);
+						setFailure(null);
+					}
+				}}
+			>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Revoke {selectedKey?.name}?</AlertDialogTitle>
+						<AlertDialogDescription>
+							This permanently revokes the key. Applications using it will lose
+							access immediately.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					{failure && (
+						<ErrorState title="Couldn't revoke the key" detail={failure} />
+					)}
+					<AlertDialogFooter>
+						<AlertDialogCancel disabled={revokeKey.isPending}>
+							Cancel
+						</AlertDialogCancel>
+						<AlertDialogAction
+							disabled={revokeKey.isPending}
+							onClick={(event) => {
+								event.preventDefault();
+								if (!selectedKey || !canManage || submitting.current) return;
+								submitting.current = true;
+								setFailure(null);
+								revokeKey.mutate(
+									{
+										id: selectedKey.id,
+										organizationId: selectedKey.organizationId,
+									},
+									{
+										onSuccess: () => {
+											toast.success(`Key "${selectedKey.name}" revoked`);
+											setSelectedKey(null);
+										},
+										onError: (error) =>
+											setFailure(failureText("revoke this key", error)),
+										onSettled: () => {
+											submitting.current = false;
+										},
+									},
+								);
+							}}
+						>
+							{revokeKey.isPending ? "Revoking…" : "Revoke"}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+		</>
 	);
 }

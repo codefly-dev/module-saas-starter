@@ -10,8 +10,9 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
+	ErrorState,
+	Field,
 	Input,
-	Label,
 } from "@/shared/ui";
 import { type CreateOrgValues, createOrgSchema } from "../model/schemas";
 import { slugify } from "../model/transforms";
@@ -21,9 +22,16 @@ interface OrgFormProps {
 	onSubmit: (values: CreateOrgValues) => void;
 	onCancel: () => void;
 	isPending: boolean;
+	error?: string;
 }
 
-export function OrgForm({ open, onSubmit, onCancel, isPending }: OrgFormProps) {
+export function OrgForm({
+	open,
+	onSubmit,
+	onCancel,
+	isPending,
+	error,
+}: OrgFormProps) {
 	const form = useForm<CreateOrgValues>({
 		resolver: zodResolver(createOrgSchema),
 		defaultValues: { name: "", slug: "" },
@@ -31,58 +39,81 @@ export function OrgForm({ open, onSubmit, onCancel, isPending }: OrgFormProps) {
 
 	const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const name = e.target.value;
-		form.setValue("name", name);
+		const previousName = form.getValues("name");
+		form.setValue("name", name, { shouldValidate: form.formState.isSubmitted });
 		// Auto-generate slug from name if slug hasn't been manually edited
 		const currentSlug = form.getValues("slug");
-		const autoSlug = slugify(form.getValues("name").slice(0, -1) || "");
+		const autoSlug = slugify(previousName);
 		if (
 			!currentSlug ||
 			currentSlug === autoSlug ||
 			currentSlug === slugify(name)
 		) {
-			form.setValue("slug", slugify(name));
+			form.setValue("slug", slugify(name), {
+				shouldValidate: form.formState.isSubmitted,
+			});
 		}
 	};
 
 	return (
-		<Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
+		<Dialog open={open} onOpenChange={(o) => !o && !isPending && onCancel()}>
 			<DialogContent className="sm:max-w-[425px]">
 				<DialogHeader>
-					<DialogTitle>Create Organization</DialogTitle>
+					<DialogTitle>Create organization</DialogTitle>
 					<DialogDescription>
 						Add a new organization. You will be the owner.
 					</DialogDescription>
 				</DialogHeader>
-				<form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-					<div className="space-y-2">
-						<Label htmlFor="org-name">Name</Label>
-						<Input
-							id="org-name"
-							placeholder="Acme Inc."
-							{...form.register("name")}
-							onChange={handleNameChange}
-						/>
-						{form.formState.errors.name && (
-							<p className="text-sm text-destructive">
-								{form.formState.errors.name.message}
-							</p>
+				<form
+					noValidate
+					onSubmit={form.handleSubmit((values) => {
+						if (!isPending) onSubmit(values);
+					})}
+					className="space-y-4"
+				>
+					<Field
+						label="Name"
+						error={form.formState.errors.name?.message}
+						required
+					>
+						{(control) => (
+							<Input
+								{...control}
+								placeholder="Acme Inc."
+								{...form.register("name")}
+								onChange={handleNameChange}
+								disabled={isPending}
+							/>
 						)}
-					</div>
-					<div className="space-y-2">
-						<Label htmlFor="org-slug">Slug</Label>
-						<Input
-							id="org-slug"
-							placeholder="acme-inc"
-							{...form.register("slug")}
-						/>
-						{form.formState.errors.slug && (
-							<p className="text-sm text-destructive">
-								{form.formState.errors.slug.message}
-							</p>
+					</Field>
+					<Field
+						label="Organization address"
+						description="Use lowercase letters, numbers and hyphens."
+						error={form.formState.errors.slug?.message}
+						required
+					>
+						{(control) => (
+							<Input
+								{...control}
+								placeholder="acme-inc"
+								{...form.register("slug")}
+								disabled={isPending}
+							/>
 						)}
-					</div>
+					</Field>
+					{error && (
+						<ErrorState
+							title="Couldn't create the organization"
+							detail={error}
+						/>
+					)}
 					<DialogFooter>
-						<Button type="button" variant="outline" onClick={onCancel}>
+						<Button
+							type="button"
+							variant="outline"
+							onClick={onCancel}
+							disabled={isPending}
+						>
 							Cancel
 						</Button>
 						<Button type="submit" disabled={isPending}>

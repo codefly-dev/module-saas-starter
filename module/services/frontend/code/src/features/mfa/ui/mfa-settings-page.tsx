@@ -28,22 +28,22 @@ export function MFASettingsPage() {
 	const [showSetup, setShowSetup] = useState(false);
 	const [showPasskeySetup, setShowPasskeySetup] = useState(false);
 
-	const { data, isLoading, isError } = useQuery(mfaQueries.devices());
+	const { data, isLoading, isError, error } = useQuery(mfaQueries.devices());
 	const devices: MFADevice[] =
 		(data as { devices?: MFADevice[] } | undefined)?.devices ?? [];
 
 	const revokeMutation = useMutation({
 		mutationFn: (deviceId: string) => mfaMutations.revokeDevice(deviceId),
-		onSuccess: () => {
+		onSuccess: async () => {
 			toast.success("Device removed");
-			queryClient.invalidateQueries({ queryKey: ["mfa"] });
+			await queryClient.invalidateQueries({ queryKey: ["mfa"] });
 		},
-		onError: (error) => toast.error(failureText("remove the device", error)),
 	});
 
+	const { mutateAsync: revoke } = revokeMutation;
 	const handleRevoke = useCallback(
-		(device: MFADevice) => revokeMutation.mutate(device.id),
-		[revokeMutation],
+		(device: MFADevice) => revoke(device.id),
+		[revoke],
 	);
 
 	return (
@@ -67,7 +67,9 @@ export function MFASettingsPage() {
 
 			<Card>
 				<CardHeader>
-					<CardTitle>Security methods</CardTitle>
+					<CardTitle role="heading" aria-level={2}>
+						Security methods
+					</CardTitle>
 					<CardDescription>
 						{isError
 							? "Your security methods could not be loaded."
@@ -84,7 +86,7 @@ export function MFASettingsPage() {
 					{isError ? (
 						<ErrorState
 							title="Couldn't load your security methods"
-							detail="Whether any are enrolled is unknown. Reload the page; if it keeps failing, tell your administrator."
+							detail={failureText("load your security methods", error)}
 						/>
 					) : (
 						<MFADevices

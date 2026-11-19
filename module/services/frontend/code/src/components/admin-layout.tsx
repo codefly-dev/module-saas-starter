@@ -1,15 +1,15 @@
 "use client";
 
+import type {
+	NavItem,
+	PluginNavSection,
+} from "@codefly-dev/saas-plugin-contract";
 import {
 	CastBar,
 	openTeamSwitcher,
 	TeamSwitcher,
 	useCasting,
 } from "@codefly-dev/saas-ui/casting";
-import type {
-	NavItem,
-	PluginNavSection,
-} from "@codefly-dev/saas-plugin-contract";
 import {
 	Boxes,
 	ChevronRight,
@@ -95,8 +95,10 @@ function PluginNavigationSection({
 			<SidebarGroupContent className="space-y-2">
 				{groupPluginItems(section).map(([group, items]) => (
 					<div key={group ?? "default"}>
-						{group ? (
-							<div className="px-2 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
+						{group &&
+						group.trim().toLocaleLowerCase() !==
+							section.label.trim().toLocaleLowerCase() ? (
+							<div className="px-2 pb-1 text-xs font-medium text-muted-foreground">
 								{group}
 							</div>
 						) : null}
@@ -331,7 +333,9 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 										<span className="text-sm font-medium">{userLabel}</span>
 										{platformRole && (
 											<span className="text-xs text-muted-foreground">
-												{platformRole}
+												{platformRole === "super_admin"
+													? "Platform administrator"
+													: "Administrator"}
 											</span>
 										)}
 									</div>
@@ -392,12 +396,12 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             to remount the wrapper on every navigation, replaying the
             CSS animation. Snappy (200ms) so it feels like polish, not
             a delay. */}
-				<main
+				<div
 					key={pathname}
-					className="flex-1 p-6 animate-in fade-in slide-in-from-bottom-1 duration-200"
+					className="min-w-0 flex-1 p-4 sm:p-6 animate-in fade-in slide-in-from-bottom-1 duration-200"
 				>
 					{children}
-				</main>
+				</div>
 			</SidebarInset>
 
 			<TeamSwitcher />

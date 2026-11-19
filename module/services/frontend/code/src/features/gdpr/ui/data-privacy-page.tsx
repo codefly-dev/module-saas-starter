@@ -1,12 +1,12 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Download, FileArchive, Loader2, Trash2 } from "lucide-react";
+import { Download, FileArchive, Trash2 } from "lucide-react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { failureText } from "@/shared/lib/failure-text";
 import {
 	AlertDialog,
-	AlertDialogAction,
 	AlertDialogCancel,
 	AlertDialogContent,
 	AlertDialogDescription,
@@ -21,6 +21,8 @@ import {
 	CardFooter,
 	CardHeader,
 	CardTitle,
+	DelayedLoading,
+	ErrorState,
 	Grid,
 	Page as PageBody,
 	PageHeader,
@@ -37,6 +39,9 @@ export function DataPrivacyPage({
 	deletionAvailable,
 }: DataPrivacyPageProps) {
 	const queryClient = useQueryClient();
+	const [confirming, setConfirming] = useState(false);
+	const deleting = useRef(false);
+	const exporting = useRef(false);
 
 	const exportMutation = useMutation({
 		mutationFn: () => gdprMutations.requestExport(),
@@ -46,17 +51,21 @@ export function DataPrivacyPage({
 			);
 			queryClient.invalidateQueries({ queryKey: ["gdpr"] });
 		},
-		onError: (error) => toast.error(failureText("request the export", error)),
+		onSettled: () => {
+			exporting.current = false;
+		},
 	});
 
 	const deletionMutation = useMutation({
 		mutationFn: () => gdprMutations.requestDeletion(),
 		onSuccess: () => {
+			setConfirming(false);
 			toast.success("Account deletion requested.");
 			queryClient.invalidateQueries({ queryKey: ["gdpr"] });
 		},
-		onError: (error) =>
-			toast.error(failureText("request account deletion", error)),
+		onSettled: () => {
+			deleting.current = false;
+		},
 	});
 
 	return (
@@ -72,7 +81,9 @@ export function DataPrivacyPage({
 						<div className="flex items-center gap-3">
 							<FileArchive className="size-5 text-muted-foreground" />
 							<div>
-								<CardTitle>Export my data</CardTitle>
+								<CardTitle role="heading" aria-level={2}>
+									Export my data
+								</CardTitle>
 								<CardDescription>
 									A copy of the data held about you.
 								</CardDescription>
@@ -85,17 +96,28 @@ export function DataPrivacyPage({
 								? "Ask for a copy of your data. You will be notified when it is ready."
 								: "Data export is not available here yet. To get a copy of your data, contact your administrator."}
 						</p>
+						{exportMutation.isError && (
+							<ErrorState
+								title="Export wasn’t requested"
+								detail={failureText("request the export", exportMutation.error)}
+							/>
+						)}
 					</CardContent>
 					<CardFooter>
 						<Button
-							onClick={() => exportMutation.mutate()}
+							onClick={() => {
+								if (!exportAvailable || exporting.current) return;
+								exporting.current = true;
+								exportMutation.mutate();
+							}}
 							disabled={!exportAvailable || exportMutation.isPending}
 						>
+							<DelayedLoading
+								active={exportMutation.isPending}
+								label="Requesting data export"
+							/>
 							{exportMutation.isPending ? (
-								<>
-									<Loader2 className="animate-spin" />
-									Requesting…
-								</>
+								<>Requesting…</>
 							) : (
 								<>
 									<Download />
@@ -111,7 +133,9 @@ export function DataPrivacyPage({
 						<div className="flex items-center gap-3">
 							<Trash2 className="size-5 text-destructive" />
 							<div>
-								<CardTitle>Delete my account</CardTitle>
+								<CardTitle role="heading" aria-level={2}>
+									Delete my account
+								</CardTitle>
 								<CardDescription>
 									Close your account and remove your data.
 								</CardDescription>
@@ -126,10 +150,17 @@ export function DataPrivacyPage({
 						</p>
 					</CardContent>
 					<CardFooter>
-						<AlertDialog>
+						<AlertDialog
+							open={confirming}
+							onOpenChange={(open) => {
+								if (deleting.current) return;
+								if (open) deletionMutation.reset();
+								setConfirming(open);
+							}}
+						>
 							<AlertDialogTrigger
 								render={
-									<Button variant="destructive" disabled={!deletionAvailable}>
+									<Button variant="outline" disabled={!deletionAvailable}>
 										<Trash2 />
 										Delete account
 									</Button>
@@ -143,16 +174,32 @@ export function DataPrivacyPage({
 										be kept for as long as the retention policy requires.
 									</AlertDialogDescription>
 								</AlertDialogHeader>
+								{deletionMutation.isError && (
+									<ErrorState
+										title="Account deletion wasn’t requested"
+										detail={failureText(
+											"request account deletion",
+											deletionMutation.error,
+										)}
+									/>
+								)}
 								<AlertDialogFooter>
-									<AlertDialogCancel>Cancel</AlertDialogCancel>
-									<AlertDialogAction
-										onClick={() => deletionMutation.mutate()}
-										className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+									<AlertDialogCancel disabled={deletionMutation.isPending}>
+										Cancel
+									</AlertDialogCancel>
+									<Button
+										onClick={() => {
+											if (!deletionAvailable || deleting.current) return;
+											deleting.current = true;
+											deletionMutation.mutate();
+										}}
+										disabled={deletionMutation.isPending}
+										variant="destructive"
 									>
 										{deletionMutation.isPending
 											? "Requesting…"
 											: "Yes, delete my account"}
-									</AlertDialogAction>
+									</Button>
 								</AlertDialogFooter>
 							</AlertDialogContent>
 						</AlertDialog>

@@ -123,3 +123,37 @@ describe("human-readable identity", () => {
 		expect(screen.queryByText(userId)).toBeNull();
 	});
 });
+
+it("locks a selected person while saving and never exposes their identifier", () => {
+	const changed = vi.fn();
+	renderInApp(<UserPicker value={userId} onChange={changed} disabled />);
+	expect(screen.getByText("Selected person")).toBeTruthy();
+	expect(screen.queryByText(userId)).toBeNull();
+	expect(
+		screen.queryByRole("button", { name: /Choose someone other/ }),
+	).toBeNull();
+	expect(changed).not.toHaveBeenCalled();
+});
+
+it("names the organization selector for keyboard and screen-reader navigation", async () => {
+	renderInApp(<OrgSelector />);
+	expect(
+		await screen.findByRole("combobox", { name: "Organization" }),
+	).toBeTruthy();
+});
+
+it("does not show an empty organization selector after a refused read", async () => {
+	server.use(
+		http.post(rpc("OrganizationService", "ListOrganizations"), () =>
+			HttpResponse.json(
+				{ code: "permission_denied", message: "private details" },
+				{ status: 403 },
+			),
+		),
+	);
+	renderInApp(<OrgSelector />);
+	await screen.findByText("Organizations unavailable");
+	expect(screen.queryByRole("combobox")).toBeNull();
+	expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+	expect(screen.queryByText("private details")).toBeNull();
+});

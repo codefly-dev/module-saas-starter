@@ -130,7 +130,7 @@ describe("WhenRolesDeclared", () => {
 		expect(alert).toContain(
 			"Could not read whether this page has roles to set up",
 		);
-		expect(alert).toContain("The request did not complete");
+		expect(alert).toContain("Couldn't complete this request");
 		expect(alert).not.toContain("registry is down");
 	});
 
@@ -144,7 +144,7 @@ describe("WhenRolesDeclared", () => {
 		};
 		renderGate("module");
 		expect(screen.getByRole("alert").textContent).toContain(
-			"requires organization admin",
+			"Ask your organization administrator for access.",
 		);
 	});
 

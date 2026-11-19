@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useThemePreference } from "@/features/user-settings/ui/theme-preference-provider";
 import { useTheme } from "@/lib/theme-provider";
+import { failureText } from "@/shared/lib/failure-text";
 import { Button } from "@/shared/ui";
 
 const items = [
@@ -70,8 +71,7 @@ export function ThemeToggle() {
 						onClick={() => {
 							void setPreference(value).catch((error) =>
 								toast.error("Theme wasn't saved", {
-									description:
-										error instanceof Error ? error.message : "Try again.",
+									description: failureText("save your theme", error),
 								}),
 							);
 						}}

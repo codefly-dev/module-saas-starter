@@ -2,13 +2,14 @@
 
 import {
 	AlertDialog,
-	AlertDialogAction,
 	AlertDialogCancel,
 	AlertDialogContent,
 	AlertDialogDescription,
 	AlertDialogFooter,
 	AlertDialogHeader,
 	AlertDialogTitle,
+	Button,
+	ErrorState,
 } from "@/shared/ui";
 
 interface DeleteUserDialogProps {
@@ -17,6 +18,7 @@ interface DeleteUserDialogProps {
 	onConfirm: () => void;
 	onCancel: () => void;
 	isPending: boolean;
+	error?: string;
 }
 
 /** Confirm a soft-delete. Deleting also revokes the user's sessions server-side,
@@ -27,27 +29,36 @@ export function DeleteUserDialog({
 	onConfirm,
 	onCancel,
 	isPending,
+	error,
 }: DeleteUserDialogProps) {
 	return (
-		<AlertDialog open={open} onOpenChange={(o) => !o && onCancel()}>
+		<AlertDialog
+			open={open}
+			onOpenChange={(o) => !o && !isPending && onCancel()}
+		>
 			<AlertDialogContent>
 				<AlertDialogHeader>
-					<AlertDialogTitle>Delete user?</AlertDialogTitle>
+					<AlertDialogTitle>Delete {userEmail}?</AlertDialogTitle>
 					<AlertDialogDescription>
-						This soft-deletes <span className="font-medium">{userEmail}</span>{" "}
-						and revokes all their active sessions. They will be signed out
+						This removes <span className="font-medium">{userEmail}</span> and
+						revokes all their active sessions. They will be signed out
 						everywhere and lose access.
 					</AlertDialogDescription>
 				</AlertDialogHeader>
+				{error && <ErrorState title="User wasn’t deleted" detail={error} />}
 				<AlertDialogFooter>
-					<AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>
-					<AlertDialogAction
-						onClick={onConfirm}
+					<AlertDialogCancel disabled={isPending} onClick={onCancel}>
+						Cancel
+					</AlertDialogCancel>
+					<Button
+						onClick={() => {
+							if (!isPending) onConfirm();
+						}}
 						disabled={isPending}
-						className="bg-destructive text-white hover:bg-destructive/90"
+						variant="destructive"
 					>
 						{isPending ? "Deleting..." : "Delete user"}
-					</AlertDialogAction>
+					</Button>
 				</AlertDialogFooter>
 			</AlertDialogContent>
 		</AlertDialog>

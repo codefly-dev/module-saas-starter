@@ -1,10 +1,18 @@
 "use client";
 
 import { timestampDate } from "@bufbuild/protobuf/wkt";
+import { Progress } from "@codefly-dev/ui/layout";
 import { createClient } from "@connectrpc/connect";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+	createColumnHelper,
+	getCoreRowModel,
+	getPaginationRowModel,
+	useReactTable,
+} from "@tanstack/react-table";
 import { CreditCard, Download, ExternalLink, FileText } from "lucide-react";
 import Link from "next/link";
+import { useMemo } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
 import { MetricProvenance, MetricStateBadge } from "@/components/metric-state";
@@ -22,7 +30,10 @@ import {
 	useUsageMeters,
 } from "@/features/billing/service/usage-queries";
 import { useOrgEntitlements } from "@/features/platform/service/queries";
-import { BillingService } from "@/gen/saas/accounts/v1/billing_pb";
+import {
+	BillingService,
+	type Invoice,
+} from "@/gen/saas/accounts/v1/billing_pb";
 import {
 	UsageAggregation,
 	type UsageMeterSnapshot,
@@ -44,13 +55,8 @@ import {
 	Page as PageBody,
 	PageHeader,
 	Skeleton,
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
 } from "@/shared/ui";
+import { DataTable } from "@/shared/ui/data-table";
 import { billingMutations } from "../service/mutations";
 
 const billingClient = createClient(BillingService, apiTransport);
@@ -304,71 +310,13 @@ export function BillingAdminPage() {
 									}
 								/>
 							) : invoices.length === 0 ? (
-								<div className="text-sm text-muted-foreground py-6 text-center">
-									No invoices yet. They appear here once you choose a paid plan.
-								</div>
+								<EmptyState
+									icon={FileText}
+									title="No invoices yet"
+									description="Invoices appear here once you choose a paid plan."
+								/>
 							) : (
-								<Table>
-									<TableHeader>
-										<TableRow>
-											<TableHead>Number</TableHead>
-											<TableHead>Date</TableHead>
-											<TableHead>Status</TableHead>
-											<TableHead className="text-right">Amount</TableHead>
-											<TableHead />
-										</TableRow>
-									</TableHeader>
-									<TableBody>
-										{invoices.map((inv) => (
-											<TableRow key={inv.id}>
-												<TableCell className="font-mono text-xs">
-													{inv.hostedInvoiceUrl ? (
-														<Link
-															href={inv.hostedInvoiceUrl}
-															target="_blank"
-															className="underline underline-offset-2 hover:text-foreground"
-														>
-															{inv.number || "View invoice"}
-														</Link>
-													) : (
-														<span>{inv.number || "Invoice"}</span>
-													)}
-												</TableCell>
-												<TableCell className="text-muted-foreground">
-													{inv.created
-														? new Date(
-																Number(inv.created.seconds) * 1000,
-															).toLocaleDateString()
-														: "—"}
-												</TableCell>
-												<TableCell>
-													<InvoiceStatusBadge status={inv.status} />
-												</TableCell>
-												<TableCell className="text-right font-mono text-xs">
-													{formatMoney(
-														Number(inv.amountPaid || inv.amountDue),
-														inv.currency,
-													)}
-												</TableCell>
-												<TableCell className="text-right">
-													{inv.invoicePdf && (
-														<Button
-															variant="ghost"
-															size="icon-sm"
-															nativeButton={false}
-															aria-label="Download PDF"
-															render={
-																<Link href={inv.invoicePdf} target="_blank" />
-															}
-														>
-															<Download />
-														</Button>
-													)}
-												</TableCell>
-											</TableRow>
-										))}
-									</TableBody>
-								</Table>
+								<InvoiceTable invoices={invoices} />
 							)}
 						</CardContent>
 					</Card>
@@ -376,6 +324,84 @@ export function BillingAdminPage() {
 			)}
 		</PageBody>
 	);
+}
+
+function InvoiceTable({ invoices }: { invoices: Invoice[] }) {
+	const columns = useMemo(() => {
+		const column = createColumnHelper<Invoice>();
+		return [
+			column.accessor("number", {
+				header: "Invoice",
+				cell: ({ row }) =>
+					row.original.hostedInvoiceUrl ? (
+						<Link
+							href={row.original.hostedInvoiceUrl}
+							target="_blank"
+							rel="noopener noreferrer"
+							className="underline underline-offset-2"
+						>
+							{row.original.number || "View invoice"}
+						</Link>
+					) : (
+						row.original.number || "Invoice"
+					),
+			}),
+			column.accessor("created", {
+				header: "Date",
+				cell: ({ getValue }) => {
+					const date = getValue();
+					return date
+						? timestampDate(date).toLocaleDateString()
+						: "Date unavailable";
+				},
+			}),
+			column.accessor("status", {
+				header: "Status",
+				cell: ({ getValue }) => <InvoiceStatusBadge status={getValue()} />,
+			}),
+			column.display({
+				id: "amount",
+				header: "Amount",
+				cell: ({ row }) =>
+					formatMoney(
+						Number(row.original.amountPaid || row.original.amountDue),
+						row.original.currency,
+					),
+			}),
+			column.display({
+				id: "download",
+				header: "Download",
+				cell: ({ row }) =>
+					row.original.invoicePdf ? (
+						<Button
+							variant="ghost"
+							size="sm"
+							nativeButton={false}
+							aria-label={`Download invoice ${row.original.number || "PDF"}`}
+							render={
+								<Link
+									href={row.original.invoicePdf}
+									target="_blank"
+									rel="noopener noreferrer"
+								/>
+							}
+						>
+							<Download aria-hidden="true" /> PDF
+						</Button>
+					) : (
+						"Unavailable"
+					),
+			}),
+		];
+	}, []);
+	const table = useReactTable({
+		data: invoices,
+		columns,
+		getCoreRowModel: getCoreRowModel(),
+		getPaginationRowModel: getPaginationRowModel(),
+		initialState: { pagination: { pageSize: 10 } },
+	});
+	return <DataTable table={table} />;
 }
 
 function InvoiceStatusBadge({ status }: { status: string }) {
@@ -425,11 +451,9 @@ function MeterUsageRow({
 	const used = snapshot.used;
 	const limit = snapshot.limit;
 	const percent = usagePercent(used, limit);
-	const tone = {
-		critical: "bg-destructive",
-		warning: "bg-warning",
-		healthy: "bg-success",
-	}[usageTone(used, limit)];
+	const tone = (
+		{ critical: "danger", warning: "warning", healthy: "success" } as const
+	)[usageTone(used, limit)];
 	const fromISO = snapshot.periodStart
 		? timestampDate(snapshot.periodStart).toISOString()
 		: "";
@@ -479,12 +503,12 @@ function MeterUsageRow({
 				</div>
 			</div>
 			{limit > BigInt(0) && (
-				<div className="h-2 rounded-full bg-muted">
-					<div
-						className={`h-2 rounded-full ${tone}`}
-						style={{ width: `${percent}%` }}
-					/>
-				</div>
+				<Progress
+					value={percent}
+					tone={tone}
+					label={`${meter?.displayName || "Plan"} usage`}
+					valueText={`${used.toLocaleString()} of ${limitLabel} used`}
+				/>
 			)}
 			<div className="flex justify-between text-[11px] text-muted-foreground">
 				<span>

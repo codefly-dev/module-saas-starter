@@ -33,9 +33,11 @@ const col = createColumnHelper<Role>();
 export function RolesTable({
 	roles,
 	isLoading,
+	canDelete = false,
 }: {
 	roles: Role[];
 	isLoading: boolean;
+	canDelete?: boolean;
 }) {
 	const deleteRole = useDeleteRole();
 
@@ -61,24 +63,30 @@ export function RolesTable({
 				),
 			}),
 			col.accessor("permissions", {
-				header: "Permissions",
+				header: "Access",
 				cell: (info) => {
 					const perms = info.getValue();
 					if (!perms || perms.length === 0) {
 						return <span className="text-muted-foreground">None</span>;
 					}
+					if (
+						perms.some(
+							(permission) =>
+								permission.resource === "*" && permission.action === "*",
+						)
+					)
+						return <span>All activities</span>;
+					if (
+						perms.some(
+							(permission) =>
+								permission.resource === "*" || permission.action === "*",
+						)
+					)
+						return <span>Multiple activities</span>;
 					return (
-						<div className="flex flex-wrap gap-1">
-							{perms.map((p) => (
-								<Badge
-									key={`${p.resource}:${p.action}`}
-									variant="secondary"
-									className="font-mono text-xs"
-								>
-									{p.resource}:{p.action}
-								</Badge>
-							))}
-						</div>
+						<span className="type-body">
+							{perms.length} {perms.length === 1 ? "activity" : "activities"}
+						</span>
 					);
 				},
 			}),
@@ -96,10 +104,18 @@ export function RolesTable({
 				header: "",
 				cell: ({ row }) => {
 					const role = row.original;
-					if (role.builtIn) return null;
+					if (role.builtIn || !canDelete) return null;
 					return (
 						<AlertDialog>
-							<AlertDialogTrigger render={<Button variant="ghost" size="sm" />}>
+							<AlertDialogTrigger
+								render={
+									<Button
+										aria-label={`Delete ${role.name}`}
+										variant="ghost"
+										size="icon-sm"
+									/>
+								}
+							>
 								<Trash2 className="h-4 w-4 text-destructive" />
 							</AlertDialogTrigger>
 							<AlertDialogContent>
@@ -112,8 +128,11 @@ export function RolesTable({
 									</AlertDialogDescription>
 								</AlertDialogHeader>
 								<AlertDialogFooter>
-									<AlertDialogCancel>Cancel</AlertDialogCancel>
+									<AlertDialogCancel disabled={deleteRole.isPending}>
+										Cancel
+									</AlertDialogCancel>
 									<AlertDialogAction
+										disabled={deleteRole.isPending}
 										onClick={() =>
 											deleteRole.mutate(role.id, {
 												onSuccess: () =>
@@ -131,7 +150,7 @@ export function RolesTable({
 				},
 			}),
 		],
-		[deleteRole],
+		[deleteRole, canDelete],
 	);
 
 	const table = useReactTable({

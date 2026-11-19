@@ -1,3 +1,4 @@
+import { Code, ConnectError } from "@connectrpc/connect";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
 	cleanup,
@@ -9,6 +10,9 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+	read: vi.fn(async () => ({
+		notifications: { inApp: true, push: true, sound: true },
+	})),
 	update: vi.fn(async (input: unknown) => input),
 }));
 
@@ -16,9 +20,7 @@ vi.mock("@/features/user-settings/service/queries", () => ({
 	userSettingsQueries: {
 		current: () => ({
 			queryKey: ["user-settings"],
-			queryFn: async () => ({
-				notifications: { inApp: true, push: true, sound: true },
-			}),
+			queryFn: mocks.read,
 		}),
 	},
 }));
@@ -31,7 +33,11 @@ import { NotificationSettings } from "./notification-settings";
 
 afterEach(() => {
 	cleanup();
-	mocks.update.mockClear();
+	mocks.update.mockReset();
+	mocks.read.mockReset();
+	mocks.read.mockResolvedValue({
+		notifications: { inApp: true, push: true, sound: true },
+	});
 });
 
 describe("NotificationSettings", () => {
@@ -66,4 +72,59 @@ describe("NotificationSettings", () => {
 			}),
 		);
 	});
+});
+
+function mountSettings() {
+	const queryClient = new QueryClient({
+		defaultOptions: { queries: { retry: false } },
+	});
+	render(
+		<QueryClientProvider client={queryClient}>
+			<NotificationSettings />
+		</QueryClientProvider>,
+	);
+}
+it("never displays a default preference for a refused read", async () => {
+	mocks.read.mockRejectedValueOnce(
+		new ConnectError("internal scope name", Code.PermissionDenied),
+	);
+	mountSettings();
+	expect(
+		await screen.findByText(/Ask your organization administrator for access/),
+	).toBeTruthy();
+	expect(screen.queryByRole("switch")).toBeNull();
+	expect(screen.queryByText(/internal scope name/)).toBeNull();
+	expect(
+		(
+			screen.getByRole("button", {
+				name: "Save preferences",
+			}) as HTMLButtonElement
+		).disabled,
+	).toBe(true);
+});
+it("locks a pending choice and retains it with a safe inline failure", async () => {
+	let reject!: (reason: unknown) => void;
+	mocks.update.mockImplementationOnce(
+		() =>
+			new Promise((_, fail) => {
+				reject = fail;
+			}),
+	);
+	mountSettings();
+	const choice = await screen.findByRole("switch", {
+		name: "Optional updates",
+	});
+	fireEvent.click(choice);
+	fireEvent.click(screen.getByRole("button", { name: "Save preferences" }));
+	await waitFor(() =>
+		expect(choice.getAttribute("aria-disabled")).toBe("true"),
+	);
+	fireEvent.click(choice);
+	expect(mocks.update).toHaveBeenCalledTimes(1);
+	reject(new ConnectError("private server detail", Code.PermissionDenied));
+	expect(
+		await screen.findByText(/Ask your organization administrator for access/),
+	).toBeTruthy();
+	expect(choice.getAttribute("aria-checked")).toBe("false");
+	expect(screen.queryByText(/private server detail/)).toBeNull();
 });

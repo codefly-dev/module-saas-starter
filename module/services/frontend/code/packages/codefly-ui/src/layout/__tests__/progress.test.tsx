@@ -89,7 +89,7 @@ describe("Progress", () => {
 			screen
 				.getByRole("progressbar")
 				.querySelector<HTMLElement>("[data-slot='progress-fill']");
-		expect(fill()?.className).toContain("amber");
+		expect(fill()?.className).toContain("bg-warning");
 
 		rerender(<Progress value={50} label="Bad" tone="danger" />);
 		expect(fill()?.className).toContain("destructive");

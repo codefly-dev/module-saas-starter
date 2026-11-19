@@ -150,7 +150,7 @@ it("keeps the dialog open and surfaces a refusal", async () => {
 	fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
 	expect((await screen.findByRole("alert")).textContent).toContain(
-		"was not found",
+		"The request could not be completed",
 	);
 	expect(fieldValue("Branch")).toBe("gone");
 });
@@ -239,7 +239,9 @@ it("keeps the dialog open and refreshes the list when the scope moved", async ()
 	const client = fakeClient({
 		listSources,
 		updateSource: vi.fn(async () => {
-			throw new Error("This source's branch or filters changed after this form was opened");
+			throw new Error(
+				"This source's branch or filters changed after this form was opened",
+			);
 		}),
 	});
 	await openEditDialog(client);
@@ -248,7 +250,9 @@ it("keeps the dialog open and refreshes the list when the scope moved", async ()
 	});
 	fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
-	const alert = await screen.findByText(/changed after this form was opened/);
+	const alert = await screen.findByText(
+		/This source changed while you were editing/,
+	);
 	expect(alert).toBeDefined();
 	// Still open, still holding what was typed, so nothing has to be retyped.
 	expect(fieldValue("Branch")).toBe("release");

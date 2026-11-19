@@ -59,6 +59,27 @@ describe("OrgSwitcher", () => {
 		);
 	});
 
+	it("does not call a failed read an empty membership", async () => {
+		server.use(
+			http.post(rpc("OrganizationService", "ListOrganizations"), () =>
+				HttpResponse.json(
+					{ code: "permission_denied", message: "private policy" },
+					{ status: 403 },
+				),
+			),
+		);
+		open();
+		await screen.findByText("Organizations unavailable");
+		fireEvent.click(screen.getByRole("button", { name: "Organization" }));
+		expect(await screen.findByText("Couldn’t load organizations")).toBeTruthy();
+		expect(screen.queryByText("No organization")).toBeNull();
+		expect(screen.queryByText("private policy")).toBeNull();
+		expect(
+			screen.queryByRole("menuitem", { name: "Create organization" }),
+		).toBeNull();
+		expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+	});
+
 	it("does not offer creation the deployment's policy refuses", async () => {
 		organizations(false);
 		open();

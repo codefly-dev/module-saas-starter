@@ -17,9 +17,13 @@ import {
 	TableRow,
 } from "../layout/table.js";
 
+const tableFrame = "overflow-hidden rounded-lg border bg-card text-card-foreground";
+
 interface DataTableProps<T> extends DelayedLoadingOptions {
 	table: TanStackTable<T>;
 	isLoading?: boolean;
+	/** Accessible name, retained while loading. */
+	ariaLabel?: string;
 	emptyMessage?: string;
 	onRowClick?: (row: T) => void;
 }
@@ -27,6 +31,7 @@ interface DataTableProps<T> extends DelayedLoadingOptions {
 export function DataTable<T>({
 	table,
 	isLoading,
+	ariaLabel,
 	emptyMessage = "No results.",
 	onRowClick,
 	// Inherited from `DelayedLoadingOptions`, and overridden for the same reason
@@ -57,14 +62,16 @@ export function DataTable<T>({
 	// rows on screen, so the table would collapse to nothing for 200ms and then
 	// come back. The header is neither an indicator nor an answer about the data,
 	// so holding it costs the reader nothing and keeps the layout still.
-	if (quiet) return <DataTableSkeleton table={table} rows={0} />;
-	if (indicator) return <DataTableSkeleton table={table} />;
+	if (quiet)
+		return <DataTableSkeleton table={table} rows={0} ariaLabel={ariaLabel} />;
+	if (indicator)
+		return <DataTableSkeleton table={table} ariaLabel={ariaLabel} />;
 
 	return (
 		<div>
-			<div className="rounded-md border">
-				<Table>
-					<TableHeader>
+			<div className={tableFrame}>
+				<Table aria-label={ariaLabel}>
+					<TableHeader className="bg-muted/60">
 						{table.getHeaderGroups().map((headerGroup) => (
 							<TableRow key={headerGroup.id}>
 								{headerGroup.headers.map((header) => (
@@ -72,9 +79,29 @@ export function DataTable<T>({
 										key={header.id}
 										className={
 											header.column.getCanSort()
-												? "cursor-pointer select-none"
+												? "cursor-pointer select-none focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
 												: ""
 										}
+										tabIndex={header.column.getCanSort() ? 0 : undefined}
+										aria-sort={
+											header.column.getIsSorted() === "asc"
+												? "ascending"
+												: header.column.getIsSorted() === "desc"
+													? "descending"
+													: header.column.getCanSort()
+														? "none"
+														: undefined
+										}
+										onKeyDown={(event) => {
+											if (
+												event.target === event.currentTarget &&
+												header.column.getCanSort() &&
+												(event.key === "Enter" || event.key === " ")
+											) {
+												event.preventDefault();
+												header.column.getToggleSortingHandler()?.(event);
+											}
+										}}
 										onClick={header.column.getToggleSortingHandler()}
 									>
 										{header.isPlaceholder ? null : (
@@ -100,7 +127,22 @@ export function DataTable<T>({
 								<TableRow
 									key={row.id}
 									data-state={row.getIsSelected() && "selected"}
-									className={onRowClick ? "cursor-pointer" : ""}
+									className={
+										onRowClick
+											? "cursor-pointer focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
+											: ""
+									}
+									tabIndex={onRowClick ? 0 : undefined}
+									onKeyDown={(event) => {
+										if (
+											onRowClick &&
+											event.target === event.currentTarget &&
+											(event.key === "Enter" || event.key === " ")
+										) {
+											event.preventDefault();
+											onRowClick(row.original);
+										}
+									}}
 									onClick={() => onRowClick?.(row.original)}
 								>
 									{row.getVisibleCells().map((cell) => (
@@ -172,6 +214,7 @@ export function DataTable<T>({
 export function DataTableSkeleton<T>({
 	table,
 	rows = 5,
+	ariaLabel,
 }: {
 	table: TanStackTable<T>;
 	/**
@@ -181,18 +224,19 @@ export function DataTableSkeleton<T>({
 	 * because nothing is being announced yet.
 	 */
 	rows?: number;
+	ariaLabel?: string;
 }) {
 	"use no memo";
 	const announced = rows > 0;
 	return (
 		<div
-			className="rounded-md border"
+			className={tableFrame}
 			{...(announced
 				? { "aria-busy": true, "aria-label": "Loading table" }
 				: {})}
 		>
-			<Table>
-				<TableHeader>
+			<Table aria-label={ariaLabel}>
+				<TableHeader className="bg-muted/60">
 					{table.getHeaderGroups().map((headerGroup) => (
 						<TableRow key={headerGroup.id}>
 							{headerGroup.headers.map((header) => (

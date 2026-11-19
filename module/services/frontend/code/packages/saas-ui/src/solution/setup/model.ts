@@ -57,21 +57,25 @@ export interface SetupFact {
  */
 export function refusalOf(error: unknown): string {
 	if (error instanceof ConnectError) {
-		const reason = error.rawMessage || "no reason was given";
-		return `${codeWords[error.code] ?? Code[error.code]}: ${reason}`;
+		switch (error.code) {
+			case Code.PermissionDenied:
+				return "You don’t have access to do this. Ask an organization administrator to grant access.";
+			case Code.Unauthenticated:
+				return "Sign in again to continue.";
+			case Code.NotFound:
+				return "This item is no longer available. Refresh the page to see what is available.";
+			case Code.FailedPrecondition:
+				return "This change is not available yet. Check the setup requirements before continuing.";
+			case Code.InvalidArgument:
+				return "Some details could not be accepted. Check your entries before continuing.";
+			case Code.Aborted:
+				return "This item changed while you were editing. Refresh the page before continuing.";
+			case Code.Unavailable:
+				return "The service is temporarily unavailable. Try again in a moment.";
+		}
 	}
-	return error instanceof Error ? error.message : String(error);
+	return "The request could not be completed. Try again; if it keeps failing, contact your administrator.";
 }
-
-const codeWords: Partial<Record<Code, string>> = {
-	[Code.PermissionDenied]: "Refused",
-	[Code.Unauthenticated]: "Not signed in",
-	[Code.NotFound]: "Not found",
-	[Code.FailedPrecondition]: "Not now",
-	[Code.InvalidArgument]: "Invalid",
-	[Code.Unavailable]: "Unavailable",
-	[Code.Aborted]: "Changed meanwhile",
-};
 
 /** Whether a refusal is the authority denying this person, rather than a failure. */
 export function isDenied(error: unknown): boolean {

@@ -1,5 +1,6 @@
 "use client";
 
+import { JsonView } from "@codefly-dev/ui/content";
 import {
 	createColumnHelper,
 	getCoreRowModel,
@@ -7,7 +8,6 @@ import {
 	getSortedRowModel,
 	useReactTable,
 } from "@tanstack/react-table";
-import { JsonView } from "@codefly-dev/ui/content";
 import { useMemo } from "react";
 import { ResourceLabel } from "@/components/resource-label";
 import { formatDate } from "@/shared/lib/utils";
@@ -42,7 +42,7 @@ export function AuditTable({
 				),
 			}),
 			col.accessor("eventType", {
-				header: "Event Type",
+				header: "Event type",
 				cell: (info) => {
 					const event = info.row.original;
 					return (
@@ -114,7 +114,7 @@ export function AuditTable({
 				},
 			}),
 			col.accessor("ipAddress", {
-				header: "IP Address",
+				header: "IP address",
 				cell: (info) => (
 					<span className="font-mono text-xs text-muted-foreground">
 						{info.getValue() || "-"}

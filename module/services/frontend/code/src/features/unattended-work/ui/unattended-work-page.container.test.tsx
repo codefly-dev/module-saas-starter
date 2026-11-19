@@ -281,7 +281,7 @@ describe("UnattendedWorkPage", () => {
 		await waitFor(() => expect(calls.reconcile).toBe(1));
 		await waitFor(() => expect(toast.error).toHaveBeenCalled());
 		expect(String(vi.mocked(toast.error).mock.calls[0][0])).toContain(
-			"Couldn't start a run",
+			"Ask your organization administrator for access.",
 		);
 		expect(toast.success).not.toHaveBeenCalledWith(
 			"Run started for acme/handbook",

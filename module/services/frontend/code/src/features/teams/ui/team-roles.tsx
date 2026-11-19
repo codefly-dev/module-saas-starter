@@ -1,14 +1,12 @@
 "use client";
 
-import { X } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
-import {
-	useAssignRole,
-	useRevokeRole,
-} from "@/features/roles/service/mutations";
+import { useAssignRole } from "@/features/roles/service/mutations";
 import { useRoleAssignments, useRoles } from "@/features/roles/service/queries";
+import { RevokeRoleButton } from "@/features/roles/ui/revoke-role-button";
+import { failureText } from "@/shared/lib/failure-text";
 import { SubjectKind } from "@/gen/saas/accounts/v1/common_pb";
 import {
 	mayKeepRetainedRows,
@@ -35,10 +33,12 @@ import {
 // on the team page rather than only on each member's.
 export function TeamRoles({
 	teamId,
+	teamName,
 	orgId,
 	canGrant,
 }: {
 	teamId: string;
+	teamName: string;
 	orgId: string;
 	canGrant: boolean;
 }) {
@@ -59,7 +59,6 @@ export function TeamRoles({
 	const withheld = !mayKeepRetainedRows(outcome);
 	const stale = staleReadNotice(outcome, "the roles this team carries");
 	const assignRole = useAssignRole();
-	const revokeRole = useRevokeRole();
 
 	const roleNameById = new Map(
 		roles.map((role) => [role.id, role.name] as const),
@@ -82,7 +81,7 @@ export function TeamRoles({
 							}))}
 							onValueChange={(value) => setPicked(value ?? "")}
 						>
-							<SelectTrigger className="w-56">
+							<SelectTrigger aria-label="Role to assign" className="w-56">
 								<SelectValue placeholder="Pick a role…" />
 							</SelectTrigger>
 							<SelectContent>
@@ -110,9 +109,7 @@ export function TeamRoles({
 											setPicked("");
 										},
 										onError: (error) =>
-											toast.error(
-												`Failed to grant role: ${(error as Error).message}`,
-											),
+											toast.error(failureText("assign this role", error)),
 									},
 								)
 							}
@@ -162,31 +159,16 @@ export function TeamRoles({
 										{assignment.scope ? ` in ${assignment.scope}` : ""}
 									</Link>
 									{canGrant && (
-										<button
-											type="button"
-											aria-label="Revoke"
-											disabled={revokeRole.isPending}
-											className="ml-1 hover:text-destructive disabled:opacity-50"
-											onClick={() =>
-												revokeRole.mutate(
-													{
-														subjectId: teamId,
-														roleId: assignment.roleId,
-														orgId,
-														scope: assignment.scope,
-													},
-													{
-														onSuccess: () => toast.success("Role revoked"),
-														onError: (error) =>
-															toast.error(
-																`Failed to revoke: ${(error as Error).message}`,
-															),
-													},
-												)
+										<RevokeRoleButton
+											subjectId={teamId}
+											subjectLabel={teamName}
+											roleId={assignment.roleId}
+											roleName={
+												roleNameById.get(assignment.roleId) || "this role"
 											}
-										>
-											<X className="h-3 w-3" />
-										</button>
+											orgId={orgId}
+											scope={assignment.scope}
+										/>
 									)}
 								</Badge>
 							))}

@@ -125,7 +125,10 @@ describe("TeamDetailsPage (org-selection and access states)", () => {
 
 		renderInApp(<TeamDetailsPage teamId="team-1" />);
 
-		fireEvent.click(await screen.findByLabelText("Revoke"));
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Remove Editor" }),
+		);
+		fireEvent.click(await screen.findByRole("button", { name: "Remove role" }));
 
 		await waitFor(() => expect(revocations).toHaveLength(1));
 		expect(revocations[0]).toEqual({
@@ -191,7 +194,7 @@ describe("TeamDetailsPage (org-selection and access states)", () => {
 
 		const access = await screen.findByLabelText("Your team access");
 		expect(
-			await within(access).findByText(/Could not confirm what this session is/),
+			await within(access).findByText(/Could not confirm your access/),
 		).toBeTruthy();
 		expect(within(access).queryByText(/team administrator/)).toBeNull();
 	});

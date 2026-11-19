@@ -55,7 +55,8 @@ afterEach(() => {
 });
 
 describe("OnboardingGate", () => {
-	it("lets an authenticated user without an organization create one", () => {
+	it("lets an authenticated user without an organization create one", async () => {
+		listOrganizations({ organizations: [], canCreate: true });
 		render(
 			<Wrapper>
 				<OnboardingGate>
@@ -64,12 +65,60 @@ describe("OnboardingGate", () => {
 			</Wrapper>,
 		);
 
-		expect(screen.getByText("Create your workspace")).toBeTruthy();
+		expect(await screen.findByText("Create your workspace")).toBeTruthy();
 		expect(screen.getByLabelText("Organization name")).toBeTruthy();
 		expect(
 			screen.getByRole("button", { name: "Create organization" }),
 		).toBeTruthy();
 		expect(screen.queryByText("dashboard content")).toBeNull();
+	});
+
+	it("does not offer creation before the organization policy is known", () => {
+		server.use(
+			http.post(
+				rpc("OrganizationService", "ListOrganizations"),
+				() => new Promise<Response>(() => {}),
+			),
+		);
+		render(
+			<Wrapper>
+				<OnboardingGate>
+					<div>dashboard content</div>
+				</OnboardingGate>
+			</Wrapper>,
+		);
+		expect(
+			screen.queryByRole("button", { name: "Create organization" }),
+		).toBeNull();
+	});
+
+	it("shows a refused organization read without offering creation or retry", async () => {
+		server.use(
+			http.post(rpc("OrganizationService", "ListOrganizations"), () =>
+				HttpResponse.json(
+					{ code: "permission_denied", message: "internal policy secret" },
+					{ status: 403 },
+				),
+			),
+		);
+		render(
+			<Wrapper>
+				<OnboardingGate>
+					<div>dashboard content</div>
+				</OnboardingGate>
+			</Wrapper>,
+		);
+		expect(
+			await screen.findByText("Couldn’t load your organizations"),
+		).toBeTruthy();
+		expect(
+			screen.getByText(/Ask your organization administrator/),
+		).toBeTruthy();
+		expect(screen.queryByText(/internal policy secret/)).toBeNull();
+		expect(
+			screen.queryByRole("button", { name: "Create organization" }),
+		).toBeNull();
+		expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
 	});
 
 	it("offers an organization the user already belongs to instead of only creating one", async () => {

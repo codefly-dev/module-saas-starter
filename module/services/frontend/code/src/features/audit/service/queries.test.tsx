@@ -1,3 +1,4 @@
+import { Code, ConnectError } from "@connectrpc/connect";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -8,8 +9,8 @@ import {
 } from "@/lib/hooks/use-api-client";
 import {
 	auditEventTypesQuery,
-	useAuditLog,
 	useAuditAggregate,
+	useAuditLog,
 	usePrincipalDirectory,
 } from "./queries";
 
@@ -69,6 +70,38 @@ describe("auditEventTypesQuery", () => {
 });
 
 describe("useAuditLog", () => {
+	it("discards denied snapshots across filters without clearing another organization", async () => {
+		const client = new QueryClient({
+			defaultOptions: { queries: { retry: false } },
+		});
+		const oldKey = ["audit-log", { orgId: "org-1", eventType: "old" }];
+		const otherKey = ["audit-log", { orgId: "org-2" }];
+		const previous = { events: [], totalCount: 2 };
+		client.setQueryData(oldKey, previous);
+		client.setQueryData(otherKey, previous);
+		const queryAuditLog = vi
+			.fn()
+			.mockRejectedValue(new ConnectError("private", Code.PermissionDenied));
+		vi.mocked(useAuditService).mockReturnValue({
+			queryAuditLog,
+		} as unknown as ReturnType<typeof useAuditService>);
+		const { result } = renderHook(() => useAuditLog({ orgId: "org-1" }), {
+			wrapper: ({ children }) => (
+				<QueryClientProvider client={client}>{children}</QueryClientProvider>
+			),
+		});
+		await waitFor(() => expect(result.current.isError).toBe(true));
+		expect(client.getQueryData(oldKey)).toBeUndefined();
+		expect(client.getQueryData(otherKey)).toEqual(previous);
+		queryAuditLog.mockRejectedValue(
+			new ConnectError("offline", Code.Unavailable),
+		);
+		await result.current.refetch();
+		expect(client.getQueryData(oldKey)).toBeUndefined();
+		queryAuditLog.mockResolvedValue({ events: [], totalCount: 0 });
+		await result.current.refetch();
+		await waitFor(() => expect(result.current.isSuccess).toBe(true));
+	});
 	it("does not query until its organization binding is resolved", () => {
 		const queryAuditLog = vi.fn();
 		vi.mocked(useAuditService).mockReturnValue({

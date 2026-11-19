@@ -9,6 +9,7 @@ import {
 	AlertDialogFooter,
 	AlertDialogHeader,
 	AlertDialogTitle,
+	ErrorState,
 } from "@codefly-dev/ui/layout";
 import type { ReactNode } from "react";
 
@@ -33,6 +34,7 @@ export function ConfirmDialog({
 	description,
 	confirmLabel,
 	pendingLabel,
+	error,
 	cancelLabel = "Cancel",
 	destructive = true,
 	isPending = false,
@@ -48,6 +50,7 @@ export function ConfirmDialog({
 	confirmLabel: string;
 	/** Shown on the action while it is in flight: "Deleting…". */
 	pendingLabel?: string;
+	error?: string;
 	cancelLabel?: string;
 	destructive?: boolean;
 	isPending?: boolean;
@@ -67,6 +70,7 @@ export function ConfirmDialog({
 					<AlertDialogTitle>{title}</AlertDialogTitle>
 					<AlertDialogDescription>{description}</AlertDialogDescription>
 				</AlertDialogHeader>
+				{error && <ErrorState title="Not saved" detail={error} />}
 				<AlertDialogFooter>
 					<AlertDialogCancel disabled={isPending}>
 						{cancelLabel}

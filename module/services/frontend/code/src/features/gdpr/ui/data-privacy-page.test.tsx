@@ -1,6 +1,13 @@
+import { Code, ConnectError } from "@connectrpc/connect";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+
+const mutations = vi.hoisted(() => ({
+	requestDeletion: vi.fn(),
+	requestExport: vi.fn(),
+}));
+vi.mock("../service/mutations", () => ({ gdprMutations: mutations }));
 
 import { DataPrivacyPage } from "./data-privacy-page";
 
@@ -72,4 +79,41 @@ describe("DataPrivacyPage", () => {
 		).toBe(false);
 		expect(screen.queryByText(/not available here yet/)).toBeNull();
 	});
+});
+
+it("keeps account deletion confirmation open during the request and on refusal", async () => {
+	let reject!: (reason: unknown) => void;
+	mutations.requestDeletion.mockImplementationOnce(
+		() =>
+			new Promise((_, fail) => {
+				reject = fail;
+			}),
+	);
+	render(
+		<QueryClientProvider client={new QueryClient()}>
+			<DataPrivacyPage exportAvailable deletionAvailable />
+		</QueryClientProvider>,
+	);
+	fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+	fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+	expect(mutations.requestDeletion).not.toHaveBeenCalled();
+	fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+	fireEvent.click(
+		screen.getByRole("button", { name: "Yes, delete my account" }),
+	);
+	await waitFor(() =>
+		expect(mutations.requestDeletion).toHaveBeenCalledTimes(1),
+	);
+	expect(
+		(screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement)
+			.disabled,
+	).toBe(true);
+	fireEvent.keyDown(screen.getByRole("alertdialog"), { key: "Escape" });
+	expect(screen.getByRole("alertdialog")).toBeTruthy();
+	reject(new ConnectError("private account detail", Code.PermissionDenied));
+	expect(
+		await screen.findByText(/Ask your organization administrator for access/),
+	).toBeTruthy();
+	expect(screen.getByRole("alertdialog")).toBeTruthy();
+	expect(screen.queryByText(/private account detail/)).toBeNull();
 });

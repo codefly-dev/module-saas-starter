@@ -1,6 +1,14 @@
 "use client";
 
 import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
 	Badge,
 	Banner,
 	Button,
@@ -29,12 +37,12 @@ import {
 	viewerAdministersOrganization,
 } from "../solution/viewer.js";
 import { CollectionGrants } from "./collection-access.js";
+import { ConnectGitHubForm } from "./connect-github-form.js";
 import {
 	ConnectSource,
 	connectableProviders,
 	useDatasourceCatalog,
 } from "./connect-source.js";
-import { ConnectGitHubForm } from "./connect-github-form.js";
 import { EditSourceForm } from "./edit-source-form.js";
 import { messageOf } from "./errors.js";
 import { createDatasourceClient, type GatewayBinding } from "./gateway.js";
@@ -282,6 +290,14 @@ function DatasourcesPanelView({
 	// mutation handler), so they would vanish silently without this.
 	const [syncNotice, setSyncNotice] = useState<SyncNotice | null>(null);
 	const [actionError, setActionError] = useState<string | null>(null);
+	const [confirmation, setConfirmation] = useState<{
+		kind: "source" | "token";
+		source: DatasourceView;
+	} | null>(null);
+	const [confirming, setConfirming] = useState(false);
+	const [confirmationError, setConfirmationError] = useState<string | null>(
+		null,
+	);
 
 	const list = useListSources(client, orgId);
 	const { indicator: listIndicator, quiet: listQuiet } = useLoadingPhase(
@@ -479,11 +495,6 @@ function DatasourcesPanelView({
 	// token then stays, so the question names that outcome too.
 	const handleRemoveToken = async (source: DatasourceView) => {
 		if (!removeSourceCredential) return;
-		const ok = window.confirm(
-			`Remove the token saved for ${source.repo}?\n\n` +
-				"It will sync as a public repository. If GitHub needs a token to read it, the token stays.",
-		);
-		if (!ok) return;
 		setSyncNotice(null);
 		setActionError(null);
 		try {
@@ -493,9 +504,10 @@ function DatasourcesPanelView({
 				body: `${source.repo} no longer uses a token; it syncs as a public repository.`,
 			});
 			await list.refetch();
-		} catch (error) {
-			setActionError(
-				`Couldn't remove the token of ${source.repo}: ${messageOf(error)}`,
+			setConfirmation(null);
+		} catch {
+			setConfirmationError(
+				"Couldn’t remove the token. Check that the repository can be read without it and that you have access to manage sources.",
 			);
 		}
 	};
@@ -605,19 +617,20 @@ function DatasourcesPanelView({
 	};
 
 	const handleDelete = (source: DatasourceView) => {
-		const ok = window.confirm(
-			`Remove ${source.repo}?\n\n` +
-				"It stops syncing and its saved credentials are deleted. This can't be undone.",
-		);
-		if (!ok) return;
 		setActionError(null);
 		setDeletingIds((prev) => new Set(prev).add(source.id));
 		deleteMutation.mutate(
 			{ orgId, id: source.id },
 			{
-				onError: (error) =>
-					setActionError(`Couldn't remove ${source.repo}: ${messageOf(error)}`),
-				onSettled: () => setDeletingIds((prev) => without(prev, source.id)),
+				onSuccess: () => setConfirmation(null),
+				onError: () =>
+					setConfirmationError(
+						"Couldn’t remove this source. Ask your organization administrator to check your access.",
+					),
+				onSettled: () => {
+					setDeletingIds((prev) => without(prev, source.id));
+					setConfirming(false);
+				},
 			},
 		);
 	};
@@ -689,6 +702,60 @@ function DatasourcesPanelView({
 						can connect its repositories. Ask one to finish here.
 					</Banner>
 				)}
+				<AlertDialog
+					open={!!confirmation}
+					onOpenChange={(open) => {
+						if (!open && !confirming) setConfirmation(null);
+					}}
+				>
+					<AlertDialogContent>
+						<AlertDialogHeader>
+							<AlertDialogTitle>
+								{confirmation?.kind === "token"
+									? "Remove the token for"
+									: "Remove"}{" "}
+								{confirmation?.source.repo}?
+							</AlertDialogTitle>
+							<AlertDialogDescription>
+								{confirmation?.kind === "token"
+									? "It will sync as a public repository. If GitHub needs a token to read it, the token stays."
+									: "This source will stop syncing and its saved credentials will be deleted. This cannot be undone."}
+							</AlertDialogDescription>
+						</AlertDialogHeader>
+						{confirmationError && (
+							<p role="alert" className="type-body text-destructive">
+								{confirmationError}
+							</p>
+						)}
+						<AlertDialogFooter>
+							<AlertDialogCancel disabled={confirming}>
+								Cancel
+							</AlertDialogCancel>
+							<AlertDialogAction
+								variant="destructive"
+								disabled={confirming}
+								onClick={(event) => {
+									event.preventDefault();
+									if (!confirmation || confirming) return;
+									setConfirming(true);
+									setConfirmationError(null);
+									if (confirmation.kind === "source")
+										handleDelete(confirmation.source);
+									else
+										void handleRemoveToken(confirmation.source).finally(() =>
+											setConfirming(false),
+										);
+								}}
+							>
+								{confirming
+									? "Removing…"
+									: confirmation?.kind === "token"
+										? "Remove token"
+										: "Remove source"}
+							</AlertDialogAction>
+						</AlertDialogFooter>
+					</AlertDialogContent>
+				</AlertDialog>
 				{syncNotice && (
 					<Banner
 						tone="info"
@@ -765,7 +832,10 @@ function DatasourcesPanelView({
 									deleting={deletingIds.has(source.id)}
 									migrating={migratingIds.has(source.id)}
 									onSync={() => void handleSync(source)}
-									onRemove={() => handleDelete(source)}
+									onRemove={() => {
+										setConfirmationError(null);
+										setConfirmation({ kind: "source", source });
+									}}
 									onEdit={
 										canEditSource && source.provider === "github"
 											? () => {
@@ -788,7 +858,10 @@ function DatasourcesPanelView({
 										removeSourceCredential &&
 										source.provider === "github" &&
 										source.credentialMode === "token"
-											? () => void handleRemoveToken(source)
+											? () => {
+													setConfirmationError(null);
+													setConfirmation({ kind: "token", source });
+												}
 											: undefined
 									}
 									onUseApp={
@@ -1527,10 +1600,7 @@ function SourceHistory({
 				) : !history.data?.length ? (
 					<p>No recorded activity yet.</p>
 				) : (
-					<ol
-						className="space-y-3"
-						style={{ maxHeight: 360, overflowY: "auto" }}
-					>
+					<ol className="max-h-96 space-y-3 overflow-y-auto">
 						{history.data.map((e) => (
 							<li key={e.id} className="border-t pt-3 type-body">
 								<div className="flex justify-between gap-3">

@@ -1,5 +1,6 @@
-import { render, screen, cleanup } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
 const state = vi.hoisted(() => ({
 	current: [{ id: "example", assetVersion: "old", available: true }] as Array<{
 		id: string;
@@ -15,10 +16,12 @@ vi.mock("../SolutionsMenu", () => ({
 	useRegisteredSolutionsRead: () => state.read,
 }));
 vi.mock("server-only", () => ({}));
+
 import type { ViewerEntitlements } from "../entitlements";
 import { entitledSolutions, navProjection } from "../projections";
 import type { SolutionManifest } from "../registry";
 import { SolutionLivePage } from "../SolutionLivePage";
+
 beforeEach(() => {
 	state.current = [{ id: "example", assetVersion: "old", available: true }];
 	state.read = "read";
@@ -54,7 +57,7 @@ it("shows loading until the first viewer projection arrives", () => {
 			remote page
 		</SolutionLivePage>,
 	);
-	expect(screen.queryByText("Loading page…")).not.toBeNull();
+	expect(screen.getByRole("heading", { name: "Opening page" })).toBeTruthy();
 	expect(screen.queryByText("remote page")).toBeNull();
 	state.read = "read";
 	view.rerender(
@@ -70,7 +73,11 @@ it("shows loading until the first viewer projection arrives", () => {
 it("says the person's pages could not be read when the first read fails, and opens once a poll answers", () => {
 	state.read = "failed";
 	const page = () => (
-		<SolutionLivePage id="example" assetVersion="old" denied={<p>Solution not found</p>}>
+		<SolutionLivePage
+			id="example"
+			assetVersion="old"
+			denied={<p>Solution not found</p>}
+		>
 			remote page
 		</SolutionLivePage>
 	);
@@ -138,22 +145,42 @@ it("gives a module page to the granted member and the not-found answer to anothe
 		viewer: id,
 		byTarget: new Map(
 			granted
-				? [["target-ledger", { targetId: "target-ledger", healthy: true, scopeNodeId: "node-ledger", installationId: "inst-ledger" }]]
+				? [
+						[
+							"target-ledger",
+							{
+								targetId: "target-ledger",
+								healthy: true,
+								scopeNodeId: "node-ledger",
+								installationId: "inst-ledger",
+							},
+						],
+					]
 				: [],
 		),
 		revision: granted ? "1" : "0",
 	});
 	const page = (
-		<SolutionLivePage id="ledger" assetVersion="v1" denied={<p>Solution not found</p>}>
+		<SolutionLivePage
+			id="ledger"
+			assetVersion="v1"
+			denied={<p>Solution not found</p>}
+		>
 			module page
 		</SolutionLivePage>
 	);
-	for (const [member, granted] of [["member-granted", true], ["member-other", false]] as const) {
+	for (const [member, granted] of [
+		["member-granted", true],
+		["member-other", false],
+	] as const) {
 		cleanup();
-		state.current = entitledSolutions([moduleRecord], viewer(member, granted)).map(
-			({ manifest, entitlement }) => navProjection(manifest, entitlement),
+		state.current = entitledSolutions(
+			[moduleRecord],
+			viewer(member, granted),
+		).map(({ manifest, entitlement }) => navProjection(manifest, entitlement));
+		expect(state.current.map((entry) => entry.id)).toEqual(
+			granted ? ["ledger"] : [],
 		);
-		expect(state.current.map((entry) => entry.id)).toEqual(granted ? ["ledger"] : []);
 		render(page);
 		expect(screen.queryByText("module page") !== null).toBe(granted);
 		expect(screen.queryByText("Solution not found") !== null).toBe(!granted);
@@ -165,11 +192,17 @@ it("gives a module page to the granted member and the not-found answer to anothe
 it("says an entitled page whose installation is unhealthy is not available right now", () => {
 	state.current = [{ id: "example", assetVersion: "old", available: false }];
 	render(
-		<SolutionLivePage id="example" assetVersion="old" denied={<p>Solution not found</p>}>
+		<SolutionLivePage
+			id="example"
+			assetVersion="old"
+			denied={<p>Solution not found</p>}
+		>
 			remote page
 		</SolutionLivePage>,
 	);
-	expect(screen.queryByText("This page is not available right now.")).not.toBeNull();
+	expect(
+		screen.queryByText("This page is not available right now."),
+	).not.toBeNull();
 	expect(screen.queryByText("Solution not found")).toBeNull();
 	expect(screen.queryByText("remote page")).toBeNull();
 });

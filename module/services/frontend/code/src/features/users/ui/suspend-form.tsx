@@ -10,8 +10,9 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
+	ErrorState,
+	Field,
 	Input,
-	Label,
 } from "@/shared/ui";
 import { type SuspendUserValues, suspendUserSchema } from "../model/schemas";
 
@@ -22,6 +23,7 @@ interface SuspendFormProps {
 	onSubmit: (values: SuspendUserValues) => void;
 	onCancel: () => void;
 	isPending: boolean;
+	error?: string;
 }
 
 export function SuspendForm({
@@ -31,6 +33,7 @@ export function SuspendForm({
 	onSubmit,
 	onCancel,
 	isPending,
+	error,
 }: SuspendFormProps) {
 	const form = useForm<SuspendUserValues>({
 		resolver: zodResolver(suspendUserSchema),
@@ -38,31 +41,40 @@ export function SuspendForm({
 	});
 
 	return (
-		<Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
+		<Dialog open={open} onOpenChange={(o) => !o && !isPending && onCancel()}>
 			<DialogContent className="sm:max-w-[425px]">
 				<DialogHeader>
-					<DialogTitle>Suspend User</DialogTitle>
+					<DialogTitle>Suspend user</DialogTitle>
 					<DialogDescription>
 						Suspend <span className="font-medium">{userEmail}</span>. They will
 						lose access until unsuspended.
 					</DialogDescription>
 				</DialogHeader>
-				<form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-					<div className="space-y-2">
-						<Label htmlFor="reason">Reason</Label>
-						<Input
-							id="reason"
-							placeholder="Policy violation, etc."
-							{...form.register("reason")}
-						/>
-						{form.formState.errors.reason && (
-							<p className="text-sm text-destructive">
-								{form.formState.errors.reason.message}
-							</p>
+				<form
+					noValidate
+					onSubmit={form.handleSubmit((values) => {
+						if (!isPending) onSubmit(values);
+					})}
+					className="space-y-4"
+				>
+					{error && <ErrorState title="Change wasn’t saved" detail={error} />}
+					<Field label="Reason" error={form.formState.errors.reason?.message}>
+						{(control) => (
+							<Input
+								{...control}
+								disabled={isPending}
+								{...form.register("reason")}
+							/>
 						)}
-					</div>
+					</Field>
+
 					<DialogFooter>
-						<Button type="button" variant="outline" onClick={onCancel}>
+						<Button
+							type="button"
+							variant="outline"
+							disabled={isPending}
+							onClick={onCancel}
+						>
 							Cancel
 						</Button>
 						<Button type="submit" variant="destructive" disabled={isPending}>

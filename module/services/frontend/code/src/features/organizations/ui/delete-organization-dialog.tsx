@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import {
 	Button,
@@ -10,8 +10,9 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
+	ErrorState,
+	Field,
 	Input,
-	Label,
 } from "@/shared/ui";
 import { lifecycleErrorMessage } from "../model/errors";
 import { useDeleteOrganization } from "../service/lifecycle";
@@ -31,11 +32,13 @@ export function DeleteOrganizationDialog({
 }: DeleteOrganizationDialogProps) {
 	const [typed, setTyped] = useState("");
 	const remove = useDeleteOrganization();
+	const pending = useRef(false);
 	const refusal = remove.isError
 		? lifecycleErrorMessage(remove.error, "Couldn't delete the organization.")
 		: null;
 
 	const close = (next: boolean) => {
+		if (pending.current) return;
 		if (!next) {
 			setTyped("");
 			remove.reset();
@@ -67,45 +70,62 @@ export function DeleteOrganizationDialog({
 					<p className="text-muted-foreground">
 						Its history — the audit trail and approval decisions — is kept.
 					</p>
-					<div className="space-y-2">
-						<Label htmlFor="delete-org-confirm">
-							Type <span className="font-mono">{organization.slug}</span> to
-							confirm
-						</Label>
-						<Input
-							id="delete-org-confirm"
-							autoComplete="off"
-							value={typed}
-							onChange={(event) => setTyped(event.target.value)}
-						/>
-					</div>
+					<Field
+						label={
+							<>
+								Type <span className="font-mono">{organization.slug}</span> to
+								confirm
+							</>
+						}
+					>
+						{(control) => (
+							<Input
+								{...control}
+								autoComplete="off"
+								value={typed}
+								disabled={remove.isPending}
+								onChange={(event) => setTyped(event.target.value)}
+							/>
+						)}
+					</Field>
 					{refusal && (
-						<p role="alert" className="text-destructive">
-							{refusal}
-						</p>
+						<ErrorState
+							title="Couldn’t delete the organization"
+							detail={refusal}
+						/>
 					)}
 				</div>
 				<DialogFooter>
-					<Button variant="outline" onClick={() => close(false)}>
+					<Button
+						variant="outline"
+						disabled={remove.isPending}
+						onClick={() => close(false)}
+					>
 						Cancel
 					</Button>
 					<Button
 						variant="destructive"
 						disabled={!confirmed || remove.isPending}
-						onClick={() =>
+						onClick={() => {
+							if (!confirmed || pending.current) return;
+							pending.current = true;
 							remove.mutate(
 								{ orgId: organization.id, confirmSlug: typed.trim() },
 								{
+									onError: () => {
+										pending.current = false;
+									},
 									onSuccess: () => {
+										pending.current = false;
 										toast.success(`${organization.name} was deleted`);
 										close(false);
 										onDeleted?.();
 									},
 								},
-							)
-						}
+							);
+						}}
 					>
-						{remove.isPending ? "Deleting..." : "Delete organization"}
+						{remove.isPending ? "Deleting…" : "Delete organization"}
 					</Button>
 				</DialogFooter>
 			</DialogContent>

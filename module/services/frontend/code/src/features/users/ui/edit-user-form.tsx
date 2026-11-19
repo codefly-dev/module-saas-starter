@@ -10,8 +10,9 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
+	ErrorState,
+	Field,
 	Input,
-	Label,
 } from "@/shared/ui";
 import { type EditUserValues, editUserSchema } from "../model/schemas";
 import { withDisplayName } from "../model/transforms";
@@ -24,6 +25,7 @@ interface EditUserFormProps {
 	onSubmit: (edit: UserEdit) => void;
 	onCancel: () => void;
 	isPending: boolean;
+	error?: string;
 }
 
 /** Edit a user's profile (name) and primary email. The name pair lives in the
@@ -34,6 +36,7 @@ export function EditUserForm({
 	onSubmit,
 	onCancel,
 	isPending,
+	error,
 }: EditUserFormProps) {
 	const form = useForm<EditUserValues>({
 		resolver: zodResolver(editUserSchema),
@@ -45,6 +48,7 @@ export function EditUserForm({
 	});
 
 	const submit = (values: EditUserValues) => {
+		if (isPending) return;
 		const firstName = values.firstName?.trim() ?? "";
 		const lastName = values.lastName?.trim() ?? "";
 		const profile = withDisplayName(
@@ -65,7 +69,7 @@ export function EditUserForm({
 	};
 
 	return (
-		<Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
+		<Dialog open={open} onOpenChange={(o) => !o && !isPending && onCancel()}>
 			<DialogContent className="sm:max-w-[425px]">
 				<DialogHeader>
 					<DialogTitle>Edit user</DialogTitle>
@@ -74,32 +78,59 @@ export function EditUserForm({
 						<span className="font-medium">{user.primaryEmail}</span>.
 					</DialogDescription>
 				</DialogHeader>
-				<form onSubmit={form.handleSubmit(submit)} className="space-y-4">
-					<div className="grid grid-cols-2 gap-3">
-						<div className="space-y-2">
-							<Label htmlFor="firstName">First name</Label>
-							<Input id="firstName" {...form.register("firstName")} />
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="lastName">Last name</Label>
-							<Input id="lastName" {...form.register("lastName")} />
-						</div>
-					</div>
-					<div className="space-y-2">
-						<Label htmlFor="primaryEmail">Primary email</Label>
-						<Input
-							id="primaryEmail"
-							type="email"
-							{...form.register("primaryEmail")}
-						/>
-						{form.formState.errors.primaryEmail && (
-							<p className="text-sm text-destructive">
-								{form.formState.errors.primaryEmail.message}
-							</p>
+				<form
+					noValidate
+					onSubmit={form.handleSubmit(submit)}
+					className="space-y-4"
+				>
+					{error && <ErrorState title="Change wasn’t saved" detail={error} />}
+					<Field
+						label="First name"
+						error={form.formState.errors.firstName?.message}
+					>
+						{(control) => (
+							<Input
+								{...control}
+								disabled={isPending}
+								type="text"
+								{...form.register("firstName")}
+							/>
 						)}
-					</div>
+					</Field>
+					<Field
+						label="Last name"
+						error={form.formState.errors.lastName?.message}
+					>
+						{(control) => (
+							<Input
+								{...control}
+								disabled={isPending}
+								type="text"
+								{...form.register("lastName")}
+							/>
+						)}
+					</Field>
+					<Field
+						label="Primary email"
+						error={form.formState.errors.primaryEmail?.message}
+					>
+						{(control) => (
+							<Input
+								{...control}
+								disabled={isPending}
+								type="email"
+								{...form.register("primaryEmail")}
+							/>
+						)}
+					</Field>
+
 					<DialogFooter>
-						<Button type="button" variant="outline" onClick={onCancel}>
+						<Button
+							type="button"
+							variant="outline"
+							disabled={isPending}
+							onClick={onCancel}
+						>
 							Cancel
 						</Button>
 						<Button type="submit" disabled={isPending}>

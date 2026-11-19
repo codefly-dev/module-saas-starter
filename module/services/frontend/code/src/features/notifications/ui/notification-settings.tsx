@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Settings } from "@/features/user-settings/model/settings";
 import { userSettingsMutations } from "@/features/user-settings/service/mutations";
@@ -19,13 +19,19 @@ import {
 	Label,
 	Page as PageBody,
 	PageHeader,
+	Skeleton,
 	Switch,
+	useLoadingPhase,
 } from "@/shared/ui";
 
 export function NotificationSettings() {
 	const queryClient = useQueryClient();
-	const { data, isLoading, isError } = useQuery(userSettingsQueries.current());
+	const { data, isLoading, isError, error } = useQuery(
+		userSettingsQueries.current(),
+	);
 
+	const { quiet, indicator } = useLoadingPhase(isLoading);
+	const saving = useRef(false);
 	const [draft, setDraft] = useState<boolean>();
 	const inApp = draft ?? Settings.notifications.inApp.get(data);
 
@@ -38,12 +44,13 @@ export function NotificationSettings() {
 					},
 				},
 			}),
-		onSuccess: () => {
+		onSuccess: async () => {
 			toast.success("Notification preferences saved");
-			queryClient.invalidateQueries({ queryKey: ["user-settings"] });
+			await queryClient.invalidateQueries({ queryKey: ["user-settings"] });
 		},
-		onError: (error) =>
-			toast.error(failureText("save your notification preferences", error)),
+		onSettled: () => {
+			saving.current = false;
+		},
 	});
 
 	return (
@@ -55,40 +62,60 @@ export function NotificationSettings() {
 
 			<Card>
 				<CardHeader>
-					<CardTitle>In-app notifications</CardTitle>
+					<CardTitle role="heading" aria-level={2}>
+						In-app notifications
+					</CardTitle>
 					<CardDescription>
 						Push notifications and notification sounds are not available.
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-4">
-					{/* The switch shows a default when the read fails, so it is locked
-					    and the page says the real setting is unknown. */}
-					{isError && (
+					{indicator && <Skeleton className="h-16 w-full" />}
+					{!quiet && !indicator && isError && (
 						<ErrorState
-							title="Couldn't load your notification preferences"
-							detail="Your current choice is unknown, so it can't be changed here yet. Reload the page; if it keeps failing, tell your administrator."
+							title="Notification preferences unavailable"
+							detail={failureText("load your notification preferences", error)}
 						/>
 					)}
-					<div className="flex items-center justify-between gap-4">
-						<div className="space-y-0.5">
-							<Label htmlFor="notif-in-app">Optional updates</Label>
-							<p className="text-sm text-muted-foreground">
-								Show product activity and invitations in the notification
-								center. Essential security and billing messages still appear.
-							</p>
+					{!quiet && !indicator && !isError && (
+						<div className="flex items-center justify-between gap-4">
+							<div className="space-y-0.5">
+								<Label htmlFor="notif-in-app">Optional updates</Label>
+								<p
+									id="notif-in-app-description"
+									className="text-sm text-muted-foreground"
+								>
+									Show product activity and invitations in the notification
+									center. Essential security and billing messages still appear.
+								</p>
+							</div>
+							<Switch
+								id="notif-in-app"
+								checked={inApp}
+								aria-describedby="notif-in-app-description"
+								disabled={save.isPending}
+								onCheckedChange={setDraft}
+							/>
 						</div>
-						<Switch
-							id="notif-in-app"
-							checked={inApp}
-							disabled={isLoading || isError}
-							onCheckedChange={setDraft}
+					)}
+					{save.isError && (
+						<ErrorState
+							title="Preferences weren’t saved"
+							detail={failureText(
+								"save your notification preferences",
+								save.error,
+							)}
 						/>
-					</div>
+					)}
 				</CardContent>
 				<CardFooter>
 					<Button
-						onClick={() => save.mutate()}
-						disabled={isLoading || isError || save.isPending}
+						onClick={() => {
+							if (saving.current || isLoading || isError) return;
+							saving.current = true;
+							save.mutate();
+						}}
+						disabled={quiet || indicator || isError || save.isPending}
 					>
 						{save.isPending ? "Saving…" : "Save preferences"}
 					</Button>

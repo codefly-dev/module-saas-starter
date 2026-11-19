@@ -1,17 +1,6 @@
 "use client";
 
-/**
- * ActivityFeed — humanized view of recent audit events for the user's
- * primary org. Drops in anywhere on the dashboard. Reads the same
- * `audit_events` rows that drive the admin audit log; the difference
- * is presentation: each row becomes a one-line "X did Y to Z"
- * sentence rather than a structured table.
- *
- * Designed as a card with N rows + "View all" link. Empty state hides
- * the card entirely so brand-new accounts don't see a sad-looking
- * "nothing here yet" panel.
- */
-
+import { getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import {
 	Activity,
 	Building2,
@@ -23,10 +12,9 @@ import {
 	Webhook,
 } from "lucide-react";
 import Link from "next/link";
+import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
-	auditEventAction,
 	formatActorType,
 	resolveActor,
 } from "@/features/audit/model/transforms";
@@ -37,6 +25,14 @@ import {
 	useTeamNames,
 } from "@/features/audit/service/queries";
 import { useAuth } from "@/lib/auth";
+import { failureText } from "@/shared/lib/failure-text";
+import {
+	mayKeepRetainedRows,
+	readOutcome,
+	staleReadNotice,
+} from "@/shared/lib/read-outcome";
+import { ErrorState } from "@/shared/ui";
+import { DataTable } from "@/shared/ui/data-table";
 
 // Keys are registered audit event types (pkg/business/audit_registry.go), so a
 // name that is not in the catalog is a dead entry that can never render.
@@ -64,7 +60,7 @@ export function ActivityFeed({
 }) {
 	const { user, organizationId } = useAuth();
 	const resolvedOrgId = orgId ?? organizationId ?? "";
-	const { data, isLoading } = useAuditLog(
+	const { data, isLoading, isError, error } = useAuditLog(
 		{
 			orgId: resolvedOrgId,
 			// Read past the system's own rows, which this feed leaves out, so
@@ -79,94 +75,100 @@ export function ActivityFeed({
 	// People's actions only. Background work the system attributes to itself
 	// ("System SYSTEM work context task started", six times a minute) buried
 	// what people did; the Audit Log behind "View all" still holds every row.
-	const events: AuditEvent[] = (data?.events ?? [])
-		.filter((e) => !isSystemRow(e))
-		.slice(0, limit);
+	const outcome = readOutcome(isError, error);
+	const events: AuditEvent[] = useMemo(
+		() =>
+			!mayKeepRetainedRows(outcome)
+				? []
+				: (data?.events ?? [])
+						.filter((event) => !isSystemRow(event))
+						.slice(0, limit),
+		[data, outcome, limit],
+	);
+
 	const { directory: actorNames } = usePrincipalDirectory(
 		resolvedOrgId,
 		events.map((e) => e.actorId),
 	);
 	const teamNames = useTeamNames(resolvedOrgId, events);
 
-	// Hidden only for an organization with no activity at all. When every row
-	// read was the system's, the card stays with its way to the Audit Log.
-	if (!isLoading && (data?.events ?? []).length === 0) return null;
-
+	const table = useReactTable({
+		data: events,
+		columns: [
+			{
+				id: "person",
+				header: "Who",
+				cell: ({ row }) => (
+					<span className="font-medium">
+						{user?.id && row.original.actorId === user.id
+							? "You"
+							: resolveActor(row.original.actorId, actorNames).label}
+						{row.original.actorType && row.original.actorType !== "user" ? (
+							<span className="ml-2 text-xs text-muted-foreground">
+								{formatActorType(row.original.actorType)}
+							</span>
+						) : null}
+					</span>
+				),
+			},
+			{
+				id: "action",
+				header: "Activity",
+				cell: ({ row }) => {
+					const Icon = ACTION_ICONS[row.original.eventType] ?? Activity;
+					return (
+						<span className="flex items-center gap-2">
+							<Icon
+								aria-hidden
+								className="size-4 shrink-0 text-muted-foreground"
+							/>
+							<span>{humanize(row.original.eventType)}</span>
+							{resourceName(row.original, teamNames) && (
+								<span>· {resourceName(row.original, teamNames)}</span>
+							)}
+						</span>
+					);
+				},
+			},
+			{
+				id: "time",
+				header: "When",
+				accessorFn: (event) => relativeTime(event.createdAt),
+			},
+		],
+		getCoreRowModel: getCoreRowModel(),
+	});
+	if (!resolvedOrgId) return null;
 	return (
 		<Card>
 			<CardHeader className="flex flex-row items-center justify-between py-3">
 				<CardTitle className="text-base flex items-center gap-2">
-					<Activity className="h-4 w-4 text-muted-foreground" />
+					<Activity className="size-4 text-muted-foreground" />
 					Recent activity
 				</CardTitle>
-				{resolvedOrgId && (
-					<Link
-						href="/admin/audit-log"
-						className="text-xs text-muted-foreground hover:text-foreground"
-					>
-						View all →
-					</Link>
-				)}
+				<Link
+					href="/admin/audit-log"
+					className="text-xs text-muted-foreground hover:text-foreground"
+				>
+					View all →
+				</Link>
 			</CardHeader>
 			<CardContent className="pt-0">
-				{isLoading ? (
-					<div className="space-y-2">
-						<Skeleton className="h-9 w-full" />
-						<Skeleton className="h-9 w-full" />
-						<Skeleton className="h-9 w-full" />
-						<Skeleton className="h-9 w-full" />
-					</div>
-				) : events.length === 0 ? (
-					<p className="text-sm text-muted-foreground">
-						No recent activity by people. The Audit Log has the system&apos;s own.
-					</p>
+				{isError && events.length === 0 ? (
+					<ErrorState title={failureText("view recent activity", error)} />
 				) : (
-					<ul className="space-y-2.5">
-						{events.map((e) => {
-							const Icon = ACTION_ICONS[e.eventType] ?? Activity;
-							const isYou = !!user?.id && e.actorId === user.id;
-							return (
-								<li key={e.id} className="flex items-start gap-3 text-sm">
-									<div className="mt-0.5 h-7 w-7 rounded-md border bg-background flex items-center justify-center shrink-0">
-										<Icon className="h-3.5 w-3.5 text-muted-foreground" />
-									</div>
-									<div className="flex-1 min-w-0">
-										<div className="truncate">
-											<span className="font-medium">
-												{isYou
-													? "You"
-													: resolveActor(e.actorId, actorNames).label}
-											</span>{" "}
-											{e.actorType && e.actorType !== "user" ? (
-												// Only a non-human actor earns the tag: the sentence
-												// already reads as a person, and an agent's action
-												// misread as a person's is the failure worth spending
-												// the pixels on.
-												<span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-													{formatActorType(e.actorType)}
-												</span>
-											) : null}{" "}
-											<span className="text-muted-foreground">
-												{humanize(e.eventType)}
-											</span>
-											{/* The object by its name when one is known ("joined a
-											    team · Design"); never the raw resource type, which
-											    read "joined a team (team)". */}
-											{resourceName(e, teamNames) && (
-												<span className="font-medium">
-													{" "}
-													· {resourceName(e, teamNames)}
-												</span>
-											)}
-										</div>
-										<div className="text-xs text-muted-foreground">
-											{relativeTime(e.createdAt)}
-										</div>
-									</div>
-								</li>
-							);
-						})}
-					</ul>
+					<>
+						{isError && (
+							<p role="status" className="mb-3 text-sm text-muted-foreground">
+								{staleReadNotice(outcome, "recent activity")}
+							</p>
+						)}
+						<DataTable
+							table={table}
+							isLoading={isLoading}
+							emptyMessage="No recent activity by people. Open the audit log to review all recorded activity."
+						/>
+					</>
 				)}
 			</CardContent>
 		</Card>
@@ -215,17 +217,18 @@ export const ACTION_PHRASES: Record<string, string> = {
 	"saas.billing.checkout_started": "started a checkout",
 	"saas.billing.portal_opened": "opened the billing portal",
 	"saas.billing.free_plan_selected": "selected the free plan",
+	"saas.scope.granted": "granted access",
+	"saas.scope.revoked": "removed access",
+	"saas.scope.node_registered": "registered a resource",
+	"saas.onboarding.step_completed": "completed an onboarding step",
+	"saas.role.created": "created an access role",
 	"saas.role.assigned": "received a role",
 	"saas.role.revoked": "had a role revoked",
 };
 
-// humanize transforms a registered event type (`saas.user.registered`) into a
-// readable verb phrase (`registered an account`). Falls back to the
-// namespace-stripped key when unmapped — better than "did unknown".
+// Unknown event types must not turn internal identifiers into product copy.
 function humanize(action: string): string {
-	return (
-		ACTION_PHRASES[action] ?? auditEventAction(action).replace(/[._]/g, " ")
-	);
+	return ACTION_PHRASES[action] ?? "recorded activity";
 }
 
 // `createdAt` is already normalized to an ISO-8601 string at the query boundary

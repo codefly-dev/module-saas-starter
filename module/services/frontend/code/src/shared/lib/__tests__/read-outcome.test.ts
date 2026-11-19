@@ -50,6 +50,7 @@ describe("readOutcomeMessage", () => {
 			"Nobody holds this role.",
 		);
 		expect(message).toContain("don't have permission");
+		expect(message).toContain("Ask your administrator to grant access.");
 		// The defect this exists to prevent: the empty sentence must not appear.
 		expect(message).not.toContain("Nobody holds this role.");
 	});
