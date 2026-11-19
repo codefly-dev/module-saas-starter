@@ -146,18 +146,20 @@ describe("solution installation facts", () => {
 			name: "Expense reader",
 			permissions: [{ resource: "expenses", action: "read" }],
 		});
-		expect(roleOptionLabel(role)).toBe("Expense reader — expenses:read");
+		expect(roleOptionLabel(role)).toBe(
+			"Expense reader — An activity without a description",
+		);
 		expect(roleOptionLabel(create(RoleSchema, { name: "Empty" }))).toBe(
 			"Empty",
 		);
 	});
 
-	it("keeps the host's own words for a refusal", () => {
+	it("uses safe guidance for a refused request", () => {
 		expect(
 			hostRefusal(new ConnectError("no transport", Code.FailedPrecondition)),
-		).toBe("no transport");
+		).toBe("Couldn't complete this request. The current state doesn't allow this change. Refresh the page to review it.");
 		expect(hostRefusal(new ConnectError("", Code.PermissionDenied))).toBe(
-			"The host refused without giving a reason.",
+			"You don't have access to complete this request. Ask your organization administrator for access.",
 		);
 	});
 
@@ -170,7 +172,7 @@ describe("solution installation facts", () => {
 		new Error("fetch failed"),
 	])("never shows the text of a failure that is not a refusal", (error) => {
 		expect(hostRefusal(error)).toBe(
-			"The request did not complete. Try again; if it keeps failing, tell your administrator.",
+			"Couldn't complete this request. Try again; if it keeps failing, tell your administrator.",
 		);
 	});
 });

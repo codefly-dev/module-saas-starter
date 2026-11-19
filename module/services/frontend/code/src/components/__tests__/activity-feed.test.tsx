@@ -1,3 +1,4 @@
+import { Code, ConnectError } from "@connectrpc/connect";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -260,5 +261,48 @@ describe("ActivityFeed actors", () => {
 
 		expect(screen.getByText("You")).toBeTruthy();
 		expect(screen.queryByText("user")).toBeNull();
+	});
+});
+
+describe("ActivityFeed failures", () => {
+	it("keeps prior activity with a notice after a temporary failure", () => {
+		useAuditLogMock.mockReturnValue({
+			data: { events: [event(undefined)] },
+			isLoading: false,
+			isError: true,
+			error: new ConnectError("private-host", Code.Unavailable),
+		});
+		render(<ActivityFeed />);
+		expect(screen.getByText("signed in")).toBeTruthy();
+		expect(screen.getByRole("status").textContent).toContain(
+			"may be out of date",
+		);
+		expect(screen.queryByText(/private-host/)).toBeNull();
+	});
+	it("hides retained activity after a denied refresh and gives access guidance", () => {
+		useAuditLogMock.mockReturnValue({
+			data: { events: [event(undefined)] },
+			isLoading: false,
+			isError: true,
+			error: new ConnectError("private-scope", Code.PermissionDenied),
+		});
+		render(<ActivityFeed />);
+		expect(screen.getByRole("alert").textContent).toContain(
+			"Ask your organization administrator",
+		);
+		expect(screen.queryByText("signed in")).toBeNull();
+		expect(screen.queryByText(/No recent activity/)).toBeNull();
+		expect(screen.queryByText(/private-scope/)).toBeNull();
+	});
+	it("does not expose unknown event identifiers", () => {
+		useAuditLogMock.mockReturnValue({
+			data: {
+				events: [event(undefined, { eventType: "internal.scope_node.write" })],
+			},
+			isLoading: false,
+		});
+		render(<ActivityFeed />);
+		expect(screen.getByText("recorded activity")).toBeTruthy();
+		expect(screen.queryByText(/scope_node/)).toBeNull();
 	});
 });

@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+	cleanup,
+	fireEvent,
+	screen,
+	waitFor,
+	within,
+} from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
@@ -111,4 +117,50 @@ describe("viewing as a team from the list", () => {
 		);
 		expect(asked).toBe('{"teamId":"team-1"}');
 	});
+});
+
+it("keeps the named team deletion confirmation open while pending and after failure", async () => {
+	auth.orgRole = "admin";
+	let finish!: () => void;
+	const pending = new Promise<void>((resolve) => {
+		finish = resolve;
+	});
+	const remove = vi.fn(async () => {
+		await pending;
+		return HttpResponse.json(
+			{ code: "permission_denied", message: "private-server-detail" },
+			{ status: 403 },
+		);
+	});
+	server.use(
+		http.post(rpc("TeamService", "ListTeams"), () =>
+			HttpResponse.json({
+				teams: [{ id: "team-1", orgId: "org-1", name: "Acme editors" }],
+			}),
+		),
+		http.post(rpc("TeamService", "DeleteTeam"), remove),
+	);
+	renderInApp(<TeamsPage />);
+	fireEvent.click(
+		await screen.findByRole("button", { name: "Actions for Acme editors" }),
+	);
+	fireEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
+	const dialog = screen.getByRole("alertdialog");
+	expect(
+		within(dialog).getByRole("heading", { name: "Delete Acme editors?" }),
+	).toBeTruthy();
+	fireEvent.click(within(dialog).getByRole("button", { name: "Delete team" }));
+	await waitFor(() => expect(remove).toHaveBeenCalledTimes(1));
+	expect(
+		(
+			within(dialog).getByRole("button", {
+				name: "Cancel",
+			}) as HTMLButtonElement
+		).disabled,
+	).toBe(true);
+	fireEvent.keyDown(dialog, { key: "Escape" });
+	expect(screen.getByRole("alertdialog")).toBeTruthy();
+	finish();
+	expect(await within(dialog).findByText("Team wasn’t deleted")).toBeTruthy();
+	expect(screen.queryByText("private-server-detail")).toBeNull();
 });

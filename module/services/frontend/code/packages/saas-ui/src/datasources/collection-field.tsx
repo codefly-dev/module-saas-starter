@@ -1,13 +1,17 @@
 "use client";
 
-import { Input, Label } from "@codefly-dev/ui/layout";
+import {
+	Input,
+	Label,
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@codefly-dev/ui/layout";
 import type { ComponentProps } from "react";
 import { fieldErrorClass as errorClass } from "./credential-mode.js";
 import type { CollectionAccessView } from "./types.js";
-
-/** A native select drawn like the kit's input, so a form reads as one surface. */
-export const selectClass =
-	"control-height-default w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 type-input-touch outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:type-input dark:bg-input/30";
 
 interface CollectionFieldProps {
 	idFor: (name: string) => string;
@@ -48,26 +52,35 @@ export function CollectionField({
 			{listed && (
 				<>
 					<Label htmlFor={idFor("existing")}>Collection</Label>
-					<select
-						id={idFor("existing")}
-						className={selectClass}
+					<Select
 						value={boundaryNodeId ?? ""}
-						onChange={(event) =>
+						items={[
+							{ value: "", label: "A new collection" },
+							...(collections ?? []).map((collection) => ({
+								value: collection.nodeId,
+								label: collection.label,
+							})),
+						]}
+						onValueChange={(value) =>
 							onSelect(
-								event.target.value,
-								collections?.find(
-									(collection) => collection.nodeId === event.target.value,
-								)?.label ?? "",
+								value ?? "",
+								collections?.find((collection) => collection.nodeId === value)
+									?.label ?? "",
 							)
 						}
 					>
-						<option value="">A new collection</option>
-						{collections?.map((collection) => (
-							<option key={collection.nodeId} value={collection.nodeId}>
-								{collection.label}
-							</option>
-						))}
-					</select>
+						<SelectTrigger id={idFor("existing")} className="w-full">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="">A new collection</SelectItem>
+							{collections?.map((collection) => (
+								<SelectItem key={collection.nodeId} value={collection.nodeId}>
+									{collection.label}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
 				</>
 			)}
 			{!selected && (

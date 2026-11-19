@@ -159,7 +159,7 @@ describe("team details", () => {
 				name: "Remove member",
 			}),
 		);
-		await screen.findByText("No members in this team yet.");
+		await screen.findByText("No members in this team yet. Add an organization member above to get started.");
 		expect(remove).toHaveBeenCalledOnce();
 	});
 	it("keeps failed changes visible in the dialog and preserves the roster", async () => {
@@ -184,7 +184,7 @@ describe("team details", () => {
 			within(dialog).getByRole("button", { name: "Remove member" }),
 		);
 		expect((await within(dialog).findByRole("alert")).textContent).toContain(
-			"Access changed",
+			"Ask your organization administrator for access.",
 		);
 	});
 	it("does not load a roster for a team outside the selected organization", async () => {
@@ -227,7 +227,7 @@ describe("team details", () => {
 		);
 		renderInApp(<TeamDetailsPage teamId={team.id} />);
 		expect(
-			await screen.findByText("No members in this team yet."),
+			await screen.findByText("No members in this team yet. Add an organization member above to get started."),
 		).toBeTruthy();
 		fireEvent.change(screen.getByPlaceholderText("Search members by email…"), {
 			target: { value: "newbie" },
@@ -280,7 +280,7 @@ describe("team details", () => {
 				"You don't have permission to see this team's members",
 			),
 		);
-		expect(screen.queryByText("No members in this team yet.")).toBeNull();
+		expect(screen.queryByText("No members in this team yet. Add an organization member above to get started.")).toBeNull();
 	});
 });
 

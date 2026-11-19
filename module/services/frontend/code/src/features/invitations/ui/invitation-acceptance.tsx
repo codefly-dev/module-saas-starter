@@ -1,15 +1,9 @@
 "use client";
 
-import {
-	AlertCircle,
-	CheckCircle2,
-	LogIn,
-	RefreshCw,
-	UserRoundCog,
-} from "lucide-react";
+import { CheckCircle2, LogIn, RefreshCw, UserRoundCog } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useEffectEvent, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { signOutAndLeave } from "@/lib/sign-out-journey";
 import {
@@ -19,14 +13,21 @@ import {
 	CardDescription,
 	CardFooter,
 	CardHeader,
-	CardTitle,
+	ErrorState,
+	Page,
+	PageHeader,
 	Skeleton,
 } from "@/shared/ui";
 
 type State =
 	| { kind: "loading" }
 	| { kind: "ready"; emailHint?: string }
-	| { kind: "error"; message: string; wrongAccount?: boolean }
+	| {
+			kind: "error";
+			message: string;
+			wrongAccount?: boolean;
+			retryable?: boolean;
+	  }
 	| { kind: "terminal"; message: string }
 	| {
 			kind: "switch-error";
@@ -42,6 +43,7 @@ const UUID =
 function failureMessage(status: number): {
 	message: string;
 	wrongAccount?: boolean;
+	retryable?: boolean;
 } {
 	if (status === 401) {
 		return { message: "Sign in with the invited email address to continue." };
@@ -62,7 +64,8 @@ function failureMessage(status: number): {
 	if (status >= 500) {
 		return {
 			message:
-				"The invitation service is temporarily unavailable. No membership changes were made.",
+				"We couldn’t confirm the invitation’s status. Check your workspace before trying again.",
+			retryable: true,
 		};
 	}
 	return {
@@ -71,21 +74,19 @@ function failureMessage(status: number): {
 	};
 }
 
-// A refusal this route wrote carries its own `error`, and it knows things the
-// status alone cannot say — that the emailed token's cookie timed out in this
-// browser, or that the deployment declares no gateway. An upstream failure
-// carries no `error`, so the status map below still answers for it.
-async function failureFrom(response: Response): Promise<{
-	message: string;
-	wrongAccount?: boolean;
-}> {
+// The route's legacy timeout response is recognized explicitly. All other
+// upstream diagnostics use status-based guidance until the route has typed reasons.
+const TIMED_OUT_LINK =
+	"This invitation link timed out in this browser after fifteen minutes. Open it from the email again.";
+async function failureFrom(
+	response: Response,
+): Promise<ReturnType<typeof failureMessage>> {
 	const fallback = failureMessage(response.status);
 	const body = (await response.json().catch(() => null)) as {
 		error?: unknown;
 	} | null;
-	if (typeof body?.error === "string" && body.error !== "") {
-		return { ...fallback, message: body.error };
-	}
+	if (response.status === 400 && body?.error === TIMED_OUT_LINK)
+		return { message: TIMED_OUT_LINK };
 	return fallback;
 }
 
@@ -94,7 +95,6 @@ function inspectedState(summary: {
 	emailHint?: string;
 }): State {
 	switch (summary.status) {
-		case undefined:
 		case 1:
 		case "INVITATION_STATUS_PENDING":
 			return { kind: "ready", emailHint: summary.emailHint };
@@ -136,6 +136,8 @@ export function InvitationAcceptance() {
 		logout,
 	} = useAuth();
 	const [state, setState] = useState<State>({ kind: "loading" });
+	const pending = useRef(false);
+	const [switching, setSwitching] = useState(false);
 	// The id the first inspect reported, which is how a sign-in longer than the
 	// emailed token's fifteen-minute cookie still ends in an acceptance: the
 	// return path names the invitation instead of relying on that cookie
@@ -163,7 +165,11 @@ export function InvitationAcceptance() {
 			}),
 		})
 			.then(async (response) => {
-				if (!response.ok) throw await failureFrom(response);
+				if (!response.ok) {
+					const failure = await failureFrom(response);
+					if (!cancelled) setState({ kind: "error", ...failure });
+					return;
+				}
 				const summary = (await response.json()) as {
 					id?: string;
 					status?: string | number;
@@ -176,14 +182,13 @@ export function InvitationAcceptance() {
 					setState(inspectedState(summary));
 				}
 			})
-			.catch((error) => {
+			.catch(() => {
 				if (!cancelled) {
 					setState({
 						kind: "error",
 						message:
-							typeof error?.message === "string"
-								? error.message
-								: failureMessage(400).message,
+							"Couldn’t check this invitation. Check your connection and try again.",
+						retryable: true,
 					});
 				}
 			});
@@ -193,6 +198,8 @@ export function InvitationAcceptance() {
 	}, [authLoading, isAuthenticated, user?.id, safeInvitationId]);
 
 	async function accept() {
+		if (pending.current) return;
+		pending.current = true;
 		setState({ kind: "loading" });
 		try {
 			const token = getToken();
@@ -228,6 +235,8 @@ export function InvitationAcceptance() {
 			});
 		} catch {
 			setState({ kind: "error", ...failureMessage(500) });
+		} finally {
+			pending.current = false;
 		}
 	}
 
@@ -253,7 +262,7 @@ export function InvitationAcceptance() {
 
 	if (state.kind === "loading" || authLoading) {
 		return (
-			<div className="flex min-h-screen items-center justify-center p-4">
+			<Page className="flex min-h-screen items-center justify-center p-4">
 				<Card className="w-full max-w-md">
 					<CardHeader>
 						<Skeleton className="h-7 w-44" />
@@ -263,17 +272,17 @@ export function InvitationAcceptance() {
 						<Skeleton className="h-11 w-full" />
 					</CardContent>
 				</Card>
-			</div>
+			</Page>
 		);
 	}
 
 	if (state.kind === "success") {
 		return (
-			<div className="flex min-h-screen items-center justify-center p-4">
+			<Page className="flex min-h-screen items-center justify-center p-4">
 				<Card className="w-full max-w-md text-center">
 					<CardHeader>
 						<CheckCircle2 className="mx-auto h-12 w-12 text-primary" />
-						<CardTitle>Invitation accepted</CardTitle>
+						<PageHeader title="Invitation accepted" />
 						<CardDescription>
 							You are now a member of {state.organizationName}.
 						</CardDescription>
@@ -284,15 +293,15 @@ export function InvitationAcceptance() {
 						</Button>
 					</CardFooter>
 				</Card>
-			</div>
+			</Page>
 		);
 	}
 
 	return (
-		<div className="flex min-h-screen items-center justify-center bg-muted/20 p-4">
+		<Page className="flex min-h-screen items-center justify-center p-4">
 			<Card className="w-full max-w-md">
 				<CardHeader>
-					<CardTitle>Organization invitation</CardTitle>
+					<PageHeader title="Organization invitation" />
 					<CardDescription>
 						{state.kind === "ready" && state.emailHint
 							? `This invitation was sent to ${state.emailHint}.`
@@ -303,13 +312,7 @@ export function InvitationAcceptance() {
 					{(state.kind === "error" ||
 						state.kind === "terminal" ||
 						state.kind === "switch-error") && (
-						<div
-							role="alert"
-							className="flex gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm"
-						>
-							<AlertCircle className="h-4 w-4 shrink-0 text-destructive" />
-							{state.message}
-						</div>
+						<ErrorState title={state.message} />
 					)}
 				</CardContent>
 				<CardFooter className="flex-col gap-2">
@@ -365,7 +368,7 @@ export function InvitationAcceptance() {
 							Switch account
 						</Button>
 					) : null}
-					{state.kind === "error" && !state.wrongAccount && (
+					{state.kind === "error" && state.retryable && !state.wrongAccount && (
 						<Button
 							variant="ghost"
 							className="w-full"
@@ -377,6 +380,6 @@ export function InvitationAcceptance() {
 					)}
 				</CardFooter>
 			</Card>
-		</div>
+		</Page>
 	);
 }

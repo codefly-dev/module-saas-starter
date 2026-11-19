@@ -15,7 +15,7 @@ const { enterImpersonation, auth } = vi.hoisted(() => ({
 	},
 }));
 vi.mock("@/lib/auth", () => ({
-	useAuth: () => ({ enterImpersonation, ...auth }),
+	useAuth: () => ({ impersonation: { isImpersonating: false }, enterImpersonation, ...auth }),
 }));
 
 const IMPERSONATION_TOKEN = "header.payload.signature";
@@ -191,4 +191,94 @@ describe("UsersPage admin container", () => {
 		expect(bodies).toEqual([]);
 		expect(enterImpersonation).not.toHaveBeenCalled();
 	});
+});
+
+it("retains a named user-deletion confirmation during the request and refusal", async () => {
+	searchReturnsOneUser();
+	let finish!: () => void;
+	let calls = 0;
+	server.use(
+		http.post(rpc("UserService", "DeleteUser"), async () => {
+			calls++;
+			await new Promise<void>((resolve) => {
+				finish = resolve;
+			});
+			return HttpResponse.json(
+				{ code: "permission_denied", message: "private identity rule" },
+				{ status: 403 },
+			);
+		}),
+	);
+	renderInApp(<UsersPage />);
+	await screen.findByRole("link", { name: "admin@acme.test" });
+	openRowActions();
+	fireEvent.click(await screen.findByText("Delete"));
+	expect(
+		screen.getByRole("alertdialog", { name: "Delete admin@acme.test?" }),
+	).toBeTruthy();
+	fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+	expect(calls).toBe(0);
+	openRowActions();
+	fireEvent.click(await screen.findByText("Delete"));
+	fireEvent.click(screen.getByRole("button", { name: "Delete user" }));
+	await waitFor(() => expect(calls).toBe(1));
+	expect(
+		(screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement)
+			.disabled,
+	).toBe(true);
+	fireEvent.keyDown(screen.getByRole("alertdialog"), { key: "Escape" });
+	expect(screen.getByRole("alertdialog")).toBeTruthy();
+	finish();
+	expect(await screen.findByText("User wasn’t deleted")).toBeTruthy();
+	expect(
+		screen.getByText(/Ask your organization administrator for access/),
+	).toBeTruthy();
+	expect(screen.queryByText(/private identity rule/)).toBeNull();
+});
+
+it("keeps invalid profile edits beside their fields and locks pending edits", async () => {
+	searchReturnsOneUser();
+	let finish!: () => void;
+	let calls = 0;
+	server.use(
+		http.post(rpc("UserService", "UpdateUser"), async () => {
+			calls++;
+			await new Promise<void>((resolve) => {
+				finish = resolve;
+			});
+			return HttpResponse.json(
+				{ code: "unavailable", message: "private data detail" },
+				{ status: 503 },
+			);
+		}),
+	);
+	renderInApp(<UsersPage />);
+	await screen.findByRole("link", { name: "admin@acme.test" });
+	openRowActions();
+	fireEvent.click(await screen.findByText("Edit"));
+	const email = screen.getByRole("textbox", { name: "Primary email" });
+	fireEvent.change(email, { target: { value: "invalid" } });
+	fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+	expect(await screen.findByText("Enter a valid email")).toBeTruthy();
+	expect(email.getAttribute("aria-invalid")).toBe("true");
+	expect(calls).toBe(0);
+	fireEvent.change(email, { target: { value: "new@example.com" } });
+	fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+	await waitFor(() => expect(calls).toBe(1));
+	expect((email as HTMLInputElement).disabled).toBe(true);
+	fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+	finish();
+	expect(await screen.findByText("Change wasn’t saved")).toBeTruthy();
+	expect((email as HTMLInputElement).value).toBe("new@example.com");
+	expect(screen.queryByText(/private data detail/)).toBeNull();
+});
+
+it("keeps the user action menu open when the page rerenders", async () => {
+	searchReturnsOneUser();
+	const { rerender } = renderInApp(<UsersPage />);
+	await screen.findByRole("link", { name: "admin@acme.test" });
+	openRowActions();
+	expect(await screen.findByRole("menuitem", { name: "Edit" })).toBeTruthy();
+	rerender(<UsersPage />);
+	expect(screen.getByRole("menuitem", { name: "Edit" })).toBeTruthy();
 });

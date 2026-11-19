@@ -9,6 +9,15 @@ import {
 	type RoleGrant,
 } from "@codefly-dev/saas-sdk";
 import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+	AlertDialogTrigger,
 	Badge,
 	Banner,
 	Button,
@@ -18,6 +27,11 @@ import {
 	Input,
 	List,
 	ListItem,
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
 	Spinner,
 	Table,
 	TableBody,
@@ -176,7 +190,7 @@ export function SolutionSetup(props: SolutionSetupProps) {
 /** What the authority said instead of an answer, with its reason. */
 function Refusal({ error, what }: { error: unknown; what: string }) {
 	return isDenied(error) ? (
-		<Banner tone="info" title={`The authority does not show you ${what}`}>
+		<Banner tone="info" title={`You don’t have access to see ${what}`}>
 			{refusalOf(error)}
 		</Banner>
 	) : (
@@ -510,7 +524,7 @@ function RolesSection({
 					{refusal && (
 						<Banner
 							tone="danger"
-							title="The authority refused the change"
+							title="Couldn’t change access"
 							onDismiss={() => setRefusal(null)}
 						>
 							{refusal}
@@ -581,8 +595,7 @@ function RolesSection({
 }
 
 /**
- * Removing one holder of a role: one click, unless it is the role's last
- * holder, when it first says that nobody will have the role and asks again.
+ * Confirm every removal and explain the additional consequence for the last holder.
  */
 export function RemoveHolder({
 	role,
@@ -604,43 +617,51 @@ export function RemoveHolder({
 	onRemove: () => void;
 }) {
 	const [confirming, setConfirming] = useState(false);
-	if (confirming)
-		return (
-			<span
-				role="alert"
-				className="flex flex-wrap items-center gap-2 text-warning"
-			>
-				Nobody will have {roleLabel(title, role)} access to {target}.
-				<Button
-					size="sm"
-					variant="destructive"
-					disabled={busy}
-					onClick={() => {
-						setConfirming(false);
-						onRemove();
-					}}
-				>
-					Remove anyway
-				</Button>
-				<Button
-					size="sm"
-					variant="outline"
-					onClick={() => setConfirming(false)}
-				>
-					Keep
-				</Button>
-			</span>
-		);
 	return (
-		<Button
-			size="sm"
-			variant="outline"
-			disabled={busy}
-			aria-label={`Remove ${roleLabel(title, role)} from ${name}`}
-			onClick={() => (last ? setConfirming(true) : onRemove())}
+		<AlertDialog
+			open={confirming}
+			onOpenChange={(open) => {
+				if (!busy) setConfirming(open);
+			}}
 		>
-			Remove
-		</Button>
+			<AlertDialogTrigger
+				render={
+					<Button
+						size="sm"
+						variant="outline"
+						disabled={busy}
+						aria-label={`Remove ${roleLabel(title, role)} from ${name}`}
+					/>
+				}
+			>
+				Remove
+			</AlertDialogTrigger>
+			<AlertDialogContent>
+				<AlertDialogHeader>
+					<AlertDialogTitle>
+						Remove {roleLabel(title, role)} from {name}?
+					</AlertDialogTitle>
+					<AlertDialogDescription>
+						{name} will lose this role in {title || target}.
+						{last &&
+							` Nobody will have ${roleLabel(title, role)} access to ${target}.`}
+					</AlertDialogDescription>
+				</AlertDialogHeader>
+				<AlertDialogFooter>
+					<AlertDialogCancel disabled={busy}>Keep access</AlertDialogCancel>
+					<AlertDialogAction
+						variant="destructive"
+						disabled={busy}
+						onClick={() => {
+							setConfirming(false);
+							onRemove();
+						}}
+					>
+						Remove access
+					</AlertDialogAction>
+				</AlertDialogFooter>
+			</AlertDialogContent>
+		</AlertDialog>
 	);
 }
 
@@ -1088,61 +1109,82 @@ export function SolutionRoleGrantForm({
 			{fixedRole ? null : (
 				<Field label="Role">
 					{(control) => (
-						<select
-							{...control}
-							required
+						<Select
 							value={role}
-							onChange={(event) => setRole(event.target.value)}
+							onValueChange={(value) => setRole(value ?? "")}
+							disabled={busy}
+							items={roles.map((value) => ({ value, label: value }))}
 						>
-							<option value="" disabled>
-								Choose a role…
-							</option>
-							{roles.map((r) => (
-								<option key={r} value={r}>
-									{r}
-								</option>
-							))}
-						</select>
+							<SelectTrigger {...control}>
+								<SelectValue placeholder="Choose a role…" />
+							</SelectTrigger>
+							<SelectContent>
+								{roles.map((value) => (
+									<SelectItem key={value} value={value}>
+										{value}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
 					)}
 				</Field>
 			)}
 			{named ? (
 				<Field label={subjectLabel}>
 					{(control) => (
-						<select
-							{...control}
-							required
+						<Select
 							value={subject}
-							onChange={(event) => setSubject(event.target.value)}
+							onValueChange={(value) => setSubject(value ?? "")}
+							disabled={busy}
+							items={subjects?.map((entry) => ({
+								value: subjectKey(entry.kind, entry.id),
+								label:
+									entry.kind === "team" ? `Team ${entry.label}` : entry.label,
+							}))}
 						>
-							<option value="" disabled>
-								Choose {subjectLabel.toLowerCase()}…
-							</option>
-							{subjects?.map((s) => (
-								<option
-									key={subjectKey(s.kind, s.id)}
-									value={subjectKey(s.kind, s.id)}
-								>
-									{s.kind === "team" ? `Team ${s.label}` : s.label}
-								</option>
-							))}
-						</select>
+							<SelectTrigger {...control}>
+								<SelectValue
+									placeholder={`Choose ${subjectLabel.toLowerCase()}…`}
+								/>
+							</SelectTrigger>
+							<SelectContent>
+								{subjects?.map((entry) => (
+									<SelectItem
+										key={subjectKey(entry.kind, entry.id)}
+										value={subjectKey(entry.kind, entry.id)}
+									>
+										{entry.kind === "team"
+											? `Team ${entry.label}`
+											: entry.label}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
 					)}
 				</Field>
 			) : (
 				<div className="flex flex-wrap gap-3">
 					<Field label="Grant to">
 						{(control) => (
-							<select
-								{...control}
+							<Select
 								value={kind}
-								onChange={(event) =>
-									setKind(event.target.value === "team" ? "team" : "person")
+								onValueChange={(value) =>
+									setKind(value === "team" ? "team" : "person")
 								}
+								disabled={busy}
+								items={[
+									{ value: "person", label: "A person" },
+									{ value: "team", label: "A team" },
+								]}
 							>
-								<option value="person">A person</option>
-								<option value="team">A team</option>
-							</select>
+								<SelectTrigger {...control}>
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="person">A person</SelectItem>
+									<SelectItem value="team">A team</SelectItem>
+								</SelectContent>
+							</Select>
 						)}
 					</Field>
 					<Field label={kind === "team" ? "Team id" : "Person id"}>

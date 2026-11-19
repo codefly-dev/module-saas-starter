@@ -1,15 +1,20 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Save, X } from "lucide-react";
+import {
+	createColumnHelper,
+	getCoreRowModel,
+	getPaginationRowModel,
+	useReactTable,
+} from "@tanstack/react-table";
+import { ArrowLeft, Save } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { OrgSelector } from "@/components/org-selector";
-import {
-	groupByResource,
-	permissionLabel,
-} from "@/features/permissions/model/effective";
+import { UserLabel } from "@/components/user-label";
+import { activityLabel } from "@/features/permissions/model/activity-label";
+import { permissionLabel } from "@/features/permissions/model/effective";
 import { permissionQueries } from "@/features/permissions/service/queries";
 import { teamQueries } from "@/features/teams/service/queries";
 import { SubjectKind } from "@/gen/saas/accounts/v1/common_pb";
@@ -23,29 +28,27 @@ import {
 	readOutcomeMessage,
 	staleReadNotice,
 } from "@/shared/lib/read-outcome";
-import { truncateUUID } from "@/shared/lib/utils";
 import {
 	Badge,
 	Button,
 	Checkbox,
+	ErrorState,
+	Field,
 	Input,
+	Label,
 	Page as PageBody,
 	PageHeader,
 	Panel,
 	Section,
 	Spinner,
 	Stack,
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
 	useLoadingPhase,
 } from "@/shared/ui";
-import type { Permission, Role } from "../model/types";
-import { useRevokeRole, useUpdateRole } from "../service/mutations";
+import { DataTable } from "@/shared/ui/data-table";
+import type { Permission, Role, RoleAssignment } from "../model/types";
+import { useUpdateRole } from "../service/mutations";
 import { useRoleAssignments, useRoles } from "../service/queries";
+import { RevokeRoleButton } from "./revoke-role-button";
 
 export function RoleDetailPage({ roleId }: { roleId: string }) {
 	const { organizationId: orgId = "", platformRole, orgRole } = useAuth();
@@ -110,7 +113,7 @@ function RoleDetail({
 			<PageBody>
 				<PageHeader
 					title="Role not found"
-					description="No role with this id is visible in the selected organization."
+					description="This role is not available in the selected organization."
 					actions={<OrgSelector />}
 				/>
 				<BackToRoles />
@@ -136,9 +139,6 @@ function RoleDetail({
 					) : (
 						<Badge variant="secondary">Custom</Badge>
 					)}
-					<span className="select-all font-mono text-xs text-muted-foreground">
-						{role.id}
-					</span>
 				</Stack>
 			</PageHeader>
 
@@ -183,7 +183,8 @@ function RolePermissionsEditor({
 		() => new Set(role.permissions.map(permissionLabel)),
 	);
 	const updateRole = useUpdateRole();
-	const { data: info } = useQuery(permissionQueries.serviceInfo());
+	const catalogue = useQuery(permissionQueries.serviceInfo());
+	const info = catalogue.data;
 
 	// The vocabulary the service declares, plus anything this role already
 	// holds — a grant the service no longer declares still has to be visible,
@@ -192,7 +193,15 @@ function RolePermissionsEditor({
 		permissionLabel(permission),
 	);
 	const vocabulary = [...new Set([...declared, ...granted])];
-	const groups = groupByResource(vocabulary);
+	const activities = vocabulary.map((key) => {
+		const permission = info?.capabilities?.permissions.find(
+			(entry) => permissionLabel(entry) === key,
+		);
+		return {
+			key,
+			description: permission ? activityLabel(permission) : undefined,
+		};
+	});
 
 	const toggle = (label: string) => {
 		setGranted((current) => {
@@ -203,6 +212,13 @@ function RolePermissionsEditor({
 	};
 
 	const save = () => {
+		if (
+			!canWrite ||
+			updateRole.isPending ||
+			catalogue.isPending ||
+			catalogue.isError
+		)
+			return;
 		const permissions: Permission[] = [...granted].flatMap((label) => {
 			const separator = label.indexOf(":");
 			return separator <= 0
@@ -225,15 +241,21 @@ function RolePermissionsEditor({
 
 	return (
 		<Section
-			title="Permissions"
+			title="What this role allows"
 			description={
 				canWrite
-					? "The set saved here becomes the role's whole grant set."
-					: "Built-in roles are the platform's standard vocabulary and cannot be edited."
+					? "Choose the activities available to people and teams with this role."
+					: "You can review this role’s access here. This role cannot be edited by your account."
 			}
 			actions={
 				canWrite ? (
-					<Button size="sm" onClick={save} disabled={updateRole.isPending}>
+					<Button
+						size="sm"
+						onClick={save}
+						disabled={
+							updateRole.isPending || catalogue.isPending || catalogue.isError
+						}
+					>
 						<Save className="mr-1 h-4 w-4" />
 						{updateRole.isPending ? "Saving…" : "Save changes"}
 					</Button>
@@ -242,36 +264,54 @@ function RolePermissionsEditor({
 		>
 			<Panel>
 				<Stack gap={4}>
-					<Stack gap={2}>
-						<span className="text-sm font-medium">Description</span>
-						<Input
-							value={description}
-							disabled={!canWrite}
-							onChange={(event) => setDescription(event.target.value)}
-							placeholder="What this role is for"
+					<Field label="Description">
+						{(control) => (
+							<Input
+								{...control}
+								value={description}
+								disabled={!canWrite || updateRole.isPending}
+								onChange={(event) => setDescription(event.target.value)}
+								placeholder="What this role is for"
+							/>
+						)}
+					</Field>
+					{updateRole.isError && (
+						<ErrorState
+							title="Couldn't update the role"
+							detail={failureText("update the role", updateRole.error)}
 						/>
-					</Stack>
-					{groups.map((group) => (
-						<Stack key={group.resource} gap={2}>
-							<span className="text-sm font-medium">{group.resource}</span>
-							<Stack direction="row" gap={4} className="flex-wrap">
-								{group.permissions.map((permission) => {
-									const label = permissionLabel(permission);
-									return (
-										<Stack key={label} direction="row" gap={2} align="center">
-											<Checkbox
-												aria-label={label}
-												checked={granted.has(label)}
-												disabled={!canWrite}
-												onCheckedChange={() => toggle(label)}
-											/>
-											<span className="font-mono text-xs">{label}</span>
-										</Stack>
-									);
-								})}
-							</Stack>
-						</Stack>
-					))}
+					)}
+					{catalogue.isError ? (
+						<ErrorState
+							title="Activities unavailable"
+							detail="Couldn’t load the available activities. Your changes have not been saved. Ask your organization administrator to check your access."
+						/>
+					) : catalogue.isPending ? (
+						<Spinner label="Loading available activities" />
+					) : (
+						<div className="grid gap-3 md:grid-cols-2">
+							{activities.map(({ key, description: activity }) => (
+								<div
+									key={key}
+									className="flex items-start gap-2 rounded-lg border p-3"
+								>
+									<Checkbox
+										id={`role-activity-${key}`}
+										checked={granted.has(key)}
+										disabled={!canWrite || updateRole.isPending || !activity}
+										onCheckedChange={() => toggle(key)}
+									/>
+									<Label
+										htmlFor={`role-activity-${key}`}
+										className="leading-relaxed"
+									>
+										{activity ||
+											"Saved access without a description. It will be preserved when you save."}
+									</Label>
+								</div>
+							))}
+						</div>
+					)}
 				</Stack>
 			</Panel>
 		</Section>
@@ -306,7 +346,6 @@ function RoleHolders({
 	// request did not come back is worse than saying it may be out of date.
 	const withheld = !mayKeepRetainedRows(outcome);
 	const stale = staleReadNotice(outcome, "who holds this role");
-	const revokeRole = useRevokeRole();
 
 	const teamNameById = new Map(
 		(teams?.teams ?? []).map((team) => [team.id, team.name] as const),
@@ -323,7 +362,7 @@ function RoleHolders({
 	return (
 		<Section
 			title="Held by"
-			description="Every principal and team this role is assigned to in this organization."
+			description="People and teams assigned this role in the organization."
 		>
 			<Panel>
 				{quiet ? null : indicator ? (
@@ -353,81 +392,98 @@ function RoleHolders({
 								{stale}
 							</p>
 						)}
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>Subject</TableHead>
-									<TableHead>Kind</TableHead>
-									<TableHead />
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{holders.map((assignment) => {
-									const isTeam = assignment.subjectKind === SubjectKind.TEAM;
-									const name = isTeam
-										? (teamNameById.get(assignment.subjectId) ??
-											truncateUUID(assignment.subjectId))
-										: truncateUUID(assignment.subjectId);
-									const href = isTeam
-										? `/admin/teams/${assignment.subjectId}`
-										: `/admin/users/${assignment.subjectId}`;
-									return (
-										<TableRow key={assignment.id}>
-											<TableCell>
-												<Link
-													href={href}
-													className="font-mono text-xs text-primary hover:underline"
-												>
-													{name}
-												</Link>
-											</TableCell>
-											<TableCell>
-												<Badge variant="outline">
-													{isTeam ? "Team" : "Principal"}
-												</Badge>
-												{assignment.scope ? (
-													<Badge variant="secondary" className="ml-2">
-														{assignment.scope}
-													</Badge>
-												) : null}
-											</TableCell>
-											<TableCell>
-												{canWrite && (
-													<Button
-														variant="ghost"
-														size="sm"
-														disabled={revokeRole.isPending}
-														onClick={() =>
-															revokeRole.mutate(
-																{
-																	subjectId: assignment.subjectId,
-																	roleId: role.id,
-																	orgId,
-																	scope: assignment.scope,
-																},
-																{
-																	onSuccess: () =>
-																		toast.success("Role revoked"),
-																	onError: (error) =>
-																		toast.error(
-																			failureText("revoke the role", error),
-																		),
-																},
-															)
-														}
-													>
-														<X className="h-4 w-4 text-destructive" />
-													</Button>
-												)}
-											</TableCell>
-										</TableRow>
-									);
-								})}
-							</TableBody>
-						</Table>
+						<RoleHolderTable
+							holders={holders}
+							teamNameById={teamNameById}
+							role={role}
+							orgId={orgId}
+							canWrite={canWrite}
+						/>
 					</>
 				)}
 			</Panel>
 		</Section>
 	);
+}
+
+const holderColumn = createColumnHelper<RoleAssignment>();
+function RoleHolderTable({
+	holders,
+	teamNameById,
+	role,
+	orgId,
+	canWrite,
+}: {
+	holders: RoleAssignment[];
+	teamNameById: Map<string, string>;
+	role: Role;
+	orgId: string;
+	canWrite: boolean;
+}) {
+	const columns = useMemo(
+		() => [
+			holderColumn.accessor("subjectId", {
+				header: "Person or team",
+				cell: ({ row }) => {
+					const holder = row.original;
+					const isTeam = holder.subjectKind === SubjectKind.TEAM;
+					return (
+						<Link
+							href={`/admin/${isTeam ? "teams" : "users"}/${holder.subjectId}`}
+							className="text-primary hover:underline"
+						>
+							{isTeam ? (
+								teamNameById.get(holder.subjectId) || "Team unavailable"
+							) : (
+								<UserLabel userId={holder.subjectId} />
+							)}
+						</Link>
+					);
+				},
+			}),
+			holderColumn.accessor("subjectKind", {
+				header: "Type",
+				cell: ({ getValue }) => (
+					<Badge variant="outline">
+						{getValue() === SubjectKind.TEAM ? "Team" : "Person"}
+					</Badge>
+				),
+			}),
+			holderColumn.accessor("scope", {
+				header: "Applies to",
+				cell: ({ getValue }) =>
+					getValue() ? "Selected items" : "Organization",
+			}),
+			holderColumn.display({
+				id: "actions",
+				header: "",
+				cell: ({ row }) =>
+					canWrite ? (
+						<RevokeRoleButton
+							subjectId={row.original.subjectId}
+							subjectLabel={
+								row.original.subjectKind === SubjectKind.TEAM ? (
+									teamNameById.get(row.original.subjectId) || "this team"
+								) : (
+									<UserLabel userId={row.original.subjectId} />
+								)
+							}
+							roleId={role.id}
+							roleName={role.name}
+							orgId={orgId}
+							scope={row.original.scope}
+						/>
+					) : null,
+			}),
+		],
+		[canWrite, orgId, role.id, role.name, teamNameById],
+	);
+	const table = useReactTable({
+		data: holders,
+		columns,
+		getCoreRowModel: getCoreRowModel(),
+		getPaginationRowModel: getPaginationRowModel(),
+		initialState: { pagination: { pageSize: 10 } },
+	});
+	return <DataTable table={table} />;
 }

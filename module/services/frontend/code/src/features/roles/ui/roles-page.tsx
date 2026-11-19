@@ -84,7 +84,11 @@ function RolesPageForOrganization({
 					</Stack>
 				</Panel>
 			) : (
-				<RolesTable roles={roles as Role[]} isLoading={isLoading} />
+				<RolesTable
+					roles={roles as Role[]}
+					isLoading={isLoading}
+					canDelete={canCreate}
+				/>
 			)}
 		</PageBody>
 	);

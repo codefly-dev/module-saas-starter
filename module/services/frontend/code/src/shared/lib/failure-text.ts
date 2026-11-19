@@ -1,27 +1,24 @@
 import { Code, ConnectError } from "@connectrpc/connect";
 
-// The codes under which the host answers in words meant for a person: it
-// refused the act, and says why. Every other failure is the transport's, a
-// timeout's or a defect's, whose text is for an engineer.
-const SPOKEN: ReadonlySet<Code> = new Set([
-	Code.PermissionDenied,
-	Code.FailedPrecondition,
-	Code.InvalidArgument,
-	Code.AlreadyExists,
-	Code.NotFound,
-	Code.ResourceExhausted,
-]);
-
-/**
- * What to tell a person when an act did not happen. `doing` is the act as they
- * would say it ("save the team", "revoke the key"). A refusal the host worded
- * is passed on as it worded it; anything else is said plainly, without the
- * error's own text, which names transports and internals.
- */
+/** Describe a failed action without exposing transport or server details. */
 export function failureText(doing: string, error: unknown): string {
-	if (error instanceof ConnectError && SPOKEN.has(error.code)) {
-		const said = error.rawMessage.trim();
-		if (said) return `Couldn't ${doing}: ${said}`;
-	}
-	return `Couldn't ${doing}. Try again; if it keeps failing, tell your administrator.`;
+  if (error instanceof ConnectError) {
+    switch (error.code) {
+      case Code.PermissionDenied:
+        return `You don't have access to ${doing}. Ask your organization administrator for access.`;
+      case Code.Unauthenticated:
+        return `Sign in again to ${doing}.`;
+      case Code.InvalidArgument:
+        return `Couldn't ${doing}. Check the information you entered.`;
+      case Code.FailedPrecondition:
+        return `Couldn't ${doing}. The current state doesn't allow this change. Refresh the page to review it.`;
+      case Code.AlreadyExists:
+        return `Couldn't ${doing}. An item with these details already exists.`;
+      case Code.NotFound:
+        return `Couldn't ${doing}. The item is no longer available. Refresh the page to review what's available.`;
+      case Code.ResourceExhausted:
+        return `Couldn't ${doing}. A usage limit has been reached. Ask your organization administrator to review it.`;
+    }
+  }
+  return `Couldn't ${doing}. Try again; if it keeps failing, tell your administrator.`;
 }

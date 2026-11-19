@@ -161,5 +161,29 @@ describe("host plugin contribution isolation", () => {
 		expect(screen.queryByText("Must not render")).toBeNull();
 		expect(screen.getByText("Healthy host sibling")).toBeTruthy();
 		expect(screen.getByText(/request-426/)).toBeTruthy();
+		expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
 	});
+});
+
+it("does not offer retry for a refused page", () => {
+	silenceReactError();
+	function Refused(): never {
+		throw new PluginAvailabilityError("failed", { code: "http_403" });
+	}
+	render(
+		<PluginContributionBoundary
+			plugin="example"
+			contributionId="overview"
+			kind="route"
+		>
+			<Refused />
+		</PluginContributionBoundary>,
+	);
+	expect(
+		screen.getByText(/Ask your administrator to grant access/),
+	).toBeTruthy();
+	expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+	expect(
+		screen.getByRole("heading", { level: 1, name: "Page unavailable" }),
+	).toBeTruthy();
 });

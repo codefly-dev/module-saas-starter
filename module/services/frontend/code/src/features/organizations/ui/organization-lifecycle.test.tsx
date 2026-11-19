@@ -66,7 +66,7 @@ describe("LeaveOrganizationDialog", () => {
 		expect(authState.logout).not.toHaveBeenCalled();
 	});
 
-	it("shows the server's refusal for the sole member, with the way forward", async () => {
+	it("shows safe guidance when the organization cannot be left", async () => {
 		organizations([acme, { id: "org-beta", name: "Beta", slug: "beta" }]);
 		server.use(
 			http.post(rpc("OrganizationService", "LeaveOrganization"), () =>
@@ -91,7 +91,7 @@ describe("LeaveOrganizationDialog", () => {
 		const alert = await screen.findByRole("alert");
 		expect(authState.switchOrganization).not.toHaveBeenCalled();
 		expect(alert.textContent).toContain(
-			"you are this organization's only member; delete it instead of leaving",
+			"Ask an organization administrator to review its members and settings.",
 		);
 		expect(screen.getByRole("link", { name: "Manage members" })).toBeTruthy();
 	});
@@ -132,4 +132,51 @@ describe("DeleteOrganizationDialog", () => {
 		expect(authState.switchOrganization).not.toHaveBeenCalled();
 		authState.organizationId = "org-acme";
 	});
+});
+
+it("keeps organization deletion open and locked until its outcome is known", async () => {
+	authState.organizationId = "org-other";
+	let release = () => {};
+	let calls = 0;
+	server.use(
+		http.post(rpc("OrganizationService", "DeleteOrganization"), async () => {
+			calls += 1;
+			await new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			return HttpResponse.json(
+				{ code: "permission_denied", message: "private diagnostic" },
+				{ status: 403 },
+			);
+		}),
+	);
+	const onOpenChange = vi.fn();
+	renderInApp(
+		<DeleteOrganizationDialog
+			organization={acme}
+			open
+			onOpenChange={onOpenChange}
+		/>,
+	);
+	const input = screen.getByLabelText(/to confirm/) as HTMLInputElement;
+	fireEvent.change(input, { target: { value: "acme" } });
+	fireEvent.click(screen.getByRole("button", { name: "Delete organization" }));
+	try {
+		await waitFor(() => expect(calls).toBe(1));
+		expect(input.disabled).toBe(true);
+		expect(
+			(screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement)
+				.disabled,
+		).toBe(true);
+		fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+		expect(onOpenChange).not.toHaveBeenCalled();
+	} finally {
+		release();
+		authState.organizationId = "org-acme";
+	}
+	await screen.findByText("Couldn’t delete the organization");
+	expect(input.value).toBe("acme");
+	expect(input.disabled).toBe(false);
+	expect(screen.queryByText("private diagnostic")).toBeNull();
+	expect(onOpenChange).not.toHaveBeenCalled();
 });

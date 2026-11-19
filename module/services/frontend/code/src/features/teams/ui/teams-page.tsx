@@ -5,7 +5,7 @@ import { useCasting } from "@codefly-dev/saas-ui/casting";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
 import { OrgSelector } from "@/components/org-selector";
@@ -14,7 +14,6 @@ import { failureText } from "@/shared/lib/failure-text";
 import { readOutcome } from "@/shared/lib/read-outcome";
 import {
 	AlertDialog,
-	AlertDialogAction,
 	AlertDialogCancel,
 	AlertDialogContent,
 	AlertDialogDescription,
@@ -41,6 +40,7 @@ export function TeamsPage() {
 
 function TeamsPageForOrganization({ orgId }: { orgId: string }) {
 	const router = useRouter();
+	const deleting = useRef(false);
 	const { orgRole, platformRole } = useAuth();
 	const canManage =
 		orgRole === "owner" ||
@@ -115,6 +115,9 @@ function TeamsPageForOrganization({ orgId }: { orgId: string }) {
 			setDeleteTarget(null);
 		},
 		onError: (error) => toast.error(failureText("delete the team", error)),
+		onSettled: () => {
+			deleting.current = false;
+		},
 	});
 
 	const handleViewMembers = useCallback(
@@ -147,8 +150,22 @@ function TeamsPageForOrganization({ orgId }: { orgId: string }) {
 	// A refusal is not cured by asking again, so only a read that did not come
 	// back offers the retry.
 	const refused = readOutcome(isError, error) === "forbidden";
-	const handleRename = useCallback((team: Team) => setRenameTarget(team), []);
-	const handleDelete = useCallback((team: Team) => setDeleteTarget(team), []);
+	const { reset: resetUpdate } = updateMutation;
+	const { reset: resetDelete } = deleteMutation;
+	const handleRename = useCallback(
+		(team: Team) => {
+			resetUpdate();
+			setRenameTarget(team);
+		},
+		[resetUpdate],
+	);
+	const handleDelete = useCallback(
+		(team: Team) => {
+			resetDelete();
+			setDeleteTarget(team);
+		},
+		[resetDelete],
+	);
 
 	return (
 		<PageBody>
@@ -159,9 +176,14 @@ function TeamsPageForOrganization({ orgId }: { orgId: string }) {
 					<>
 						<OrgSelector />
 						{orgId && canManage && (
-							<Button onClick={() => setShowCreate(true)}>
+							<Button
+								onClick={() => {
+									createMutation.reset();
+									setShowCreate(true);
+								}}
+							>
 								<Plus className="mr-2 h-4 w-4" />
-								Create Team
+								Create team
 							</Button>
 						)}
 					</>
@@ -214,6 +236,11 @@ function TeamsPageForOrganization({ orgId }: { orgId: string }) {
 				onSubmit={(vals) => createMutation.mutate(vals)}
 				onCancel={() => setShowCreate(false)}
 				isPending={createMutation.isPending}
+				error={
+					createMutation.isError
+						? failureText("create the team", createMutation.error)
+						: undefined
+				}
 			/>
 
 			{renameTarget && (
@@ -234,31 +261,52 @@ function TeamsPageForOrganization({ orgId }: { orgId: string }) {
 					}
 					onCancel={() => setRenameTarget(null)}
 					isPending={updateMutation.isPending}
+					error={
+						updateMutation.isError
+							? failureText("update the team", updateMutation.error)
+							: undefined
+					}
 				/>
 			)}
 
 			{deleteTarget && (
-				<AlertDialog open onOpenChange={(o) => !o && setDeleteTarget(null)}>
+				<AlertDialog
+					open
+					onOpenChange={(o) => {
+						if (!o && !deleting.current && !deleteMutation.isPending)
+							setDeleteTarget(null);
+					}}
+				>
 					<AlertDialogContent>
 						<AlertDialogHeader>
-							<AlertDialogTitle>Delete team?</AlertDialogTitle>
+							<AlertDialogTitle>Delete {deleteTarget.name}?</AlertDialogTitle>
 							<AlertDialogDescription>
 								This permanently deletes{" "}
 								<span className="font-medium">{deleteTarget.name}</span> and
 								removes all its memberships. This can&apos;t be undone.
 							</AlertDialogDescription>
 						</AlertDialogHeader>
+						{deleteMutation.isError && (
+							<ErrorState
+								title="Team wasn’t deleted"
+								detail={failureText("delete the team", deleteMutation.error)}
+							/>
+						)}
 						<AlertDialogFooter>
-							<AlertDialogCancel onClick={() => setDeleteTarget(null)}>
+							<AlertDialogCancel disabled={deleteMutation.isPending}>
 								Cancel
 							</AlertDialogCancel>
-							<AlertDialogAction
-								onClick={() => deleteMutation.mutate(deleteTarget.id)}
+							<Button
+								onClick={() => {
+									if (!canManage || deleting.current) return;
+									deleting.current = true;
+									deleteMutation.mutate(deleteTarget.id);
+								}}
 								disabled={deleteMutation.isPending}
-								className="bg-destructive text-white hover:bg-destructive/90"
+								variant="destructive"
 							>
 								{deleteMutation.isPending ? "Deleting..." : "Delete team"}
-							</AlertDialogAction>
+							</Button>
 						</AlertDialogFooter>
 					</AlertDialogContent>
 				</AlertDialog>

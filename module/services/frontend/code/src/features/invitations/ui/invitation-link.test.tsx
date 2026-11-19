@@ -38,7 +38,9 @@ describe("invitation links", () => {
 				}),
 			),
 		);
-		renderInApp(<InvitationsTable invitations={[pending]} isLoading={false} />);
+		renderInApp(
+			<InvitationsTable invitations={[pending]} isLoading={false} canManage />,
+		);
 		fireEvent.click(
 			screen.getByRole("button", {
 				name: "Copy invitation link for user@example.com",

@@ -2,7 +2,7 @@
 
 import type { FrontendThemePreference } from "@codefly-dev/saas-plugin-contract";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { profileInitials } from "@/features/user-profile/model/profile";
 import { USER_PROFILE_QUERY_KEY } from "@/features/user-profile/service/client";
@@ -23,6 +23,7 @@ import {
 	CardTitle,
 	Checkbox,
 	ErrorState,
+	Field,
 	Input,
 	Label,
 	Page as PageBody,
@@ -35,6 +36,7 @@ import {
 	SelectValue,
 	Skeleton,
 	Textarea,
+	useLoadingPhase,
 } from "@/shared/ui";
 import { Settings } from "../model/settings";
 import { themePreferenceFromProto } from "../model/theme-preference";
@@ -64,20 +66,23 @@ export function GeneralSettingsPage() {
 		data: settings,
 		isLoading,
 		isError: settingsFailed,
+		error: settingsError,
 	} = useQuery(userSettingsQueries.current());
 	const {
 		data: self,
 		isLoading: isProfileLoading,
 		isError: profileFailed,
+		error: profileError,
 	} = useQuery(userProfileQueries.current());
-	if (isLoading || isProfileLoading) {
+	const { indicator, quiet } = useLoadingPhase(isLoading || isProfileLoading);
+	if (quiet || indicator) {
 		return (
 			<PageBody>
 				{HEADER}
-				<Skeleton className="h-64 w-full" />
-				<Skeleton className="h-48 w-full" />
-				<Skeleton className="h-48 w-full" />
-				<Skeleton className="h-48 w-full" />
+				{indicator && <Skeleton className="h-64 w-full" />}
+				{indicator && <Skeleton className="h-48 w-full" />}
+				{indicator && <Skeleton className="h-48 w-full" />}
+				{indicator && <Skeleton className="h-48 w-full" />}
 			</PageBody>
 		);
 	}
@@ -90,27 +95,22 @@ export function GeneralSettingsPage() {
 				<Panel>
 					<ErrorState
 						title="Couldn't load your preferences"
-						detail="Nothing was changed. Reload the page; if it keeps failing, tell your administrator."
+						detail={failureText(
+							"load your preferences",
+							settingsFailed ? settingsError : profileError,
+						)}
 					/>
 				</Panel>
 			</PageBody>
 		);
 	}
-	const formIdentity = JSON.stringify([
-		Settings.appearance.theme.get(settings),
-		Settings.regional.locale.get(settings),
-		Settings.regional.timezone.get(settings),
-		Settings.regional.dateFormat.get(settings),
-		Settings.regional.timeFormat.get(settings),
-		Settings.email.product.get(settings),
-		Settings.email.marketing.get(settings),
-		Settings.email.weeklyDigest.get(settings),
-		self?.user?.uuid,
-		self?.user?.primaryEmail,
-		self?.user?.profile,
-	]);
+
 	return (
-		<GeneralSettingsForm key={formIdentity} settings={settings} self={self} />
+		<GeneralSettingsForm
+			key={self?.user?.uuid}
+			settings={settings}
+			self={self}
+		/>
 	);
 }
 
@@ -122,6 +122,16 @@ function GeneralSettingsForm({
 	self: GetSelfResponse | undefined;
 }) {
 	const queryClient = useQueryClient();
+	// Keep drafts until this person leaves the page. Saving one section must not
+	// discard unfinished edits in another when its query refreshes.
+	const busy = useRef(false);
+	const [savingSection, setSavingSection] = useState<string | null>(null);
+	const [failure, setFailure] = useState<{
+		section: string;
+		message: string;
+	} | null>(null);
+	const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+	const isSaving = savingSection !== null;
 	const { setPreference, isSaving: isSavingTheme } = useThemePreference();
 
 	// Local form state. Initialized from the api on load; saves below
@@ -184,20 +194,28 @@ function GeneralSettingsForm({
 	});
 
 	async function persist(
+		section: string,
 		operation: () => Promise<unknown>,
 		successMessage = "Settings saved",
 	) {
+		if (busy.current) return;
+		busy.current = true;
+		setSavingSection(section);
+		setFailure(null);
 		try {
 			await operation();
 			toast.success(successMessage);
 			await queryClient.invalidateQueries({ queryKey: ["user-settings"] });
 		} catch (error) {
-			toast.error(failureText("save your changes", error));
+			setFailure({ section, message: failureText("save your changes", error) });
+		} finally {
+			busy.current = false;
+			setSavingSection(null);
 		}
 	}
 
 	function saveAppearance() {
-		void persist(async () => {
+		void persist("appearance", async () => {
 			await setPreference(theme);
 			await save.mutateAsync({
 				patch: Settings.regional.locale.patch(locale),
@@ -206,15 +224,24 @@ function GeneralSettingsForm({
 	}
 
 	function saveTimezone() {
-		void persist(() =>
+		try {
+			new Intl.DateTimeFormat(undefined, { timeZone: timezone.trim() });
+		} catch {
+			setFieldErrors({ tz: "Enter a valid time zone, such as Europe/Paris." });
+			return;
+		}
+		setFieldErrors({});
+		void persist("regional", () =>
 			save.mutateAsync({
-				patch: { regional: { timezone, dateFormat, timeFormat } },
+				patch: {
+					regional: { timezone: timezone.trim(), dateFormat, timeFormat },
+				},
 			}),
 		);
 	}
 
 	function saveEmail() {
-		void persist(() =>
+		void persist("email", () =>
 			save.mutateAsync({
 				patch: {
 					email: {
@@ -228,12 +255,39 @@ function GeneralSettingsForm({
 	}
 
 	function saveUserProfile() {
-		void persist(async () => {
-			await saveProfile.mutateAsync();
-			await queryClient.invalidateQueries({
-				queryKey: USER_PROFILE_QUERY_KEY,
-			});
-		}, "Profile saved");
+		const errors: Record<string, string> = {};
+		if (profileAvatarURL.trim()) {
+			try {
+				const url = new URL(profileAvatarURL);
+				if (url.protocol !== "https:" && url.protocol !== "http:")
+					throw new Error();
+			} catch {
+				errors["profile-avatar"] =
+					"Enter a complete image address beginning with https:// or http://.";
+			}
+		}
+		if (profileTimezone.trim()) {
+			try {
+				new Intl.DateTimeFormat(undefined, {
+					timeZone: profileTimezone.trim(),
+				});
+			} catch {
+				errors["profile-timezone"] =
+					"Enter a valid time zone, such as Europe/Paris.";
+			}
+		}
+		setFieldErrors(errors);
+		if (Object.keys(errors).length) return;
+		void persist(
+			"profile",
+			async () => {
+				await saveProfile.mutateAsync();
+				await queryClient.invalidateQueries({
+					queryKey: USER_PROFILE_QUERY_KEY,
+				});
+			},
+			"Profile saved",
+		);
 	}
 
 	return (
@@ -243,300 +297,428 @@ function GeneralSettingsForm({
 			{/* ── Profile ── */}
 			<Card>
 				<CardHeader>
-					<CardTitle>Profile</CardTitle>
+					<CardTitle role="heading" aria-level={2}>
+						Profile
+					</CardTitle>
 					<CardDescription>
 						Your public identity across organizations and team activity.
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-5">
-					<div className="flex items-center gap-4">
-						<Avatar data-size="lg">
-							<AvatarImage src={profileAvatarURL || undefined} />
-							<AvatarFallback>
-								{profileInitials(
-									profileDisplayName || profileName || self?.user?.primaryEmail,
+					<form
+						aria-label="Profile"
+						className="contents"
+						onSubmit={(event) => {
+							event.preventDefault();
+							saveUserProfile();
+						}}
+					>
+						{failure?.section === "profile" && (
+							<ErrorState title="Changes not saved" detail={failure.message} />
+						)}
+						<div className="flex items-center gap-4">
+							<Avatar data-size="lg">
+								<AvatarImage src={profileAvatarURL || undefined} />
+								<AvatarFallback>
+									{profileInitials(
+										profileDisplayName ||
+											profileName ||
+											self?.user?.primaryEmail,
+									)}
+								</AvatarFallback>
+							</Avatar>
+							<div className="grid flex-1 gap-4 sm:grid-cols-2">
+								<Field
+									label="Full name"
+									className="space-y-2"
+									error={fieldErrors["profile-name"]}
+								>
+									{(control) => (
+										<Input
+											disabled={isSaving}
+											{...control}
+											value={profileName}
+											onChange={(event) => setProfileName(event.target.value)}
+											placeholder="Jane Doe"
+										/>
+									)}
+								</Field>
+								<Field
+									label="Display name"
+									className="space-y-2"
+									error={fieldErrors["profile-display-name"]}
+								>
+									{(control) => (
+										<Input
+											disabled={isSaving}
+											{...control}
+											value={profileDisplayName}
+											onChange={(event) =>
+												setProfileDisplayName(event.target.value)
+											}
+											placeholder="jane"
+										/>
+									)}
+								</Field>
+							</div>
+						</div>
+						<div className="grid gap-4 sm:grid-cols-2">
+							<Field
+								label="Profile picture link"
+								className="space-y-2 sm:col-span-2"
+								error={fieldErrors["profile-avatar"]}
+							>
+								{(control) => (
+									<Input
+										disabled={isSaving}
+										{...control}
+										value={profileAvatarURL}
+										onChange={(event) =>
+											setProfileAvatarURL(event.target.value)
+										}
+										placeholder="https://example.com/avatar.png"
+									/>
 								)}
-							</AvatarFallback>
-						</Avatar>
-						<div className="grid flex-1 gap-4 sm:grid-cols-2">
-							<div className="space-y-2">
-								<Label htmlFor="profile-name">Full name</Label>
-								<Input
-									id="profile-name"
-									value={profileName}
-									onChange={(event) => setProfileName(event.target.value)}
-									placeholder="Ada Lovelace"
-								/>
-							</div>
-							<div className="space-y-2">
-								<Label htmlFor="profile-display-name">Display name</Label>
-								<Input
-									id="profile-display-name"
-									value={profileDisplayName}
-									onChange={(event) =>
-										setProfileDisplayName(event.target.value)
-									}
-									placeholder="ada"
-								/>
-							</div>
+							</Field>
+							<Field
+								label="Title"
+								className="space-y-2"
+								error={fieldErrors["profile-title"]}
+							>
+								{(control) => (
+									<Input
+										disabled={isSaving}
+										{...control}
+										value={profileTitle}
+										onChange={(event) => setProfileTitle(event.target.value)}
+										placeholder="Engineering Manager"
+									/>
+								)}
+							</Field>
+							<Field
+								label="Phone"
+								className="space-y-2"
+								error={fieldErrors["profile-phone"]}
+							>
+								{(control) => (
+									<Input
+										disabled={isSaving}
+										{...control}
+										value={profilePhone}
+										onChange={(event) => setProfilePhone(event.target.value)}
+										placeholder="+1 555 0100"
+									/>
+								)}
+							</Field>
+							<Field
+								label="Location"
+								className="space-y-2"
+								error={fieldErrors["profile-location"]}
+							>
+								{(control) => (
+									<Input
+										disabled={isSaving}
+										{...control}
+										value={profileLocation}
+										onChange={(event) => setProfileLocation(event.target.value)}
+										placeholder="New York, NY"
+									/>
+								)}
+							</Field>
+							<Field
+								label="Profile time zone"
+								className="space-y-2"
+								error={fieldErrors["profile-timezone"]}
+							>
+								{(control) => (
+									<Input
+										disabled={isSaving}
+										{...control}
+										value={profileTimezone}
+										onChange={(event) => setProfileTimezone(event.target.value)}
+										placeholder="America/New_York"
+									/>
+								)}
+							</Field>
+							<Field
+								label="Bio"
+								className="space-y-2 sm:col-span-2"
+								error={fieldErrors["profile-bio"]}
+							>
+								{(control) => (
+									<Textarea
+										disabled={isSaving}
+										{...control}
+										value={profileBio}
+										onChange={(event) => setProfileBio(event.target.value)}
+										rows={3}
+										placeholder="A short note teammates see on your profile."
+									/>
+								)}
+							</Field>
 						</div>
-					</div>
-					<div className="grid gap-4 sm:grid-cols-2">
-						<div className="space-y-2 sm:col-span-2">
-							<Label htmlFor="profile-avatar">Avatar URL</Label>
-							<Input
-								id="profile-avatar"
-								value={profileAvatarURL}
-								onChange={(event) => setProfileAvatarURL(event.target.value)}
-								placeholder="https://example.com/avatar.png"
-							/>
+						<div className="flex justify-end">
+							<Button type="submit" disabled={isSaving}>
+								{saveProfile.isPending ? "Saving…" : "Save profile"}
+							</Button>
 						</div>
-						<div className="space-y-2">
-							<Label htmlFor="profile-title">Title</Label>
-							<Input
-								id="profile-title"
-								value={profileTitle}
-								onChange={(event) => setProfileTitle(event.target.value)}
-								placeholder="Engineering Manager"
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="profile-phone">Phone</Label>
-							<Input
-								id="profile-phone"
-								value={profilePhone}
-								onChange={(event) => setProfilePhone(event.target.value)}
-								placeholder="+1 555 0100"
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="profile-location">Location</Label>
-							<Input
-								id="profile-location"
-								value={profileLocation}
-								onChange={(event) => setProfileLocation(event.target.value)}
-								placeholder="New York, NY"
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="profile-timezone">Profile time zone</Label>
-							<Input
-								id="profile-timezone"
-								value={profileTimezone}
-								onChange={(event) => setProfileTimezone(event.target.value)}
-								placeholder="America/New_York"
-							/>
-						</div>
-						<div className="space-y-2 sm:col-span-2">
-							<Label htmlFor="profile-bio">Bio</Label>
-							<Textarea
-								id="profile-bio"
-								value={profileBio}
-								onChange={(event) => setProfileBio(event.target.value)}
-								rows={3}
-								placeholder="A short note teammates see on your profile."
-							/>
-						</div>
-					</div>
-					<div className="flex justify-end">
-						<Button onClick={saveUserProfile} disabled={saveProfile.isPending}>
-							{saveProfile.isPending ? "Saving…" : "Save profile"}
-						</Button>
-					</div>
+					</form>
 				</CardContent>
 			</Card>
 
 			{/* ── Appearance ── */}
 			<Card>
 				<CardHeader>
-					<CardTitle>Appearance</CardTitle>
+					<CardTitle role="heading" aria-level={2}>
+						Appearance
+					</CardTitle>
 					<CardDescription>
 						The theme follows your device by default. Pick light or dark to keep
 						it fixed.
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-4">
-					<div className="grid grid-cols-2 gap-4 max-w-md">
-						<div className="space-y-2">
-							<Label htmlFor="theme">Theme</Label>
-							<Select
-								value={theme}
-								items={{ system: "System", light: "Light", dark: "Dark" }}
-								onValueChange={(value) => {
-									if (
-										value === "system" ||
-										value === "light" ||
-										value === "dark"
-									)
-										setLocalTheme(value);
-								}}
-							>
-								<SelectTrigger id="theme">
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="system">System</SelectItem>
-									<SelectItem value="light">Light</SelectItem>
-									<SelectItem value="dark">Dark</SelectItem>
-								</SelectContent>
-							</Select>
+					<form
+						aria-label="Appearance"
+						className="contents"
+						onSubmit={(event) => {
+							event.preventDefault();
+							saveAppearance();
+						}}
+					>
+						{failure?.section === "appearance" && (
+							<ErrorState title="Changes not saved" detail={failure.message} />
+						)}
+						<div className="grid gap-4 sm:grid-cols-2 max-w-md">
+							<Field label="Theme" className="space-y-2">
+								{(control) => (
+									<Select
+										disabled={isSaving}
+										value={theme}
+										items={{ system: "System", light: "Light", dark: "Dark" }}
+										onValueChange={(value) => {
+											if (
+												value === "system" ||
+												value === "light" ||
+												value === "dark"
+											)
+												setLocalTheme(value);
+										}}
+									>
+										<SelectTrigger {...control}>
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											<SelectItem value="system">System</SelectItem>
+											<SelectItem value="light">Light</SelectItem>
+											<SelectItem value="dark">Dark</SelectItem>
+										</SelectContent>
+									</Select>
+								)}
+							</Field>
+							<Field label="Language" className="space-y-2">
+								{(control) => (
+									<Select
+										disabled={isSaving}
+										items={{
+											en: "English",
+											es: "Español",
+											fr: "Français",
+											de: "Deutsch",
+											ja: "日本語",
+										}}
+										value={locale}
+										onValueChange={(v) => v && setLocale(v)}
+									>
+										<SelectTrigger {...control}>
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											<SelectItem value="en">English</SelectItem>
+											<SelectItem value="es">Español</SelectItem>
+											<SelectItem value="fr">Français</SelectItem>
+											<SelectItem value="de">Deutsch</SelectItem>
+											<SelectItem value="ja">日本語</SelectItem>
+										</SelectContent>
+									</Select>
+								)}
+							</Field>
 						</div>
-						<div className="space-y-2">
-							<Label htmlFor="locale">Language</Label>
-							<Select
-								items={{
-									en: "English",
-									es: "Español",
-									fr: "Français",
-									de: "Deutsch",
-									ja: "日本語",
-								}}
-								value={locale}
-								onValueChange={(v) => v && setLocale(v)}
+						<div className="flex justify-end">
+							<Button
+								variant="outline"
+								type="submit"
+								disabled={isSaving || isSavingTheme}
 							>
-								<SelectTrigger id="locale">
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="en">English</SelectItem>
-									<SelectItem value="es">Español</SelectItem>
-									<SelectItem value="fr">Français</SelectItem>
-									<SelectItem value="de">Deutsch</SelectItem>
-									<SelectItem value="ja">日本語</SelectItem>
-								</SelectContent>
-							</Select>
+								{save.isPending || isSavingTheme
+									? "Saving…"
+									: "Save appearance"}
+							</Button>
 						</div>
-					</div>
-					<div className="flex justify-end">
-						<Button
-							onClick={saveAppearance}
-							disabled={save.isPending || isSavingTheme}
-						>
-							{save.isPending || isSavingTheme ? "Saving…" : "Save appearance"}
-						</Button>
-					</div>
+					</form>
 				</CardContent>
 			</Card>
 
 			{/* ── Time & date ── */}
 			<Card>
 				<CardHeader>
-					<CardTitle>Time & date</CardTitle>
+					<CardTitle role="heading" aria-level={2}>
+						Time & date
+					</CardTitle>
 					<CardDescription>
 						How dates and times are shown to you across the product.
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-4">
-					<div className="grid grid-cols-3 gap-4">
-						<div className="space-y-2 col-span-2">
-							<Label htmlFor="tz">Time zone</Label>
-							<Input
-								id="tz"
-								placeholder="America/New_York"
-								value={timezone}
-								onChange={(e) => setTimezone(e.target.value)}
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="time-format">Time format</Label>
-							<Select
-								value={timeFormat}
-								items={{ "24h": "24-hour", "12h": "12-hour" }}
-								onValueChange={(v) => v && setTimeFormat(v)}
+					<form
+						aria-label="Time and date"
+						className="contents"
+						onSubmit={(event) => {
+							event.preventDefault();
+							saveTimezone();
+						}}
+					>
+						{failure?.section === "regional" && (
+							<ErrorState title="Changes not saved" detail={failure.message} />
+						)}
+						<div className="grid gap-4 sm:grid-cols-3">
+							<Field
+								label="Time zone"
+								className="space-y-2 sm:col-span-2"
+								error={fieldErrors["tz"]}
 							>
-								<SelectTrigger id="time-format">
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="24h">24-hour</SelectItem>
-									<SelectItem value="12h">12-hour</SelectItem>
-								</SelectContent>
-							</Select>
+								{(control) => (
+									<Input
+										disabled={isSaving}
+										{...control}
+										placeholder="America/New_York"
+										value={timezone}
+										onChange={(e) => setTimezone(e.target.value)}
+									/>
+								)}
+							</Field>
+							<Field label="Time format" className="space-y-2">
+								{(control) => (
+									<Select
+										disabled={isSaving}
+										value={timeFormat}
+										items={{ "24h": "24-hour", "12h": "12-hour" }}
+										onValueChange={(v) => v && setTimeFormat(v)}
+									>
+										<SelectTrigger {...control}>
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											<SelectItem value="24h">24-hour</SelectItem>
+											<SelectItem value="12h">12-hour</SelectItem>
+										</SelectContent>
+									</Select>
+								)}
+							</Field>
 						</div>
-					</div>
-					<div className="space-y-2 max-w-xs">
-						<Label htmlFor="date-format">Date format</Label>
-						<Select
-							value={dateFormat}
-							items={{
-								iso: "ISO (2026-04-25)",
-								us: "US (04/25/2026)",
-								eu: "EU (25/04/2026)",
-							}}
-							onValueChange={(v) => v && setDateFormat(v)}
-						>
-							<SelectTrigger id="date-format">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value="iso">ISO (2026-04-25)</SelectItem>
-								<SelectItem value="us">US (04/25/2026)</SelectItem>
-								<SelectItem value="eu">EU (25/04/2026)</SelectItem>
-							</SelectContent>
-						</Select>
-					</div>
-					<div className="flex justify-end">
-						<Button onClick={saveTimezone} disabled={save.isPending}>
-							{save.isPending ? "Saving…" : "Save time & date"}
-						</Button>
-					</div>
+						<Field label="Date format" className="space-y-2 max-w-xs">
+							{(control) => (
+								<Select
+									disabled={isSaving}
+									value={dateFormat}
+									items={{
+										iso: "ISO (2026-04-25)",
+										us: "US (04/25/2026)",
+										eu: "EU (25/04/2026)",
+									}}
+									onValueChange={(v) => v && setDateFormat(v)}
+								>
+									<SelectTrigger {...control}>
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="iso">ISO (2026-04-25)</SelectItem>
+										<SelectItem value="us">US (04/25/2026)</SelectItem>
+										<SelectItem value="eu">EU (25/04/2026)</SelectItem>
+									</SelectContent>
+								</Select>
+							)}
+						</Field>
+						<div className="flex justify-end">
+							<Button variant="outline" type="submit" disabled={isSaving}>
+								{save.isPending ? "Saving…" : "Save time & date"}
+							</Button>
+						</div>
+					</form>
 				</CardContent>
 			</Card>
 
 			{/* ── Email ── */}
 			<Card>
 				<CardHeader>
-					<CardTitle>Email preferences</CardTitle>
+					<CardTitle role="heading" aria-level={2}>
+						Email preferences
+					</CardTitle>
 					<CardDescription>
 						Choose which optional emails you receive. Invitations are sent with
 						product updates. Billing lifecycle messages are always on.
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-3">
-					<div className="flex items-start gap-3">
-						<Checkbox
-							id="email-product"
-							checked={emailProduct}
-							onCheckedChange={(v) => setEmailProduct(v === true)}
-						/>
-						<div className="space-y-0.5">
-							<Label htmlFor="email-product">Product updates</Label>
-							<p className="text-xs text-muted-foreground">
-								Invitations and news about the product.
-							</p>
+					<form
+						aria-label="Email preferences"
+						className="contents"
+						onSubmit={(event) => {
+							event.preventDefault();
+							saveEmail();
+						}}
+					>
+						{failure?.section === "email" && (
+							<ErrorState title="Changes not saved" detail={failure.message} />
+						)}
+						<div className="flex items-start gap-3">
+							<Checkbox
+								disabled={isSaving}
+								id="email-product"
+								checked={emailProduct}
+								onCheckedChange={(v) => setEmailProduct(v === true)}
+							/>
+							<div className="space-y-0.5">
+								<Label htmlFor="email-product">Product updates</Label>
+								<p className="text-xs text-muted-foreground">
+									Invitations and news about the product.
+								</p>
+							</div>
 						</div>
-					</div>
-					<div className="flex items-start gap-3">
-						<Checkbox
-							id="email-weekly-digest"
-							checked={emailWeeklyDigest}
-							onCheckedChange={(v) => setEmailWeeklyDigest(v === true)}
-						/>
-						<div className="space-y-0.5">
-							<Label htmlFor="email-weekly-digest">Weekly digest</Label>
-							<p className="text-xs text-muted-foreground">
-								A weekly summary, when your organization has one set up.
-							</p>
+						<div className="flex items-start gap-3">
+							<Checkbox
+								disabled={isSaving}
+								id="email-weekly-digest"
+								checked={emailWeeklyDigest}
+								onCheckedChange={(v) => setEmailWeeklyDigest(v === true)}
+							/>
+							<div className="space-y-0.5">
+								<Label htmlFor="email-weekly-digest">Weekly digest</Label>
+								<p className="text-xs text-muted-foreground">
+									A weekly summary, when your organization has one set up.
+								</p>
+							</div>
 						</div>
-					</div>
-					<div className="flex items-start gap-3">
-						<Checkbox
-							id="email-marketing"
-							checked={emailMarketing}
-							onCheckedChange={(v) => setEmailMarketing(v === true)}
-						/>
-						<div className="space-y-0.5">
-							<Label htmlFor="email-marketing">Marketing</Label>
-							<p className="text-xs text-muted-foreground">
-								Newsletters and promotions. Off by default.
-							</p>
+						<div className="flex items-start gap-3">
+							<Checkbox
+								disabled={isSaving}
+								id="email-marketing"
+								checked={emailMarketing}
+								onCheckedChange={(v) => setEmailMarketing(v === true)}
+							/>
+							<div className="space-y-0.5">
+								<Label htmlFor="email-marketing">Marketing</Label>
+								<p className="text-xs text-muted-foreground">
+									Newsletters and promotions. Off by default.
+								</p>
+							</div>
 						</div>
-					</div>
-					<div className="flex justify-end pt-2">
-						<Button onClick={saveEmail} disabled={save.isPending}>
-							{save.isPending ? "Saving…" : "Save email preferences"}
-						</Button>
-					</div>
+						<div className="flex justify-end pt-2">
+							<Button variant="outline" type="submit" disabled={isSaving}>
+								{save.isPending ? "Saving…" : "Save email preferences"}
+							</Button>
+						</div>
+					</form>
 				</CardContent>
 			</Card>
 		</PageBody>

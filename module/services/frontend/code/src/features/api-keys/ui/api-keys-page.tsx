@@ -3,7 +3,9 @@
 import { Key } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { OrgSelector } from "@/components/org-selector";
+import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
 import { useAuth } from "@/lib/auth";
+import { hasPermission } from "@/lib/permissions";
 import { readOutcome } from "@/shared/lib/read-outcome";
 import {
 	Button,
@@ -19,7 +21,12 @@ import { APIKeyForm } from "./api-key-form";
 import { APIKeysTable } from "./api-keys-table";
 
 export function APIKeysPage() {
-	const { organizationId: orgId = "" } = useAuth();
+	const { organizationId: orgId = "", platformRole, orgRole } = useAuth();
+	const canManage = hasPermission(
+		platformRole,
+		orgRole,
+		PERMISSIONS.API_KEYS_WRITE,
+	);
 	const {
 		data: keys = [],
 		isLoading,
@@ -38,7 +45,7 @@ export function APIKeysPage() {
 				description="Create and revoke the keys other programs use to reach this organization."
 				actions={
 					<>
-						<APIKeyForm key={orgId} orgId={orgId} />
+						{canManage && <APIKeyForm key={orgId} orgId={orgId} />}
 						<OrgSelector />
 					</>
 				}
@@ -68,8 +75,22 @@ export function APIKeysPage() {
 						)}
 					</Stack>
 				</Panel>
+			) : !isLoading && keys.length === 0 ? (
+				<EmptyState
+					icon={Key}
+					title="No API keys yet"
+					headingAs="h2"
+					description={canManage
+						? "Create a key to connect an application to this organization."
+						: "An organization administrator can create a key to connect an application."}
+				/>
 			) : (
-				<APIKeysTable keys={keys as APIKey[]} isLoading={isLoading} />
+				<APIKeysTable
+					key={orgId}
+					keys={keys as APIKey[]}
+					isLoading={isLoading}
+					canManage={canManage}
+				/>
 			)}
 		</PageBody>
 	);

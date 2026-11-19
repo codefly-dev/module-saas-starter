@@ -86,6 +86,15 @@ describe("DashboardEditor", () => {
 		expect(
 			screen.getByRole("combobox", { name: "Chart" }).textContent,
 		).toContain("Line");
+		await waitFor(() =>
+			expect(
+				(
+					screen.getByRole("button", {
+						name: "Add widget",
+					}) as HTMLButtonElement
+				).disabled,
+			).toBe(false),
+		);
 		fireEvent.click(screen.getByRole("button", { name: "Add widget" }));
 
 		// The default form is an all-events time-series line, so the added widget
@@ -104,6 +113,9 @@ describe("DashboardEditor", () => {
 		);
 
 		const add = screen.getByRole("button", { name: "Add widget" });
+		await waitFor(() =>
+			expect((add as HTMLButtonElement).disabled).toBe(false),
+		);
 		fireEvent.click(add);
 		expect(await screen.findByText("Events over time")).toBeTruthy();
 
@@ -139,6 +151,10 @@ describe("DashboardEditor", () => {
 		await waitFor(() => expect(order()).toEqual(["Beta", "Alpha"]));
 
 		fireEvent.click(screen.getByRole("button", { name: 'Remove "Alpha"' }));
+		expect(
+			screen.getByRole("heading", { name: "Remove “Alpha”?" }),
+		).toBeTruthy();
+		fireEvent.click(screen.getByRole("button", { name: "Remove widget" }));
 		await waitFor(() => expect(screen.queryByText("Alpha")).toBeNull());
 		expect(screen.getByText("Beta")).toBeTruthy();
 	});
@@ -152,6 +168,12 @@ describe("DashboardEditor", () => {
 			/>,
 		);
 
+		await waitFor(() =>
+			expect(
+				(screen.getByRole("button", { name: "Preview" }) as HTMLButtonElement)
+					.disabled,
+			).toBe(false),
+		);
 		fireEvent.click(screen.getByRole("button", { name: "Preview" }));
 		expect(await screen.findByText("Preview: 8 across 2 points.")).toBeTruthy();
 	});
@@ -165,9 +187,74 @@ describe("DashboardEditor", () => {
 			/>,
 		);
 
+		await waitFor(() =>
+			expect(
+				(screen.getByRole("button", { name: "Preview" }) as HTMLButtonElement)
+					.disabled,
+			).toBe(false),
+		);
 		fireEvent.click(screen.getByRole("button", { name: "Preview" }));
 		expect(
-			await screen.findByText(/No organization is in scope yet/),
+			await screen.findByText(/Select an organization to preview/),
 		).toBeTruthy();
 	});
+});
+
+it("shows a refused event catalogue instead of silently falling back to all events", async () => {
+	mount();
+	const service = fakeAuditService();
+	service.listAuditEventTypes.mockRejectedValue(
+		new Error("private-server-detail"),
+	);
+	vi.mocked(useAuditService).mockReturnValue(
+		service as unknown as ReturnType<typeof useAuditService>,
+	);
+	renderInApp(
+		<DashboardEditor
+			storageKey="dashboard:test"
+			initial={dashboard({ title: "T", metrics: [] })}
+		/>,
+	);
+	expect(
+		await screen.findByText("Couldn’t load available events"),
+	).toBeTruthy();
+	expect(
+		(screen.getByRole("button", { name: "Add widget" }) as HTMLButtonElement)
+			.disabled,
+	).toBe(true);
+	expect(screen.queryByText("private-server-detail")).toBeNull();
+});
+it("keeps the named removal confirmation and the widget when saving fails", async () => {
+	mount();
+	const service = fakeAuditService();
+	vi.mocked(useAuditService).mockReturnValue(
+		service as unknown as ReturnType<typeof useAuditService>,
+	);
+	const { client } = renderInApp(
+		<DashboardEditor
+			storageKey="dashboard:test"
+			initial={dashboard({
+				title: "T",
+				metrics: [
+					metric({ title: "Alpha", groupBy: "event_type", chart: "bar" }),
+				],
+			})}
+		/>,
+	);
+	await waitFor(() =>
+		expect(
+			(screen.getByRole("button", { name: "Add widget" }) as HTMLButtonElement)
+				.disabled,
+		).toBe(false),
+	);
+	await client.invalidateQueries({ refetchType: "none" });
+	service.listAuditEventTypes.mockRejectedValue(
+		new Error("private-server-detail"),
+	);
+	fireEvent.click(screen.getByRole("button", { name: 'Remove "Alpha"' }));
+	fireEvent.click(screen.getByRole("button", { name: "Remove widget" }));
+	expect(await screen.findByText("Widget wasn’t removed")).toBeTruthy();
+	expect(screen.getByRole("alertdialog")).toBeTruthy();
+	expect(screen.getByText("Alpha")).toBeTruthy();
+	expect(screen.queryByText("private-server-detail")).toBeNull();
 });

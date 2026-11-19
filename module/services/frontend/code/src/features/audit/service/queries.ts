@@ -2,7 +2,7 @@ import type { MessageInitShape } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { assertAuditScopeContract } from "@codefly-dev/saas-sdk";
 import type { Client } from "@connectrpc/connect";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { teamQueries } from "@/features/teams/service/queries";
 import type {
 	AggregateAuditLogRequestSchema,
@@ -13,6 +13,7 @@ import {
 	useAuditService,
 	usePrincipalService,
 } from "@/lib/hooks/use-api-client";
+import { mayKeepRetainedRows, readOutcome } from "@/shared/lib/read-outcome";
 import { toAuditEvent } from "../model/transforms";
 import type {
 	AuditEventTypeInfo,
@@ -25,20 +26,39 @@ export function useAuditLog(
 	options: { enabled?: boolean } = {},
 ) {
 	const svc = useAuditService();
+	const client = useQueryClient();
 	return useQuery({
 		queryKey: ["audit-log", params],
-		queryFn: () =>
-			svc.queryAuditLog({
-				orgId: params.orgId ?? "",
-				eventType: params.eventType ?? "",
-				eventTypes: params.eventTypes ?? [],
-				category: params.category ?? "",
-				namespace: params.namespace ?? "",
-				actorId: params.actorId ?? "",
-				from: params.from ? timestampFromDate(params.from) : undefined,
-				to: params.to ? timestampFromDate(params.to) : undefined,
-				pageSize: params.pageSize ?? 50,
-			}),
+		queryFn: async () => {
+			try {
+				return await svc.queryAuditLog({
+					orgId: params.orgId ?? "",
+					eventType: params.eventType ?? "",
+					eventTypes: params.eventTypes ?? [],
+					category: params.category ?? "",
+					namespace: params.namespace ?? "",
+					actorId: params.actorId ?? "",
+					from: params.from ? timestampFromDate(params.from) : undefined,
+					to: params.to ? timestampFromDate(params.to) : undefined,
+					pageSize: params.pageSize ?? 50,
+				});
+			} catch (error) {
+				if (!mayKeepRetainedRows(readOutcome(true, error))) {
+					for (const query of client
+						.getQueryCache()
+						.findAll({ queryKey: ["audit-log"] })) {
+						const filters = query.queryKey[1] as AuditLogFilters | undefined;
+						if (
+							filters?.orgId === params.orgId &&
+							query.state.data !== undefined
+						) {
+							query.setState({ data: undefined, dataUpdatedAt: 0 });
+						}
+					}
+				}
+				throw error;
+			}
+		},
 		enabled: options.enabled,
 		select: (data) => ({
 			events: data.events.map(toAuditEvent),

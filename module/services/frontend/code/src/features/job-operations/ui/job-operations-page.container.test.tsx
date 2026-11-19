@@ -384,4 +384,35 @@ describe("JobOperationsPage job details", () => {
 		);
 		expect(screen.getByRole("alertdialog")).toBeTruthy();
 	});
+	it("keeps failure details private in the list and inspection dialog", async () => {
+		const job = {
+			id: "job-1",
+			queue: "emails",
+			state: "JOB_STATE_DEAD_LETTER",
+			attemptCount: 1,
+			maxAttempts: 1,
+			lastFailure: {
+				code: "PRIVATE_INTERNAL_CODE",
+				message: "secret-token-123",
+			},
+		};
+		server.use(
+			http.post(rpc("PlatformAdminService", "GetJobOperations"), () =>
+				HttpResponse.json({ queues: [] }),
+			),
+			http.post(rpc("PlatformAdminService", "ListJobs"), () =>
+				HttpResponse.json({ jobs: [job] }),
+			),
+			http.post(rpc("PlatformAdminService", "GetJob"), () =>
+				HttpResponse.json({ job, attempts: [], transitions: [] }),
+			),
+		);
+		renderInApp(<JobOperationsPage />);
+		expect(await screen.findByText("The job failed for a reason this page has no description for")).toBeTruthy();
+		fireEvent.click(screen.getByRole("button", { name: /View details of/ }));
+		expect(await screen.findByText(/Tell the team that owns this work/)).toBeTruthy();
+		expect(
+			screen.queryByText(/PRIVATE_INTERNAL_CODE|secret-token-123/),
+		).toBeNull();
+	});
 });

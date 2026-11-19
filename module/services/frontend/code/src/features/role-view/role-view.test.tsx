@@ -1,9 +1,4 @@
-import {
-	cleanup,
-	fireEvent,
-	screen,
-	waitFor,
-} from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderInApp } from "@/test/container";
@@ -307,8 +302,8 @@ describe("the notice that a narrowed session ended or is unconfirmed", () => {
 	});
 
 	it.each([
-		["reading", "Confirming what this session is"],
-		["failed", "Could not confirm what this session is"],
+		["reading", "Checking your access"],
+		["failed", "Could not confirm your access"],
 	] as const)(
 		"says a session the host has not confirmed is %s, never 'not a cast'",
 		(state, words) => {
@@ -316,7 +311,9 @@ describe("the notice that a narrowed session ended or is unconfirmed", () => {
 			renderInApp(<RoleViewBanner />);
 			const bar = screen.getByRole("status");
 			expect(bar.textContent).toContain(words);
-			expect(bar.textContent).toContain("no administrator access is offered");
+			expect(bar.textContent).toContain(
+				"Administrator controls are unavailable",
+			);
 		},
 	);
 });

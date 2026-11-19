@@ -5,13 +5,18 @@ import {
 	Button,
 	Input,
 	Label,
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
 	Spinner,
 	useLoadingPhase,
 } from "@codefly-dev/ui/layout";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { apiSourceRefusal, sourceLinks } from "./api-source.js";
-import { selectClass } from "./collection-field.js";
+import { messageOf } from "./errors.js";
 import type { DatasourceClient, DomainView } from "./types.js";
 
 /**
@@ -266,7 +271,7 @@ export function DatasourceAccountLinks({
 			)}
 			{completed.isError && (
 				<p role="alert" className="type-body text-destructive">
-					Couldn’t link the account: {completed.error.message}
+					Couldn’t link the account: {messageOf(completed.error)}
 				</p>
 			)}
 			{declined && (
@@ -312,12 +317,12 @@ export function DatasourceAccountLinks({
 			)}
 			{begin.isError && (
 				<p role="alert" className="type-body text-destructive">
-					Couldn’t start the link: {begin.error.message}
+					Couldn’t start the link: {messageOf(begin.error)}
 				</p>
 			)}
 			{remove.isError && (
 				<p role="alert" className="type-body text-destructive">
-					Couldn’t unlink: {remove.error.message}
+					Couldn’t unlink: {messageOf(remove.error)}
 				</p>
 			)}
 		</section>
@@ -412,7 +417,7 @@ export function DatasourceDirectoryPanel({
 		<div className="space-y-6">
 			{failure?.error && (
 				<p role="alert" className="type-body text-destructive">
-					{failure.error.message}
+					{messageOf(failure.error)}
 				</p>
 			)}
 
@@ -458,19 +463,29 @@ export function DatasourceDirectoryPanel({
 					</div>
 					<div className="min-w-40 flex-1 space-y-1">
 						<Label htmlFor={id("team")}>Your team</Label>
-						<select
-							id={id("team")}
-							className={selectClass}
+						<Select
 							value={teamId}
-							onChange={(event) => setTeamId(event.target.value)}
+							items={[
+								{ value: "", label: "Choose a team" },
+								...data.teams.map((team) => ({
+									value: team.id,
+									label: team.name,
+								})),
+							]}
+							onValueChange={(value) => setTeamId(value ?? "")}
 						>
-							<option value="">Choose a team</option>
-							{data.teams.map((t) => (
-								<option key={t.id} value={t.id}>
-									{t.name}
-								</option>
-							))}
-						</select>
+							<SelectTrigger id={id("team")} className="w-full">
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="">Choose a team</SelectItem>
+								{data.teams.map((team) => (
+									<SelectItem key={team.id} value={team.id}>
+										{team.name}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
 					</div>
 					<Button
 						variant="outline"

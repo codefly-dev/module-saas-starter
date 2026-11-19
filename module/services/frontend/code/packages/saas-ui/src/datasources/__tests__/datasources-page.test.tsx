@@ -256,7 +256,7 @@ describe("Data sources page", () => {
 			}),
 		);
 		expect(
-			await within(nobody).findByRole("listbox", { name: "People and teams" }),
+			await within(nobody).findByRole("group", { name: "Add people or teams" }),
 		).toBeVisible();
 	});
 
@@ -376,8 +376,6 @@ describe("Data sources page", () => {
 	});
 
 	it("says a token is saved, and offers to replace or remove it without ever showing it", async () => {
-		const confirm = vi.fn(() => true);
-		vi.stubGlobal("confirm", confirm);
 		const datasources = client({
 			listSources: vi.fn(async () => [
 				{ ...handbook, credentialMode: "token" as const },
@@ -396,7 +394,15 @@ describe("Data sources page", () => {
 			await screen.findByRole("menuitem", { name: "Replace token" }),
 		).toBeVisible();
 		fireEvent.click(screen.getByRole("menuitem", { name: "Remove token" }));
-		expect(confirm).toHaveBeenCalledOnce();
+		expect(datasources.removeSourceCredential).not.toHaveBeenCalled();
+		expect(screen.getByRole("alertdialog").textContent).toContain(
+			"public repository",
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+		expect(datasources.removeSourceCredential).not.toHaveBeenCalled();
+		fireEvent.click(screen.getByRole("button", { name: "More for acme/handbook" }));
+		fireEvent.click(screen.getByRole("menuitem", { name: "Remove token" }));
+		fireEvent.click(screen.getByRole("button", { name: "Remove token" }));
 		await waitFor(() =>
 			expect(datasources.removeSourceCredential).toHaveBeenCalledWith(
 				"org-1",

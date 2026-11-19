@@ -288,7 +288,9 @@ describe("combined reviewed installation", () => {
 		refuseReview = true;
 		renderInApp(<Page />);
 		const dialog = await open();
-		await within(dialog).findByText(/Required module records/);
+		await within(dialog).findByText(
+			/The current state doesn't allow this change/,
+		);
 		expect(requests).toEqual([]);
 	});
 	it('the install dialog shows "You will get" with every role ticked and untickable', async () => {
@@ -565,6 +567,9 @@ describe("combined reviewed installation", () => {
 		await install();
 		await waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
 		expect(vi.mocked(toast.warning).mock.calls[0][0]).toContain(
+			"grant the rest in Set up",
+		);
+		expect(vi.mocked(toast.warning).mock.calls[0][0]).not.toContain(
 			"user: the role could not be granted to its team: refused",
 		);
 		expect(toast.success).not.toHaveBeenCalledWith(

@@ -99,13 +99,15 @@ export function InstalledCard({
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle>
+				<CardTitle role="heading" aria-level={2}>
 					{unclassified ? "Installed modules" : "Installed"}
 				</CardTitle>
 				<CardDescription>
 					{unclassified
 						? "Every module installed in this organization, by composition. Which of them are solutions is shown once what this organization can install is read."
-						: "What this organization has installed, at which release, and how healthy each installation is right now."}
+						: showModules
+							? "Check versions and health for installed modules."
+							: "Check versions, health and team access for installed solutions."}
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-3">

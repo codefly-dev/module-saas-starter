@@ -776,7 +776,8 @@ function SectionTitleButton({
 	onRename: () => void;
 }) {
 	return (
-		<button
+		<Button
+			variant="ghost"
 			type="button"
 			aria-label={`Rename section ${title}`}
 			data-section-title={sectionId}
@@ -788,7 +789,7 @@ function SectionTitleButton({
 				aria-hidden
 				className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/title:opacity-100 group-focus-visible/title:opacity-100"
 			/>
-		</button>
+		</Button>
 	);
 }
 

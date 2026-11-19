@@ -14,6 +14,7 @@ import {
 	Tabs,
 	TabsList,
 	TabsTrigger,
+	useLoadingPhase,
 } from "@/shared/ui";
 import { CatalogueCard } from "./catalogue-card";
 import { InstalledCard } from "./installed-card";
@@ -73,8 +74,8 @@ function SolutionsHeader({
 			title={showModules ? "Supporting module administration" : "Solutions"}
 			description={
 				showModules
-					? "Modules are part of the platform: every organization has each one, kept up to date by the platform. This page shows which release each is at and whether it is healthy; nothing here installs or removes one."
-					: "The solutions this organization can install, and the module pages whose access it sets up. Install a solution after reviewing what each role can do and its supporting modules; a module page is already part of the platform, and nobody can use it until its roles are given to teams."
+					? "Check the versions and health of the modules your platform provides."
+					: "Review and install solutions for your organization, and choose which teams can use them."
 			}
 			actions={actions}
 		>

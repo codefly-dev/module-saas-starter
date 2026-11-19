@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { Button } from "@/shared/ui";
+import { Button, ErrorState, Page, PageHeader, Spinner } from "@/shared/ui";
 
 // The proxy has always treated /auth/logout as public, but no page served it,
 // so a user whose account menu was unreachable had no way to end the session.
@@ -54,18 +54,20 @@ export function LogoutPage() {
 
 	if (!incomplete) {
 		return (
-			<p className="min-h-screen flex items-center justify-center">
-				Signing out…
-			</p>
+			<Page>
+				<PageHeader title="Signing out" />
+				<Spinner label="Signing out…" />
+			</Page>
 		);
 	}
 
 	return (
-		<div className="min-h-screen flex flex-col items-center justify-center gap-4 px-4 text-center">
-			<p className="max-w-prose">
-				We could not finish signing you out. Your session may still be usable
-				for a few minutes. Please try again.
-			</p>
+		<Page>
+			<PageHeader title="Sign-out incomplete" />
+			<ErrorState
+				title="We could not finish signing you out"
+				detail="Your session may still be usable for a few minutes. Please try again."
+			/>
 			<Button
 				variant="outline"
 				onClick={() => {
@@ -75,6 +77,6 @@ export function LogoutPage() {
 			>
 				Try again
 			</Button>
-		</div>
+		</Page>
 	);
 }

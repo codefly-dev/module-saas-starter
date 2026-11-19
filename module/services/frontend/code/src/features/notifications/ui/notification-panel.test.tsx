@@ -10,6 +10,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+	listError: null as unknown,
 	markRead: vi.fn(async () => undefined),
 	resolveAction: vi.fn(
 		async (_v: { id: string; unread: boolean }) =>
@@ -31,20 +32,23 @@ vi.mock("../service/queries", () => ({
 	notificationQueries: {
 		list: () => ({
 			queryKey: ["notifications"],
-			queryFn: async () => ({
-				notifications: [
-					{
-						id: "notification-1",
-						title: "You've been invited",
-						body: "Join Acme",
-						type: "info",
-						read: false,
-						createdAt: "2026-07-28T12:34:56.789Z",
-						hasAction: true,
-					},
-				],
-				nextPageToken: "",
-			}),
+			queryFn: async () => {
+				if (mocks.listError) throw mocks.listError;
+				return {
+					notifications: [
+						{
+							id: "notification-1",
+							title: "You've been invited",
+							body: "Join Acme",
+							type: "info",
+							read: false,
+							createdAt: "2026-07-28T12:34:56.789Z",
+							hasAction: true,
+						},
+					],
+					nextPageToken: "",
+				};
+			},
 		}),
 	},
 }));
@@ -61,6 +65,7 @@ import { NotificationPanel } from "./notification-panel";
 
 afterEach(() => {
 	cleanup();
+	mocks.listError = null;
 	mocks.markRead.mockClear();
 	mocks.resolveAction.mockClear();
 	mocks.push.mockClear();
@@ -81,6 +86,24 @@ function renderPanel(onClose = vi.fn()) {
 }
 
 describe("NotificationPanel", () => {
+	it("distinguishes a refused read from no notifications without exposing server details", async () => {
+		mocks.listError = new ConnectError(
+			"private policy diagnostic",
+			Code.PermissionDenied,
+		);
+		renderPanel();
+		expect(await screen.findByText("Couldn’t load notifications")).toBeTruthy();
+		expect(screen.queryByText("No notifications")).toBeNull();
+		expect(screen.queryByText(/private policy diagnostic/)).toBeNull();
+		expect(
+			(
+				screen.getByRole("button", {
+					name: "Mark all read",
+				}) as HTMLButtonElement
+			).disabled,
+		).toBe(true);
+	});
+
 	// The list carries no destination at all: it comes back from the server,
 	// which re-authorizes the resource as the link is followed.
 	it("opens the re-authorized destination and only then marks it read", async () => {
@@ -93,7 +116,9 @@ describe("NotificationPanel", () => {
 		);
 
 		await waitFor(() => {
-			expect(mocks.push).toHaveBeenCalledWith("/invitations/accept?token=token");
+			expect(mocks.push).toHaveBeenCalledWith(
+				"/invitations/accept?token=token",
+			);
 		});
 		expect(mocks.resolveAction).toHaveBeenCalledWith("notification-1");
 		expect(mocks.markRead).toHaveBeenCalledWith("notification-1");

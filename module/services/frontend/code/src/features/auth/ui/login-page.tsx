@@ -1,8 +1,8 @@
 "use client";
 
-import { Loader2, LogIn } from "lucide-react";
+import { LogIn } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BrandMark } from "@/components/brand-mark";
 import {
 	forgetClientAuthorization,
@@ -17,18 +17,22 @@ import {
 	isHeaderInjectedProvider,
 	useAuth,
 } from "@/lib/auth";
+import { AuthError } from "@/lib/auth-errors";
 import type { FixtureUser } from "@/lib/fixtures/types";
 import { publicHandoffDestination } from "@/lib/public-handoff";
 import {
 	Avatar,
 	AvatarFallback,
-	Badge,
 	Button,
 	Card,
 	CardContent,
 	CardDescription,
 	CardHeader,
+	EmptyState,
 	ErrorState,
+	Page,
+	PageHeader,
+	Spinner,
 } from "@/shared/ui";
 
 const SIGN_IN_FAILED =
@@ -40,20 +44,14 @@ interface FixtureResponse {
 	sign_in_choices?: string[];
 }
 
-/**
- * What to show when a sign-in step fails. The sign-in calls refuse with a
- * sentence written for the person (a plain `Error`, or an `AuthError`), and
- * that sentence is passed on. Anything else that can be thrown here — a request
- * that never left the browser, a response that could not be read, a browser
- * exception — carries text written for developers, so `fallback` is said
- * instead. Told apart by the error's kind, never by its text.
- */
+/** Authentication responses can carry server diagnostics; use the action's safe copy. */
 export function signInFailureText(error: unknown, fallback: string): string {
-	return error instanceof Error &&
-		(error.name === "Error" || error.name === "AuthError") &&
-		error.message
-		? error.message
-		: fallback;
+	if (
+		error instanceof AuthError &&
+		(error.detail.status === 403 || error.detail.code === "permission_denied")
+	)
+		return "Your account does not have access. Ask your organization administrator to grant access.";
+	return fallback;
 }
 
 export function LoginPage({ identity }: { identity: IdentityConfig }) {
@@ -76,6 +74,11 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 	const [error, setError] = useState<string | null>(null);
 	const [fixtureUsers, setFixtureUsers] = useState<FixtureUser[]>([]);
 	const [loading, setLoading] = useState<string | null>(null);
+	const pending = useRef(false);
+	const [fixtureState, setFixtureState] = useState<
+		"loading" | "ready" | "failed"
+	>("loading");
+	const [fixtureAttempt, setFixtureAttempt] = useState(0);
 
 	// A registered client sent the person here to sign in on its behalf. The
 	// host decides whether that request is allowed before anything else renders:
@@ -128,19 +131,27 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 
 	useEffect(() => {
 		if (!devMode || clientRefusal) return;
-		fetch("/api/fixtures")
-			.then((res) => (res.ok ? (res.json() as Promise<FixtureResponse>) : null))
-			.then((data) => {
-				if (!data?.users) return;
-				const choices = data.sign_in_choices;
-				if (!choices) {
-					setFixtureUsers(data.users.length <= 3 ? data.users : []);
-					return;
-				}
-				setFixtureUsers(choices.flatMap((id) => data.users.filter((u) => u.provider_id === id)));
+		const controller = new AbortController();
+		setFixtureState("loading");
+		fetch("/api/fixtures", { signal: controller.signal })
+			.then(async (res) => {
+				if (!res.ok) throw new Error("Fixture list unavailable");
+				return res.json() as Promise<FixtureResponse>;
 			})
-			.catch(() => {});
-	}, [devMode, clientRefusal]);
+			.then((data) => {
+				if (controller.signal.aborted) return;
+				if (!Array.isArray(data.users)) throw new Error("Fixture list unavailable");
+				const choices = data.sign_in_choices;
+				setFixtureUsers(choices
+					? choices.flatMap((id) => data.users.filter((u) => u.provider_id === id))
+					: data.users.length <= 3 ? data.users : []);
+				setFixtureState("ready");
+			})
+			.catch(() => {
+				if (!controller.signal.aborted) setFixtureState("failed");
+			});
+		return () => controller.abort();
+	}, [devMode, clientRefusal, fixtureAttempt]);
 
 	// Header-injected identity: no button. The gateway already authenticated the
 	// user upstream, so exchange the injected header for a session on load.
@@ -169,6 +180,8 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 	]);
 
 	async function handleFixtureLogin(user: FixtureUser) {
+		if (pending.current) return;
+		pending.current = true;
 		setError(null);
 		const fixtureToken = user.fixture_token ?? user.provider_id;
 		setLoading(fixtureToken);
@@ -184,14 +197,19 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 			// state and force a cross-origin refresh round-trip (fragile when the
 			// FE and api are on different ports, e.g. the e2e direct-to-api setup).
 			if (authenticated) router.push(destination);
+			else {
+				pending.current = false;
+				setLoading(null);
+			}
 		} catch (err) {
 			setError(signInFailureText(err, SIGN_IN_FAILED));
+			pending.current = false;
 			setLoading(null);
 		}
 	}
 
 	return (
-		<div className="flex min-h-screen w-full items-center justify-center p-4">
+		<Page className="flex min-h-screen w-full items-center justify-center p-4">
 			<div className="w-full max-w-md space-y-6">
 				<div className="flex items-center justify-center gap-3">
 					<BrandMark
@@ -205,9 +223,7 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 
 				<Card>
 					<CardHeader>
-						<h1 data-slot="page-title" className="type-page-title">
-							{stepUp ? "Confirm your passkey" : "Sign in"}
-						</h1>
+						<PageHeader title={stepUp ? "Confirm your passkey" : "Sign in"} />
 						<CardDescription>
 							{stepUp
 								? "That change needs your second factor confirmed within the last 15 minutes. Sign in again and you will be taken back to where you were."
@@ -221,27 +237,13 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 						    any sign-in method is offered. */}
 						{clientRefusal && <ErrorState title={clientRefusal} />}
 
-						{clientPending && (
-							<p
-								role="status"
-								className="flex items-center gap-2 text-sm text-muted-foreground"
-							>
-								<Loader2 className="size-4 shrink-0 animate-spin" />
-								Checking the application…
-							</p>
-						)}
+						{clientPending && <Spinner label="Checking the application…" />}
 
 						{error && <ErrorState title={error} />}
 
 						{/* Header-injected identity — no button, exchange in progress */}
 						{headerInjected && !error && !clientPending && !clientRefusal && (
-							<p
-								role="status"
-								className="flex items-center gap-2 text-sm text-muted-foreground"
-							>
-								<Loader2 className="size-4 shrink-0 animate-spin" />
-								Signing you in…
-							</p>
+							<Spinner label="Signing you in…" />
 						)}
 
 						{/* OAuth providers */}
@@ -253,7 +255,11 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 										variant="outline"
 										size="lg"
 										className="w-full"
+										disabled={loading !== null}
 										onClick={async () => {
+											if (pending.current) return;
+											pending.current = true;
+											setLoading(p.id);
 											setError(null);
 											try {
 												await signInWith(p, destination);
@@ -262,9 +268,9 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 												// redirect, so the click otherwise looks dead. Log the
 												// status for operators; show the user a real message.
 												console.error("Sign-in could not be started", err);
-												setError(
-													"Sign-in is temporarily misconfigured. Please try again in a few minutes.",
-												);
+												pending.current = false;
+												setLoading(null);
+												setError(signInFailureText(err, SIGN_IN_FAILED));
 											}
 										}}
 									>
@@ -275,8 +281,42 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 							</div>
 						)}
 
+						{devMode &&
+							!clientPending &&
+							!clientRefusal &&
+							fixtureState === "loading" && (
+								<Spinner label="Loading sign-in choices" />
+							)}
+						{devMode &&
+							!clientPending &&
+							!clientRefusal &&
+							fixtureState === "failed" && (
+								<>
+									<ErrorState
+										title="Couldn’t load sign-in choices"
+										detail="Check your connection and try again."
+									/>
+									<Button
+										variant="outline"
+										onClick={() => setFixtureAttempt((value) => value + 1)}
+									>
+										Try again
+									</Button>
+								</>
+							)}
+						{devMode &&
+							!clientPending &&
+							!clientRefusal &&
+							fixtureState === "ready" &&
+							fixtureUsers.length === 0 && (
+								<EmptyState
+									heading="No sign-in choices available"
+									description="Ask your administrator to configure a sign-in method."
+								/>
+							)}
 						{/* Fixture users — dev mode */}
 						{devMode &&
+							fixtureState === "ready" &&
 							fixtureUsers.length > 0 &&
 							!clientPending &&
 							!clientRefusal && (
@@ -292,10 +332,10 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 												variant="outline"
 												className="h-auto w-full justify-start gap-3 px-3 py-2 text-left"
 												onClick={() => handleFixtureLogin(u)}
-												disabled={loading === token}
+												disabled={loading !== null}
 											>
 												{loading === token ? (
-													<Loader2 className="size-8 shrink-0 animate-spin p-1.5 text-muted-foreground" />
+													<Spinner label="Signing in" />
 												) : (
 													<Avatar>
 														<AvatarFallback>
@@ -314,7 +354,6 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 														{u.email}
 													</span>
 												</span>
-												<Badge variant="secondary">{u.role}</Badge>
 											</Button>
 										);
 									})}
@@ -336,6 +375,6 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 					.
 				</p>
 			</div>
-		</div>
+		</Page>
 	);
 }

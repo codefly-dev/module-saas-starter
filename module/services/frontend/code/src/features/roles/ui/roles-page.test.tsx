@@ -28,12 +28,32 @@ beforeEach(() => {
 	session.orgRole = "owner";
 	session.platformRole = undefined;
 	session.switchOrganization.mockReset();
+	server.use(
+		http.post(rpc("IntrospectionService", "GetServiceInfo"), () =>
+			HttpResponse.json({
+				capabilities: {
+					permissions: [
+						{
+							resource: "content",
+							action: "read",
+							description: "Read content",
+						},
+						{
+							resource: "content",
+							action: "write",
+							description: "Edit content",
+						},
+					],
+				},
+			}),
+		),
+	);
 });
 
 afterEach(cleanup);
 
 async function openDraft(name = "Example editor") {
-	fireEvent.click(screen.getByRole("button", { name: "Create Role" }));
+	fireEvent.click(screen.getByRole("button", { name: "Create role" }));
 	await screen.findByRole("dialog");
 	fireEvent.change(screen.getByLabelText("Name"), { target: { value: name } });
 }
@@ -61,7 +81,7 @@ describe("RolesPage admin container", () => {
 		renderInApp(<RolesPage />);
 
 		expect(await screen.findByText("Editor")).toBeTruthy();
-		expect(screen.getByText("content:write")).toBeTruthy();
+		expect(screen.getByText("1 activity")).toBeTruthy();
 		expect(listedScopes).toEqual([{ orgId: "org-1" }]);
 	});
 
@@ -90,15 +110,12 @@ describe("RolesPage admin container", () => {
 			fireEvent.change(screen.getByLabelText("Description"), {
 				target: { value: "  Limited editing  " },
 			});
-			for (const action of ["read", "write"]) {
-				fireEvent.change(screen.getByPlaceholderText("Resource"), {
-					target: { value: "content" },
-				});
-				fireEvent.change(screen.getByPlaceholderText("Action"), {
-					target: { value: action },
-				});
-				fireEvent.click(screen.getByRole("button", { name: "Add" }));
-			}
+			fireEvent.click(
+				await screen.findByRole("checkbox", { name: "Read content" }),
+			);
+			fireEvent.click(
+				await screen.findByRole("checkbox", { name: "Edit content" }),
+			);
 			fireEvent.click(screen.getByRole("button", { name: "Create" }));
 			await waitFor(() =>
 				expect(requests).toEqual([
@@ -126,7 +143,7 @@ describe("RolesPage admin container", () => {
 		(auth) => {
 			Object.assign(session, auth);
 			renderInApp(<RolesPage />);
-			expect(screen.queryByRole("button", { name: "Create Role" })).toBeNull();
+			expect(screen.queryByRole("button", { name: "Create role" })).toBeNull();
 		},
 	);
 
@@ -144,7 +161,9 @@ describe("RolesPage admin container", () => {
 		renderInApp(<RolesPage />);
 		await openDraft();
 		expect(
-			screen.getByText("Define a global role with custom permissions."),
+			screen.getByText(
+				"Define a role that can be assigned across organizations.",
+			),
 		).toBeTruthy();
 		fireEvent.click(screen.getByRole("button", { name: "Create" }));
 		await waitFor(() => expect(requests).toHaveLength(1));
@@ -174,13 +193,9 @@ describe("RolesPage admin container", () => {
 			),
 		});
 		await openDraft("First organization draft");
-		fireEvent.change(screen.getByPlaceholderText("Resource"), {
-			target: { value: "content" },
-		});
-		fireEvent.change(screen.getByPlaceholderText("Action"), {
-			target: { value: "write" },
-		});
-		fireEvent.click(screen.getByRole("button", { name: "Add" }));
+		fireEvent.click(
+			await screen.findByRole("checkbox", { name: "Edit content" }),
+		);
 		await waitFor(() =>
 			expect(listedScopes).toContainEqual({ orgId: "org-1" }),
 		);
@@ -190,7 +205,7 @@ describe("RolesPage admin container", () => {
 		await waitFor(() =>
 			expect(listedScopes).toContainEqual({ orgId: "org-2" }),
 		);
-		fireEvent.click(screen.getByRole("button", { name: "Create Role" }));
+		fireEvent.click(screen.getByRole("button", { name: "Create role" }));
 		await screen.findByRole("dialog");
 		expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("");
 		expect(screen.queryByText("content:write")).toBeNull();
@@ -282,4 +297,36 @@ describe("RolesPage admin container", () => {
 			]),
 		);
 	});
+});
+
+it("does not offer deletion to a member who can only read roles", async () => {
+	session.orgRole = "member";
+	server.use(
+		http.post(rpc("PermissionService", "ListRoles"), () =>
+			HttpResponse.json({
+				roles: [{ id: "role-a", name: "Reviewer", builtIn: false }],
+			}),
+		),
+	);
+	renderInApp(<RolesPage />);
+	expect(await screen.findByText("Reviewer")).toBeTruthy();
+	expect(screen.queryByRole("button", { name: "Delete Reviewer" })).toBeNull();
+});
+
+it("does not create a role from an unreadable activity catalogue", async () => {
+	server.use(
+		http.post(rpc("IntrospectionService", "GetServiceInfo"), () =>
+			HttpResponse.json(
+				{ code: "permission_denied", message: "internal scope" },
+				{ status: 403 },
+			),
+		),
+	);
+	renderInApp(<RolesPage />);
+	await openDraft();
+	expect(await screen.findByText("Activities unavailable")).toBeTruthy();
+	expect(screen.queryByText("internal scope")).toBeNull();
+	expect(
+		screen.getByRole("button", { name: "Create" }).hasAttribute("disabled"),
+	).toBe(true);
 });

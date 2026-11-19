@@ -1,4 +1,4 @@
-import { messageOf } from "./errors.js";
+import { failureReason, messageOf } from "./errors.js";
 import type { AccountLinkView, DatasourceView } from "./types.js";
 
 /**
@@ -139,13 +139,14 @@ const refusals: { match: RegExp; words: (name: string) => string }[] = [
 			"This source belongs to another member of the organization. Connect your own instead.",
 	},
 	{
-		match: /not a member of this organization|organization membership required/i,
+		match:
+			/not a member of this organization|organization membership required/i,
 		words: () => "You are not a member of this organization.",
 	},
 ];
 
 export function apiSourceRefusal(error: unknown, name: string): string {
-	const message = messageOf(error);
+	const message = failureReason(error);
 	const refusal = refusals.find(({ match }) => match.test(message));
-	return refusal ? refusal.words(name) : message;
+	return refusal ? refusal.words(name) : messageOf(error);
 }

@@ -1,4 +1,10 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WaitlistVerification } from "./waitlist-verification";
 
@@ -21,10 +27,9 @@ describe("WaitlistVerification", () => {
 
 		render(<WaitlistVerification />);
 
-		await waitFor(() =>
-			expect(screen.getByLabelText("Verification failed")).toBeTruthy(),
-		);
-		expect(screen.getByText("This verification link expired.")).toBeTruthy();
+		await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+		expect(screen.getByText(/Request a new link to continue/)).toBeTruthy();
+		expect(screen.queryByText("This verification link expired.")).toBeNull();
 	});
 
 	it("renders success only for a verified state", async () => {
@@ -44,4 +49,18 @@ describe("WaitlistVerification", () => {
 			expect(screen.getByLabelText("Verification succeeded")).toBeTruthy(),
 		);
 	});
+});
+
+it("offers retry for a temporary failure without showing the server message", async () => {
+	const fetch = vi
+		.spyOn(globalThis, "fetch")
+		.mockResolvedValueOnce(
+			Response.json({ message: "private diagnostics" }, { status: 503 }),
+		)
+		.mockResolvedValueOnce(Response.json({ state: "WAITLIST_STATE_VERIFIED" }));
+	render(<WaitlistVerification />);
+	fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+	await screen.findByLabelText("Verification succeeded");
+	expect(fetch).toHaveBeenCalledTimes(2);
+	expect(screen.queryByText("private diagnostics")).toBeNull();
 });

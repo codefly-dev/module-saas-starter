@@ -1,10 +1,9 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { AuthError, operatorReference } from "@/lib/auth-errors";
+import { AuthError } from "@/lib/auth-errors";
 import {
 	Button,
 	Card,
@@ -13,13 +12,17 @@ import {
 	CardFooter,
 	CardHeader,
 	ErrorState,
+	Page,
+	PageHeader,
 	Skeleton,
+	Spinner,
 } from "@/shared/ui";
 
 interface CallbackFailure {
 	message: string;
-	/** Operator-facing correlation line (code / request id / trace id), when known. */
+	/** Support request reference, when known. */
 	reference: string | null;
+	denied?: boolean;
 }
 
 function CallbackHandler() {
@@ -30,17 +33,16 @@ function CallbackHandler() {
 	const code = params.get("code");
 	const state = params.get("state");
 	const providerError = params.get("error");
-	const providerErrorDescription = params.get("error_description");
+
 	// The identity provider's own error is a code and a description written for
 	// whoever integrated it, and both arrive in the address bar, where anyone can
-	// put anything. The person is told what happened in this page's words; what
-	// the provider said goes on the reference line, for whoever they ask.
+	// put anything. Show only this page’s explanation, never the supplied text.
 	const parameterError = useMemo<CallbackFailure | null>(() => {
 		if (providerError) {
 			return {
 				message:
 					"Your sign-in provider did not sign you in. The sign-in was cancelled, or your account is not allowed to use this application.",
-				reference: `${providerError}${providerErrorDescription ? `: ${providerErrorDescription}` : ""}`,
+				reference: null,
 			};
 		}
 		if (!code || !state) {
@@ -50,7 +52,7 @@ function CallbackHandler() {
 			};
 		}
 		return null;
-	}, [providerError, providerErrorDescription, code, state]);
+	}, [providerError, code, state]);
 
 	// An authorization code is redeemable once. completeOAuth's identity changes
 	// as sign-in stores its tokens, which re-runs this effect with the same code;
@@ -66,8 +68,17 @@ function CallbackHandler() {
 		completeOAuth(code, state).catch((e) => {
 			if (e instanceof AuthError) {
 				setCompletionFailure({
-					message: e.message,
-					reference: operatorReference(e.detail),
+					message:
+						e.detail.status === 403 || e.detail.code === "permission_denied"
+							? "You don’t have access to this application. Ask your organization administrator to grant access."
+							: e.message,
+					denied:
+						e.detail.status === 403 || e.detail.code === "permission_denied",
+					reference:
+						e.detail.requestId &&
+						/^[a-zA-Z0-9_-]{1,128}$/.test(e.detail.requestId)
+							? e.detail.requestId
+							: null,
 				});
 				return;
 			}
@@ -87,12 +98,10 @@ function CallbackHandler() {
 
 	if (failure) {
 		return (
-			<div className="flex min-h-screen w-full items-center justify-center p-4">
+			<Page className="flex min-h-screen w-full items-center justify-center p-4">
 				<Card className="w-full max-w-md">
 					<CardHeader>
-						<h1 data-slot="page-title" className="type-page-title">
-							Sign-in failed
-						</h1>
+						<PageHeader title="Sign-in failed" />
 						<CardDescription>
 							We couldn&apos;t finish signing you in.
 						</CardDescription>
@@ -106,39 +115,36 @@ function CallbackHandler() {
 							</p>
 						)}
 					</CardContent>
-					<CardFooter>
-						<Button
-							variant="outline"
-							size="lg"
-							className="w-full"
-							nativeButton={false}
-							render={<a href="/auth/login" />}
-						>
-							Sign in again
-						</Button>
-					</CardFooter>
+					{!failure.denied && (
+						<CardFooter>
+							<Button
+								variant="outline"
+								size="lg"
+								className="w-full"
+								nativeButton={false}
+								render={<a href="/auth/login" />}
+							>
+								Sign in again
+							</Button>
+						</CardFooter>
+					)}
 				</Card>
-			</div>
+			</Page>
 		);
 	}
 
 	return (
-		<div className="flex min-h-screen w-full items-center justify-center p-4">
+		<Page className="flex min-h-screen w-full items-center justify-center p-4">
 			<Card className="w-full max-w-md">
 				<CardHeader>
-					<h1
-						data-slot="page-title"
-						className="type-page-title flex items-center gap-2"
-					>
-						<Loader2 className="size-5 animate-spin" />
-						Signing you in
-					</h1>
+					<PageHeader title="Signing you in" />
+					<Spinner label="Completing sign-in" />
 					<CardDescription>
 						Please wait while we complete the sign-in process.
 					</CardDescription>
 				</CardHeader>
 			</Card>
-		</div>
+		</Page>
 	);
 }
 
@@ -146,14 +152,14 @@ export function CallbackPage() {
 	return (
 		<Suspense
 			fallback={
-				<div className="flex min-h-screen w-full items-center justify-center p-4">
+				<Page className="flex min-h-screen w-full items-center justify-center p-4">
 					<Card className="w-full max-w-md">
 						<CardHeader>
 							<Skeleton className="h-7 w-44" />
 							<Skeleton className="h-4 w-full" />
 						</CardHeader>
 					</Card>
-				</div>
+				</Page>
 			}
 		>
 			<CallbackHandler />

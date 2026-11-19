@@ -12,10 +12,14 @@ import { server } from "@/test/setup";
 
 // The page reads the active tenant from the signed session. Pin it so the
 // container renders the table (not the "select an organization" empty state).
-const auth = vi.hoisted(() => ({ organizationId: "org-1" }));
+const auth = vi.hoisted(() => ({
+	organizationId: "org-1",
+	orgRole: "admin" as "admin" | "member" | undefined,
+}));
 vi.mock("@/lib/auth", () => ({
 	useAuth: () => ({
 		organizationId: auth.organizationId,
+		orgRole: auth.orgRole,
 		switchOrganization: async () => {},
 	}),
 }));
@@ -25,6 +29,7 @@ import { APIKeysPage } from "./api-keys-page";
 afterEach(cleanup);
 beforeEach(() => {
 	auth.organizationId = "org-1";
+	auth.orgRole = "admin";
 });
 
 describe("APIKeysPage admin container", () => {
@@ -80,11 +85,64 @@ describe("APIKeysPage admin container", () => {
 		);
 		const dialog = await screen.findByRole("alertdialog");
 		fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
-		await screen.findByText("No API keys");
+		await screen.findByRole("heading", { name: "No API keys yet", level: 2 });
+		expect(screen.queryByRole("table", { name: "API keys" })).toBeNull();
 		expect(requestBody).toEqual({ id: "key-1", organizationId: "org-1" });
 		expect(
 			screen.queryByRole("button", { name: "Revoke Example key" }),
 		).toBeNull();
+	});
+	it("keeps the named confirmation open while revoking and explains a denial inline", async () => {
+		let finish!: () => void;
+		const pending = new Promise<void>((resolve) => {
+			finish = resolve;
+		});
+		const revoke = vi.fn(async () => {
+			await pending;
+			return HttpResponse.json(
+				{
+					code: "permission_denied",
+					message: "internal permission key:revoke",
+				},
+				{ status: 403 },
+			);
+		});
+		server.use(
+			http.post(rpc("APIKeyService", "ListAPIKeys"), () =>
+				HttpResponse.json({
+					keys: [{ id: "key-1", organizationId: "org-1", name: "Example key" }],
+				}),
+			),
+			http.post(rpc("APIKeyService", "RevokeAPIKey"), revoke),
+		);
+		renderInApp(<APIKeysPage />);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Revoke Example key" }),
+		);
+		const dialog = await screen.findByRole("alertdialog", {
+			name: "Revoke Example key?",
+		});
+		fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
+		await waitFor(() => expect(revoke).toHaveBeenCalledOnce());
+		expect(
+			within(dialog)
+				.getByRole("button", { name: "Revoking…" })
+				.hasAttribute("disabled"),
+		).toBe(true);
+		expect(
+			within(dialog)
+				.getByRole("button", { name: "Cancel" })
+				.hasAttribute("disabled"),
+		).toBe(true);
+		fireEvent.keyDown(dialog, { key: "Escape" });
+		expect(screen.getByRole("alertdialog")).toBeTruthy();
+		finish();
+		expect((await within(dialog).findByRole("alert")).textContent).toContain(
+			"Ask your organization administrator for access.",
+		);
+		expect(dialog.textContent).not.toContain("key:revoke");
+		fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+		await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
 	});
 	it("opens the creation dialog and displays the newly created secret", async () => {
 		const create = vi.fn(() =>
@@ -92,17 +150,19 @@ describe("APIKeysPage admin container", () => {
 		);
 		server.use(http.post(rpc("APIKeyService", "CreateAPIKey"), create));
 		renderInApp(<APIKeysPage />);
-		fireEvent.click(screen.getByRole("button", { name: "Create Key" }));
+		fireEvent.click(screen.getByRole("button", { name: "Create key" }));
 		const dialog = await screen.findByRole("dialog");
-		fireEvent.change(within(dialog).getByLabelText("Name"), {
+		fireEvent.change(within(dialog).getByRole("textbox", { name: "Name" }), {
 			target: { value: "Example integration" },
 		});
-		fireEvent.click(within(dialog).getByRole("button", { name: "Create Key" }));
+		fireEvent.click(within(dialog).getByRole("button", { name: "Create key" }));
 		expect(await screen.findByText("sk_test_example_secret")).toBeTruthy();
 		expect(create).toHaveBeenCalledOnce();
 		expect(within(dialog).queryByRole("button", { name: "Close" })).toBeNull();
 		fireEvent.click(
-			within(dialog).getByLabelText("I have saved this key securely"),
+			within(dialog).getByRole("checkbox", {
+				name: "I have saved this key securely",
+			}),
 		);
 		fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
 		await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -110,7 +170,7 @@ describe("APIKeysPage admin container", () => {
 	it("explains the missing organization instead of leaving a dead create button", async () => {
 		auth.organizationId = "";
 		renderInApp(<APIKeysPage />);
-		fireEvent.click(screen.getByRole("button", { name: "Create Key" }));
+		fireEvent.click(screen.getByRole("button", { name: "Create key" }));
 		expect(
 			await screen.findByText("Select an organization to create its API key."),
 		).toBeTruthy();
@@ -128,16 +188,16 @@ describe("APIKeysPage admin container", () => {
 			),
 		);
 		renderInApp(<APIKeysPage />);
-		fireEvent.click(screen.getByRole("button", { name: "Create Key" }));
+		fireEvent.click(screen.getByRole("button", { name: "Create key" }));
 		const dialog = await screen.findByRole("dialog");
-		fireEvent.change(within(dialog).getByLabelText("Name"), {
+		fireEvent.change(within(dialog).getByRole("textbox", { name: "Name" }), {
 			target: { value: "Example integration" },
 		});
 		fireEvent.submit(
 			within(dialog).getByRole("form", { name: "Create API key" }),
 		);
 		expect((await within(dialog).findByRole("alert")).textContent).toContain(
-			"You need organization admin access.",
+			"Ask your organization administrator for access.",
 		);
 		server.use(
 			http.post(rpc("APIKeyService", "CreateAPIKey"), () =>
@@ -185,4 +245,21 @@ describe("APIKeysPage admin container", () => {
 		renderInApp(<APIKeysPage />);
 		expect(await screen.findByText("Production Backend")).toBeTruthy();
 	});
+});
+
+it("hides key mutations when the current organization role cannot manage keys", async () => {
+	auth.orgRole = "member";
+	server.use(
+		http.post(rpc("APIKeyService", "ListAPIKeys"), () =>
+			HttpResponse.json({
+				keys: [{ id: "key-1", organizationId: "org-1", name: "Example key" }],
+			}),
+		),
+	);
+	renderInApp(<APIKeysPage />);
+	await screen.findByText("Example key");
+	expect(screen.queryByRole("button", { name: "Create key" })).toBeNull();
+	expect(
+		screen.queryByRole("button", { name: "Revoke Example key" }),
+	).toBeNull();
 });

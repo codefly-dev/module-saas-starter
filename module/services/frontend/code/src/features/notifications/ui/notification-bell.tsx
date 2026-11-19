@@ -1,5 +1,10 @@
 "use client";
 
+import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "@codefly-dev/ui/layout";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -106,22 +111,36 @@ export function NotificationBell() {
 	}, [unreadCount]);
 
 	return (
-		<div className="relative">
-			<Button
-				variant="ghost"
-				size="sm"
-				className="relative h-8 w-8 p-0"
-				onClick={() => setOpen(!open)}
+		<Popover open={open} onOpenChange={setOpen}>
+			<PopoverTrigger
+				render={
+					<Button
+						variant="ghost"
+						size="sm"
+						className="relative h-8 w-8 p-0"
+						aria-label={
+							unreadCount > 0
+								? `Notifications, ${unreadCount} unread`
+								: "Notifications"
+						}
+						aria-expanded={open}
+					>
+						<Bell className="h-4 w-4" />
+						{unreadCount > 0 && (
+							<span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-medium text-destructive-foreground">
+								{unreadCount > 99 ? "99+" : unreadCount}
+							</span>
+						)}
+					</Button>
+				}
+			/>
+			<PopoverContent
+				align="end"
+				className="w-80 p-0"
+				aria-label="Notifications"
 			>
-				<Bell className="h-4 w-4" />
-				{unreadCount > 0 && (
-					<span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-medium text-destructive-foreground">
-						{unreadCount > 99 ? "99+" : unreadCount}
-					</span>
-				)}
-			</Button>
-
-			{open && <NotificationPanel onClose={() => setOpen(false)} />}
-		</div>
+				{open && <NotificationPanel onClose={() => setOpen(false)} />}
+			</PopoverContent>
+		</Popover>
 	);
 }

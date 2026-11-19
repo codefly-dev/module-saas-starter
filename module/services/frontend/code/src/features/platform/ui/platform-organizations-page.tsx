@@ -14,13 +14,14 @@ import { useAuth } from "@/lib/auth";
 import {
 	mayKeepRetainedRows,
 	readOutcome,
-	readOutcomeMessage,
 	staleReadNotice,
 } from "@/shared/lib/read-outcome";
 import { formatDate } from "@/shared/lib/utils";
 import {
 	Badge,
 	Button,
+	ErrorState,
+	Field,
 	Input,
 	Label,
 	Page as PageBody,
@@ -111,7 +112,7 @@ export function PlatformOrganizationsPage() {
 				),
 			}),
 			col.accessor("slug", {
-				header: "Slug",
+				header: "Organization address",
 				cell: (info) => (
 					<span className="font-mono text-sm text-muted-foreground">
 						{info.getValue()}
@@ -169,13 +170,16 @@ export function PlatformOrganizationsPage() {
 			/>
 
 			<div className="flex flex-wrap items-center gap-4">
-				<Input
-					aria-label="Search organizations"
-					placeholder="Search by name or slug"
-					className="max-w-sm"
-					value={search}
-					onChange={(event) => setSearch(event.target.value)}
-				/>
+				<Field label="Search organizations" className="w-full max-w-sm">
+					{(control) => (
+						<Input
+							{...control}
+							placeholder="Search by name or address"
+							value={search}
+							onChange={(event) => setSearch(event.target.value)}
+						/>
+					)}
+				</Field>
 				<div className="flex items-center gap-2">
 					<Switch
 						id="include-archived"
@@ -194,15 +198,26 @@ export function PlatformOrganizationsPage() {
 					{stale}
 				</p>
 			)}
-			<DataTable
-				table={table}
-				isLoading={isLoading}
-				emptyMessage={readOutcomeMessage(
-					outcome,
-					"the organizations",
-					query ? "No organization matches." : "No organizations yet.",
-				)}
-			/>
+			{isError && (withheld || rows.length === 0) ? (
+				<ErrorState
+					title="Couldn't load the organizations"
+					detail={
+						outcome === "forbidden"
+							? "You don't have access to this list. Ask a platform administrator to grant access."
+							: "Reload the page to try again. If it keeps failing, ask a platform administrator for help."
+					}
+				/>
+			) : (
+				<DataTable
+					table={table}
+					isLoading={isLoading}
+					emptyMessage={
+						query
+							? "No organizations match. Try a different name or address."
+							: "No organizations yet. Create one to bring people together."
+					}
+				/>
+			)}
 			<div className="flex justify-end gap-2">
 				<Button
 					variant="outline"

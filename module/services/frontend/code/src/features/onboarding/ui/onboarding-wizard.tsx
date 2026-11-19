@@ -1,16 +1,17 @@
 "use client";
 
+import { Progress } from "@codefly-dev/ui/layout";
 import {
 	Building2,
 	Check,
 	CreditCard,
 	Key,
-	Loader2,
 	PartyPopper,
 	RotateCcw,
 	SkipForward,
 	UsersRound,
 } from "lucide-react";
+import { useAuth } from "@/lib/auth";
 import {
 	Button,
 	Card,
@@ -19,9 +20,15 @@ import {
 	CardFooter,
 	CardHeader,
 	CardTitle,
+	DelayedLoading,
+	ErrorState,
+	Field,
 	Input,
-	Label,
+	Page,
+	PageHeader,
 	Skeleton,
+	Spinner,
+	useLoadingPhase,
 } from "@/shared/ui";
 import type {
 	OnboardingController,
@@ -31,11 +38,8 @@ import {
 	ONBOARDING_STEP_CONTENT,
 	type OnboardingStep,
 	OnboardingStepId,
-	OnboardingStepStatus,
 } from "../model/types";
 import { useOnboardingController } from "../react/use-onboarding-controller";
-
-import { useAuth } from "@/lib/auth";
 
 /**
  * Derive workspace placeholders from the signed-in user's email domain
@@ -73,50 +77,53 @@ function OrganizationAction({
 	return (
 		<form
 			className="space-y-4"
+			noValidate
 			onSubmit={(event) => {
 				event.preventDefault();
 				void controller.createOrganization();
 			}}
 		>
-			<div className="space-y-2">
-				<Label htmlFor="org-name">Organization name</Label>
-				<Input
-					id="org-name"
-					autoComplete="organization"
-					value={model.draft.name}
-					onChange={(event) =>
-						controller.setOrganizationName(event.target.value)
-					}
-					placeholder={placeholders.name}
-					required
-				/>
-			</div>
-			<div className="space-y-2">
-				<Label htmlFor="org-slug">Workspace slug</Label>
-				<Input
-					id="org-slug"
-					value={model.draft.slug}
-					onChange={(event) =>
-						controller.setOrganizationSlug(event.target.value)
-					}
-					pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
-					placeholder={placeholders.slug}
-					required
-				/>
-			</div>
-			{model.error && (
-				<p role="alert" className="text-sm text-destructive">
-					{model.error}
-				</p>
-			)}
-			<Button
-				type="submit"
-				disabled={
-					!model.draft.name.trim() || !model.draft.slug.trim() || model.pending
-				}
-				className="w-full"
+			<Field label="Organization name" error={model.fieldErrors?.name}>
+				{(control) => (
+					<Input
+						{...control}
+						disabled={model.pending}
+						autoComplete="organization"
+						value={model.draft.name}
+						onChange={(event) =>
+							controller.setOrganizationName(event.target.value)
+						}
+						placeholder={placeholders.name}
+						required
+					/>
+				)}
+			</Field>
+			<Field
+				label="Organization address"
+				error={model.fieldErrors?.slug}
+				description="Use 2–63 letters, numbers or hyphens."
 			>
-				{model.pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+				{(control) => (
+					<Input
+						{...control}
+						disabled={model.pending}
+						value={model.draft.slug}
+						onChange={(event) =>
+							controller.setOrganizationSlug(event.target.value)
+						}
+						pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+						placeholder={placeholders.slug}
+						required
+					/>
+				)}
+			</Field>
+			{model.error && (
+				<ErrorState title="Setup wasn’t saved" detail={model.error} />
+			)}
+			<Button type="submit" disabled={model.pending} className="w-full">
+				<DelayedLoading active={model.pending} label="Saving setup">
+					<Spinner label="Creating organization" size="sm" />
+				</DelayedLoading>
 				Create organization
 			</Button>
 		</form>
@@ -134,11 +141,11 @@ function StepAction({
 	return (
 		<div className="space-y-3">
 			<p className="text-sm text-muted-foreground">
-				This checklist item is completed from its canonical admin surface and
-				updates automatically when you return.
+				Complete this step on its settings page. Your checklist updates when you
+				return.
 			</p>
 			<Button className="w-full" onClick={() => controller.openCurrentStep()}>
-				Open {ONBOARDING_STEP_CONTENT[step.id].label}
+				{ONBOARDING_STEP_CONTENT[step.id].label}
 			</Button>
 		</div>
 	);
@@ -150,7 +157,15 @@ export function OnboardingWizard({
 	requiredOnly?: boolean;
 }) {
 	const { controller, model } = useOnboardingController(requiredOnly);
-	return <OnboardingWizardView controller={controller} model={model} />;
+	return (
+		<Page>
+			<PageHeader
+				title="Get started"
+				description="Set up your workspace and invite the people you work with."
+			/>
+			<OnboardingWizardView controller={controller} model={model} />
+		</Page>
+	);
 }
 
 export function OnboardingWizardView({
@@ -160,11 +175,14 @@ export function OnboardingWizardView({
 	controller: OnboardingController;
 	model: OnboardingViewModel;
 }) {
+	const loading = useLoadingPhase(model.phase === "loading");
 	if (model.phase === "organization") {
 		return (
 			<Card className="mx-auto w-full max-w-lg">
 				<CardHeader>
-					<CardTitle>Create your workspace</CardTitle>
+					<CardTitle role="heading" aria-level={2}>
+						Create your workspace
+					</CardTitle>
 					<CardDescription>
 						Set up the organization that will own your team and product
 						resources.
@@ -177,11 +195,15 @@ export function OnboardingWizardView({
 		);
 	}
 
-	if (model.phase === "loading") {
+	if (loading.quiet || loading.indicator) {
 		return (
 			<div className="mx-auto w-full max-w-xl space-y-4 p-6">
-				<Skeleton className="h-7 w-52" />
-				<Skeleton className="h-80 w-full" />
+				{loading.indicator && (
+					<>
+						<Skeleton className="h-7 w-52" />
+						<Skeleton className="h-80 w-full" />
+					</>
+				)}
 			</div>
 		);
 	}
@@ -190,17 +212,27 @@ export function OnboardingWizardView({
 		return (
 			<Card className="mx-auto w-full max-w-lg">
 				<CardHeader>
-					<CardTitle>Setup is temporarily unavailable</CardTitle>
-					<CardDescription>
-						{model.error ??
-							"Your progress is still stored on the server. Retry when the connection is available."}
-					</CardDescription>
+					<CardTitle role="heading" aria-level={2}>
+						Setup needs attention
+					</CardTitle>
+					<ErrorState
+						title="Couldn’t continue setup"
+						detail={
+							model.error ??
+							"Your progress is saved. Try again when your connection is available."
+						}
+					/>
 				</CardHeader>
 				<CardFooter>
-					<Button onClick={() => void controller.refresh()}>
-						<RotateCcw className="mr-2 h-4 w-4" />
-						Retry
-					</Button>
+					{model.retryable !== false && (
+						<Button
+							disabled={model.pending}
+							onClick={() => void controller.refresh()}
+						>
+							<RotateCcw className="mr-2 h-4 w-4" />
+							Try again
+						</Button>
+					)}
 				</CardFooter>
 			</Card>
 		);
@@ -211,13 +243,11 @@ export function OnboardingWizardView({
 			<Card className="mx-auto w-full max-w-md text-center">
 				<CardHeader>
 					<PartyPopper className="mx-auto mb-3 h-10 w-10 text-primary" />
-					<CardTitle>
+					<CardTitle role="heading" aria-level={2}>
 						{model.requiredOnly ? "Workspace ready" : "Checklist complete"}
 					</CardTitle>
 					<CardDescription>
-						{model.progress?.activationAchieved
-							? "Your organization has reached its configured activation milestone."
-							: "Setup is saved. Product activation is tracked separately."}
+						Your workspace is ready. You can continue from your dashboard.
 					</CardDescription>
 				</CardHeader>
 				<CardFooter className="justify-center">
@@ -240,28 +270,15 @@ export function OnboardingWizardView({
 					<span>
 						{model.completedCount} of {model.visibleSteps.length} completed
 					</span>
-					<span>
-						Flow {model.progress?.flowId} v{model.progress?.flowVersion}
-					</span>
 				</div>
-				<div className="grid grid-cols-4 gap-2">
-					{model.visibleSteps.map((step) => (
-						<div
-							key={step.id}
-							className={`h-2 rounded-full ${
-								step.status === OnboardingStepStatus.COMPLETED
-									? "bg-primary"
-									: step.status === OnboardingStepStatus.SKIPPED
-										? "bg-muted-foreground/40"
-										: "bg-muted"
-							}`}
-						>
-							<span className="sr-only">
-								{step.label}: {OnboardingStepStatus[step.status].toLowerCase()}
-							</span>
-						</div>
-					))}
-				</div>
+				<Progress
+					label="Setup progress"
+					value={
+						model.visibleSteps.length
+							? (model.completedCount / model.visibleSteps.length) * 100
+							: 0
+					}
+				/>
 			</section>
 
 			<Card>
@@ -271,7 +288,9 @@ export function OnboardingWizardView({
 							<Icon className="h-5 w-5 text-primary" />
 						</div>
 						<div>
-							<CardTitle>{currentStep.label}</CardTitle>
+							<CardTitle role="heading" aria-level={2}>
+								{currentStep.label}
+							</CardTitle>
 							<CardDescription>{currentStep.description}</CardDescription>
 						</div>
 					</div>
@@ -294,11 +313,10 @@ export function OnboardingWizardView({
 							onClick={() => void controller.refresh()}
 							disabled={model.pending}
 						>
-							{model.pending ? (
-								<Loader2 className="mr-2 h-4 w-4 animate-spin" />
-							) : (
-								<Check className="mr-2 h-4 w-4" />
-							)}
+							<DelayedLoading active={model.pending} label="Saving setup">
+								<Spinner label="Checking progress" size="sm" />
+							</DelayedLoading>
+							{!model.pending && <Check className="mr-2 h-4 w-4" />}
 							Check progress
 						</Button>
 					</CardFooter>

@@ -24,7 +24,7 @@ navigation:
     label: Users
     path: /admin/users
     icon: Users
-    group: Users & Access
+    group: Users & access
     access: admin
     permission: users:read
     surfaces:
@@ -37,7 +37,7 @@ navigation:
     label: Organizations
     path: /admin/organizations
     icon: Building2
-    group: Users & Access
+    group: Users & access
     access: admin
     permission: orgs:read
     surfaces:
@@ -50,7 +50,7 @@ navigation:
     label: Teams
     path: /admin/teams
     icon: UsersRound
-    group: Users & Access
+    group: Users & access
     access: authenticated
     permission: teams:read
     surfaces:
@@ -63,7 +63,7 @@ navigation:
     label: Roles
     path: /admin/roles
     icon: Shield
-    group: Users & Access
+    group: Users & access
     access: admin
     permission: roles:read
     surfaces:
@@ -76,7 +76,7 @@ navigation:
     label: Permissions
     path: /admin/permissions
     icon: KeyRound
-    group: Users & Access
+    group: Users & access
     access: admin
     permission: roles:read
     surfaces:
@@ -89,7 +89,7 @@ navigation:
     label: Invitations
     path: /admin/invitations
     icon: Mail
-    group: Users & Access
+    group: Users & access
     access: admin
     permission: invitations:read
     surfaces:
@@ -99,10 +99,10 @@ navigation:
     order: 140
   - id: admin-api-keys
     plugin: core-users
-    label: API Keys
+    label: API keys
     path: /admin/api-keys
     icon: Key
-    group: Users & Access
+    group: Users & access
     access: admin
     permission: api_keys:read
     surfaces:
@@ -112,7 +112,7 @@ navigation:
     order: 150
   - id: admin-organization-settings
     plugin: core-users
-    label: Organization Settings
+    label: Organization settings
     path: /admin/organizations/settings
     icon: Building2
     group: Organizations
@@ -123,7 +123,7 @@ navigation:
     order: 160
   - id: admin-platform-users
     plugin: platform-admin
-    label: Platform Users
+    label: Platform users
     path: /admin/platform/admins
     icon: UserSearch
     group: Platform
@@ -185,7 +185,7 @@ navigation:
     order: 230
   - id: admin-job-operations
     plugin: platform-admin
-    label: Job Operations
+    label: Job operations
     path: /admin/platform/jobs
     icon: ListChecks
     group: Platform
@@ -208,7 +208,7 @@ navigation:
     order: 236
   - id: admin-audit-log
     plugin: audit
-    label: Audit Log
+    label: Audit log
     path: /admin/audit-log
     icon: Activity
     group: Platform
@@ -221,7 +221,7 @@ navigation:
     order: 240
   - id: admin-module-authority
     plugin: platform-admin
-    label: Module Authority
+    label: Module access
     path: /admin/platform/module-authority
     icon: Shield
     group: Platform
@@ -232,7 +232,7 @@ navigation:
     order: 241
   - id: admin-event-operations
     plugin: platform-admin
-    label: Event Operations
+    label: Event operations
     path: /admin/platform/events
     icon: Activity
     group: Platform
@@ -243,7 +243,7 @@ navigation:
     order: 242
   - id: admin-unattended-work
     plugin: platform-admin
-    label: Unattended Work
+    label: Unattended work
     path: /admin/platform/unattended-work
     icon: Key
     group: Platform
@@ -303,7 +303,7 @@ navigation:
     order: 410
   - id: admin-sso
     plugin: core-users
-    label: Single Sign-On
+    label: Single sign-on
     path: /admin/sso
     icon: KeyRound
     group: Integrations
@@ -313,7 +313,7 @@ navigation:
     order: 420
   - id: api-docs
     plugin: audit
-    label: API Docs
+    label: API docs
     path: /docs
     icon: BookOpen
     group: Developer
@@ -360,7 +360,7 @@ navigation:
     order: 610
   - id: data-privacy
     plugin: core-users
-    label: Data & Privacy
+    label: Data & privacy
     path: /settings/data
     icon: FileText
     group: Settings
@@ -372,7 +372,7 @@ navigation:
     order: 620
   - id: privacy-choices
     plugin: core-users
-    label: Privacy Choices
+    label: Privacy choices
     path: /settings/privacy
     icon: ShieldCheck
     group: Settings

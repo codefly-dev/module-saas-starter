@@ -1,3 +1,4 @@
+import { Code, ConnectError } from "@connectrpc/connect";
 import { describe, expect, it, vi } from "vitest";
 import {
 	type OnboardingProgress,
@@ -180,7 +181,7 @@ describe("OnboardingController", () => {
 
 		expect(controller.getSnapshot()).toMatchObject({
 			phase: "organization",
-			error: "Enter an organization name and a valid workspace slug.",
+			fieldErrors: { slug: expect.stringContaining("2–63") },
 			pending: false,
 		});
 		expect(backend.created).toEqual([]);
@@ -293,7 +294,8 @@ describe("OnboardingController", () => {
 		await controller.start();
 		expect(controller.getSnapshot()).toMatchObject({
 			phase: "error",
-			error: "accounts unavailable",
+			error:
+				"Couldn't continue setup. Try again; if it keeps failing, tell your administrator.",
 			pending: false,
 		});
 
@@ -371,4 +373,53 @@ describe("organization slug rules", () => {
 		expect(validOrganizationSlug("ab-")).toBe(false);
 		expect(validOrganizationSlug("a".repeat(64))).toBe(false);
 	});
+});
+
+it("keeps a failed creation editable without exposing server diagnostics", async () => {
+	const backend = new RecordingBackend();
+	backend.createFailure = new Error("private-server-detail");
+	const controller = new OnboardingController({ backend });
+	controller.setOrganizationName("Acme");
+	await controller.createOrganization();
+	expect(controller.getSnapshot()).toMatchObject({
+		phase: "organization",
+		draft: { name: "Acme", slug: "acme" },
+	});
+	expect(controller.getSnapshot().error).not.toContain("private-server-detail");
+});
+it("retries opening an already created organization without creating it again", async () => {
+	const backend = new RecordingBackend();
+	backend.switchOrganization = vi
+		.fn()
+		.mockRejectedValueOnce(new Error("switch failed"))
+		.mockResolvedValue(undefined);
+	const controller = new OnboardingController({ backend });
+	controller.setOrganizationName("Acme");
+	await controller.createOrganization();
+	expect(controller.getSnapshot().error).toContain(
+		"open your new organization",
+	);
+	await controller.refresh();
+	expect(backend.created).toHaveLength(1);
+	expect(backend.switchOrganization).toHaveBeenCalledTimes(2);
+	expect(controller.getSnapshot().phase).toBe("step");
+});
+it("does not recommend retry for refused setup access", async () => {
+	const backend = new RecordingBackend();
+	backend.progressFailure = new ConnectError(
+		"private-server-detail",
+		Code.PermissionDenied,
+	);
+	const controller = new OnboardingController({
+		backend,
+		organizationId: "org-1",
+	});
+	await controller.start();
+	expect(controller.getSnapshot()).toMatchObject({
+		phase: "error",
+		retryable: false,
+	});
+	expect(controller.getSnapshot().error).toContain(
+		"Ask your organization administrator",
+	);
 });

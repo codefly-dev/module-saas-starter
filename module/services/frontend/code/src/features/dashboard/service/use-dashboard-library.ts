@@ -16,6 +16,8 @@ import {
 export interface DashboardLibraryState {
 	// Every dashboard the viewer can act on, newest activity first.
 	records: DashboardRecord[];
+	isLoading: boolean;
+	readError: Error | null;
 	// The last read or write failure, or null after a success. A failed mutation
 	// (a full store, a concurrently-deleted record) surfaces here rather than
 	// throwing past the fire-and-forget callers.
@@ -25,12 +27,12 @@ export interface DashboardLibraryState {
 	create(input: CreateDashboardInput): Promise<DashboardRecord>;
 	// The fire-and-forget mutations never reject — they surface failures through
 	// `error` — so a `void`-invoked handler cannot leak an unhandled rejection.
-	rename(id: string, name: string): Promise<void>;
-	setVisibility(id: string, visibility: DashboardVisibility): Promise<void>;
+	rename(id: string, name: string): Promise<boolean>;
+	setVisibility(id: string, visibility: DashboardVisibility): Promise<boolean>;
 	// Copy an existing dashboard into a new private one. Resolves null when the
 	// source id is gone or the copy fails.
 	duplicate(id: string): Promise<DashboardRecord | null>;
-	remove(id: string): Promise<void>;
+	remove(id: string): Promise<boolean>;
 }
 
 function byRecency(records: DashboardRecord[]): DashboardRecord[] {
@@ -59,28 +61,48 @@ export function useDashboardLibrary(
 
 	const [records, setRecords] = useState<DashboardRecord[]>([]);
 	const [error, setError] = useState<Error | null>(null);
+	const [readError, setReadError] = useState<Error | null>(null);
+	const [isLoading, setLoading] = useState(true);
 
 	useEffect(() => {
 		let cancelled = false;
 		supersededRef.current = false;
+		setRecords([]);
+		setError(null);
+		setReadError(null);
+		setLoading(true);
 
-		Promise.resolve(activeLibrary.list()).then(
-			(loaded) => {
-				if (!cancelled && !supersededRef.current) setRecords(byRecency(loaded));
-			},
-			(cause) => {
-				if (!cancelled) setError(cause as Error);
-			},
-		);
+		Promise.resolve()
+			.then(() => activeLibrary.list())
+			.then(
+				(loaded) => {
+					if (!cancelled && !supersededRef.current) {
+						setRecords(byRecency(loaded));
+						setLoading(false);
+					}
+				},
+				(cause) => {
+					if (!cancelled && !supersededRef.current) {
+						setError(cause as Error);
+						setReadError(cause as Error);
+						setLoading(false);
+						setRecords([]);
+					}
+				},
+			);
 
 		const unsubscribe = activeLibrary.subscribe((change) => {
 			if (cancelled) return;
 			supersededRef.current = true;
+			setLoading(false);
 			if (change.kind === "error") {
 				setError(change.error);
+				setReadError(change.error);
+				setRecords([]);
 				return;
 			}
 			setError(null);
+			setReadError(null);
 			setRecords(byRecency(change.records));
 		});
 
@@ -113,8 +135,8 @@ export function useDashboardLibrary(
 	const rename = useCallback(
 		(id: string, name: string) =>
 			guard(() => activeLibrary.update(id, { name })).then(
-				() => {},
-				() => {},
+				() => true,
+				() => false,
 			),
 		[activeLibrary, guard],
 	);
@@ -122,8 +144,8 @@ export function useDashboardLibrary(
 	const setVisibility = useCallback(
 		(id: string, visibility: DashboardVisibility) =>
 			guard(() => activeLibrary.update(id, { visibility })).then(
-				() => {},
-				() => {},
+				() => true,
+				() => false,
 			),
 		[activeLibrary, guard],
 	);
@@ -148,13 +170,23 @@ export function useDashboardLibrary(
 	const remove = useCallback(
 		(id: string) =>
 			guard(() => activeLibrary.remove(id)).then(
-				() => {},
-				() => {},
+				() => true,
+				() => false,
 			),
 		[activeLibrary, guard],
 	);
 
-	return { records, error, create, rename, setVisibility, duplicate, remove };
+	return {
+		records,
+		error,
+		isLoading,
+		readError,
+		create,
+		rename,
+		setVisibility,
+		duplicate,
+		remove,
+	};
 }
 
 // The starting spec for a freshly created, empty dashboard: a titled canvas the

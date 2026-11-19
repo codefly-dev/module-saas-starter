@@ -4,12 +4,15 @@ import { Download } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Dashboard, type DashboardData } from "@/components/dashboard";
 import { useAuth } from "@/lib/auth";
+import { failureText } from "@/shared/lib/failure-text";
+import { readOutcome } from "@/shared/lib/read-outcome";
 import {
 	Button,
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuTrigger,
+	ErrorState,
 	SegmentedControl,
 	Select,
 	SelectContent,
@@ -74,7 +77,7 @@ export function AuditPage() {
 
 	// The registry's own list of registered types. Named for what it is, so it
 	// cannot be confused with the eventTypes FILTER below.
-	const { data: registeredTypes } = useAuditEventTypes();
+	const { data: registeredTypes, error: registryError } = useAuditEventTypes();
 	// The table shows the same window the tiles and the series describe.
 	// Every read names the organisation the page is showing. The aggregate RPC
 	// treats a request with no organisation as platform-wide and requires a
@@ -82,7 +85,12 @@ export function AuditPage() {
 	// list fine saw every tile and chart "Failed to load". A platform
 	// administrator with no organisation selected still reads platform-wide.
 	const orgId = organizationId ?? "";
-	const { data, isLoading } = useAuditLog({
+	const {
+		data,
+		isLoading,
+		error: listError,
+		refetch: refetchList,
+	} = useAuditLog({
 		orgId,
 		eventType,
 		eventTypes,
@@ -97,7 +105,11 @@ export function AuditPage() {
 
 	const scope = { eventType, eventTypes, category, namespace };
 	const current = { orgId, from: windows.current.from, to: windows.current.to };
-	const previous = { orgId, from: windows.previous.from, to: windows.previous.to };
+	const previous = {
+		orgId,
+		from: windows.previous.from,
+		to: windows.previous.to,
+	};
 
 	// One headline aggregate per window, grouped by category then event type
 	// and NOT filtered by category: every tile slices it client-side (exact,
@@ -218,8 +230,20 @@ export function AuditPage() {
 			label,
 			value: now,
 			format: "compact" as const,
-			delta: relativeChange(now, before),
-			deltaLabel: `vs previous ${range}`,
+			delta:
+				totalBefore.data !== undefined &&
+				actorsBefore.data !== undefined &&
+				!totalBefore.error &&
+				!actorsBefore.error
+					? relativeChange(now, before)
+					: undefined,
+			deltaLabel:
+				totalBefore.data !== undefined &&
+				actorsBefore.data !== undefined &&
+				!totalBefore.error &&
+				!actorsBefore.error
+					? `vs previous ${range}`
+					: "Previous period unavailable",
 			...extra,
 		});
 		const newUsers = tile(
@@ -306,12 +330,17 @@ export function AuditPage() {
 		totalBefore.data,
 		actorsNow.data,
 		actorsBefore.data,
+		totalBefore.error,
+		actorsBefore.error,
 		showsNoFilter,
 		showsSecurityOnly,
 		showsNewUsersOnly,
 	]);
-	const tilesLoading = totalNow.isLoading || actorsNow.isLoading;
-	const tilesError = totalNow.error ?? actorsNow.error;
+	const tilesLoading =
+		totalNow.isLoading ||
+		actorsNow.isLoading ||
+		(registeredTypes === undefined && !registryError);
+	const tilesError = totalNow.error ?? actorsNow.error ?? registryError;
 
 	const { directory: actorNames, failed: actorNamesFailed } =
 		usePrincipalDirectory(organizationId ?? "", [
@@ -352,7 +381,9 @@ export function AuditPage() {
 
 	const handleExport = (format: "csv" | "json") => {
 		// The download is what the page is showing: same filters, same window.
+		if (exportMutation.isPending || listError) return;
 		exportMutation.mutate({
+			orgId,
 			format,
 			eventType,
 			eventTypes,
@@ -391,7 +422,9 @@ export function AuditPage() {
 						<Button
 							variant="outline"
 							size="sm"
-							disabled={exportMutation.isPending}
+							disabled={
+								exportMutation.isPending || Boolean(listError) || isLoading
+							}
 						>
 							<Download className="mr-2 h-4 w-4" />
 							{exportMutation.isPending ? "Exporting..." : "Export"}
@@ -426,7 +459,7 @@ export function AuditPage() {
 					}
 				}}
 			>
-				<SelectTrigger className="w-[160px]">
+				<SelectTrigger aria-label="Event category" className="w-full sm:w-40">
 					<SelectValue placeholder="Category" />
 				</SelectTrigger>
 				<SelectContent>
@@ -441,7 +474,7 @@ export function AuditPage() {
 			<Select
 				value={namespaceFilter}
 				items={[
-					{ value: "all", label: "All namespaces" },
+					{ value: "all", label: "All sources" },
 					...namespaces.map((n) => ({ value: n, label: n })),
 				]}
 				onValueChange={(v) => {
@@ -452,11 +485,11 @@ export function AuditPage() {
 					}
 				}}
 			>
-				<SelectTrigger className="w-[160px]">
-					<SelectValue placeholder="Namespace" />
+				<SelectTrigger aria-label="Event source" className="w-full sm:w-40">
+					<SelectValue placeholder="Source" />
 				</SelectTrigger>
 				<SelectContent>
-					<SelectItem value="all">All namespaces</SelectItem>
+					<SelectItem value="all">All sources</SelectItem>
 					{namespaces.map((n) => (
 						<SelectItem key={n} value={n}>
 							{n}
@@ -480,7 +513,7 @@ export function AuditPage() {
 					}
 				}}
 			>
-				<SelectTrigger className="w-[220px]">
+				<SelectTrigger aria-label="Event type" className="w-full sm:w-56">
 					<SelectValue placeholder="Filter by event type" />
 				</SelectTrigger>
 				<SelectContent>
@@ -496,7 +529,7 @@ export function AuditPage() {
 	);
 
 	const dashboard: DashboardData = {
-		title: "Audit Log",
+		title: "Audit log",
 		// When a set filter is on, say so here. Every dropdown still reads "all"
 		// — none of them can express a set — so without this the table, the
 		// series and the breakdowns would all be narrowed with nothing on the
@@ -511,7 +544,7 @@ export function AuditPage() {
 			{
 				id: "headline",
 				kind: "metrics",
-				metrics: tiles,
+				metrics: tilesError || tilesLoading ? [] : tiles,
 				isLoading: tilesLoading,
 				error: tilesError,
 				emptyMessage: "No events in range.",
@@ -546,7 +579,7 @@ export function AuditPage() {
 				title: "Top actors",
 				description: "Who did the most, for the current filter.",
 				items: topActors.map((b) => ({
-					label: actorNames.get(b.key) ?? b.key.slice(0, 8),
+					label: actorNames.get(b.key) || "Name unavailable",
 					value: b.count,
 				})),
 				isLoading: actorsNow.isLoading,
@@ -564,11 +597,34 @@ export function AuditPage() {
 								Actor names could not be loaded; actors are shown by id.
 							</p>
 						) : null}
-						<AuditTable
-							events={events}
-							isLoading={isLoading}
-							actorNames={actorNames}
-						/>
+						{listError ? (
+							<>
+								<ErrorState
+									title="Couldn't load the activity log"
+									detail={failureText("view the activity log", listError)}
+								/>
+								{readOutcome(true, listError) !== "forbidden" && (
+									<Button variant="outline" onClick={() => void refetchList()}>
+										Try again
+									</Button>
+								)}
+							</>
+						) : (
+							<AuditTable
+								events={events}
+								isLoading={isLoading}
+								actorNames={actorNames}
+							/>
+						)}
+						{exportMutation.isError && (
+							<ErrorState
+								title="Couldn't export the activity log"
+								detail={failureText(
+									"export the activity log",
+									exportMutation.error,
+								)}
+							/>
+						)}
 					</div>
 				),
 			},
