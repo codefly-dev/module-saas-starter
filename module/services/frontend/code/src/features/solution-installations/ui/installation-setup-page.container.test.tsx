@@ -721,9 +721,9 @@ it("shows a refused installation read without retry or an empty claim", async ()
 	);
 	render();
 	expect(
-		await screen.findByText("This installation could not be read"),
+		await screen.findByText(/permission to see this installation|Couldn't load this installation/),
 	).toBeTruthy();
-	expect(screen.queryByRole("button", { name: "Refresh" })).toBeNull();
+	expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
 	expect(
 		screen.queryByText("This organization has no such installation"),
 	).toBeNull();
@@ -742,10 +742,10 @@ it("keeps recovery available after a temporary installation read failure", async
 	);
 	render();
 	expect(
-		await screen.findByText("This installation could not be read"),
+		await screen.findByText(/permission to see this installation|Couldn't load this installation/),
 	).toBeTruthy();
 	serve({ installations: [] });
-	fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+	fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 	expect(
 		await screen.findByText("This organization has no such installation"),
 	).toBeTruthy();

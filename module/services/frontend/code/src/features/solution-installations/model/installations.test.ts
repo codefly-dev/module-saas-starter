@@ -157,8 +157,21 @@ describe("solution installation facts", () => {
 	it("uses safe guidance for a refused request", () => {
 		expect(
 			hostRefusal(new ConnectError("no transport", Code.FailedPrecondition)),
-		).toContain("The current state doesn't allow this change.");
-		expect(hostRefusal(new ConnectError("", Code.Internal))).toBe(
+		).toBe("Couldn't complete this request. The current state doesn't allow this change. Refresh the page to review it.");
+		expect(hostRefusal(new ConnectError("", Code.PermissionDenied))).toBe(
+			"You don't have access to complete this request. Ask your organization administrator for access.",
+		);
+	});
+
+	// A transport failure, a timeout or a defect is not the host refusing:
+	// its text names internals, so the page says it plainly instead.
+	it.each([
+		new ConnectError("upstream connect error", Code.Unavailable),
+		new ConnectError("pq: relation missing", Code.Internal),
+		new ConnectError("", Code.Internal),
+		new Error("fetch failed"),
+	])("never shows the text of a failure that is not a refusal", (error) => {
+		expect(hostRefusal(error)).toBe(
 			"Couldn't complete this request. Try again; if it keeps failing, tell your administrator.",
 		);
 	});

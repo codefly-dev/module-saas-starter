@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm, useFormState } from "react-hook-form";
 import { toast } from "sonner";
 import {
 	Button,
@@ -34,9 +34,11 @@ export function OrganizationProfileForm({
 		defaultValues: { name: organization.name, slug: organization.slug },
 	});
 
+	const { isDirty } = useFormState({ control: form.control });
+	const { reset } = form;
 	useEffect(() => {
-		form.reset({ name: organization.name, slug: organization.slug });
-	}, [organization.name, organization.slug, form]);
+		reset({ name: organization.name, slug: organization.slug });
+	}, [organization.name, organization.slug, reset]);
 
 	const onSubmit = (values: CreateOrgValues) =>
 		update.mutate(
@@ -74,10 +76,10 @@ export function OrganizationProfileForm({
 						required
 					>
 						{(control) => (
-							<Input
-								{...control}
-								{...form.register("name")}
-								disabled={update.isPending}
+							<Controller
+								name="name"
+								control={form.control}
+								render={({ field }) => <Input {...control} {...field} disabled={update.isPending} />}
 							/>
 						)}
 					</Field>
@@ -88,10 +90,10 @@ export function OrganizationProfileForm({
 						required
 					>
 						{(control) => (
-							<Input
-								{...control}
-								{...form.register("slug")}
-								disabled={update.isPending}
+							<Controller
+								name="slug"
+								control={form.control}
+								render={({ field }) => <Input {...control} {...field} disabled={update.isPending} />}
 							/>
 						)}
 					</Field>
@@ -108,7 +110,7 @@ export function OrganizationProfileForm({
 				<CardFooter>
 					<Button
 						type="submit"
-						disabled={update.isPending || !form.formState.isDirty}
+						disabled={update.isPending || !isDirty}
 					>
 						{update.isPending ? "Saving..." : "Save"}
 					</Button>

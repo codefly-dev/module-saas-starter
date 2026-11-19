@@ -392,6 +392,9 @@ jobs:
   # revision, or a patch below it within the same major.minor, so a declaration
   # names no suite the pin did not run.
   host-interface-conformance:
+    # Agent release resolution uses the authenticated GitHub API.
+    env:
+      GH_TOKEN: ${{ github.token }}
     name: Host interface conformance (authority main)
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -563,6 +566,15 @@ jobs:
         run: codefly generate runnables saas-starter --check
       - name: Check generated libraries are reproducible with the pinned CLI
         run: bash scripts/ci/check-generated-libraries.sh
+      - name: Retain generated libraries for drift diagnosis
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: regenerated-libraries
+          path: |
+            libraries/source-read-sdk/
+            module/services/frontend/code/packages/saas-sdk/generated/
+          if-no-files-found: error
 
   module-package:
     name: Immutable module package
@@ -683,6 +695,9 @@ jobs:
   # near-instant no-op — the same property a downstream consumer sees when it
   # syncs the starter with no local deltas.
   codefly-plan:
+    # Agent release resolution uses the authenticated GitHub API.
+    env:
+      GH_TOKEN: ${{ github.token }}
     name: Codefly CI plan
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -811,6 +826,9 @@ jobs:
           if-no-files-found: error
 
   codefly-quality-phases:
+    # Agent release resolution uses the authenticated GitHub API.
+    env:
+      GH_TOKEN: ${{ github.token }}
     name: Codefly quality (${{ matrix.phase }})
     needs: codefly-plan
     # Always run on release tags: a release must exercise the full topology
@@ -1048,6 +1066,9 @@ jobs:
         run: test "${QUALITY_RESULT}" = success
 
   codefly-supply-chain:
+    # Agent release resolution uses the authenticated GitHub API.
+    env:
+      GH_TOKEN: ${{ github.token }}
     name: Codefly supply chain
     needs: codefly-plan
     # Always run on release tags: a release must exercise the full topology
@@ -1128,6 +1149,9 @@ jobs:
           npm --prefix module/services/marketing/code audit --omit=dev --audit-level=high
 
   codefly-build:
+    # Agent release resolution uses the authenticated GitHub API.
+    env:
+      GH_TOKEN: ${{ github.token }}
     name: Codefly build
     needs: codefly-plan
     # Always run on release tags: a release must exercise the full topology

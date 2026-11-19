@@ -89,3 +89,64 @@ export function holdersByRole(
 			.sort(),
 	}));
 }
+
+/** Who holds which role and the people and teams the host names. */
+export interface AccessView {
+	grants: Map<string, RoleGrant[]>;
+	failed: Set<string>;
+	unreached: (installationId: string) => readonly string[];
+	roles: (installationId: string) => readonly string[];
+	name: (grant: RoleGrant) => string;
+}
+
+/**
+ * Who an uninstall takes access from, in one phrase ("expenses-editor and
+ * expenses-viewer lose": the teams or people holding a role), from the role
+ * holders the table already shows. Empty when nobody holds a role or the
+ * holders are not read yet.
+ */
+export function uninstallLosers(
+	row: Pick<InstalledRow, "installationId">,
+	access: AccessView,
+): string {
+	const grants = access.grants.get(row.installationId);
+	if (!grants) return "";
+	const names = grants.map((grant) => ({
+		name: access.name(grant),
+		id: grant.teamId || grant.personId,
+	}));
+	// A holder whose name is not read yet would be shown as its id: say the
+	// general sentence rather than name anyone by an id.
+	if (names.some(({ name, id }) => !name || name === id)) return "";
+	const holders = [...new Set(names.map(({ name }) => name))].sort();
+	if (holders.length === 0) return "";
+	if (holders.length === 1) return `${holders[0]} loses`;
+	return `${holders.slice(0, -1).join(", ")} and ${holders[holders.length - 1]} lose`;
+}
+
+/** What the page calls an installed row: its target's alias, when the host still offers it. */
+export function installedName(row: Pick<InstalledRow, "solution">): string {
+	return row.solution.kind === "value"
+		? row.solution.text
+		: "this installation";
+}
+
+/**
+ * The question asked before an uninstall: the act and the thing in the title,
+ * and who loses access (by name when the holders are read) with what is kept.
+ */
+export function uninstallQuestion(
+	row: Pick<InstalledRow, "installationId" | "solution">,
+	access: AccessView,
+): { title: string; description: string } {
+	const name = installedName(row);
+	const losers = uninstallLosers(row, access);
+	return {
+		title: `Uninstall ${name}?`,
+		description: `${
+			losers
+				? `${losers} access to ${name} at once.`
+				: "Everyone who holds one of its roles loses access at once."
+		} Its record and audit trail remain. Shared supporting module installations are kept.`,
+	};
+}

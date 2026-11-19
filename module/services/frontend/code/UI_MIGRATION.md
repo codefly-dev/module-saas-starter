@@ -136,49 +136,10 @@ module package and the aggregate Release gates. Publication jobs were skipped
 for this draft PR. This supersedes the earlier remote API-rate-limit failure;
 the local service readiness limitations above remain separate.
 
-### Administration usability follow-up
+### Host feature extraction inventory
 
-Administration dashboards now compose the kit PageHeader; dense filters live in a wrapping row beneath the title. PageHeader and Section wrap actions to preserve readable headings. The kit preview stylesheet includes these layouts.
-
-Permissions and team-member lists use DataTable. Access checks show declared activity descriptions, and failed user-directory or assignment reads cannot masquerade as empty results. User details explicitly describe access from assigned roles rather than claiming to enumerate organization and platform authority.
-
-Role removal from user details, role holders, team roles, and the member-roles dialog composes the kit AlertDialog through the role feature. Confirmation names the subject and role, preserves the assignment restriction, and disables controls while submitting. Read-only role viewers have no delete control. Session rows summarize browsers and operating systems, and denied reads explain who can grant access without offering retry. The checkout-return page offers billing verification without claiming a completed payment.
-
-This is an incremental migration: remaining route/dialog coverage and live-fixture limitations are recorded in the workspace UI inventory. A successful source migration is not evidence that every route has passed a visual audit.
-
-### Administration forms and access review (2026-11-18)
-
-Source connection uses the kit Select for collections, repositories and directory
-team matching. Sharing composes kit Checkbox and Label; source removal, saved-token
-removal and collection-access removal use AlertDialog with named consequences,
-cancellation and pending guards. GitHub setup groups related fields on wider
-screens and disables editing during submission. The source package owns these
-changes; published consumers need a package update, not copied components.
-
-Waitlist uses the kit DataTable and confirms rejection. Role creation and editing
-use described activities instead of free-form resource/action tokens. Role holders
-use DataTable and resolved person names. A failed activity catalogue prevents a
-save, and existing undescribed grants remain intact. Legacy role names and missing
-activity descriptions returned by the service still need owner-side cleanup;
-frontend presentation does not rename stored roles or change authorization.
-
-### November 18: remaining admin controls and read states
-
-Jobs, event delivery, invoices, catalogue installations, background-work access,
-user access, roles and waitlist lists now use the shared DataTable. Destructive
-and ownership changes use named kit confirmations. API-key choices and install
-approvals use kit radios/checkboxes, and notifications use the kit popover.
-Progress indicators use theme tokens. Source and module-access failures redact
-server diagnostics; failed reads remain distinct from empty collections.
-
-Onboarding waits for the organization's creation policy instead of offering
-creation on loading or failure. Organization switching preserves read failures,
-and passkey registration keeps safe inline failure feedback in its dialog.
-The shared DataTable supports accessible names, keyboard sorting and keyboard
-row activation with visible focus; these improvements apply to its consumers.
-
-Module access still edits a complete configuration document. A fully described,
-structured editor needs the owner to expose the editable configuration schema;
-this pass does not guess grants or change that contract. Generated navigation
-labels also remain owned by their catalogue generator. Browser coverage is
-recorded in the workspace inventory rather than inferred from passing unit tests.
+The inventory includes the extracted event, job, catalogue, installation, module
+authority and unattended-work components. Their owner stories remain marked
+missing. The shared confirmation composition is a promotion candidate, not a
+completed kit migration. Removed playground sources and obsolete MetricCard
+duplication exceptions no longer appear in the current-source inventory.

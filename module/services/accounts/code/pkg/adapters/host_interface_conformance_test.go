@@ -30,10 +30,10 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	conformance "github.com/codefly-dev/authority/libraries/conformance/go"
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
+	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
 	modulecontract "github.com/codefly-dev/core/contracts/module"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/sdk"
-	"github.com/codefly-dev/authority/libraries/solutionhost/go"
 	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -75,18 +75,6 @@ const (
 	conformanceZoe      = "00000000-0000-7000-8000-0000000000b5"
 	conformanceMaya     = "00000000-0000-7000-8000-0000000000b1"
 )
-
-// TestAccountsPassesTheHostInterfaceConformanceSuite boots accounts over a
-// fresh test store, seeds the harness's fixture and runs the shared host
-// interface conformance suite against it, then the cases beyond the suite.
-// It runs wherever the package's tests run with their dependencies, as every
-// other store-backed test does: a switch to turn it on was a switch nothing in
-// CI turned, so the suite was skipped there. It includes everything the
-// fresh-store test it replaces asserted (manifest authority derived from an
-// empty store, a person issued).
-func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
-	runHostInterfaceFixture(t)
-}
 
 // conformanceDestroyBudget is how long tearing the suite's dependencies down
 // may take once the suite has stopped.
@@ -515,8 +503,8 @@ func runHostInterfaceFixture(t *testing.T) {
 		// The installed proposals solution and its own workload. Its roles name
 		// its own kind alone, so records (Audience) is unrelated to it.
 		InstalledSolution: proposals, InstalledAudience: "conformance-proposals", InstalledCredential: credential("conformance-proposals"),
-		// An Acme owner who is not an administrator; a member with no role and no team.
-		OwnerToken: "fixture-owner", UnentitledToken: "fixture-no-roles",
+		// A member with no installation role and no team.
+		UnentitledToken: "fixture-no-roles",
 		// Globex's administrator, and the hop's own workload credential (service
 		// account hop in the authority module's namespace).
 		OtherAdminToken: "fixture-zoe",

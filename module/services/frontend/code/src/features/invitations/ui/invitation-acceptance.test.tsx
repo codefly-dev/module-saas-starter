@@ -79,6 +79,8 @@ describe("InvitationAcceptance", () => {
 			await screen.findByRole("button", { name: "Accept invitation" }),
 		);
 
+		fireEvent.click(await screen.findByRole("button", { name: "Continue to workspace" }));
+
 		await waitFor(() =>
 			expect(
 				screen.getByText(/invitation was accepted, but this browser/i),

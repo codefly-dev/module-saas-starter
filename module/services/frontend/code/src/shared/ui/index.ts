@@ -141,4 +141,4 @@ export {
 	useDelayedLoading,
 	useLoadingPhase,
 } from "@codefly-dev/ui/layout";
-export { Toaster } from "@/components/ui/sonner";
+export { ConfirmDialog } from "./confirm-dialog";

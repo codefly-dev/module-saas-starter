@@ -23,11 +23,13 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
+	ErrorState,
 	Label,
 } from "@/shared/ui";
 import {
 	assertMatchingOffer,
 	moduleConsentText,
+	reviewFailure,
 } from "../model/install-review";
 import { hostRefusal, releaseText } from "../model/installations";
 import {
@@ -79,7 +81,7 @@ export function InstallSolutionDialog({
 		useTargetTitles().get(solution.routeAlias) ?? solution.routeAlias;
 	const { user } = useAuth();
 	const top = useRef<HTMLDivElement>(null);
-	const approvalId = useId();
+	const approveId = useId();
 	const [chosen, setChosen] = useState<Record<string, string>>({});
 	const [untaken, setUntaken] = useState<ReadonlySet<string>>(new Set());
 	const [approved, setApproved] = useState(false);
@@ -149,7 +151,12 @@ export function InstallSolutionDialog({
 					active={review.isFetching}
 					label="Preparing required access"
 				/>
-				{review.isError && <p role="alert">{hostRefusal(review.error)}</p>}
+				{review.isError && (
+					<ErrorState
+						title="Couldn't prepare this review"
+						detail={reviewFailure(review.error, hostRefusal)}
+					/>
+				)}
 				{data && (
 					<div className="space-y-4 text-sm">
 						{upgrade && (
@@ -200,12 +207,13 @@ export function InstallSolutionDialog({
 						<TechnicalAccess offer={data.offer} modules={data.modules} />
 						<div className="flex items-start gap-2">
 							<Checkbox
-								id={approvalId}
+								id={approveId}
+								className="mt-0.5"
 								checked={approved}
-								onCheckedChange={setApproved}
+								onCheckedChange={(checked) => setApproved(checked === true)}
 								disabled={isPending}
 							/>
-							<Label htmlFor={approvalId}>
+							<Label htmlFor={approveId} className="leading-normal">
 								I approve this {upgrade ? "release" : "solution"} and the access
 								it and its supporting modules require, including the technical
 								details.
@@ -214,10 +222,10 @@ export function InstallSolutionDialog({
 					</div>
 				)}
 				{error && (
-					<p role="alert">
-						{error} The original review is retained. Retry it after a temporary
-						failure, or review again if access has changed.
-					</p>
+					<ErrorState
+						title={upgrade ? "It was not updated" : "It was not installed"}
+						detail={`${error} The original review is retained. Retry it after a temporary failure, or review again if access has changed.`}
+					/>
 				)}
 				<DialogFooter>
 					<Button variant="outline" onClick={onClose}>

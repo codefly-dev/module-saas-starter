@@ -163,7 +163,7 @@ func testAMemberConnectsAPersonalSourceOfTheirOwn(t *testing.T, h reviewedClosur
 	})
 
 	t.Run("anything but a personal source is still an administrator's to connect", func(t *testing.T) {
-		refused(t, shared(remi, granted), codes.PermissionDenied, "requires organization administrator or owner role")
+		refused(t, shared(remi, granted), codes.PermissionDenied, "requires an administrator of organization", fixtureOrganization, "an owner also qualifies")
 	})
 
 	t.Run("its owner declares its operations and signs in for it; nobody else does", func(t *testing.T) {

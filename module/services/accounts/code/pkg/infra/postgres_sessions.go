@@ -276,3 +276,46 @@ func (s *PostgresStore) EndSessionTree(ctx context.Context, sessionID, reason st
 	}
 	return revoked, rows.Err()
 }
+
+// CheckCapabilitySession checks interactive roots without treating generated
+// roots of API keys or durable delegations as interactive sessions.
+func (s *PostgresStore) CheckCapabilitySession(ctx context.Context, sessionID string) error {
+	id, ok := asUUID(sessionID)
+	if !ok {
+		return nil
+	}
+	var known bool
+	if err := s.getQueryExecutor(ctx).QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM sessions WHERE id=$1)`, id).Scan(&known); err != nil {
+		return err
+	}
+	if !known {
+		return nil
+	}
+	end, open, err := s.SessionEndsAt(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if !open || !time.Now().Before(end) {
+		return business.ErrNoOpenSession
+	}
+	return nil
+}
+
+// RevokedSessionMarkers reads durable revocations whose bearer markers may
+// still be needed. Replaying them is idempotent, including after a restart.
+func (s *PostgresStore) RevokedSessionMarkers(ctx context.Context) ([]business.RevokedSession, error) {
+	rows, err := s.getQueryExecutor(ctx).Query(ctx, `SELECT id, family_id FROM sessions WHERE revoked_at IS NOT NULL AND revoked_reason IS DISTINCT FROM 'rotated' AND revoked_reason IS DISTINCT FROM 'organization_membership_changed' AND expires_at > NOW()`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []business.RevokedSession
+	for rows.Next() {
+		var row business.RevokedSession
+		if err := rows.Scan(&row.ID, &row.FamilyID); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}

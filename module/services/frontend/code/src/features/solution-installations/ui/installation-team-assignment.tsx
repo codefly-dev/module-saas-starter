@@ -10,6 +10,8 @@ import { useId } from "react";
 import type { Team } from "@/gen/saas/accounts/v1/common_pb";
 import {
 	Checkbox,
+	ErrorState,
+	Field,
 	Label,
 	Select,
 	SelectContent,
@@ -18,6 +20,7 @@ import {
 	SelectValue,
 } from "@/shared/ui";
 import type { RoleTeam } from "../model/team-assignment";
+import { ReviewSection, RolePanel } from "./review-section";
 
 const CONVENTIONAL = "conventional";
 
@@ -56,99 +59,120 @@ export function InstallationTeamAssignment({
 }) {
 	const checkboxPrefix = useId();
 	return (
-		<section aria-label="Roles" className="space-y-3">
-			<div>
-				<h3 className="font-medium">Roles</h3>
-				<p className="text-muted-foreground">
-					Each role goes to a team: everyone in the team has it. Change a
-					team&apos;s people, or the team, at any time.
-				</p>
-			</div>
+		<ReviewSection
+			title="Roles"
+			className="space-y-3"
+			description="Each role goes to a team: everyone in the team has it. Change a team's people, or the team, at any time."
+		>
 			{teamsError && (
-				<p role="alert">
-					Teams could not be read: {teamsError} Each role goes to its team named
-					below, created if it does not exist.
+				<ErrorState
+					title="Teams could not be read"
+					detail={`${teamsError} Each role goes to its team named below, created if it does not exist.`}
+				/>
+			)}
+			{assignment.map((entry, i) => (
+				<RoleAssignment
+					key={entry.role}
+					entry={entry}
+					fallback={conventional[i]}
+					teams={teams}
+					taking={taken.has(entry.role)}
+					disabled={disabled}
+					onChoose={onChoose}
+					onTake={onTake}
+					can={abilities.find((a) => a.role === entry.role)}
+					words={roleLabel(title, entry.role)}
+				/>
+			))}
+		</ReviewSection>
+	);
+}
+
+/** One role: what it can do, the team it goes to, and whether the person joins it. */
+function RoleAssignment({
+	entry,
+	fallback,
+	teams,
+	taking,
+	disabled,
+	onChoose,
+	onTake,
+	can,
+	words,
+}: {
+	entry: RoleTeam;
+	fallback: RoleTeam;
+	teams: readonly Team[];
+	taking: boolean;
+	disabled: boolean;
+	onChoose: (role: string, teamId: string | undefined) => void;
+	onTake: (role: string, take: boolean) => void;
+	can: RoleAbilities | undefined;
+	/** The role as the target's own ("Example Pages admin"). */
+	words: string;
+}) {
+	const takeId = useId();
+	const items: Record<string, string> = { [CONVENTIONAL]: fallback.name };
+	for (const team of teams)
+		if (team.id !== fallback.team?.id) items[team.id] = team.name;
+	const heading = can
+		? `What ${article(words).toLowerCase()} ${words} can do`
+		: `${words[0]?.toUpperCase() ?? ""}${words.slice(1)}`;
+	return (
+		<RolePanel role={entry.role} heading={heading}>
+			{can && <RoleAbilitiesList abilities={can} label={heading} />}
+			<Field
+				label="Goes to team"
+				description={
+					entry.team
+						? `existing team ${entry.name}`
+						: `${entry.name} will be created`
+				}
+			>
+				{(control) => (
+					<Select
+						items={items}
+						value={entry.chosen ? entry.team?.id : CONVENTIONAL}
+						onValueChange={(value) =>
+							onChoose(
+								entry.role,
+								!value || value === CONVENTIONAL ? undefined : value,
+							)
+						}
+						disabled={disabled || teams.length === 0}
+					>
+						<SelectTrigger
+							id={control.id}
+							aria-describedby={control["aria-describedby"]}
+							aria-label={`Team for ${words}`}
+							className="w-full sm:w-56"
+						>
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							{Object.entries(items).map(([value, label]) => (
+								<SelectItem key={value} value={value}>
+									{label}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+				)}
+			</Field>
+			{entry.chosen && taking && (
+				<p className="text-muted-foreground">
+					Joining {entry.name} also gives you whatever else {entry.name} has.
 				</p>
 			)}
-			{assignment.map((entry, i) => {
-				const fallback = conventional[i];
-				const items: Record<string, string> = {
-					[CONVENTIONAL]: fallback.name,
-				};
-				for (const team of teams)
-					if (team.id !== fallback.team?.id) items[team.id] = team.name;
-				const can = abilities.find((a) => a.role === entry.role);
-				const words = roleLabel(title, entry.role);
-				return (
-					<section
-						key={entry.role}
-						aria-label={`Role ${entry.role}`}
-						className="space-y-2 rounded-lg border p-3"
-					>
-						<h4 className="font-medium">
-							{can
-								? `What ${article(words).toLowerCase()} ${words} can do`
-								: `${words[0]?.toUpperCase() ?? ""}${words.slice(1)}`}
-						</h4>
-						{can && (
-							<RoleAbilitiesList
-								abilities={can}
-								label={`What ${article(words).toLowerCase()} ${words} can do`}
-							/>
-						)}
-						<div className="flex flex-wrap items-center gap-2">
-							<span>Goes to team</span>
-							<Select
-								items={items}
-								value={entry.chosen ? entry.team?.id : CONVENTIONAL}
-								onValueChange={(value) =>
-									onChoose(
-										entry.role,
-										!value || value === CONVENTIONAL ? undefined : value,
-									)
-								}
-								disabled={disabled || teams.length === 0}
-							>
-								<SelectTrigger
-									aria-label={`Team for ${words}`}
-									className="w-56"
-								>
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									{Object.entries(items).map(([value, label]) => (
-										<SelectItem key={value} value={value}>
-											{label}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-							<span className="text-muted-foreground">
-								{entry.team
-									? `existing team ${entry.name}`
-									: `${entry.name} will be created`}
-							</span>
-						</div>
-						{entry.chosen && taken.has(entry.role) && (
-							<p className="text-muted-foreground">
-								Joining {entry.name} also gives you whatever else {entry.name}{" "}
-								has.
-							</p>
-						)}
-						<div className="inline-flex items-center gap-2">
-							<Checkbox
-								id={`${checkboxPrefix}-${entry.role}`}
-								checked={taken.has(entry.role)}
-								disabled={disabled}
-								onCheckedChange={(checked) => onTake(entry.role, checked)}
-							/>
-							<Label htmlFor={`${checkboxPrefix}-${entry.role}`}>
-								Add me to this team
-							</Label>
-						</div>
-					</section>
-				);
-			})}
-		</section>
+			<div className="flex items-center gap-2">
+				<Checkbox
+					id={takeId}
+					checked={taking}
+					disabled={disabled}
+					onCheckedChange={(checked) => onTake(entry.role, checked === true)}
+				/>
+				<Label htmlFor={takeId}>Add me to this team</Label>
+			</div>
+		</RolePanel>
 	);
 }

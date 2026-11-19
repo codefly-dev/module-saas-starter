@@ -35,7 +35,7 @@ function organizations(list: { id: string; name: string; slug: string }[]) {
 }
 
 describe("LeaveOrganizationDialog", () => {
-	it("moves the session to another organization before leaving the current one", async () => {
+	it("leaves under the current organization before entering another one", async () => {
 		const calls: string[] = [];
 		authState.switchOrganization.mockImplementation(async (id: string) => {
 			calls.push(`switch:${id}`);
@@ -61,7 +61,7 @@ describe("LeaveOrganizationDialog", () => {
 		);
 		fireEvent.click(screen.getByRole("button", { name: "Leave organization" }));
 		await waitFor(() =>
-			expect(calls).toEqual(["switch:org-beta", "leave:org-acme"]),
+			expect(calls).toEqual(["leave:org-acme", "switch:org-beta"]),
 		);
 		expect(authState.logout).not.toHaveBeenCalled();
 	});
@@ -89,6 +89,7 @@ describe("LeaveOrganizationDialog", () => {
 		);
 		fireEvent.click(screen.getByRole("button", { name: "Leave organization" }));
 		const alert = await screen.findByRole("alert");
+		expect(authState.switchOrganization).not.toHaveBeenCalled();
 		expect(alert.textContent).toContain(
 			"Ask an organization administrator to review its members and settings.",
 		);

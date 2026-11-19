@@ -13,7 +13,7 @@ const { enterImpersonation, auth } = vi.hoisted(() => ({
 	},
 }));
 vi.mock("@/lib/auth", () => ({
-	useAuth: () => ({ enterImpersonation, ...auth }),
+	useAuth: () => ({ impersonation: { isImpersonating: false }, enterImpersonation, ...auth }),
 }));
 
 const IMPERSONATION_TOKEN = "header.payload.signature";

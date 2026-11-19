@@ -5,7 +5,7 @@ import {
 	screen,
 	within,
 } from "@testing-library/react";
-import { HttpResponse, http, type JsonBodyType } from "msw";
+import { delay, HttpResponse, http, type JsonBodyType } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
@@ -170,7 +170,7 @@ const catalogue = {
 
 function stateOf(name: string, state: string): HTMLElement {
 	const row = screen.getByText(name).closest("tr");
-	const cell = row?.querySelector<HTMLElement>(`[aria-label="${state}"]`);
+	const cell = row?.querySelector<HTMLElement>(`[data-heading="${state}"]`);
 	if (!cell) throw new Error(`no ${state} cell for ${name}`);
 	return cell;
 }
@@ -188,7 +188,7 @@ describe("PlatformCataloguePage admin container", () => {
 		serve(catalogue);
 		renderInApp(<PlatformCataloguePage />);
 		await screen.findByText("drifted-solution");
-		for (const state of ["Desired", "Authorized", "Applied", "Observed"]) {
+		for (const state of ["Requested", "Approved", "Deployed", "Observed"]) {
 			expect(screen.getByRole("columnheader", { name: state })).toBeTruthy();
 		}
 		// A column that could only ever read "Not recorded" is not a column: it
@@ -219,9 +219,7 @@ describe("PlatformCataloguePage admin container", () => {
 			),
 		).toBeTruthy();
 		expect(
-			within(stateOf("rogue-solution", "Authorized")).getByText(
-				"Not authorized",
-			),
+			within(stateOf("rogue-solution", "Approved")).getByText("Not authorized"),
 		).toBeTruthy();
 
 		// "Running authorized" beside an undated observation is the one cell an
@@ -236,7 +234,7 @@ describe("PlatformCataloguePage admin container", () => {
 		).toBeGreaterThan(0);
 		expect(within(moduleObserved).queryByText("Running authorized")).toBeNull();
 		expect(
-			within(stateOf("billing-module", "Authorized")).getByText("Not recorded"),
+			within(stateOf("billing-module", "Approved")).getByText("Not recorded"),
 		).toBeTruthy();
 	});
 
@@ -244,10 +242,12 @@ describe("PlatformCataloguePage admin container", () => {
 		serve(catalogue);
 		renderInApp(<PlatformCataloguePage />);
 		await screen.findByText("drifted-solution");
-		expect(screen.getByText("Not known to this host")).toBeTruthy();
+		expect(
+			screen.getByText("What this platform doesn't know yet"),
+		).toBeTruthy();
 		expect(screen.getByText("No approval record.")).toBeTruthy();
 		// What nobody has built is said apart from what this host failed to learn.
-		expect(screen.getByText("Not yet built on this platform")).toBeTruthy();
+		expect(screen.getByText("Not available on this platform yet")).toBeTruthy();
 		expect(
 			screen.getByText("Build size is codefly-dev/core#708."),
 		).toBeTruthy();
@@ -259,23 +259,34 @@ describe("PlatformCataloguePage admin container", () => {
 		renderInApp(<PlatformCataloguePage />);
 		fireEvent.click(
 			await screen.findByRole("button", {
-				name: "Show installations of drifted-solution",
+				name: "Show the 1 organization using drifted-solution",
 			}),
 		);
-		const installations = screen.getByRole("dialog", {
-			name: "Installations of drifted-solution",
-		});
+		const installations = await screen.findByRole("dialog");
+		expect(
+			within(installations).getByText("Organizations using drifted-solution"),
+		).toBeTruthy();
+		for (const header of [
+			"Organization",
+			"Release in use",
+			"Teams with access",
+			"Installed on",
+		]) {
+			expect(
+				within(installations).getByRole("columnheader", { name: header }),
+			).toBeTruthy();
+		}
 		expect(within(installations).getByText("Acme")).toBeTruthy();
 		expect(
 			within(installations).getByText("example/drifted@1.2.0"),
 		).toBeTruthy();
 		// Granted here and inherited from above are listed apart, each named.
 		const granted = within(installations)
-			.getByText("Granted at this installation")
-			.closest("div");
+			.getByText("Given access here")
+			.closest<HTMLElement>('[data-slot="team-grants"]');
 		const inherited = within(installations)
-			.getByText("Inherited from above")
-			.closest("div");
+			.getByText("Access inherited from a wider grant")
+			.closest<HTMLElement>('[data-slot="team-grants"]');
 		if (!granted || !inherited) throw new Error("team groups missing");
 		expect(within(granted).getByText("Finance Team")).toBeTruthy();
 		expect(within(granted).queryByText("Everyone Team")).toBeNull();
@@ -299,20 +310,72 @@ describe("PlatformCataloguePage admin container", () => {
 			),
 		);
 		renderInApp(<PlatformCataloguePage />);
+		const refusal = await screen.findByRole("alert");
+		expect(refusal.textContent).toContain(
+			"You don't have access to the catalogue",
+		);
+		// A missing role is not fixed by trying again: the page names who can
+		// grant it, offers no retry, and never repeats the server's words.
+		expect(refusal.textContent).toContain(
+			"Ask a platform super administrator to give you access.",
+		);
+		expect(refusal.textContent).not.toContain("super_admin");
+		expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
 		expect(
-			await screen.findByText(/You don't have permission to see the catalogue/),
-		).toBeTruthy();
-		expect(
-			screen.queryByText(/No module or solution has been delivered/),
+			screen.queryByText("Nothing is deployed on this platform yet"),
 		).toBeNull();
+	});
+
+	it("says a failed read failed, and offers to retry it", async () => {
+		let healthy = false;
+		server.use(
+			http.post(rpc("PlatformAdminService", "ListPlatformCatalogue"), () =>
+				healthy
+					? HttpResponse.json(catalogue)
+					: HttpResponse.json(
+							{ code: "internal", message: "pq: connection reset" },
+							{ status: 500 },
+						),
+			),
+		);
+		renderInApp(<PlatformCataloguePage />);
+		const failure = await screen.findByRole("alert");
+		expect(failure.textContent).toContain("The catalogue couldn't be loaded");
+		expect(failure.textContent).not.toContain("connection reset");
+		expect(
+			screen.queryByText("Nothing is deployed on this platform yet"),
+		).toBeNull();
+
+		healthy = true;
+		fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+		expect(await screen.findByText("drifted-solution")).toBeTruthy();
+	});
+
+	it("shows a loading table, never the empty state, while the read is in flight", async () => {
+		server.use(
+			http.post(
+				rpc("PlatformAdminService", "ListPlatformCatalogue"),
+				async () => {
+					await delay(600);
+					return HttpResponse.json(catalogue);
+				},
+			),
+		);
+		renderInApp(<PlatformCataloguePage />);
+		expect(await screen.findByLabelText("Loading table")).toBeTruthy();
+		expect(
+			screen.queryByText("Nothing is deployed on this platform yet"),
+		).toBeNull();
+		expect(await screen.findByText("drifted-solution")).toBeTruthy();
 	});
 
 	it("says an empty platform is empty", async () => {
 		serve({ entries: [], registryRevision: "0" });
 		renderInApp(<PlatformCataloguePage />);
 		expect(
-			await screen.findByText(/No module or solution has been delivered/),
+			await screen.findByText("Nothing is deployed on this platform yet"),
 		).toBeTruthy();
+		expect(screen.queryByRole("table")).toBeNull();
 	});
 });
 

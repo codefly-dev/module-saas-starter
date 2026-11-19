@@ -132,17 +132,22 @@ func TestHopBrowserCallToAnHTTPRouteNamesItsModule(t *testing.T) {
 	require.Equal(t, []string{"wc-for-tracing"}, face.header.Values(hop.WorkContextKey))
 }
 
-func TestHopBrowserCallHoldsTheWorkContextUntilItNearlyLapses(t *testing.T) {
+func TestHopBrowserChecksCurrentAuthorityOnEachCall(t *testing.T) {
 	gw, issuer, face, bearer := hopBrowserHarness(t)
-	for range 3 {
+	call := func() int {
 		req := httptest.NewRequest(http.MethodPost, listCollection, strings.NewReader(`{}`))
 		req.Header.Set("Authorization", "Bearer "+bearer)
 		w := httptest.NewRecorder()
 		gw.ServeHTTP(w, req)
-		require.Equal(t, http.StatusOK, w.Code)
+		return w.Code
 	}
-	require.Equal(t, 3, face.calls)
-	require.Equal(t, 1, issuer.calls, "the person's Work Context is held, and the session re-authenticated on each call")
+	require.Equal(t, http.StatusOK, call())
+	issuer.refuse = status.Error(codes.PermissionDenied, "installation grant ended")
+	require.Equal(t, http.StatusForbidden, call())
+	require.Equal(t, 1, face.calls)
+	issuer.refuse = nil
+	require.Equal(t, http.StatusOK, call())
+	require.Equal(t, 2, face.calls)
 }
 
 func TestHopBrowserCallWithoutASessionIsRefusedBeforeTheAuthority(t *testing.T) {

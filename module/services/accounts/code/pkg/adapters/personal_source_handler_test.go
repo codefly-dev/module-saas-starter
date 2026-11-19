@@ -16,6 +16,7 @@ import (
 // source stays an administrator's.
 func TestAMemberDeclaresOnTheirOwnPersonalSourceWhereTheyMayCallIt(t *testing.T) {
 	org, member, other, source := "11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222", "33333333-3333-4333-8333-333333333333", "44444444-4444-4444-8444-444444444444"
+	adminReason := `requires an administrator of organization "` + org + `" (an owner also qualifies)`
 	for _, c := range []struct {
 		name    string
 		owner   string
@@ -25,8 +26,8 @@ func TestAMemberDeclaresOnTheirOwnPersonalSourceWhereTheyMayCallIt(t *testing.T)
 	}{
 		{name: "their own, where they may call it", owner: member, allowed: true},
 		{name: "their own, where they may not call it", owner: member, want: connect.CodePermissionDenied, reason: "you do not hold datasource:invoke on scope node boundary"},
-		{name: "another member's", owner: other, allowed: true, want: connect.CodePermissionDenied, reason: "requires organization administrator or owner role"},
-		{name: "the organization's own", allowed: true, want: connect.CodePermissionDenied, reason: "requires organization administrator or owner role"},
+		{name: "another member's", owner: other, allowed: true, want: connect.CodePermissionDenied, reason: adminReason},
+		{name: "the organization's own", allowed: true, want: connect.CodePermissionDenied, reason: adminReason},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			store := &sourceWireStore{allowed: c.allowed, role: gen.OrgRole_ORG_ROLE_MEMBER,

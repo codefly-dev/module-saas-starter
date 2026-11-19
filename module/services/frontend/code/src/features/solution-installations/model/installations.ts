@@ -13,7 +13,7 @@ import {
 import { failureText } from "@/shared/lib/failure-text";
 import type { Badge } from "@/shared/ui";
 
-import { InstallReviewError } from "./install-review";
+
 
 type StatusTone = NonNullable<ComponentProps<typeof Badge>["tone"]>;
 
@@ -278,8 +278,6 @@ export function roleOptionLabel(role: Role): string {
 	return `${role.name} — ${permits}`;
 }
 
-/** A safe explanation of a failed installation read or change. */
 export function hostRefusal(error: unknown): string {
-	if (error instanceof InstallReviewError) return error.message;
 	return failureText("complete this request", error);
 }

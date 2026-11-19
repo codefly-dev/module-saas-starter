@@ -309,15 +309,16 @@ describe("combined reviewed installation", () => {
 				within(access).getByRole("region", { name: `Role ${role}` }),
 			).getByRole("checkbox", {
 				name: "Add me to this team",
-			}) as HTMLInputElement;
-		expect(me("admin").getAttribute("aria-checked")).toBe("true");
-		expect(me("user").getAttribute("aria-checked")).toBe("true");
+			});
+		const ticked = (role: string) => me(role).getAttribute("aria-checked");
+		expect(ticked("admin")).toBe("true");
+		expect(ticked("user")).toBe("true");
 		expect(
 			within(access).getByText(/example-solution-admin will be created/),
 		).toBeTruthy();
 		fireEvent.click(me("user"));
-		expect(me("user").getAttribute("aria-checked")).toBe("false");
-		expect(me("admin").getAttribute("aria-checked")).toBe("true");
+		expect(ticked("user")).toBe("false");
+		expect(ticked("admin")).toBe("true");
 		// Nothing is picked: approving is all Install waits on.
 		fireEvent.click(
 			within(dialog).getByRole("checkbox", { name: /I approve this solution/ }),

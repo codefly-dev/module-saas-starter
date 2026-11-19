@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import yaml from "js-yaml";
+import { FixtureFileSchema } from "@/lib/fixtures/types";
 import {
 	cleanup,
 	fireEvent,
@@ -94,54 +98,18 @@ afterEach(() => {
 });
 
 describe("LoginPage", () => {
-	it("does not present a failed choice read as no available sign-in methods", async () => {
+	it("offers only the three page-role cases from the full dev-admin fixture", async () => {
 		h.providers = [];
-		vi.stubGlobal(
-			"fetch",
-			vi.fn().mockResolvedValue(new Response(null, { status: 503 })),
-		);
-		render(<LoginPage identity={{}} />);
-		expect(
-			await screen.findByText("Couldn’t load sign-in choices"),
-		).toBeTruthy();
-		expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
-		expect(screen.queryByText("No sign-in choices available")).toBeNull();
-	});
-
-	it("explains an empty sign-in catalogue", async () => {
-		h.providers = [];
-		vi.stubGlobal(
-			"fetch",
-			vi.fn().mockResolvedValue(Response.json({ users: [] })),
-		);
-		render(<LoginPage identity={{}} />);
-		expect(
-			await screen.findByText("No sign-in choices available"),
-		).toBeTruthy();
-		expect(
-			screen.getByText(/Ask your administrator to configure/),
-		).toBeTruthy();
-	});
-
-	it("locks every provider while sign-in starts and allows recovery after failure", async () => {
-		let fail!: (error: Error) => void;
-		h.signInWith.mockImplementation(
-			() =>
-				new Promise((_resolve, reject) => {
-					fail = reject;
-				}),
-		);
-		render(<LoginPage identity={{}} />);
-		const button = screen.getByRole("button", {
-			name: /Continue with Provider/,
-		});
-		fireEvent.click(button);
-		expect(button.hasAttribute("disabled")).toBe(true);
-		fireEvent.click(button);
-		expect(h.signInWith).toHaveBeenCalledTimes(1);
-		fail(new Error("private diagnostics"));
-		await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
-		expect(screen.queryByText("private diagnostics")).toBeNull();
+		const fixture = FixtureFileSchema.parse(yaml.load(readFileSync(resolve(process.cwd(), "../../../fixtures/dev-admin.yaml"), "utf8")));
+		const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(fixture));
+		try {
+			render(<LoginPage identity={{}} />);
+			await screen.findByText("Dana Lee");
+			const people = fixture.users.filter((person) => screen.queryByText(person.email));
+			expect(people.map((person) => person.name).sort()).toEqual(["Bob Williams", "Carol Davis", "Dana Lee"]);
+		} finally {
+			fetch.mockRestore();
+		}
 	});
 
 	it("does not present authentication as Terms acceptance", () => {

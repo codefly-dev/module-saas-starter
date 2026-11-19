@@ -125,8 +125,26 @@ describe("WhenRolesDeclared", () => {
 		};
 		renderGate("module");
 		expect(screen.queryByText("Setup")).toBeNull();
+		// Said, and plainly: the transport's own text is never the page's.
+		const alert = screen.getByRole("alert").textContent;
+		expect(alert).toContain(
+			"Could not read whether this page has roles to set up",
+		);
+		expect(alert).toContain("Couldn't complete this request");
+		expect(alert).not.toContain("registry is down");
+	});
+
+	it("says a refused catalogue read as the host words it", () => {
+		catalogue.result = {
+			isError: true,
+			error: new ConnectError(
+				"requires organization admin",
+				Code.PermissionDenied,
+			),
+		};
+		renderGate("module");
 		expect(screen.getByRole("alert").textContent).toContain(
-			"Couldn't complete this request",
+			"Ask your organization administrator for access.",
 		);
 	});
 

@@ -35,10 +35,11 @@ import (
 
 type snapshotProbeStore struct {
 	business.Store
-	core    *memstore.Store
-	replay  workcontext.ReplayStore
-	asked   atomic.Int64 // questions opened (WithAuthoritySnapshot)
-	outside atomic.Int64 // core reads made outside any question's snapshot
+	sessionFailure error
+	core           *memstore.Store
+	replay         workcontext.ReplayStore
+	asked          atomic.Int64 // questions opened (WithAuthoritySnapshot)
+	outside        atomic.Int64 // core reads made outside any question's snapshot
 }
 
 type inProbeSnapshot struct{}
@@ -194,4 +195,8 @@ func TestEveryHostAuthorityQuestionIsOneSnapshot(t *testing.T) {
 		require.Equal(t, int64(1), probe.asked.Load()-asked, "%s asks the core one question", handler.name)
 		require.Zero(t, probe.outside.Load()-outside, "%s: every read the core makes is the question's snapshot", handler.name)
 	}
+}
+
+func (s *snapshotProbeStore) CheckCapabilitySession(context.Context, string) error {
+	return s.sessionFailure
 }

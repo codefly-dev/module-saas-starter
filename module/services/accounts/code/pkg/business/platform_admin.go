@@ -125,6 +125,13 @@ func (s *Service) SuspendUser(ctx context.Context, actorID string, req *gen.Susp
 		if err := s.store.UpdateUserStatus(ctx, req.UserId, "suspended"); err != nil {
 			return err
 		}
+		// Include earlier committed revocations so retrying a suspension
+		// retries markers lost to a transient revocation-store failure.
+		previous, err := s.store.InvalidatedUserSessions(ctx, req.UserId)
+		if err != nil {
+			return err
+		}
+		revoked = append(revoked, previous...)
 		if len(stranded) == 0 {
 			return s.emitTx(ctx, actorID, "user", EventUserSuspended, "user", req.UserId, "")
 		}
@@ -136,14 +143,14 @@ func (s *Service) SuspendUser(ctx context.Context, actorID string, req *gen.Susp
 	// Suspension contains a compromised account, and the gateway admits an
 	// already-issued access token from the revocation list alone: without the
 	// markers the credential being contained stays usable for its whole lifetime.
-	s.revokeSessionAccess(ctx, accessRevocationKeys(revoked))
+	containmentErr := s.publishSessionRevocations(ctx, revoked)
 
 	message := fmt.Sprintf("Security: user %s suspended by %s (reason: %s)", req.UserId, actorID, req.Reason)
 	if len(stranded) > 0 {
 		message += fmt.Sprintf(" — organizations left without an administrator: %s", strings.Join(stranded, ", "))
 	}
 	s.notifySlack(ctx, message)
-	return nil
+	return containmentErr
 }
 
 // UnsuspendUser reactivates a suspended user account (super_admin only).

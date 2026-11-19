@@ -1,6 +1,7 @@
 import { scopesText } from "@codefly-dev/saas-ui/solution";
 import type { ReviewedOffer } from "@/gen/host/installation/v1/installation_pb";
 import { offerScopeText } from "../model/install-review";
+import { ReviewSection } from "./review-section";
 
 /**
  * The machine access an installation receives, as the authority's offer
@@ -22,8 +23,7 @@ export function DeclaredAccess({
 	);
 	const heading = `What the ${subject} can do on its own`;
 	return (
-		<section aria-label={heading} className="space-y-2">
-			<h3 className="font-medium">{heading}</h3>
+		<ReviewSection title={heading}>
 			{installationRole === "none" ? (
 				<p>
 					Nothing: it only acts for the person using it.
@@ -44,7 +44,7 @@ export function DeclaredAccess({
 						: "with no access to any data."}
 				</p>
 			)}
-		</section>
+		</ReviewSection>
 	);
 }
 

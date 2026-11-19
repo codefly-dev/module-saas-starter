@@ -258,7 +258,8 @@ func (t coreTx) members(organization, person string) ([]domain.Person, error) {
 }
 
 // The organisation roles a member holds, as the core reads them: the
-// membership role that administers ("owner" or "admin") and nothing else. An
+// membership role that administers ("owner" or "admin"), normalized to the
+// core's single administrative role, "admin", and nothing else. An
 // organisation role decides administration only (members, teams,
 // installations, grants) and reaches no module, so a member's role
 // assignments and scope grants are this host's own business and are never
@@ -266,7 +267,7 @@ func (t coreTx) members(organization, person string) ([]domain.Person, error) {
 // installation (RoleGrants).
 func memberRoles(membership string) []string {
 	if membership == "owner" || membership == "admin" {
-		return []string{membership}
+		return []string{domain.AdminRole}
 	}
 	return nil
 }

@@ -26,13 +26,13 @@ import (
 // user role on audit, which reads and writes its log, and no role on other;
 // outsider is a member of the organization holding no role anywhere.
 type statedCredentialFixture struct {
+	sessions                          *snapshotProbeStore
 	server                            *HostAuthorityServer
 	org, member, outsider             string
 	audit, other, records             string
 	auditInstallation, otherInstalled string
 	publicOrigin                      string
 	read, write                       *basev0.WorkScopeV1
-	issuedBefore                      func() int
 }
 
 func newStatedCredentialFixture(t *testing.T) statedCredentialFixture {
@@ -42,6 +42,7 @@ func newStatedCredentialFixture(t *testing.T) statedCredentialFixture {
 		audit: "stated-audit", other: "stated-other", records: "stated-records", publicOrigin: "https://app.example.test"}
 	admin := uuid.NewString()
 	probe := &snapshotProbeStore{core: memstore.New(), replay: workcontext.NewMemoryReplayStore()}
+	f.sessions = probe
 	probe.core.PutOrganization(domain.Organization{ID: f.org, Name: "Acme"})
 	probe.core.PutPerson(domain.Person{ID: admin, Organization: f.org, Roles: []string{"admin"}})
 	probe.core.PutPerson(domain.Person{ID: f.member, Organization: f.org})
@@ -242,4 +243,20 @@ func TestAnImpersonatedCredentialIsIssuedNothingAtASolution(t *testing.T) {
 			require.Contains(t, status.Convert(err).Message(), "impersonated")
 		})
 	}
+}
+
+func TestEndedResourceTokenSessionRefusesRetainedCapabilityAndNewIssue(t *testing.T) {
+	f := newStatedCredentialFixture(t)
+	ctx := f.resourceToken(f.member, f.audit, f.auditInstallation)
+	audience := f.principal(f.audit)
+	issued, err := f.issue(ctx, audience)
+	require.NoError(t, err)
+	_, err = f.server.Check(context.Background(), &authorityv1.CheckRequest{Token: issued.GetToken(), Audience: audience})
+	require.NoError(t, err)
+	f.sessions.sessionFailure = business.ErrNoOpenSession
+	_, err = f.server.Check(context.Background(), &authorityv1.CheckRequest{Token: issued.GetToken(), Audience: audience})
+	require.Equal(t, codes.Unauthenticated, status.Code(err), "%v", err)
+	out, err := f.issue(ctx, audience)
+	require.Equal(t, codes.Unauthenticated, status.Code(err), "%v", err)
+	require.Nil(t, out)
 }

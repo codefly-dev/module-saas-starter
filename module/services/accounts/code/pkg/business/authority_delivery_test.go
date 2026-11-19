@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
+	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/authority/libraries/solutionhost/go"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 

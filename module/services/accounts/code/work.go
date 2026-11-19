@@ -41,9 +41,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/codefly-dev/authority/libraries/solutionhost/go/workloadidentity/native"
 	"github.com/codefly-dev/core/resources"
 	"github.com/codefly-dev/core/wool"
-	"github.com/codefly-dev/authority/libraries/solutionhost/go/workloadidentity/native"
 	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 	codefly "github.com/codefly-dev/sdk-go"
 	storagev0 "github.com/codefly-dev/service-object-storage/gen/codefly/storage/v0"
@@ -1284,6 +1284,13 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 			}
 		}
 
+		// Replay durable revocations after transient marker-store failures.
+		sweepSessionRevocations := func() {
+			if err := service.ReconcileSessionRevocations(retentionCtx); err != nil {
+				rw.Warn("session revocation publication failed; will retry", wool.ErrField(err))
+			}
+		}
+
 		// Datasource reconcile (issue #487 §6): the production safety net for lost
 		// webhooks and for local development without a public tunnel. Each sweep
 		// enqueues a reconcile job for every active source whose schedule has
@@ -1343,6 +1350,7 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 		runRetention()
 		sweepReplay()
 		sweepPrivacyArtifacts()
+		sweepSessionRevocations()
 		sweepReconcile()
 		sweepInstallationRecheck()
 		sweepAuditArchive()
@@ -1364,6 +1372,7 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 				sweepReplay()
 				sweepPrivacyArtifacts()
 			case <-reconcileTicker.C:
+				sweepSessionRevocations()
 				sweepReconcile()
 				sweepInstallationRecheck()
 			}

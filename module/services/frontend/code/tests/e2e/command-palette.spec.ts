@@ -1,3 +1,4 @@
+import { signInForScenario } from "./fixture-session";
 // Cmd-K command palette regression. Three things matter:
 //   1. The cmd+K hotkey opens it (Linear/GitHub/Slack convention).
 //   2. The nav list is gated by role — Bob doesn't see admin entries.
@@ -11,10 +12,8 @@ import { expect, type Page, test } from "@playwright/test";
 import { resolveConsentPrompt } from "./consent";
 
 async function loginAs(page: Page, fixtureName: string) {
-	await page.goto("/auth/login");
-	await expect(page.getByText(fixtureName)).toBeVisible({ timeout: 15000 });
-	await page.getByText(fixtureName).click();
-	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
+	await signInForScenario(page, fixtureName);
+	await expect(page.getByRole("heading", { name: /^Welcome back/ })).toBeVisible({ timeout: 20000 });
 	await resolveConsentPrompt(page);
 }
 

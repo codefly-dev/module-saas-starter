@@ -1,3 +1,4 @@
+import { signInForScenario } from "./fixture-session";
 // The RBAC administration journey end to end: mint a role, grant it to a
 // person, confirm the grant on the permissions browser, then take it away from
 // that person's own page. Each step reads the surface an administrator reads
@@ -10,10 +11,8 @@ import { resolveConsentPrompt } from "./consent";
 const ROLE_NAME = `e2e-rbac-${Date.now()}`;
 
 async function loginAsSuperAdmin(page: Page) {
-	await page.goto("/auth/login");
-	await expect(page.getByText("Sarah Chen")).toBeVisible({ timeout: 15000 });
-	await page.getByText("Sarah Chen").click();
-	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
+	await signInForScenario(page, "Sarah Chen");
+	await expect(page.getByRole("heading", { name: /^Welcome back/ })).toBeVisible({ timeout: 20000 });
 	await resolveConsentPrompt(page);
 }
 
@@ -45,7 +44,7 @@ test.describe("RBAC administration", () => {
 
 		// 3. Grant it to a person from their own page.
 		await page.goto("/admin/users");
-		const userLink = page.getByRole("link", { name: /@/ }).first();
+		const userLink = page.getByRole("link", { name: "carol@acme.com", exact: true });
 		await userLink.click();
 		await page.waitForURL(/\/admin\/users\/[^/]+$/, { timeout: 15000 });
 		await page.getByRole("button", { name: /manage roles/i }).click();
@@ -76,7 +75,7 @@ test.describe("RBAC administration", () => {
 		// 5. Revoke from the user page, and watch the permission leave with it.
 		await page.goBack();
 		await page.waitForURL(/\/admin\/users\/[^/]+$/, { timeout: 15000 });
-		await page.getByRole("button", { name: "Revoke" }).first().click();
+		await page.locator('[data-slot="badge"]').filter({ has: page.getByRole("link", { name: ROLE_NAME, exact: true }) }).getByRole("button", { name: "Revoke" }).click();
 		await expect(page.getByText(/role revoked/i)).toBeVisible({
 			timeout: 15000,
 		});

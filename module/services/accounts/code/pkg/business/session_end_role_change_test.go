@@ -1,3 +1,5 @@
+//go:build !pure
+
 package business_test
 
 import (
@@ -41,6 +43,8 @@ func TestARoleChangeLeavesTheSessionOpenUntilItIsEndedOrTheMemberRemoved(t *test
 	session := signIn()
 	_, err := testService.SessionEndsAt(testCtx, session)
 	require.NoError(t, err, "a session just opened is open")
+	require.NoError(t, testService.CheckCapabilitySession(testCtx, session))
+	require.NoError(t, testService.CheckCapabilitySession(testCtx, uuid.NewString()), "noninteractive roots do not name session rows")
 
 	setRole(gen.OrgRole_ORG_ROLE_ADMIN)
 	_, err = testService.SessionEndsAt(testCtx, session)
@@ -48,11 +52,13 @@ func TestARoleChangeLeavesTheSessionOpenUntilItIsEndedOrTheMemberRemoved(t *test
 	setRole(gen.OrgRole_ORG_ROLE_MEMBER)
 	_, err = testService.SessionEndsAt(testCtx, session)
 	require.NoError(t, err, "and a role taken away does too")
+	require.NoError(t, testService.CheckCapabilitySession(testCtx, session))
 
 	// It is still the session's to end, once.
 	require.NoError(t, testService.EndSession(testCtx, member, org, session))
 	_, err = testService.SessionEndsAt(testCtx, session)
 	require.ErrorIs(t, err, business.ErrNoOpenSession, "an ended session is not open")
+	require.ErrorIs(t, testService.CheckCapabilitySession(testCtx, session), business.ErrNoOpenSession)
 	require.ErrorIs(t, testService.EndSession(testCtx, member, org, session), business.ErrNoOpenSession, "and ending is never undone")
 
 	// A removal is not a role change: the leaver's session is over.

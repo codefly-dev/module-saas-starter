@@ -6,11 +6,13 @@ import {
 	type SetupSubject,
 	SolutionRoleGrantForm,
 } from "@codefly-dev/saas-ui/solution";
+import { List, ListItem } from "@codefly-dev/ui/layout";
 import { createClient } from "@connectrpc/connect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { InstallationService } from "@/gen/host/installation/v1/installation_pb";
 import { apiTransport } from "@/lib/connect/transport";
+import { readOutcome } from "@/shared/lib/read-outcome";
 import {
 	Banner,
 	Card,
@@ -18,8 +20,11 @@ import {
 	CardDescription,
 	CardHeader,
 	CardTitle,
+	DelayedLoading,
 } from "@/shared/ui";
 import { hostRefusal } from "../model/installations";
+import { ListReadFailure } from "./list-read-state";
+import { RolePanel } from "./review-section";
 
 const installations = createClient(InstallationService, apiTransport);
 
@@ -82,44 +87,48 @@ export function ModulePageAccess({
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle role="heading" aria-level={2} className="text-base">
-					Who has access to {target}
-				</CardTitle>
+				<CardTitle>Who has access to {target}</CardTitle>
 				<CardDescription>
 					{target} is part of the platform; its roles decide who can use it.
 					Each role goes to teams or people, and anyone in a team has it.
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-4">
+				<DelayedLoading
+					active={read.isLoading}
+					label="Loading who has access"
+				/>
 				{read.isError && (
-					<Banner tone="danger" title="Its access could not be read">
-						{hostRefusal(read.error)}
-					</Banner>
+					<ListReadFailure
+						outcome={readOutcome(true, read.error) as "forbidden" | "failed"}
+						subject={`who has access to ${target}`}
+						error={read.error}
+						retrying={read.isFetching}
+						onRetry={() => void read.refetch()}
+					/>
 				)}
 				{change.isError && (
-					<Banner tone="danger" title="The authority refused">
+					<Banner tone="danger" title="Couldn't change who has access">
 						{hostRefusal(change.error)}
 					</Banner>
 				)}
 				{read.data?.roles.map((role) => {
 					const holders = read.data.grants.filter((g) => g.role === role);
 					return (
-						<section
+						<RolePanel
 							key={role}
-							aria-label={`Role ${role}`}
-							className="space-y-2 rounded-lg border p-3"
-						>
-							<h4 className="font-medium">
-								{title
+							role={role}
+							heading={
+								title
 									? roleLabel(title, role)
-									: `${role[0]?.toUpperCase()}${role.slice(1)}`}
-							</h4>
-							<ul
-								aria-label={`Who has ${roleLabel(title, role)}`}
-								className="space-y-2"
-							>
+									: `${role[0]?.toUpperCase()}${role.slice(1)}`
+							}
+						>
+							<List label={`Who has ${roleLabel(title, role)}`}>
 								{holders.length === 0 && (
-									<li className="text-muted-foreground">Nobody has it yet.</li>
+									<ListItem className="text-muted-foreground">
+										Nobody has it yet.
+									</ListItem>
 								)}
 								{holders.map((g) => {
 									const who = g.teamId
@@ -128,18 +137,13 @@ export function ModulePageAccess({
 									const name =
 										who.kind === "team" ? `Team ${who.label}` : who.label;
 									return (
-										<li
+										<ListItem
 											key={`${g.teamId}:${g.personId}`}
-											className="space-y-1 rounded-md bg-muted/40 p-2"
-										>
-											<div className="flex items-center justify-between gap-2">
-												{who.href ? (
-													<a className="underline" href={who.href}>
-														{name}
-													</a>
-												) : (
-													<span>{name}</span>
-												)}
+											className="rounded-md bg-muted/40 p-2"
+											description={
+												who.kind === "team" ? teamControls?.(who) : undefined
+											}
+											actions={
 												<RemoveHolder
 													role={role}
 													title={title}
@@ -159,12 +163,19 @@ export function ModulePageAccess({
 														)
 													}
 												/>
-											</div>
-											{who.kind === "team" && teamControls?.(who)}
-										</li>
+											}
+										>
+											{who.href ? (
+												<a className="underline" href={who.href}>
+													{name}
+												</a>
+											) : (
+												name
+											)}
+										</ListItem>
 									);
 								})}
-							</ul>
+							</List>
 							<SolutionRoleGrantForm
 								roles={[role]}
 								fixedRole={role}
@@ -184,7 +195,7 @@ export function ModulePageAccess({
 									)
 								}
 							/>
-						</section>
+						</RolePanel>
 					);
 				})}
 			</CardContent>

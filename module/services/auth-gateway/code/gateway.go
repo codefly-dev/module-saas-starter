@@ -67,7 +67,7 @@ type Gateway struct {
 	workContext          *workContextVerifier
 	// personContexts mints what a solution receives in place of the person's
 	// session: their Work Context at that one solution, issued by the
-	// authority for their session and held until shortly before it lapses
+	// authority for the current request
 	// (forwardUpstreamCredential). It is the holder the hop's browser path
 	// uses for a module, standing on its issuer alone. Set after construction;
 	// nil mints nothing, and a solution that declares an authority principal

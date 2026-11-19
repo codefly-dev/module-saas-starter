@@ -1,3 +1,4 @@
+import { signInForScenario } from "./fixture-session";
 // Webhooks page E2E. Covers the org-selector wiring fix
 // (webhooks-page.tsx previously used a hardcoded "default" org id; now
 // uses the same OrgSelector component as teams / api-keys / invitations
@@ -13,10 +14,8 @@ import { expect, type Page, test } from "@playwright/test";
 import { resolveConsentPrompt } from "./consent";
 
 async function loginAsSuperAdmin(page: Page) {
-	await page.goto("/auth/login");
-	await expect(page.getByText("Sarah Chen")).toBeVisible({ timeout: 15000 });
-	await page.getByText("Sarah Chen").click();
-	await expect(page.getByText("Welcome back")).toBeVisible({ timeout: 20000 });
+	await signInForScenario(page, "Sarah Chen");
+	await expect(page.getByRole("heading", { name: /^Welcome back/ })).toBeVisible({ timeout: 20000 });
 	await resolveConsentPrompt(page);
 	await expect
 		.poll(async () =>
