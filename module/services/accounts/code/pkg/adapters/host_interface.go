@@ -93,7 +93,7 @@ func coreStatus(err error) error {
 
 // signedInPerson is the person a session bearer authenticates, as the core
 // takes them: their id, the organization the session is at, the session,
-// which is open (requireOpenSession).
+// which is open (openSessionDeadline).
 // Only an interactive session acts as a person here: never a credential
 // confined to one consumer's ceiling, an identity acting on someone's behalf
 // (X-Act), an administrator viewing as someone (impersonation) or an API key.
@@ -135,13 +135,7 @@ func signedInPerson(ctx context.Context, what string) (authority.Person, error) 
 	return person, nil
 }
 
-// requireOpenSession refuses, Unauthenticated, a session id that names no open
-// session of this host.
-func requireOpenSession(ctx context.Context, sessionID string) error {
-	_, err := openSessionDeadline(ctx, sessionID)
-	return err
-}
-
+// openSessionDeadline states the deadline of an open host session.
 func openSessionDeadline(ctx context.Context, sessionID string) (time.Time, error) {
 	if service == nil {
 		return time.Time{}, status.Error(codes.Unavailable, "this host reads no sessions")
@@ -941,7 +935,7 @@ func (s *HostSessionServer) lifetime(ctx context.Context, session *sessionv1.Ses
 // derived from the records themselves, in one snapshot.
 func grantEpoch(ctx context.Context, session *sessionv1.Session) (string, error) {
 	h := sha256.New()
-	fmt.Fprintf(h, "person %q at %q roles %q teams %q cast %q\n", session.GetPersonId(), session.GetOrganizationId(),
+	_, _ = fmt.Fprintf(h, "person %q at %q roles %q teams %q cast %q\n", session.GetPersonId(), session.GetOrganizationId(),
 		slices.Sorted(slices.Values(session.GetRoles())), slices.Sorted(slices.Values(session.GetTeamIds())), session.GetCastTeamId())
 	digest := func() string { return fmt.Sprintf("sha256:%x", h.Sum(nil)) }
 	core, err := authorityCore()
@@ -958,20 +952,20 @@ func grantEpoch(ctx context.Context, session *sessionv1.Session) (string, error)
 		}
 		held, err := core.HeldInstallations(ctx, caller, caller.Organization)
 		if _, refused := domain.CodeOf(err); refused {
-			fmt.Fprintf(h, "refused\n")
+			_, _ = fmt.Fprintf(h, "refused\n")
 			return nil
 		} else if err != nil {
 			return err
 		}
 		for _, i := range held {
-			fmt.Fprintf(h, "held %q revision %d generation %d roles %q\n", i.Installation.ID, i.Installation.Revision, generation(i.Installation.Target), i.Roles)
+			_, _ = fmt.Fprintf(h, "held %q revision %d generation %d roles %q\n", i.Installation.ID, i.Installation.Revision, generation(i.Installation.Target), i.Roles)
 		}
 		composed, err := core.ComposedInstallations(ctx, caller, caller.Organization)
 		if _, refused := domain.CodeOf(err); err != nil && !refused {
 			return err
 		}
 		for _, i := range composed {
-			fmt.Fprintf(h, "composed %q revision %d generation %d\n", i.ID, i.Revision, generation(i.Target))
+			_, _ = fmt.Fprintf(h, "composed %q revision %d generation %d\n", i.ID, i.Revision, generation(i.Target))
 		}
 		return nil
 	})

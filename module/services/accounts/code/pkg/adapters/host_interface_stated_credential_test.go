@@ -33,7 +33,6 @@ type statedCredentialFixture struct {
 	auditInstallation, otherInstalled string
 	publicOrigin                      string
 	read, write                       *basev0.WorkScopeV1
-	issuedBefore                      func() int
 }
 
 func newStatedCredentialFixture(t *testing.T) statedCredentialFixture {
