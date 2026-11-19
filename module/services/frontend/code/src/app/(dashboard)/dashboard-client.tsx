@@ -11,6 +11,7 @@ import Link from "next/link";
 import { ActivityFeed } from "@/components/activity-feed";
 import { RoleGate } from "@/components/auth/role-gate";
 import { Slot } from "@/components/slot";
+import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
 import { useAuth } from "@/lib/auth";
 import {
 	Badge,
@@ -96,7 +97,9 @@ export default function DashboardClient() {
 			{/* Read-only view of recent audit events scoped to the user's
 			    primary org. Hides itself when there are no events so a
 			    fresh account doesn't see "nothing here yet". */}
-			<ActivityFeed />
+			<RoleGate requirePermission={PERMISSIONS.AUDIT_READ}>
+				<ActivityFeed />
+			</RoleGate>
 
 			<Slot name="dashboard.widgets" />
 

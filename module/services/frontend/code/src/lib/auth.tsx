@@ -205,9 +205,9 @@ async function performRefreshExchange(): Promise<RefreshOutcome> {
 	const res = await fetch("/v1/auth/refresh", {
 		method: "POST",
 		credentials: "include",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({}),
+		headers: { "Content-Type": "application/json", "X-Codefly-Cookie-Session": "optional" },
 	}).catch(() => null);
+	if (res?.status === 204) return { status: "expired" };
 	const status = classifyRefreshStatus(res);
 	if (status !== "ok") return { status };
 	const data = await res!.json().catch(() => null);

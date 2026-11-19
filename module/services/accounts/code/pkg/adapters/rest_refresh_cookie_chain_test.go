@@ -144,3 +144,27 @@ func TestABrowserSessionSurvivesTheRealRESTChain(t *testing.T) {
 		t.Fatalf("the cookie a browser sends back did not reach the handler: %v", handler.received)
 	}
 }
+
+func TestOptionalCookieRefreshStartsSignedOut(t *testing.T) {
+	handler := refreshTokenCookie(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	for _, tc := range []struct {
+		name, mode, body string
+		status           int
+	}{
+		{"anonymous browser", "optional", "", http.StatusNoContent},
+		{"ordinary refresh", "", "", http.StatusBadRequest},
+		{"explicit body", "optional", "{}", http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodPost, "/v1/auth/refresh", strings.NewReader(tc.body))
+			r.Header.Set("X-Codefly-Cookie-Session", tc.mode)
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, r)
+			if w.Code != tc.status {
+				t.Fatalf("refresh returned %d, want %d", w.Code, tc.status)
+			}
+		})
+	}
+}

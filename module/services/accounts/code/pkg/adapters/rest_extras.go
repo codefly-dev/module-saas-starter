@@ -64,6 +64,12 @@ func refreshTokenCookie(next http.Handler) http.Handler {
 		if consumesCookieRefreshToken {
 			if c, err := r.Cookie(refreshTokenCookieName); err == nil && c.Value != "" {
 				r = injectRefreshToken(r, c.Value)
+			} else if path == "/v1/auth/refresh" && r.Method == http.MethodPost &&
+				r.Header.Get("X-Codefly-Cookie-Session") == "optional" && r.ContentLength == 0 {
+				// A browser restoring a cookie-only session can start signed out.
+				w.Header().Set("Cache-Control", "no-store")
+				w.WriteHeader(http.StatusNoContent)
+				return
 			}
 		}
 
