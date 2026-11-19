@@ -74,15 +74,6 @@ test.describe("Webhooks admin page", () => {
 	});
 });
 
-// ─────────────────────────────────────────────────────────────────
-// v2 paths: replay + rotate. These run end-to-end through the api
-// (sync WebhookSender on Test/Replay, RotateWebhookSecret service
-// method that mints a new secret and shows it once). The endpoint
-// URL is a public httpbin which always 404s on POSTs to /status/404
-// — fine for replay testing because we only care that *some*
-// delivery row exists with httpStatus filled in.
-// ─────────────────────────────────────────────────────────────────
-
 async function pickAcmeOrg(page: Page) {
 	await page.goto("/admin/webhooks");
 	const trigger = page.getByRole("combobox").first();
@@ -149,9 +140,7 @@ test.describe("Webhooks v2 — replay + rotate", () => {
 		const url = `https://example.com/webhook-replay-${Date.now()}`;
 		await createWebhook(page, url);
 
-		// Trigger a Test delivery so the deliveries panel has at least
-		// one row to replay. WebhookSender.Send runs synchronously, so
-		// by the time the success toast lands the row is in the db.
+		// Queue a delivery, then inspect its persisted row before replaying it.
 		await actionsTriggerForUrl(page, url).click();
 		await page.getByRole("menuitem", { name: /^test$/i }).click();
 		await expect(page.getByText(/test delivery queued/i)).toBeVisible({
@@ -173,7 +162,7 @@ test.describe("Webhooks v2 — replay + rotate", () => {
 			timeout: 10_000,
 		});
 
-		const deliveryRows = panel.getByRole("button", { name: /^delivery /i });
+		const deliveryRows = panel.getByRole("button", { name: /^Delivery: / });
 		await expect(deliveryRows.first()).toBeVisible({ timeout: 10_000 });
 		const beforeCount = await deliveryRows.count();
 		expect(beforeCount).toBeGreaterThanOrEqual(1);
@@ -205,7 +194,7 @@ test.describe("Webhooks v2 — replay + rotate", () => {
 		await page.getByRole("menuitem", { name: /rotate secret/i }).click();
 
 		await expect(
-			page.getByText("Couldn't rotate secret", { exact: true }),
+			page.getByText(/Couldn't rotate the signing secret/),
 		).toBeVisible({ timeout: 10_000 });
 		await expect(
 			page.getByText(/mfa_required/),
