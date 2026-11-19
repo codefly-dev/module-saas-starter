@@ -223,6 +223,7 @@ service DashboardService {
         target: RESOURCE_TARGET_OWNED_RESOURCE
         lookup: RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION
       }
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
       mfa: MFA_REQUIREMENT_NONE
       audit: {
         events: "saas.dashboard.shared"

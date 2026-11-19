@@ -2000,39 +2000,6 @@ func (s *PlatformAdminServer) ListPlatformAdmins(ctx context.Context, _ *gen.Lis
 	return service.ListPlatformAdmins(ctx, actorID)
 }
 
-func (s *PlatformAdminServer) ListFeatureFlags(ctx context.Context, _ *gen.ListFeatureFlagsRequest) (*gen.ListFeatureFlagsResponse, error) {
-	actorID, err := requireAuth(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
-		return nil, err
-	}
-	return service.ListFeatureFlags(ctx, actorID)
-}
-
-// UpsertFeatureFlag remains implemented only because saas.accounts.v1 is a
-// published stable contract. Authorization is repeated here for direct-server
-// callers as well as enforced by the transport policy interceptor. No business
-// or store mutation path exists.
-func (s *PlatformAdminServer) UpsertFeatureFlag(ctx context.Context, req *gen.UpsertFeatureFlagRequest) (*gen.UpsertFeatureFlagResponse, error) {
-	if err := Validate(req); err != nil {
-		return nil, err
-	}
-	actorID, err := requireAuth(ctx)
-	if err != nil {
-		return nil, err
-	}
-	role, err := platformRole(ctx, actorID)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "cannot resolve platform role: %v", err)
-	}
-	if role != "super_admin" {
-		return nil, status.Error(codes.PermissionDenied, "requires platform super-admin role")
-	}
-	return nil, status.Error(codes.FailedPrecondition, "legacy feature-flag inventory is read-only; use feature-flags@1")
-}
-
 func (s *PlatformAdminServer) GetJobOperations(ctx context.Context, req *jobsv1.GetJobOperationsRequest) (*jobsv1.GetJobOperationsResponse, error) {
 	if err := Validate(req); err != nil {
 		return nil, err

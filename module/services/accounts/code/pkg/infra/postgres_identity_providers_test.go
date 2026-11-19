@@ -13,8 +13,9 @@ import (
 
 func TestProviderRegistered_SeededProviders(t *testing.T) {
 	// Seeded by migrations: the built-in providers, the generic OIDC set, and
-	// the providers the service synthesizes itself (magic_link) — every value
-	// that user_identities.provider foreign-keys against.
+	// magic_link, which nothing provisions any more but which stays seeded so
+	// an identity recorded under it keeps its foreign key — every value that
+	// user_identities.provider foreign-keys against.
 	for _, provider := range []string{"workos", "google", "oidc", "auth0", "okta", "ping", "magic_link"} {
 		registered, err := testStore.ProviderRegistered(testCtx, provider)
 		require.NoError(t, err)

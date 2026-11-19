@@ -155,7 +155,7 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 	service.SetAbuseVerifier(abuseVerifier)
 	_, abuseDisabled := abuseVerifier.(abuse.DisabledVerifier)
 	if abuseDisabled {
-		w.Warn("ABUSE PROTECTION DISABLED — anonymous endpoints (Authenticate, RegisterUser, JoinWaitlist, SendMagicLink) are guarded by rate limiting alone; set ABUSE_PROTECTION_MODE=turnstile before serving production traffic")
+		w.Warn("ABUSE PROTECTION DISABLED — anonymous endpoints (Authenticate, RegisterUser, JoinWaitlist) are guarded by rate limiting alone; set ABUSE_PROTECTION_MODE=turnstile before serving production traffic")
 	}
 
 	// Per-IP rate limiting attributes anonymous traffic to a source address.
@@ -887,7 +887,7 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 		return redisClient.Close()
 	}
 	if anonymousEndpointsUnprotected(abuseDisabled, rateLimiterWired) {
-		w.Warn("ANONYMOUS ENDPOINTS UNPROTECTED — abuse protection is disabled AND no Redis rate limiter is wired, so Authenticate/RegisterUser/JoinWaitlist/SendMagicLink have NO app-layer throttle; enable ABUSE_PROTECTION_MODE=turnstile or wire the cache dependency before serving production traffic")
+		w.Warn("ANONYMOUS ENDPOINTS UNPROTECTED — abuse protection is disabled AND no Redis rate limiter is wired, so Authenticate/RegisterUser/JoinWaitlist have NO app-layer throttle; enable ABUSE_PROTECTION_MODE=turnstile or wire the cache dependency before serving production traffic")
 	}
 
 	adapters.WithService(service)
@@ -1000,7 +1000,7 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 		// No outbox, but links handed to an administrator still need the
 		// canonical origin.
 		service.SetEmailOutbox(nil, appBase)
-		w.Warn("EMAIL DELIVERY DISABLED — EMAIL_PROVIDER=disabled: invitations, magic links and notifications send no email; an invitation's accept link is returned to the administrator who issues it")
+		w.Warn("EMAIL DELIVERY DISABLED — EMAIL_PROVIDER=disabled: invitations and notifications send no email; an invitation's accept link is returned to the administrator who issues it")
 	} else {
 		templateStore := infra.NewPostgresTemplateStore(store)
 		requestEmailOutbox, err := email.NewOutbox(store, templateStore, emailConfig.from)

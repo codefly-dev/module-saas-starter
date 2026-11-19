@@ -59,6 +59,10 @@ image rolled back below a migration runs against the newer schema. Where the
 older binary's statements no longer fit that schema, **apply the migration's
 down file before the older image starts**, never after:
 
+- **79** (`79_drop_feature_flags_and_magic_links`) drops `feature_flags` and
+  `magic_links`. A binary from before it still serves `ListFeatureFlags`,
+  which then fails on the missing relation; nothing else in it reaches either
+  table through a route. Its down file restores both relations empty.
 - **78** (`78_authority_core_approved_reading`) keys
   `authority_core_approved_modules` on module, generation and offer digest.
   A binary from before it writes an approved declaration with `ON CONFLICT

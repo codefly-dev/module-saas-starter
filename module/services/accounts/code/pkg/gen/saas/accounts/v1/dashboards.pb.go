@@ -684,7 +684,7 @@ const file_saas_accounts_v1_dashboards_proto_rawDesc = "" +
 	"\x12DashboardListScope\x12$\n" +
 	" DASHBOARD_LIST_SCOPE_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19DASHBOARD_LIST_SCOPE_MINE\x10\x01\x12#\n" +
-	"\x1fDASHBOARD_LIST_SCOPE_ORG_SHARED\x10\x022\xdb\a\n" +
+	"\x1fDASHBOARD_LIST_SCOPE_ORG_SHARED\x10\x022\xdd\a\n" +
 	"\x10DashboardService\x12\xaa\x01\n" +
 	"\x0fCreateDashboard\x12(.saas.accounts.v1.CreateDashboardRequest\x1a\x1b.saas.accounts.v1.Dashboard\"P\xc2\xf3\x18L\b\x02\x10\x03\x1a\x10dashboards:write*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x1a\n" +
@@ -698,10 +698,10 @@ const file_saas_accounts_v1_dashboards_proto_rawDesc = "" +
 	"\x16saas.dashboard.updated\x10\x02@\x01H\x04P\x03X\x03`\x01\x12\xa1\x01\n" +
 	"\x0fDeleteDashboard\x12(.saas.accounts.v1.DeleteDashboardRequest\x1a\x16.google.protobuf.Empty\"L\xc2\xf3\x18H\b\x02\x10\x03\x1a\x10dashboards:write*\b\n" +
 	"\x02id\x10\x04\x18\x030\x01:\x1a\n" +
-	"\x16saas.dashboard.deleted\x10\x02@\x01H\x04P\x03X\x03`\x01\x12\xa3\x01\n" +
-	"\x0eShareDashboard\x12'.saas.accounts.v1.ShareDashboardRequest\x1a\x1b.saas.accounts.v1.Dashboard\"K\xc2\xf3\x18G\b\x02\x10\x04\x1a\x10dashboards:share*\b\n" +
+	"\x16saas.dashboard.deleted\x10\x02@\x01H\x04P\x03X\x03`\x01\x12\xa5\x01\n" +
+	"\x0eShareDashboard\x12'.saas.accounts.v1.ShareDashboardRequest\x1a\x1b.saas.accounts.v1.Dashboard\"M\xc2\xf3\x18I\b\x02\x10\x04\x1a\x10dashboards:share*\b\n" +
 	"\x02id\x10\x04\x18\x030\x01:\x19\n" +
-	"\x15saas.dashboard.shared\x10\x02@\x01H\x04P\x03X\x03`\x01B\xb7\x01\n" +
+	"\x15saas.dashboard.shared\x10\x02@\x01H\x04P\x03X\x03`\x01x\x02B\xb7\x01\n" +
 	"\x14com.saas.accounts.v1B\x0fDashboardsProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (

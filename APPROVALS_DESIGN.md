@@ -447,10 +447,8 @@ The issue flags three; the tree shows two still open and one now moot:
   no audit event. **Fix:** emit `principal.created`.
 - **`Service.RevokePrincipal`** (`pkg/business/principals.go:318`) — emits no
   audit event. **Fix:** emit `principal.revoked`.
-- **`UpsertFeatureFlag`** — *no longer a gap.* It is now a deprecated read-only
-  stub that returns `FailedPrecondition "legacy feature-flag inventory is
-  read-only"` (`pkg/adapters/rpcs.go:1564-1579`); it mutates nothing, so there
-  is nothing to audit. No change needed.
+- **`UpsertFeatureFlag`** — *no longer a gap.* The RPC is deleted with the
+  database-backed flag inventory, so there is nothing to audit.
 
 These two principal fixes are small and independent — land them as their own
 PR (they need no approval infrastructure), not bundled into the primitive.

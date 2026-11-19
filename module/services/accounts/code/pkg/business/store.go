@@ -670,9 +670,6 @@ type Store interface {
 	GetPlanByName(ctx context.Context, name string) (*PlanFull, error)
 	ListPublicPlans(ctx context.Context) ([]PublicPlan, error)
 
-	// Legacy feature-flag migration inventory
-	ListFeatureFlags(ctx context.Context) ([]*FeatureFlag, error)
-
 	// Platform admin - user operations
 	SearchUsers(ctx context.Context, query string, pageSize int32, pageToken string) ([]*gen.User, string, error)
 	UpdateUserStatus(ctx context.Context, userID string, status string) error
@@ -940,11 +937,6 @@ type Store interface {
 	TransitionOnboardingStep(ctx context.Context, userID, orgID, flowID string, flowVersion uint32, fromStatus string, step *OnboardingStep) (*OnboardingStep, bool, error)
 	GetOrganizationActivation(ctx context.Context, orgID, flowID string, flowVersion uint32, milestone string) (*time.Time, error)
 	RecordOrganizationActivation(ctx context.Context, orgID, flowID string, flowVersion uint32, milestone, actorID string) error
-
-	// Magic Links
-	CreateMagicLink(ctx context.Context, ml *MagicLink) error
-	GetMagicLinkByTokenHash(ctx context.Context, tokenHash string) (*MagicLink, error)
-	MarkMagicLinkUsed(ctx context.Context, id string) error
 
 	// User consent — server-side TOS/privacy acceptance trail.
 	GetUserConsent(ctx context.Context, userID string) (version string, acceptedAt *time.Time, err error)

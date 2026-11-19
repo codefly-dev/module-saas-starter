@@ -125,7 +125,7 @@ from the audited platform, so read the mapping carefully.
 | Capability | Status | Notes |
 |---|---|---|
 | Tenant directory + members | ✅ | `organizations`, `organization_members`, `teams`/`team_members`, all RLS-scoped; `OrganizationService`/`TeamService` CRUD; `/admin/organizations`, `/admin/teams`. Postgres-first — the audit explicitly regrets Firestore-first, so this is the recommended shape. |
-| Per-product enablement flags (`provisioned`/`visible`) | 🟡 | Entitlement/plan gates (`entitlement_overrides`, `plans`, `plan_entitlements`) answer "is this org allowed this capability"; runtime rollout moved to Unleash (`feature-flags@1`), and the DB `feature_flags` table is retired/read-only ([MODULE.md](./MODULE.md)). No generic per-product provisioned/visible matrix beyond entitlements. |
+| Per-product enablement flags (`provisioned`/`visible`) | 🟡 | Entitlement/plan gates (`entitlement_overrides`, `plans`, `plan_entitlements`) answer "is this org allowed this capability"; runtime rollout belongs to Unleash (`feature-flags@1`); the DB `feature_flags` table and its API are deleted ([MODULE.md](./MODULE.md)). No generic per-product provisioned/visible matrix beyond entitlements. |
 | Tenant-lifecycle admin UI | 🟡 | Org settings + member management ship; ownership transfer / suspension / deletion are not built ([docs/PLAN.md](./docs/PLAN.md)). The audit calls the *absence* of any lifecycle UI untenable past ~5 tenants — the starter is ahead here but not complete. |
 
 ### 1.5 The admin console

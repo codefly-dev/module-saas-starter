@@ -8311,7 +8311,7 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"+SOURCE_DELEGATION_REVOCATION_MEMBER_REMOVED\x10\x04\x120\n" +
 	",SOURCE_DELEGATION_REVOCATION_PERMISSION_LOST\x10\x05\x12.\n" +
 	"*SOURCE_DELEGATION_REVOCATION_USER_INACTIVE\x10\x06\x120\n" +
-	",SOURCE_DELEGATION_REVOCATION_BINDING_CHANGED\x10\a2\xb99\n" +
+	",SOURCE_DELEGATION_REVOCATION_BINDING_CHANGED\x10\a2\xbd9\n" +
 	"\x11DatasourceService\x12\xb9\x03\n" +
 	"\x1cPruneSourceOperationReceipts\x125.saas.accounts.v1.PruneSourceOperationReceiptsRequest\x1a6.saas.accounts.v1.PruneSourceOperationReceiptsResponse\"\xa9\x02\xc2\xf3\x18l\b\x02\x10\x03\x1a\x11datasource:invoke\"\x11datasource:invoke*\x0f\n" +
 	"\tsource_id\x10\x04\x18\x030\x01:#\n" +
@@ -8334,10 +8334,10 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\"saas.datasource.operation.declared\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02B:\x01*\"=/v1/organizations/{org_id}/datasources/{source_id}/operations\x12\xac\x01\n" +
 	"\x0fAddGitHubSource\x12(.saas.accounts.v1.AddGitHubSourceRequest\x1a).saas.accounts.v1.AddGitHubSourceResponse\"D\xc2\xf3\x18@\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01: \n" +
-	"\x1csaas.datasource.source.added\x10\x02@\x01H\x04P\x04X\x03`\x01\x12\x9a\x01\n" +
-	"\tAddSource\x12\".saas.accounts.v1.AddSourceRequest\x1a#.saas.accounts.v1.AddSourceResponse\"D\xc2\xf3\x18@\b\x02\x10\x03*\f\n" +
+	"\x1csaas.datasource.source.added\x10\x02@\x01H\x04P\x04X\x03`\x01\x12\x9c\x01\n" +
+	"\tAddSource\x12\".saas.accounts.v1.AddSourceRequest\x1a#.saas.accounts.v1.AddSourceResponse\"F\xc2\xf3\x18B\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01: \n" +
-	"\x1csaas.datasource.source.added\x10\x02@\x01H\x04P\x04X\x03`\x01\x12\xa5\x01\n" +
+	"\x1csaas.datasource.source.added\x10\x02@\x01H\x04P\x04X\x03`\x01x\x02\x12\xa5\x01\n" +
 	"\fUpdateSource\x12%.saas.accounts.v1.UpdateSourceRequest\x1a&.saas.accounts.v1.UpdateSourceResponse\"F\xc2\xf3\x18B\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\"\n" +
 	"\x1esaas.datasource.source.updated\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\x8f\x01\n" +
@@ -8366,10 +8366,10 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\"saas.datasource.credential.updated\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\xd5\x01\n" +
 	"\x1aBeginDatasourceAccountLink\x123.saas.accounts.v1.BeginDatasourceAccountLinkRequest\x1a4.saas.accounts.v1.BeginDatasourceAccountLinkResponse\"L\xc2\xf3\x18H\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:(\n" +
-	"$saas.datasource.account_link_started\x10\x02@\x01H\x04P\x02X\x04`\x01\x12\xd8\x01\n" +
-	"\x1dCompleteDatasourceAccountLink\x126.saas.accounts.v1.CompleteDatasourceAccountLinkRequest\x1a7.saas.accounts.v1.CompleteDatasourceAccountLinkResponse\"F\xc2\xf3\x18B\b\x02\x10\x03*\f\n" +
+	"$saas.datasource.account_link_started\x10\x02@\x01H\x04P\x02X\x04`\x01\x12\xda\x01\n" +
+	"\x1dCompleteDatasourceAccountLink\x126.saas.accounts.v1.CompleteDatasourceAccountLinkRequest\x1a7.saas.accounts.v1.CompleteDatasourceAccountLinkResponse\"H\xc2\xf3\x18D\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\"\n" +
-	"\x1esaas.datasource.account_linked\x10\x02@\x01H\x04P\x04X\x03`\x01\x12\xb5\x01\n" +
+	"\x1esaas.datasource.account_linked\x10\x02@\x01H\x04P\x04X\x03`\x01x\x02\x12\xb5\x01\n" +
 	"\x1cListMyDatasourceAccountLinks\x125.saas.accounts.v1.ListMyDatasourceAccountLinksRequest\x1a6.saas.accounts.v1.ListMyDatasourceAccountLinksResponse\"&\xc2\xf3\x18\"\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x02X\x03`\x01\x12\xd4\x01\n" +
 	"\x1bDeleteDatasourceAccountLink\x124.saas.accounts.v1.DeleteDatasourceAccountLinkRequest\x1a5.saas.accounts.v1.DeleteDatasourceAccountLinkResponse\"H\xc2\xf3\x18D\b\x02\x10\x03*\f\n" +

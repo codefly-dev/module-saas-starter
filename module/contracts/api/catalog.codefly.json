@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/authority/contract.binpb",
-      "digest": "sha256:6e379b84a56ba1dbcaf3093e95d37182d21dd00ff3432460f93af2f7d9c6e24d",
+      "digest": "sha256:f0638637eee5fb2c462415b70d342ae62dc8d637882252dea5d34bc2d6a8aa9a",
       "services": [
         {
           "name": "ModuleCapabilitiesService",
@@ -66,7 +66,7 @@
       "kind": "protobuf",
       "package": "",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:6e379b84a56ba1dbcaf3093e95d37182d21dd00ff3432460f93af2f7d9c6e24d",
+      "digest": "sha256:f0638637eee5fb2c462415b70d342ae62dc8d637882252dea5d34bc2d6a8aa9a",
       "services": [
         {
           "name": "ArtifactService",
@@ -476,7 +476,6 @@
             "/saas.accounts.v1.PlatformAdminService/ListActiveSessions",
             "/saas.accounts.v1.PlatformAdminService/ListAllOrganizations",
             "/saas.accounts.v1.PlatformAdminService/ListEventSubscriptions",
-            "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags",
             "/saas.accounts.v1.PlatformAdminService/ListJobs",
             "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins",
             "/saas.accounts.v1.PlatformAdminService/ListPlatformCatalogue",
@@ -488,8 +487,7 @@
             "/saas.accounts.v1.PlatformAdminService/SearchUsers",
             "/saas.accounts.v1.PlatformAdminService/StopImpersonation",
             "/saas.accounts.v1.PlatformAdminService/SuspendUser",
-            "/saas.accounts.v1.PlatformAdminService/UnsuspendUser",
-            "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag"
+            "/saas.accounts.v1.PlatformAdminService/UnsuspendUser"
           ]
         },
         {

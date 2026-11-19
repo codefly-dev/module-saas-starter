@@ -435,12 +435,12 @@ const file_saas_accounts_v1_teams_proto_rawDesc = "" +
 	"\x12UpdateTeamResponse\x12*\n" +
 	"\x04team\x18\x01 \x01(\v2\x16.saas.accounts.v1.TeamR\x04team\"6\n" +
 	"\x11DeleteTeamRequest\x12!\n" +
-	"\ateam_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06teamId2\xfb\t\n" +
-	"\vTeamService\x12\xbd\x01\n" +
+	"\ateam_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06teamId2\xfd\t\n" +
+	"\vTeamService\x12\xbf\x01\n" +
 	"\n" +
-	"CreateTeam\x12#.saas.accounts.v1.CreateTeamRequest\x1a$.saas.accounts.v1.CreateTeamResponse\"d\xc2\xf3\x185\b\x02\x10\x04*\f\n" +
+	"CreateTeam\x12#.saas.accounts.v1.CreateTeamRequest\x1a$.saas.accounts.v1.CreateTeamResponse\"f\xc2\xf3\x187\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x15\n" +
-	"\x11saas.team.created\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02%:\x01*\" /v1/organizations/{org_id}/teams\x12\xa4\x01\n" +
+	"\x11saas.team.created\x10\x02@\x01H\x04P\x03X\x03`\x01x\x02\x82\xd3\xe4\x93\x02%:\x01*\" /v1/organizations/{org_id}/teams\x12\xa4\x01\n" +
 	"\tListTeams\x12\".saas.accounts.v1.ListTeamsRequest\x1a#.saas.accounts.v1.ListTeamsResponse\"N\xc2\xf3\x18\"\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\"\x12 /v1/organizations/{org_id}/teams\x12\xb4\x01\n" +
 	"\tAddMember\x12&.saas.accounts.v1.AddTeamMemberRequest\x1a\x16.google.protobuf.Empty\"g\xc2\xf3\x18=\b\x02\x10\x04*\r\n" +

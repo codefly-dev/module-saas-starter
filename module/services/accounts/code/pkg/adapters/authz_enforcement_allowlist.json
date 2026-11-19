@@ -9,11 +9,6 @@
       "missing": ["mfa_recent_step_up"]
     },
     {
-      "procedure": "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag",
-      "reason": "Legacy read-only stub. Enforces the SUPER_ADMIN floor via an inline service.Store().GetPlatformRole compare instead of requirePlatformRole, so the require*-based scanner cannot see it; the check is present and denies non-super-admins.",
-      "ticket": "#429"
-    },
-    {
       "procedure": "/saas.accounts.v1.BillingService/OpenPortal",
       "reason": "Declares tenant ORG_ADMIN + billing:write, but requireBillingAdmin admits org admin/owner OR a plain member holding billing:write. That OR cannot be expressed by the flat IDL (which reads as AND), and the permission dimension the handler leans on is not modeled by this gate; the org-admin floor is intentionally looser than declared. Membership and the RECENT_STEP_UP MFA floor are still lockstep-enforced. Folding this into the central check waits on the #447 declaration/handler OR-parity work.",
       "ticket": "#447",

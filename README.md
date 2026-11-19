@@ -67,7 +67,7 @@ not this list, is the enumeration.
 - **Webhooks** — outbound subscriptions with delivery history, replay, secret
   rotation, and a test delivery.
 - **Platform administration** — platform roles, user search and suspension,
-  session revocation, impersonation, and feature-flag inventory.
+  session revocation, and impersonation.
 - **Introspection** — the service describes its own operations, permissions,
   protected tables, and scopes at runtime.
 

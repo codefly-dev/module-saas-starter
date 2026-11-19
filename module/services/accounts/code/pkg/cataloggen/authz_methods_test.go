@@ -65,11 +65,6 @@ func TestAuthorizationCatalogCompilationAndPolicyProjection(t *testing.T) {
 		policyv1.Exposure_EXPOSURE_AUTHENTICATED,
 		methodByProcedure(catalog, "/saas.accounts.v1.UsageService/GetUsageHistory").GetPolicy().GetExposure(),
 	)
-	require.Equal(
-		t,
-		policyv1.PlatformRoleRequirement_PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN,
-		methodByProcedure(catalog, "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag").GetPolicy().GetPlatformRole(),
-	)
 }
 
 func TestAuthorizationArtifactsAreDeterministicAndCurrent(t *testing.T) {
@@ -185,5 +180,5 @@ func TestImpersonationRestrictionsMatchTheDescriptorsTheInterceptorReads(t *test
 	}
 
 	require.Equal(t, catalogued, enforced)
-	require.Len(t, enforced, 90) // 72 of the API package (57, and the 15 durable grants of impersonation_durable_grant_test.go) + OpenTeamCast, ListCastableTeams, OpenRoleView, Issue, Delegate, RevokeDelegation, GetDelegation, Install, Review, GrantRole, RevokeRole, ListRoleGrants, List, ListHeld, Current, ListOffers, ReviewOffer of the implemented interfaces; Check and ListResources are public, authenticated by the token they check, and End (session 0.6.0)
+	require.Len(t, enforced, 93) // 75 of the API package (56, and the 19 durable grants of impersonation_durable_grant_test.go) + OpenTeamCast, ListCastableTeams, OpenRoleView, Issue, Delegate, RevokeDelegation, GetDelegation, Install, Review, GrantRole, RevokeRole, ListRoleGrants, List, ListHeld, Current, ListOffers, ReviewOffer of the implemented interfaces; Check and ListResources are public, authenticated by the token they check, and End (session 0.6.0)
 }

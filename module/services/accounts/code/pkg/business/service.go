@@ -687,8 +687,8 @@ func (s *Service) SetEmailOutbox(outbox *email.Outbox, appBaseURL string) {
 	s.appBaseURL = appBaseURL
 }
 
-// publicBaseURL is the origin baked into interactive links — magic-link,
-// invitation, and waitlist emails, and Stripe redirect targets. Those links are
+// publicBaseURL is the origin baked into interactive links — invitation
+// and waitlist emails, and Stripe redirect targets. Those links are
 // delivered out of band and never re-validated downstream, so the origin must be
 // operator-trusted.
 //

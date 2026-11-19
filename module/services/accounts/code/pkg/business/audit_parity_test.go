@@ -54,7 +54,12 @@ var eventsEmittedOutsideRPC = []EventType{
 	EventApprovalCancelled,
 	EventApprovalEscalated,
 	EventApprovalTimeout,
+	// Retired, and emitted by nothing now: magic-link sign-in and the
+	// database-backed flag inventory are deleted. The two types stay registered
+	// because a journal may hold rows of them and consumers keep a copy of this
+	// registry; removing a name would orphan both.
 	EventAuthMagicLinkLogin,
+	EventFeatureFlagUpdated,
 	EventAuthSSOJitProvisioned,
 	EventBillingCheckoutStarted,
 	EventBillingFreePlan,

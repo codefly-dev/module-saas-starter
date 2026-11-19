@@ -570,30 +570,3 @@ func (s *Service) ListPlatformAdmins(ctx context.Context, actorID string) (*gen.
 
 	return &gen.ListPlatformAdminsResponse{Admins: entries}, nil
 }
-
-// ListFeatureFlags returns the legacy migration inventory (super_admin only).
-func (s *Service) ListFeatureFlags(ctx context.Context, actorID string) (*gen.ListFeatureFlagsResponse, error) {
-	w := wool.Get(ctx).In("ListFeatureFlags")
-
-	if err := s.requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
-		return nil, w.Wrapf(err, "permission denied")
-	}
-
-	flags, err := s.store.ListFeatureFlags(ctx)
-	if err != nil {
-		return nil, w.Wrapf(err, "cannot list feature flags")
-	}
-
-	var entries []*gen.FeatureFlagEntry
-	for _, f := range flags {
-		entries = append(entries, &gen.FeatureFlagEntry{
-			Name:           f.Name,
-			Description:    f.Description,
-			Enabled:        f.Enabled,
-			RolloutPercent: int32(f.RolloutPercent),
-			TargetOrgIds:   f.TargetOrgIDs,
-		})
-	}
-
-	return &gen.ListFeatureFlagsResponse{Flags: entries}, nil
-}

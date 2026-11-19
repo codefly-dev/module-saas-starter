@@ -76,9 +76,6 @@ pkg/business/invitations.go: (*Service).ResendInvitation: As(System())
 pkg/business/invitations.go: (*Service).RevokeInvitation: WithControlPlane
 pkg/business/invitations.go: (*Service).invitationByToken: As(System())
 pkg/business/invitations.go: (*Service).pendingInvitationForSsoJit: As(System())
-pkg/business/magic_links.go: (*Service).SendMagicLink: As(System())
-pkg/business/magic_links.go: (*Service).VerifyMagicLink: As(System())
-pkg/business/magic_links.go: (*Service).VerifyMagicLink: As(System())
 pkg/business/module_audit_declarations.go: (*Service).ModuleDeclareAuditEventTypes: WithControlPlane
 pkg/business/module_capabilities.go: (*Service).ModuleEmitAuditEvent: WithControlPlane
 pkg/business/module_capabilities.go: (*Service).ModuleListSubscriptions: WithControlPlane

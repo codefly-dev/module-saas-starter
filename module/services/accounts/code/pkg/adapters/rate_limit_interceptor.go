@@ -136,7 +136,7 @@ func grpcRateLimitInterceptor() grpc.UnaryServerInterceptor {
 
 // rateLimitKey picks the most specific identifier available on the
 // context and, for anonymous callers (Authenticate / BeginOAuth /
-// RegisterUser / JoinWaitlist / magic-link), falls back to a per-IP key
+// RegisterUser / JoinWaitlist), falls back to a per-IP key
 // so pre-auth traffic still gets an app-layer budget rather than being
 // skipped. Returns "" only when the peer address can't be parsed either.
 func rateLimitKey(ctx context.Context, req connect.AnyRequest) string {

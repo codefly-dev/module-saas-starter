@@ -79,12 +79,6 @@ const (
 	// PlatformAdminServiceGetOrganizationRosterProcedure is the fully-qualified name of the
 	// PlatformAdminService's GetOrganizationRoster RPC.
 	PlatformAdminServiceGetOrganizationRosterProcedure = "/saas.accounts.v1.PlatformAdminService/GetOrganizationRoster"
-	// PlatformAdminServiceListFeatureFlagsProcedure is the fully-qualified name of the
-	// PlatformAdminService's ListFeatureFlags RPC.
-	PlatformAdminServiceListFeatureFlagsProcedure = "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags"
-	// PlatformAdminServiceUpsertFeatureFlagProcedure is the fully-qualified name of the
-	// PlatformAdminService's UpsertFeatureFlag RPC.
-	PlatformAdminServiceUpsertFeatureFlagProcedure = "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag"
 	// PlatformAdminServiceGetJobOperationsProcedure is the fully-qualified name of the
 	// PlatformAdminService's GetJobOperations RPC.
 	PlatformAdminServiceGetJobOperationsProcedure = "/saas.accounts.v1.PlatformAdminService/GetJobOperations"
@@ -146,13 +140,6 @@ type PlatformAdminServiceClient interface {
 	// GetOrganizationRoster lists any organization's members for the platform
 	// view, which needs no membership of its own.
 	GetOrganizationRoster(context.Context, *connect.Request[v1.GetOrganizationRosterRequest]) (*connect.Response[v1.GetOrganizationRosterResponse], error)
-	// Legacy feature-flag migration inventory (platform-only, read-only)
-	ListFeatureFlags(context.Context, *connect.Request[v1.ListFeatureFlagsRequest]) (*connect.Response[v1.ListFeatureFlagsResponse], error)
-	// Deprecated: retained for v1 wire compatibility. The legacy inventory is
-	// read-only; this method always returns FAILED_PRECONDITION.
-	//
-	// Deprecated: do not use.
-	UpsertFeatureFlag(context.Context, *connect.Request[v1.UpsertFeatureFlagRequest]) (*connect.Response[v1.UpsertFeatureFlagResponse], error)
 	// Product-neutral durable job operations. Payload bytes never leave the
 	// worker database boundary through these methods.
 	GetJobOperations(context.Context, *connect.Request[v11.GetJobOperationsRequest]) (*connect.Response[v11.GetJobOperationsResponse], error)
@@ -272,18 +259,6 @@ func NewPlatformAdminServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithSchema(platformAdminServiceMethods.ByName("GetOrganizationRoster")),
 			connect.WithClientOptions(opts...),
 		),
-		listFeatureFlags: connect.NewClient[v1.ListFeatureFlagsRequest, v1.ListFeatureFlagsResponse](
-			httpClient,
-			baseURL+PlatformAdminServiceListFeatureFlagsProcedure,
-			connect.WithSchema(platformAdminServiceMethods.ByName("ListFeatureFlags")),
-			connect.WithClientOptions(opts...),
-		),
-		upsertFeatureFlag: connect.NewClient[v1.UpsertFeatureFlagRequest, v1.UpsertFeatureFlagResponse](
-			httpClient,
-			baseURL+PlatformAdminServiceUpsertFeatureFlagProcedure,
-			connect.WithSchema(platformAdminServiceMethods.ByName("UpsertFeatureFlag")),
-			connect.WithClientOptions(opts...),
-		),
 		getJobOperations: connect.NewClient[v11.GetJobOperationsRequest, v11.GetJobOperationsResponse](
 			httpClient,
 			baseURL+PlatformAdminServiceGetJobOperationsProcedure,
@@ -357,8 +332,6 @@ type platformAdminServiceClient struct {
 	listPlatformAdmins     *connect.Client[v1.ListPlatformAdminsRequest, v1.ListPlatformAdminsResponse]
 	listAllOrganizations   *connect.Client[v1.ListAllOrganizationsRequest, v1.ListAllOrganizationsResponse]
 	getOrganizationRoster  *connect.Client[v1.GetOrganizationRosterRequest, v1.GetOrganizationRosterResponse]
-	listFeatureFlags       *connect.Client[v1.ListFeatureFlagsRequest, v1.ListFeatureFlagsResponse]
-	upsertFeatureFlag      *connect.Client[v1.UpsertFeatureFlagRequest, v1.UpsertFeatureFlagResponse]
 	getJobOperations       *connect.Client[v11.GetJobOperationsRequest, v11.GetJobOperationsResponse]
 	listJobs               *connect.Client[v11.ListJobsRequest, v11.ListJobsResponse]
 	getJob                 *connect.Client[v11.GetJobRequest, v11.GetJobResponse]
@@ -440,18 +413,6 @@ func (c *platformAdminServiceClient) GetOrganizationRoster(ctx context.Context, 
 	return c.getOrganizationRoster.CallUnary(ctx, req)
 }
 
-// ListFeatureFlags calls saas.accounts.v1.PlatformAdminService.ListFeatureFlags.
-func (c *platformAdminServiceClient) ListFeatureFlags(ctx context.Context, req *connect.Request[v1.ListFeatureFlagsRequest]) (*connect.Response[v1.ListFeatureFlagsResponse], error) {
-	return c.listFeatureFlags.CallUnary(ctx, req)
-}
-
-// UpsertFeatureFlag calls saas.accounts.v1.PlatformAdminService.UpsertFeatureFlag.
-//
-// Deprecated: do not use.
-func (c *platformAdminServiceClient) UpsertFeatureFlag(ctx context.Context, req *connect.Request[v1.UpsertFeatureFlagRequest]) (*connect.Response[v1.UpsertFeatureFlagResponse], error) {
-	return c.upsertFeatureFlag.CallUnary(ctx, req)
-}
-
 // GetJobOperations calls saas.accounts.v1.PlatformAdminService.GetJobOperations.
 func (c *platformAdminServiceClient) GetJobOperations(ctx context.Context, req *connect.Request[v11.GetJobOperationsRequest]) (*connect.Response[v11.GetJobOperationsResponse], error) {
 	return c.getJobOperations.CallUnary(ctx, req)
@@ -530,13 +491,6 @@ type PlatformAdminServiceHandler interface {
 	// GetOrganizationRoster lists any organization's members for the platform
 	// view, which needs no membership of its own.
 	GetOrganizationRoster(context.Context, *connect.Request[v1.GetOrganizationRosterRequest]) (*connect.Response[v1.GetOrganizationRosterResponse], error)
-	// Legacy feature-flag migration inventory (platform-only, read-only)
-	ListFeatureFlags(context.Context, *connect.Request[v1.ListFeatureFlagsRequest]) (*connect.Response[v1.ListFeatureFlagsResponse], error)
-	// Deprecated: retained for v1 wire compatibility. The legacy inventory is
-	// read-only; this method always returns FAILED_PRECONDITION.
-	//
-	// Deprecated: do not use.
-	UpsertFeatureFlag(context.Context, *connect.Request[v1.UpsertFeatureFlagRequest]) (*connect.Response[v1.UpsertFeatureFlagResponse], error)
 	// Product-neutral durable job operations. Payload bytes never leave the
 	// worker database boundary through these methods.
 	GetJobOperations(context.Context, *connect.Request[v11.GetJobOperationsRequest]) (*connect.Response[v11.GetJobOperationsResponse], error)
@@ -652,18 +606,6 @@ func NewPlatformAdminServiceHandler(svc PlatformAdminServiceHandler, opts ...con
 		connect.WithSchema(platformAdminServiceMethods.ByName("GetOrganizationRoster")),
 		connect.WithHandlerOptions(opts...),
 	)
-	platformAdminServiceListFeatureFlagsHandler := connect.NewUnaryHandler(
-		PlatformAdminServiceListFeatureFlagsProcedure,
-		svc.ListFeatureFlags,
-		connect.WithSchema(platformAdminServiceMethods.ByName("ListFeatureFlags")),
-		connect.WithHandlerOptions(opts...),
-	)
-	platformAdminServiceUpsertFeatureFlagHandler := connect.NewUnaryHandler(
-		PlatformAdminServiceUpsertFeatureFlagProcedure,
-		svc.UpsertFeatureFlag,
-		connect.WithSchema(platformAdminServiceMethods.ByName("UpsertFeatureFlag")),
-		connect.WithHandlerOptions(opts...),
-	)
 	platformAdminServiceGetJobOperationsHandler := connect.NewUnaryHandler(
 		PlatformAdminServiceGetJobOperationsProcedure,
 		svc.GetJobOperations,
@@ -748,10 +690,6 @@ func NewPlatformAdminServiceHandler(svc PlatformAdminServiceHandler, opts ...con
 			platformAdminServiceListAllOrganizationsHandler.ServeHTTP(w, r)
 		case PlatformAdminServiceGetOrganizationRosterProcedure:
 			platformAdminServiceGetOrganizationRosterHandler.ServeHTTP(w, r)
-		case PlatformAdminServiceListFeatureFlagsProcedure:
-			platformAdminServiceListFeatureFlagsHandler.ServeHTTP(w, r)
-		case PlatformAdminServiceUpsertFeatureFlagProcedure:
-			platformAdminServiceUpsertFeatureFlagHandler.ServeHTTP(w, r)
 		case PlatformAdminServiceGetJobOperationsProcedure:
 			platformAdminServiceGetJobOperationsHandler.ServeHTTP(w, r)
 		case PlatformAdminServiceListJobsProcedure:
@@ -833,14 +771,6 @@ func (UnimplementedPlatformAdminServiceHandler) ListAllOrganizations(context.Con
 
 func (UnimplementedPlatformAdminServiceHandler) GetOrganizationRoster(context.Context, *connect.Request[v1.GetOrganizationRosterRequest]) (*connect.Response[v1.GetOrganizationRosterResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PlatformAdminService.GetOrganizationRoster is not implemented"))
-}
-
-func (UnimplementedPlatformAdminServiceHandler) ListFeatureFlags(context.Context, *connect.Request[v1.ListFeatureFlagsRequest]) (*connect.Response[v1.ListFeatureFlagsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PlatformAdminService.ListFeatureFlags is not implemented"))
-}
-
-func (UnimplementedPlatformAdminServiceHandler) UpsertFeatureFlag(context.Context, *connect.Request[v1.UpsertFeatureFlagRequest]) (*connect.Response[v1.UpsertFeatureFlagResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PlatformAdminService.UpsertFeatureFlag is not implemented"))
 }
 
 func (UnimplementedPlatformAdminServiceHandler) GetJobOperations(context.Context, *connect.Request[v11.GetJobOperationsRequest]) (*connect.Response[v11.GetJobOperationsResponse], error) {

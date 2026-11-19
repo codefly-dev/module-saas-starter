@@ -293,7 +293,9 @@ func TestPostgresEmailOutboxEnforcesTenantAndPreAuthTransactionScopes(t *testing
 	require.Zero(t, rolledBack)
 }
 
-func TestMagicLinkRunsThroughTransactionalGenericEmailWorker(t *testing.T) {
+func TestInvitationEmailRunsThroughTransactionalGenericEmailWorker(t *testing.T) {
+	ownerID := seedUser(t)
+	orgID := seedOrg(t, ownerID)
 	workerPool, err := infra.NewJobWorkerPool(testCtx)
 	require.NoError(t, err)
 	t.Cleanup(workerPool.Close)
@@ -307,25 +309,28 @@ func TestMagicLinkRunsThroughTransactionalGenericEmailWorker(t *testing.T) {
 	require.NoError(t, err)
 	service, err := business.NewService(testStore)
 	require.NoError(t, err)
+	service.SetEntitlementChecker(business.NewDefaultEntitlementChecker(testStore, business.PlansSold))
 	service.SetEmailOutbox(outbox, "https://app.example.com")
-	require.NoError(t, service.SendMagicLink(testCtx, "magic@example.com", ""))
+	response, err := service.CreateInvitation(testCtx, ownerID, &accountsv1.CreateInvitationRequest{
+		OrgId: orgID, Email: "worker-invite@example.com", Role: accountsv1.InvitationRole_INVITATION_ROLE_MEMBER,
+	})
+	require.NoError(t, err)
 
 	var jobID, state, orderingKey string
 	var encoded []byte
 	require.NoError(t, workerPool.QueryRow(testCtx, `
 		SELECT id::text, state, ordering_key, payload
 		FROM job_messages
-		WHERE queue = $1 AND source = 'saas.accounts.authentication'
-		ORDER BY created_at DESC
-		LIMIT 1`, email.DeliveryQueue,
+		WHERE queue = $1 AND idempotency_key = $2`,
+		email.DeliveryQueue, response.GetInvitation().GetId(),
 	).Scan(&jobID, &state, &orderingKey, &encoded))
 	require.Equal(t, "pending", state)
-	require.NotContains(t, orderingKey, "magic@example.com")
+	require.NotContains(t, orderingKey, "worker-invite@example.com")
 	payload := &notificationsv1.EmailDeliveryJob{}
 	require.NoError(t, proto.Unmarshal(encoded, payload))
-	require.Equal(t, []string{"magic@example.com"}, payload.GetTo())
+	require.Equal(t, []string{"worker-invite@example.com"}, payload.GetTo())
 	require.True(t, strings.Contains(payload.GetHtmlBody(),
-		"https://app.example.com/auth/magic-link?token="))
+		"https://app.example.com/invitations/accept?token="))
 
 	sender := email.NewFakeSender()
 	handler, err := email.NewJobHandler(sender)
@@ -338,7 +343,7 @@ func TestMagicLinkRunsThroughTransactionalGenericEmailWorker(t *testing.T) {
 	processed, err := worker.RunOnce(testCtx)
 	require.NoError(t, err)
 	require.Positive(t, processed)
-	require.Contains(t, sender.ToAddresses(), "magic@example.com")
+	require.Contains(t, sender.ToAddresses(), "worker-invite@example.com")
 
 	require.NoError(t, workerPool.QueryRow(testCtx,
 		`SELECT state FROM job_messages WHERE id = $1`, jobID,

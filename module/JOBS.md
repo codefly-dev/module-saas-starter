@@ -365,9 +365,7 @@ link is returned to the administrator who created it (and re-issued by
 provider and the `log` sink are refused at boot (#973).
 
 Invitation creation and its tenant-scoped email job share the same organization
-transaction. Magic-link token insertion and its global email job share the
-same audited pre-authentication control-plane transaction. A failure to enqueue
-rolls back the corresponding product row. After Stripe projection, billing
+transaction. A failure to enqueue rolls back the corresponding product row. After Stripe projection, billing
 uses the stable Stripe event/template identity to append a second email job;
 enqueue failure is returned to the Stripe worker so its original event remains
 retryable. Exact duplicate enqueue is accepted without creating another
@@ -394,7 +392,7 @@ rather than introduce another queue.
 Unit tests cover generated exact payloads, strict and HTML-safe templates,
 retry/permanent provider classification, exact duplicate enqueue, and replay
 identity. Fresh-PostgreSQL tests prove tenant and pre-auth authority, atomic
-invitation and magic-link rows, generic worker delivery, exact function ACLs,
+invitation rows, generic worker delivery, exact function ACLs,
 and rollback on enqueue failure.
 
 ## Product analytics adapter

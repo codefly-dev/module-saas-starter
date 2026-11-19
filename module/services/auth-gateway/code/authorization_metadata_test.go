@@ -20,7 +20,7 @@ func TestGeneratedAuthorizationMetadataJoinsRESTAndConnectRoutes(t *testing.T) {
 	require.True(t, mfaCompletion.RateLimitBackendFailClosed)
 	require.True(t, mfaCompletion.AuthenticationFactorAttempt)
 
-	unknownExtension := &RouteEntry{Method: "POST", Path: "/v1/auth/magic-link", Protected: false}
+	unknownExtension := &RouteEntry{Method: "POST", Path: "/v1/billing/webhook", Protected: false}
 	require.NoError(t, applyGeneratedAuthorizationMetadata(unknownExtension, compiledAuthorizationCatalog()))
 	require.Empty(t, unknownExtension.Procedure)
 	require.Equal(t, edgeRateLimitClassUnspecified, unknownExtension.RateLimitClass)

@@ -367,7 +367,6 @@ their next owning change.
 | Feature                             | Status | Notes                                                            |
 |-------------------------------------|--------|------------------------------------------------------------------|
 | OAuth code-grant (WorkOS/Auth0/Google) | ✅  | Generic Codefly `identity` capability with provider-specific exchange adapters |
-| Magic link                          | 🟡    | Token gen/verify in `business/magic_links.go`; needs email-send wiring |
 | Password login                       | ❌    | Intentional — provider-only; account recovery routed via OAuth    |
 | Fixture login (dev)                 | ✅    | Click-to-login in dev mode; not exposed in prod build            |
 | MFA (passkeys + TOTP + recovery)    | ✅    | WebAuthn with exact RP/origin policy and encrypted credential state; durable one-use login challenges and recent AAL2 step-up |
@@ -510,7 +509,7 @@ see `JOBS.md` for the exact boundary and sequencing.
 | In-app notifications   | ✅    | DB-backed, actionable, list / mark-read / unread-count; optional writes honor the user opt-out |
 | In-app banner          | ✅    | Active-tenant unread selection, current-action authorization, shared kit Banner; see [NOTIFICATIONS.md](NOTIFICATIONS.md) |
 | SSE notification stream| ✅    | `/api/notifications/stream` Server-Sent-Events                      |
-| Email transactional    | ✅    | Invitation, magic-link, and billing emails use a generated transactional outbox and isolated worker |
+| Email transactional    | ✅    | Invitation and billing emails use a generated transactional outbox and isolated worker |
 | Email templates        | ✅    | Versioned DB catalog; strict variable resolution, HTML escaping, and immutable rendered job payloads |
 | Resend delivery events | ✅    | Exact-body Svix verification, stale/tamper rejection, durable `svix-id` dedup, PII-minimized history, monotonic invitation projection |
 | User notification prefs| 🟡    | Optional in-app and product/marketing/digest email policy is enforced; per-workflow overrides and unsubscribe are not yet available |
@@ -540,7 +539,6 @@ see `JOBS.md` for the exact boundary and sequencing.
 | User search & CRUD     | ✅    | Platform-admin can suspend / unsuspend / delete                    |
 | Impersonation          | ✅    | Mints session with `acting` claim; banner shown to impersonator    |
 | Sessions list          | ✅    | Active device families with description, activity, and both expiries |
-| Feature flags          | 🟡    | Unleash is the designated runtime owner; the DB/API/UI are a read-only migration inventory with no runtime evaluator and are removed after cutover |
 | Entitlements           | ✅    | Per-org plan → feature mapping with overrides                      |
 | Webhooks (system view) | ✅    | List + delete from admin                                           |
 | Time-bound impersonation | ✅  | Access tokens are capped at five minutes by default                 |
@@ -585,12 +583,12 @@ implementations without rewriting the route handlers.
 
 | Surface                | Pages                                                                          |
 |------------------------|--------------------------------------------------------------------------------|
-| Auth & acquisition     | `/auth/login`, `/auth/callback`, `/auth/magic-link`, `/invitations/accept`, `/waitlist`, `/waitlist/verify` |
+| Auth & acquisition     | `/auth/login`, `/auth/callback`, `/invitations/accept`, `/waitlist`, `/waitlist/verify` |
 | Legal                  | `/legal/terms`, `/legal/privacy`                                                 |
 | Dashboard (every user) | `/`, `/notifications`, `/onboarding`, `/settings/{mfa,notifications,data,privacy}` |
 | Subscription           | `/admin/billing`, `/admin/billing/success`                                     |
 | Org admin (`/admin/*`) | `users`, `organizations`, `teams`, `roles`, `invitations`, `api-keys`, `audit-log`, `webhooks`, `entitlements`, `billing` |
-| Platform admin         | `/admin/platform/{admins,feature-flags,waitlist}`, `/admin/sessions`           |
+| Platform admin         | `/admin/platform/{admins,waitlist}`, `/admin/sessions`           |
 | Docs                   | `/docs/sdks`, `/docs/compliance`                                               |
 
 ### Marketing (Next.js, separate deployable)
@@ -650,7 +648,6 @@ starters, and large-scale enterprise SaaS expectations.
 |--------------------------------------------|-------------|--------------------|
 | OAuth login (multiple providers)           | ✅          | Same               |
 | Email/password login                       | ❌          | ✅ (most starters keep both) |
-| Magic-link login                           | 🟡          | ✅ (one-click)     |
 | MFA enforced on sensitive ops              | ✅          | 🟡 `requireMFA` gates billing, GDPR delete, impersonation, organization deletion, waitlist review, the role/scope/principal grants (creation and revocation) and the platform-admin mutations (suspend, unsuspend, session revoke, entitlement override). Fail-closed for a privileged actor — any platform role, or ownership of the request's organization — where not being enrolled is a refusal, not a pass; opt-in per user for every other member, which an ENROLLED organization admin now meets on the grant paths (see below). **The method policy still declares `MFA_REQUIREMENT_NONE` for the newly gated methods, so the policy/handler lockstep gate does not yet demand it** — see the note below |
 | Multi-org tenancy                          | ✅          | Same               |
 | Org invitations                            | ✅          | Same               |
@@ -708,7 +705,6 @@ arrives at the least convenient moment by design.
 
 | Feature                                        | This module | World-class       |
 |------------------------------------------------|-------------|-------------------|
-| Feature flags (per-org)                        | ✅          | Same — usually external (LaunchDarkly) |
 | Entitlements (plan → feature gates)            | ✅          | 🟡 (many use Stripe metadata — ours is first-class) |
 | In-app notifications                           | ✅          | Same              |
 | SSE / real-time                                | ✅          | 🟡 (often WebSocket; SSE is simpler & sufficient) |

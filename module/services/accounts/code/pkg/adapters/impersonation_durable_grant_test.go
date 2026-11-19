@@ -19,6 +19,10 @@ import (
 // a provider group bound onto a team, an invitation sent again, and a new
 // organization owned by the person impersonated.
 var durableGrantsOnceOpenToImpersonation = []string{
+	"/saas.accounts.v1.DatasourceService/CompleteDatasourceAccountLink",
+	"/saas.accounts.v1.DatasourceService/AddSource",
+	"/saas.accounts.v1.TeamService/CreateTeam",
+	"/saas.accounts.v1.DashboardService/ShareDashboard",
 	"/saas.accounts.v1.InstallationService/InstallReviewedSolution",
 	"/saas.accounts.v1.InstallationService/InstallSolution",
 	"/saas.accounts.v1.InstallationService/SetUpModulePage",

@@ -920,22 +920,6 @@
     {
       "protocol": "GATEWAY_PROTOCOL_REST",
       "method": "GET",
-      "path": "/v1/platform/feature-flags",
-      "match": "GATEWAY_MATCH_EXACT",
-      "procedure": "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags",
-      "owner": {
-        "module": "saas-starter",
-        "service": "accounts"
-      },
-      "upstream_endpoint": "rest",
-      "exposure": "EXPOSURE_AUTHENTICATED",
-      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
-      "rewrite_path": "",
-      "remove_after": ""
-    },
-    {
-      "protocol": "GATEWAY_PROTOCOL_REST",
-      "method": "GET",
       "path": "/v1/platform/jobs",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.PlatformAdminService/ListJobs",
@@ -2795,22 +2779,6 @@
       "path": "/v1/organizations/{org_id}/settings",
       "match": "GATEWAY_MATCH_PATH_TEMPLATE",
       "procedure": "/saas.accounts.v1.OrganizationService/UpdateOrgSettings",
-      "owner": {
-        "module": "saas-starter",
-        "service": "accounts"
-      },
-      "upstream_endpoint": "rest",
-      "exposure": "EXPOSURE_AUTHENTICATED",
-      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
-      "rewrite_path": "",
-      "remove_after": ""
-    },
-    {
-      "protocol": "GATEWAY_PROTOCOL_REST",
-      "method": "PUT",
-      "path": "/v1/platform/feature-flags/{name}",
-      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
-      "procedure": "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

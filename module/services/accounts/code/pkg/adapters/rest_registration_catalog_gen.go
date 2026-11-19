@@ -139,7 +139,6 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"GET /v1/platform/catalogue":                         {},
 	"GET /v1/platform/events/operations":                 {},
 	"GET /v1/platform/events/subscriptions":              {},
-	"GET /v1/platform/feature-flags":                     {},
 	"GET /v1/platform/jobs":                              {},
 	"GET /v1/platform/jobs/operations":                   {},
 	"GET /v1/platform/module-envelope":                   {},
@@ -298,7 +297,6 @@ var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "POST", path: regexp.MustCompile("^/v1/webhooks/[^/]+:rotateSecret$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/webhooks/[^/]+:test$")},
 	{method: "PUT", path: regexp.MustCompile("^/v1/organizations/[^/]+/settings$")},
-	{method: "PUT", path: regexp.MustCompile("^/v1/platform/feature-flags/[^/]+$")},
 }
 
 func catalogRESTRouteAllowed(method, path string) bool {

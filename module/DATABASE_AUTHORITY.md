@@ -487,9 +487,7 @@ making an unreviewed table writable.
 ## Global catalog grants
 
 Migration `62_global_catalog_grants` removes the historical full-CRUD grant
-from every relation that intentionally has no tenant RLS. Forward migration
-`95_feature_flags_read_only` additionally removes all runtime write authority
-from the retired feature-flag inventory.
+from every relation that intentionally has no tenant RLS.
 
 | Relation | `app_tenant` authority | Other authority |
 |---|---|---|
@@ -498,7 +496,6 @@ from the retired feature-flag inventory.
 | `email_templates` | select | migration principal writes |
 | `data_retention_policies` | select | migration principal writes |
 | `bootstrap_state` | select, update | migration principal seeds |
-| `feature_flags` | select | migration principal writes; runtime inventory is read-only |
 | `platform_admins` | select, insert, update, delete | platform-super-admin/bootstrap application gates |
 
 The infrastructure suite checks every operation in this matrix, including the
@@ -521,7 +518,7 @@ All tenant/user rows remain constrained by their forced RLS policies.
 | select, insert | `gdpr_requests` (accepted by request traffic, transitioned only by the leased privacy worker under the control plane) |
 | select, insert, update, delete | `mfa_backup_codes`, `mfa_devices`, `notifications`, `user_identities` |
 | insert only | `client_authorization_codes`, `mfa_login_transactions` |
-| no tenant relation authority | `job_attempts`, `job_messages`, `job_state_transitions`, `magic_links`, `membership_integrity_findings` |
+| no tenant relation authority | `job_attempts`, `job_messages`, `job_state_transitions`, `membership_integrity_findings` |
 
 Retention deletes and token-based pre-auth reads/updates use the audited
 control-plane boundary; they are intentionally not granted to `app_tenant`.
@@ -544,10 +541,10 @@ executable inventory and this table in the same change.
 
 | Scope | Relations | Required database boundary |
 |---|---|---|
-| `global` | `audit_event_types`, `authority_core_approved_modules`, `authority_core_clients`, `authority_core_delegations`, `authority_core_grant_epochs`, `authority_core_installations`, `authority_core_module_revisions`, `authority_core_modules`, `authority_core_owner_aware`, `authority_core_person_epochs`, `authority_core_replay`, `authority_core_role_grants`, `authority_core_role_views`, `authority_core_tombstones`, `bootstrap_state`, `data_retention_policies`, `datasource_credential_budgets`, `email_templates`, `feature_flags`, `hop_admission_keys`, `hop_admission_proofs`, `identity_providers`, `module_envelopes`, `plan_entitlements`, `plans`, `platform_admins`, `solution_delivery_documents`, `solution_generation_history`, `solution_host_bindings`, `solution_registrations`, `solution_targets` | No RLS; exact grants |
+| `global` | `audit_event_types`, `authority_core_approved_modules`, `authority_core_clients`, `authority_core_delegations`, `authority_core_grant_epochs`, `authority_core_installations`, `authority_core_module_revisions`, `authority_core_modules`, `authority_core_owner_aware`, `authority_core_person_epochs`, `authority_core_replay`, `authority_core_role_grants`, `authority_core_role_views`, `authority_core_tombstones`, `bootstrap_state`, `data_retention_policies`, `datasource_credential_budgets`, `email_templates`, `hop_admission_keys`, `hop_admission_proofs`, `identity_providers`, `module_envelopes`, `plan_entitlements`, `plans`, `platform_admins`, `solution_delivery_documents`, `solution_generation_history`, `solution_host_bindings`, `solution_registrations`, `solution_targets` | No RLS; exact grants |
 | `tenant` | `actor_chain_journal`, `actor_chain_revocations`, `api_keys`, `approval_decisions`, `approval_requests`, `audit_event_idempotency`, `audit_events`, `connector_credentials`, `dashboards`, `datasource_account_links`, `datasource_domains`, `datasource_group_bindings`, `datasource_object_manifests`, `codefly_effect_receipts`, `datasource_operation_attempts`, `datasource_oauth_consumed_states`, `datasource_source_operations`, `datasource_sources`, `delegation_grants`, `domain_events`, `entitlement_overrides`, `executable_artifact_approvals`, `github_app_installations`, `github_app_setups`, `installations`, `invitations`, `membership_integrity_findings`, `org_generic_settings`, `org_identity_providers`, `org_key_bindings`, `org_settings`, `organization_activations`, `organization_authorization_revisions`, `organization_members`, `organizations`, `principal_authorization_revisions`, `principals`, `record_shares`, `role_assignments`, `role_permissions`, `roles`, `scope_grants`, `scope_nodes`, `source_delegations`, `source_read_revisions`, `subscriptions`, `team_members`, `team_membership_quarantine`, `teams`, `usage_events`, `usage_totals`, `webhook_deliveries`, `webhook_subscriptions`, `work_context_replay` | Enabled and forced RLS with at least one policy |
 | `user` | `client_authorization_codes`, `gdpr_requests`, `mfa_backup_codes`, `mfa_devices`, `mfa_login_transactions`, `notifications`, `onboarding_progress`, `resource_follows`, `sessions`, `user_consent_events`, `user_consent_preferences`, `user_identities`, `users`, `webauthn_ceremonies`, `webauthn_credentials` | Enabled and forced RLS with at least one policy |
-| `pre_auth` | `magic_links`, `waitlist_entries` | Enabled and forced RLS; fail-closed request policy, accessed only by the control-plane role |
+| `pre_auth` | `waitlist_entries` | Enabled and forced RLS; fail-closed request policy, accessed only by the control-plane role |
 | `job` | `job_messages` | Enabled and forced RLS with at least one policy; no request relation grant — function-only scoped enqueue plus exact job-worker grants |
 | `worker` | `analytics_deliveries`, `email_delivery_events`, `event_subscriptions`, `job_attempts`, `job_state_transitions` | No RLS; no request relation grant, exact grants to one named worker role |
 

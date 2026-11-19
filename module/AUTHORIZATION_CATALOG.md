@@ -67,7 +67,7 @@ for public `POST /v1/users` registration. Descriptor-equivalent YAML has been
 removed; attempting to reintroduce one of those routes as an extension fails
 startup.
 
-Non-protobuf extension routes such as magic links and provider webhooks remain
+Non-protobuf extension routes such as billing and provider webhooks remain
 on explicit YAML policy. They are never guessed into a protobuf method. See
 `REST_SURFACE.md` for the route and OpenAPI boundary.
 

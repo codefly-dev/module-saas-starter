@@ -455,7 +455,6 @@
         "/saas.accounts.v1.PlatformAdminService/ListActiveSessions",
         "/saas.accounts.v1.PlatformAdminService/ListAllOrganizations",
         "/saas.accounts.v1.PlatformAdminService/ListEventSubscriptions",
-        "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags",
         "/saas.accounts.v1.PlatformAdminService/ListJobs",
         "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins",
         "/saas.accounts.v1.PlatformAdminService/ListPlatformCatalogue",
@@ -467,8 +466,7 @@
         "/saas.accounts.v1.PlatformAdminService/SearchUsers",
         "/saas.accounts.v1.PlatformAdminService/StopImpersonation",
         "/saas.accounts.v1.PlatformAdminService/SuspendUser",
-        "/saas.accounts.v1.PlatformAdminService/UnsuspendUser",
-        "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag"
+        "/saas.accounts.v1.PlatformAdminService/UnsuspendUser"
       ]
     },
     {

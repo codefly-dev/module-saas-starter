@@ -415,7 +415,6 @@
         "/saas.accounts.v1.PlatformAdminService/ListActiveSessions",
         "/saas.accounts.v1.PlatformAdminService/ListAllOrganizations",
         "/saas.accounts.v1.PlatformAdminService/ListEventSubscriptions",
-        "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags",
         "/saas.accounts.v1.PlatformAdminService/ListJobs",
         "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins",
         "/saas.accounts.v1.PlatformAdminService/ListPlatformCatalogue",
@@ -427,8 +426,7 @@
         "/saas.accounts.v1.PlatformAdminService/SearchUsers",
         "/saas.accounts.v1.PlatformAdminService/StopImpersonation",
         "/saas.accounts.v1.PlatformAdminService/SuspendUser",
-        "/saas.accounts.v1.PlatformAdminService/UnsuspendUser",
-        "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag"
+        "/saas.accounts.v1.PlatformAdminService/UnsuspendUser"
       ]
     },
     {
@@ -4000,7 +3998,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Change a dashboard's visibility between private and org-shared.",
@@ -4155,7 +4153,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_member",
       "description": "Connect a datasource for any provider, storing its config and encrypted credential.",
@@ -4410,7 +4408,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_member",
       "description": "Finish an account link from the provider's sign-in and link the account it proves.",
@@ -12351,57 +12349,6 @@
       }
     },
     {
-      "procedure": "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags",
-      "service": "PlatformAdminService",
-      "full_service": "saas.accounts.v1.PlatformAdminService",
-      "method": "ListFeatureFlags",
-      "input_type": "saas.accounts.v1.ListFeatureFlagsRequest",
-      "output_type": "saas.accounts.v1.ListFeatureFlagsResponse",
-      "client_streaming": false,
-      "server_streaming": false,
-      "deprecated": false,
-      "source_proto": "saas/accounts/v1/platform_admin.proto",
-      "protocols": [
-        "PROTOCOL_GRPC",
-        "PROTOCOL_CONNECT",
-        "PROTOCOL_REST"
-      ],
-      "http_bindings": [
-        {
-          "method": "GET",
-          "path": "/v1/platform/feature-flags",
-          "body": "",
-          "response_body": ""
-        }
-      ],
-      "policy": {
-        "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_NONE",
-        "permissions": [],
-        "scopes": [],
-        "resource_bindings": [],
-        "mfa": "MFA_REQUIREMENT_NONE",
-        "audit": {
-          "events": [],
-          "emission": "AUDIT_EMISSION_NONE"
-        },
-        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
-        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
-        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
-        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
-        "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false,
-        "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
-      },
-      "policy_tier": "platform_admin",
-      "description": "List the legacy feature-flag migration inventory.",
-      "owner": {
-        "module": "saas-starter",
-        "service": "accounts"
-      }
-    },
-    {
       "procedure": "/saas.accounts.v1.PlatformAdminService/ListJobs",
       "service": "PlatformAdminService",
       "full_service": "saas.accounts.v1.PlatformAdminService",
@@ -13026,59 +12973,6 @@
       },
       "policy_tier": "platform_admin",
       "description": "Restore a suspended user.",
-      "owner": {
-        "module": "saas-starter",
-        "service": "accounts"
-      }
-    },
-    {
-      "procedure": "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag",
-      "service": "PlatformAdminService",
-      "full_service": "saas.accounts.v1.PlatformAdminService",
-      "method": "UpsertFeatureFlag",
-      "input_type": "saas.accounts.v1.UpsertFeatureFlagRequest",
-      "output_type": "saas.accounts.v1.UpsertFeatureFlagResponse",
-      "client_streaming": false,
-      "server_streaming": false,
-      "deprecated": true,
-      "source_proto": "saas/accounts/v1/platform_admin.proto",
-      "protocols": [
-        "PROTOCOL_GRPC",
-        "PROTOCOL_CONNECT",
-        "PROTOCOL_REST"
-      ],
-      "http_bindings": [
-        {
-          "method": "PUT",
-          "path": "/v1/platform/feature-flags/{name}",
-          "body": "*",
-          "response_body": ""
-        }
-      ],
-      "policy": {
-        "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_NONE",
-        "permissions": [],
-        "scopes": [],
-        "resource_bindings": [],
-        "mfa": "MFA_REQUIREMENT_NONE",
-        "audit": {
-          "events": [
-            "saas.feature_flag.updated"
-          ],
-          "emission": "AUDIT_EMISSION_SUCCESS"
-        },
-        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
-        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
-        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
-        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
-        "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false,
-        "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
-      },
-      "policy_tier": "platform_admin",
-      "description": "Deprecated compatibility method; always rejects writes to the legacy feature-flag inventory.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -13993,7 +13887,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Create a team within an org.",

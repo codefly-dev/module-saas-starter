@@ -124,32 +124,18 @@ feature.
 
 ### Database-backed feature-flag retirement
 
-The `feature_flags` table, read-only `ListFeatureFlags` API, and
-`/admin/platform/feature-flags` page are a legacy migration inventory, not a
-runtime flag owner. No application runtime evaluates or mutates that table: the
-former database evaluator, combined flag/entitlement checker, and mutation path
-have been removed. The published v1 `UpsertFeatureFlag` RPC remains deprecated
-for wire compatibility, but its handler always fails closed and the runtime
-database roles have no write grants. The remaining surface is retired in this
-order:
-
-1. Land the
-   [`feature-flags@1` contract](https://github.com/codefly-dev/core/issues/281),
-   [Unleash service](https://github.com/codefly-dev/module-saas-starter/issues/130),
-   and [Unleash provider](https://github.com/codefly-dev/module-saas-starter/issues/128).
-2. Export each legacy row through the read-only inventory API and map `enabled`,
-   `rollout_percent`, and
-   `target_org_ids` to one explicitly owned Unleash project/environment and its
-   strategies. Reject ambiguous mappings, import once, then verify equivalent
-   evaluations against fixed organization fixtures. Do not add dual reads or
-   dual writes.
-3. Bind consumers to `feature-flags@1` and remove the admin route/navigation,
-   list RPC and messages, business/infra read methods, generated read surfaces,
-   permissions, and tests in the same cutover. Keep the deprecated v1 mutation
-   compatibility shim until the stable-major support policy permits removal.
-4. After the imported project is verified and no legacy consumers remain, add
-   a forward migration that drops `feature_flags` and its grants/indexes. The
-   historical migration that originally created the table remains immutable.
+The database-backed flag inventory is deleted: the `feature_flags` table (store
+migration `79_drop_feature_flags_and_magic_links`), the `ListFeatureFlags` and
+`UpsertFeatureFlag` RPCs with their messages and REST routes, and the
+`/admin/platform/feature-flags` page. No application runtime evaluated or
+mutated that table, so nothing replaces it here. Runtime flags are the
+provider-neutral
+[`feature-flags@1` contract](https://github.com/codefly-dev/core/issues/281),
+which the
+[Unleash service](https://github.com/codefly-dev/module-saas-starter/issues/130)
+and [Unleash provider](https://github.com/codefly-dev/module-saas-starter/issues/128)
+serve. The audit event type `saas.feature_flag.updated` stays registered,
+emitted by nothing, because a journal may hold rows of it.
 
 Entitlements and plan gates stay in Accounts and Postgres. They answer whether
 an organization bought or is allowed a product capability; Unleash answers

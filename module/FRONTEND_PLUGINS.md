@@ -56,7 +56,7 @@ The application composition root explicitly imports the installed packages and
 projects generated inputs into the active sidebar, command palette, user menu,
 and three built-in plugin modules. The
 shared icon binding is exhaustive over the generated icon union. Platform-user,
-feature-flag, job-operations, and session links use the same `super_admin` presentation rule
+job-operations, and session links use the same `super_admin` presentation rule
 across every renderer.
 
 Page access and navigation visibility are defense-in-depth UX. Accounts method

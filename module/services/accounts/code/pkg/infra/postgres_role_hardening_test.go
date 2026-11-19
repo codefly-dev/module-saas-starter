@@ -43,7 +43,6 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"email_templates":             {selectRows: true},
 	"data_retention_policies":     {selectRows: true},
 	"bootstrap_state":             {selectRows: true}, // the bootstrap claim runs on the control plane
-	"feature_flags":               {selectRows: true},
 	"audit_event_types":           {selectRows: true},
 	"platform_admins":             {selectRows: true}, // granting and revoking run on the control plane
 	"analytics_deliveries":        {},
@@ -144,7 +143,6 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	// A privacy request is accepted and read by request traffic; only the leased
 	// worker transitions it, under the control plane.
 	"gdpr_requests":              {selectRows: true, insertRows: true},
-	"magic_links":                {},
 	"mfa_backup_codes":           {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"mfa_devices":                {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"client_authorization_codes": {insertRows: true},
@@ -391,9 +389,6 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 				"datasource_operation_attempts", "codefly_effect_receipts",
 				"datasource_object_manifests":
 				want = relationPrivileges{}
-			}
-			if relation == "feature_flags" {
-				want = relationPrivileges{selectRows: true}
 			}
 			// audit_events is append-only: the control plane reads and inserts
 			// (system NULL-org events) but never updates or deletes rows.

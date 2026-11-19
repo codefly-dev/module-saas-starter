@@ -68,8 +68,6 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 	// and each bump the same figure, and the merge of both is a count that is
 	// silently wrong while every test is green.
 	wantExtensions := map[string]bool{
-		"POST /v1/auth/magic-link":                       false,
-		"POST /v1/auth/magic-link/verify":                false,
 		"POST /v1/auth/backchannel-logout":               false,
 		"POST /v1/billing/webhook":                       false,
 		"POST /v1/email/webhook/resend":                  false,
@@ -109,7 +107,7 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 	require.NotNil(t, matcher.MatchREST(http.MethodPost, "/v1/platform/jobs/job-123:replay"))
 	require.Nil(t, matcher.MatchREST(http.MethodPost, "/v1/platform/jobs/:replay"))
 	require.Nil(t, matcher.MatchREST(http.MethodPost, "/v1/platform/jobs/job-123:other"))
-	require.NotNil(t, matcher.MatchREST(http.MethodPost, "/v1/auth/magic-link"))
+	require.Nil(t, matcher.MatchREST(http.MethodPost, "/v1/auth/magic-link"))
 	require.Equal(t, "/v1/datasource/github/app/webhook", matcher.MatchREST(http.MethodPost, "/v1/datasource/github/app/webhook").Path)
 	require.Equal(t, "/v1/datasource/github/webhook/{source_id}", matcher.MatchREST(http.MethodPost, "/v1/datasource/github/webhook/source-1").Path)
 	require.Nil(t, matcher.MatchREST(http.MethodPost, "/v1/datasource/github/webhook/"))

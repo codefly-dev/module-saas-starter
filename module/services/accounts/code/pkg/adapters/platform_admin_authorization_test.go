@@ -101,10 +101,6 @@ func platformAdminHandlers() []platformAdminHandler {
 			_, err := srv.PutModuleEnvelope(ctx, &gen.PutModuleEnvelopeRequest{Document: `{"revision":1}`})
 			return err
 		}},
-		{"ListFeatureFlags", "super_admin", func(ctx context.Context, srv *PlatformAdminServer) error {
-			_, err := srv.ListFeatureFlags(ctx, &gen.ListFeatureFlagsRequest{})
-			return err
-		}},
 		{"GetJobOperations", "super_admin", func(ctx context.Context, srv *PlatformAdminServer) error {
 			_, err := srv.GetJobOperations(ctx, &jobsv1.GetJobOperationsRequest{})
 			return err

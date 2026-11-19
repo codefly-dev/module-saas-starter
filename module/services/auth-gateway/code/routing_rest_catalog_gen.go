@@ -61,7 +61,6 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "GET", Path: "/v1/platform/catalogue", Procedure: "/saas.accounts.v1.PlatformAdminService/ListPlatformCatalogue"},
 		{Service: "accounts", Method: "GET", Path: "/v1/platform/events/operations", Procedure: "/saas.accounts.v1.PlatformAdminService/GetEventOperations"},
 		{Service: "accounts", Method: "GET", Path: "/v1/platform/events/subscriptions", Procedure: "/saas.accounts.v1.PlatformAdminService/ListEventSubscriptions"},
-		{Service: "accounts", Method: "GET", Path: "/v1/platform/feature-flags", Procedure: "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags"},
 		{Service: "accounts", Method: "GET", Path: "/v1/platform/jobs", Procedure: "/saas.accounts.v1.PlatformAdminService/ListJobs"},
 		{Service: "accounts", Method: "GET", Path: "/v1/platform/jobs/operations", Procedure: "/saas.accounts.v1.PlatformAdminService/GetJobOperations"},
 		{Service: "accounts", Method: "GET", Path: "/v1/platform/jobs/{job_id}", Procedure: "/saas.accounts.v1.PlatformAdminService/GetJob"},
@@ -179,7 +178,6 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "POST", Path: "/v1/work-contexts:task", Procedure: "/saas.accounts.v1.WorkContextService/StartTask"},
 		{Service: "accounts", Method: "PUT", Path: "/v1/consent/preferences", Procedure: "/saas.accounts.v1.ConsentService/UpdatePreferences"},
 		{Service: "accounts", Method: "PUT", Path: "/v1/organizations/{org_id}/settings", Procedure: "/saas.accounts.v1.OrganizationService/UpdateOrgSettings"},
-		{Service: "accounts", Method: "PUT", Path: "/v1/platform/feature-flags/{name}", Procedure: "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag"},
 		{Service: "accounts", Method: "PUT", Path: "/v1/platform/module-envelope", Procedure: "/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope"},
 	}
 }

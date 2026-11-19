@@ -134,10 +134,9 @@ type privilegedMutation struct {
 // principals grant authority; the platform-admin entries change another identity's
 // state or a tenant's ceiling.
 //
-// UpsertFeatureFlag is deliberately absent: it mutates nothing, returning
-// FailedPrecondition for a retired inventory. DisableAgentPrincipal and
-// EnableAgentPrincipal are absent for a different reason — they admit on an internal
-// service credential, where there is no human actor and so no factor to require.
+// DisableAgentPrincipal and EnableAgentPrincipal are deliberately absent: they
+// admit on an internal service credential, where there is no human actor and so
+// no factor to require.
 var privilegedMutationMethods = []privilegedMutation{
 	{"PermServer", "CreateRole", "rpcs.go"},
 	{"PermServer", "UpdateRole", "rpcs.go"},

@@ -363,7 +363,7 @@ State-of-the-art, not "good enough". Every item below lands as part of the phase
   retains stable event identity. Test and replay RPCs atomically queue generated
   jobs rather than executing a separate synchronous transport. See
   `module/WEBHOOKS.md` for the verification contract.
-- **Transactional email outbox**: invitation and magic-link product writes
+- **Transactional email outbox**: invitation product writes
   commit atomically with generated exact-rendered email jobs under tenant and
   audited pre-authentication scope respectively. Billing events append email
   work by stable Stripe event identity and propagate enqueue failures for

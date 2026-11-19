@@ -2722,7 +2722,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -2730,7 +2730,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/dashboards.proto",
-      "policy_sha256": "45f04e1af1aaac9bef8a274579d32f11792ef9746340425875dfb4a58300844a",
+      "policy_sha256": "1e862d2fcb5bbf1c1e3d65c4287164fc2a61b9ceb3a7fd154642fee436599525",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -2859,7 +2859,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_member",
       "owner": {
@@ -2867,7 +2867,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/datasource.proto",
-      "policy_sha256": "cc348ba8373bfcfd090c83fdee5bec852dbed0807ebf141268c1933d9517b72a",
+      "policy_sha256": "0b7a470fabbd6df00ae81405b724e47c3fdaeca0ad8b82ca26be14b47397da40",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -3084,7 +3084,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_member",
       "owner": {
@@ -3092,7 +3092,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/datasource.proto",
-      "policy_sha256": "48c784b8830ae1b3c1997c3173fd46ff68b42935f2209dee5a77599569850b09",
+      "policy_sha256": "e4035ac1d631c1120d0fabea680516830ba5abeb7217e5a4b88583ec578cdc79",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -9431,43 +9431,6 @@
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
-      "procedure": "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags",
-      "full_service": "saas.accounts.v1.PlatformAdminService",
-      "method": "ListFeatureFlags",
-      "input_type": "saas.accounts.v1.ListFeatureFlagsRequest",
-      "output_type": "saas.accounts.v1.ListFeatureFlagsResponse",
-      "client_streaming": false,
-      "server_streaming": false,
-      "policy": {
-        "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_NONE",
-        "permissions": [],
-        "scopes": [],
-        "resource_bindings": [],
-        "mfa": "MFA_REQUIREMENT_NONE",
-        "audit": {
-          "events": [],
-          "emission": "AUDIT_EMISSION_NONE"
-        },
-        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
-        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
-        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
-        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
-        "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false,
-        "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
-      },
-      "policy_tier": "platform_admin",
-      "owner": {
-        "module": "saas-starter",
-        "service": "accounts"
-      },
-      "source_proto": "saas/accounts/v1/platform_admin.proto",
-      "policy_sha256": "e3ae6ee3f1b70dbabb131e3a486c403859c0f3540c61dca8132317bd1be9d7b3",
-      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
-    },
-    {
       "procedure": "/saas.accounts.v1.PlatformAdminService/ListJobs",
       "full_service": "saas.accounts.v1.PlatformAdminService",
       "method": "ListJobs",
@@ -9927,45 +9890,6 @@
       },
       "source_proto": "saas/accounts/v1/platform_admin.proto",
       "policy_sha256": "9df58ac0fa5f5c5f2a42aeb771d29b9219fe284470fb82d9477b470af0a10ad3",
-      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
-    },
-    {
-      "procedure": "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag",
-      "full_service": "saas.accounts.v1.PlatformAdminService",
-      "method": "UpsertFeatureFlag",
-      "input_type": "saas.accounts.v1.UpsertFeatureFlagRequest",
-      "output_type": "saas.accounts.v1.UpsertFeatureFlagResponse",
-      "client_streaming": false,
-      "server_streaming": false,
-      "policy": {
-        "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_NONE",
-        "permissions": [],
-        "scopes": [],
-        "resource_bindings": [],
-        "mfa": "MFA_REQUIREMENT_NONE",
-        "audit": {
-          "events": [
-            "saas.feature_flag.updated"
-          ],
-          "emission": "AUDIT_EMISSION_SUCCESS"
-        },
-        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
-        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
-        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
-        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
-        "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
-        "authentication_factor_attempt": false,
-        "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
-      },
-      "policy_tier": "platform_admin",
-      "owner": {
-        "module": "saas-starter",
-        "service": "accounts"
-      },
-      "source_proto": "saas/accounts/v1/platform_admin.proto",
-      "policy_sha256": "903a788dfac97b597b819eb1c8786e6107d0bd891ecfc6f6b1d6852d2e404fec",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -10687,7 +10611,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "owner": {
@@ -10695,7 +10619,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/teams.proto",
-      "policy_sha256": "657fedca1d4f7f664056d087302e72e2eea04262efbda5cbe6375dfa1d29bec1",
+      "policy_sha256": "dec4a18e47dcad86f8aaaee0d5c1afd36952e3468396430ff43594281058b6b3",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {

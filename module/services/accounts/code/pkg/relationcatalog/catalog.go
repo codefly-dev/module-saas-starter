@@ -99,7 +99,6 @@ var authorities = map[string]Authority{
 	"bootstrap_state":                 {Scope: ScopeGlobal},
 	"data_retention_policies":         {Scope: ScopeGlobal},
 	"email_templates":                 {Scope: ScopeGlobal},
-	"feature_flags":                   {Scope: ScopeGlobal},
 	"identity_providers":              {Scope: ScopeGlobal},
 	"plan_entitlements":               {Scope: ScopeGlobal},
 	"plans":                           {Scope: ScopeGlobal},
@@ -291,10 +290,6 @@ var authorities = map[string]Authority{
 
 	// Pre-authentication relations. Read and written before any session
 	// exists, so their request policy admits nothing at all.
-	"magic_links": {
-		Scope: ScopePreAuth, PolicyShape: ShapeControlPlane,
-		Notes: "Minting and redemption run as bounded service operations under the control-plane role.",
-	},
 	"waitlist_entries": {
 		Scope: ScopePreAuth, PolicyShape: ShapeControlPlane,
 		Notes: "Public writes and platform administration use bounded service operations under the control-plane role.",

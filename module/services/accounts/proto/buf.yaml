@@ -100,6 +100,10 @@ breaking:
       # delivered, so nothing registers at runtime and nothing verifies either
       # credential.
       - saas/accounts/v1/module_registration.proto
+      # ListFeatureFlagsRequest/Response, FeatureFlagEntry and
+      # UpsertFeatureFlagRequest/Response: the messages of the two deleted
+      # feature-flag RPCs (see RPC_NO_DELETE below).
+      - saas/accounts/v1/platform_admin.proto
     # ListMyAccessibleScopes moved from PermissionService to the new
     # AccessibleScopeService in accessible_scopes.proto (issue #577), which changes
     # its Connect/gRPC procedure path. Its REST route (GET /v1/accessible-scopes) is
@@ -116,6 +120,12 @@ breaking:
       # secrets are deleted, so nothing can authenticate to them, and no
       # gateway or frontend path accepts what they minted. Legacy means delete.
       - saas/accounts/v1/module_capabilities.proto
+      # ListFeatureFlags and UpsertFeatureFlag: the database-backed flag
+      # inventory is deleted. Nothing evaluated a flag, the list read a table
+      # no runtime wrote, and the upsert had been a stub that always failed
+      # closed. The product page that called them is gone and store migration
+      # 79 drops the table in the same change. Legacy means delete.
+      - saas/accounts/v1/platform_admin.proto
     # target_collection (a free-text string that was neither resolvable nor
     # grantable) is replaced by a scope-node boundary binding across the three
     # datasource messages (issue #473). Waive only field deletion for this file;

@@ -3,9 +3,6 @@
 package business_test
 
 import (
-	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"sync/atomic"
 	"testing"
@@ -14,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	ed25519minter "accounts/pkg/auth/ed25519"
-	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
@@ -67,23 +63,6 @@ func useMinterConfig(t *testing.T, cfg ed25519minter.Config) {
 	})
 }
 
-// seedMagicLink stores a magic link for emailAddr and returns its plaintext
-// token, standing in for the delivered email.
-func seedMagicLink(t *testing.T, emailAddr string) string {
-	t.Helper()
-	plaintext := "magic-link-expiry-" + business.NewIDString()
-	sum := sha256.Sum256([]byte(plaintext))
-	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		return testStore.CreateMagicLink(ctx, &business.MagicLink{
-			ID:        business.NewIDString(),
-			Email:     emailAddr,
-			TokenHash: hex.EncodeToString(sum[:]),
-			ExpiresAt: time.Now().Add(time.Hour),
-		})
-	}))
-	return plaintext
-}
-
 // TestExpiresInMatchesSignedTTLAcrossIssuingEndpoints pins every token-issuing
 // response to the exp the minter signed, under a TTL policy that differs from
 // the package defaults in both directions — so a response built from a fixed
@@ -129,10 +108,6 @@ func TestExpiresInMatchesSignedTTLAcrossIssuingEndpoints(t *testing.T) {
 		&gen.SwitchOrganizationRequest{OrganizationId: target.Organization.Id})
 	require.NoError(t, err)
 	requireExpiresInMatchesToken(t, switched.AccessToken, switched.ExpiresIn, accessTTL)
-
-	magic, err := testService.VerifyMagicLink(testCtx, seedMagicLink(t, "magic-expires-in@test.com"))
-	require.NoError(t, err)
-	requireExpiresInMatchesToken(t, magic.AccessToken, magic.ExpiresIn, accessTTL)
 
 	_, secret := registerMFAUser(t, "mfa-expires-in", "mfa-expires-in@test.com")
 	challenge, err := authenticateFixture(testCtx, &gen.AuthenticateRequest{

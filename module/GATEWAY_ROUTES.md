@@ -93,7 +93,7 @@ leave the alias with stale auth behavior.
 ## REST and frontend boundary
 
 The running gateway consumes all 120 descriptor REST routes from
-`saas.rest.surface.v1`. Non-protobuf billing and magic-link endpoints remain
+`saas.rest.surface.v1`. Non-protobuf endpoints such as billing remain
 explicit extensions. Accounts uses the same generated surface for service
 registration and a fail-closed method/path allowlist; the checked-in OpenAPI
 document is filtered and verified against it. See `REST_SURFACE.md`.

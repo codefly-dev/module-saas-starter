@@ -61,6 +61,7 @@ service TeamService {
         target: RESOURCE_TARGET_ORGANIZATION
         lookup: RESOURCE_LOOKUP_DIRECT_ID
       }
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
       mfa: MFA_REQUIREMENT_NONE
       audit: {
         events: "saas.team.created"

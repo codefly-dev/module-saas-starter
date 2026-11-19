@@ -256,28 +256,6 @@
     "PlatformAdminServiceUnsuspendUserBody": {
       "type": "object"
     },
-    "PlatformAdminServiceUpsertFeatureFlagBody": {
-      "description": "Deprecated: the database-backed flag inventory is read-only while consumers\nmigrate to the provider-neutral feature-flags@1 capability.",
-      "properties": {
-        "description": {
-          "type": "string"
-        },
-        "enabled": {
-          "type": "boolean"
-        },
-        "rolloutPercent": {
-          "format": "int32",
-          "type": "integer"
-        },
-        "targetOrgIds": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "type": "object"
-    },
     "PrincipalServiceRevokePrincipalBody": {
       "properties": {
         "reason": {
@@ -2056,30 +2034,6 @@
       },
       "type": "object"
     },
-    "v1FeatureFlagEntry": {
-      "properties": {
-        "description": {
-          "type": "string"
-        },
-        "enabled": {
-          "type": "boolean"
-        },
-        "name": {
-          "type": "string"
-        },
-        "rolloutPercent": {
-          "format": "int32",
-          "type": "integer"
-        },
-        "targetOrgIds": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "type": "object"
-    },
     "v1FinishWebAuthnRegistrationRequest": {
       "properties": {
         "ceremonyToken": {
@@ -3371,18 +3325,6 @@
           "description": "subscriptions is every live subscription across all principals, ordered by\ncreated_at.",
           "items": {
             "$ref": "#/definitions/v1EventSubscriptionSummary",
-            "type": "object"
-          },
-          "type": "array"
-        }
-      },
-      "type": "object"
-    },
-    "v1ListFeatureFlagsResponse": {
-      "properties": {
-        "flags": {
-          "items": {
-            "$ref": "#/definitions/v1FeatureFlagEntry",
             "type": "object"
           },
           "type": "array"
@@ -5978,15 +5920,6 @@
         "patch": {
           "$ref": "#/definitions/v1UserSettings",
           "description": "Partial — only explicitly present fields change. Missing parent messages\nare materialized by the typed settings SDK, and nested siblings survive."
-        }
-      },
-      "type": "object"
-    },
-    "v1UpsertFeatureFlagResponse": {
-      "description": "Deprecated: UpsertFeatureFlag always fails closed and returns no response.",
-      "properties": {
-        "name": {
-          "type": "string"
         }
       },
       "type": "object"
@@ -10155,68 +10088,6 @@
             }
           }
         },
-        "tags": [
-          "PlatformAdminService"
-        ]
-      }
-    },
-    "/v1/platform/feature-flags": {
-      "get": {
-        "operationId": "PlatformAdminService_ListFeatureFlags",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1ListFeatureFlagsResponse"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/googleRpcStatus"
-            }
-          }
-        },
-        "summary": "Legacy feature-flag migration inventory (platform-only, read-only)",
-        "tags": [
-          "PlatformAdminService"
-        ]
-      }
-    },
-    "/v1/platform/feature-flags/{name}": {
-      "put": {
-        "operationId": "PlatformAdminService_UpsertFeatureFlag",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "name",
-            "required": true,
-            "type": "string"
-          },
-          {
-            "in": "body",
-            "name": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/PlatformAdminServiceUpsertFeatureFlagBody"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1UpsertFeatureFlagResponse"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/googleRpcStatus"
-            }
-          }
-        },
-        "summary": "Deprecated: retained for v1 wire compatibility. The legacy inventory is\nread-only; this method always returns FAILED_PRECONDITION.",
         "tags": [
           "PlatformAdminService"
         ]

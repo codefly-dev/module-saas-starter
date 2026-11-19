@@ -204,41 +204,6 @@ message ListPlatformAdminsResponse {
   repeated PlatformAdminEntry admins = 1;
 }
 
-// ── Feature flag messages ───────────────────────────────────────
-
-message ListFeatureFlagsRequest {}
-
-message FeatureFlagEntry {
-  string name = 1;
-  string description = 2;
-  bool enabled = 3;
-  int32 rollout_percent = 4;
-  repeated string target_org_ids = 5;
-}
-
-message ListFeatureFlagsResponse {
-  repeated FeatureFlagEntry flags = 1;
-}
-
-// Deprecated: the database-backed flag inventory is read-only while consumers
-// migrate to the provider-neutral feature-flags@1 capability.
-message UpsertFeatureFlagRequest {
-  option deprecated = true;
-
-  string name = 1 [(buf.validate.field).string.min_len = 1];
-  string description = 2;
-  bool enabled = 3;
-  int32 rollout_percent = 4;
-  repeated string target_org_ids = 5;
-}
-
-// Deprecated: UpsertFeatureFlag always fails closed and returns no response.
-message UpsertFeatureFlagResponse {
-  option deprecated = true;
-
-  string name = 1;
-}
-
 // ============================================================================
 // Platform Catalogue (issue #1020)
 //
@@ -873,45 +838,6 @@ service PlatformAdminService {
     };
   }
 
-  // Legacy feature-flag migration inventory (platform-only, read-only)
-  rpc ListFeatureFlags(ListFeatureFlagsRequest) returns (ListFeatureFlagsResponse) {
-    option (saas.policy.v1.method_policy) = {
-      exposure: EXPOSURE_AUTHENTICATED
-      tenant: TENANT_REQUIREMENT_NONE
-      mfa: MFA_REQUIREMENT_NONE
-      audit: {emission: AUDIT_EMISSION_NONE}
-      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
-      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
-      request_sensitivity: SENSITIVITY_CONFIDENTIAL
-      response_sensitivity: SENSITIVITY_CONFIDENTIAL
-      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
-    };
-    option (google.api.http) = {get: "/v1/platform/feature-flags"};
-  }
-  // Deprecated: retained for v1 wire compatibility. The legacy inventory is
-  // read-only; this method always returns FAILED_PRECONDITION.
-  rpc UpsertFeatureFlag(UpsertFeatureFlagRequest) returns (UpsertFeatureFlagResponse) {
-    option deprecated = true;
-    option (saas.policy.v1.method_policy) = {
-      exposure: EXPOSURE_AUTHENTICATED
-      tenant: TENANT_REQUIREMENT_NONE
-      mfa: MFA_REQUIREMENT_NONE
-      audit: {
-        events: "saas.feature_flag.updated"
-        emission: AUDIT_EMISSION_SUCCESS
-      }
-      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
-      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
-      request_sensitivity: SENSITIVITY_CONFIDENTIAL
-      response_sensitivity: SENSITIVITY_CONFIDENTIAL
-      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
-      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
-    };
-    option (google.api.http) = {
-      put: "/v1/platform/feature-flags/{name}"
-      body: "*"
-    };
-  }
   // Product-neutral durable job operations. Payload bytes never leave the
   // worker database boundary through these methods.
   rpc GetJobOperations(saas.jobs.v1.GetJobOperationsRequest) returns (saas.jobs.v1.GetJobOperationsResponse) {
