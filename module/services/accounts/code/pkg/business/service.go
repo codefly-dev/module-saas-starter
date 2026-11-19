@@ -24,7 +24,7 @@ import (
 
 	"github.com/codefly-dev/sdk-go/receipts"
 
-	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
+	"github.com/codefly-dev/authority/libraries/solutionhost/go"
 	"github.com/codefly-dev/core/wool"
 	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 	"github.com/google/uuid"
