@@ -10,7 +10,8 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
-	Label,
+	ErrorState,
+	Field,
 	Textarea,
 } from "@/shared/ui";
 import {
@@ -25,6 +26,7 @@ interface ImpersonateFormProps {
 	onSubmit: (values: ImpersonateUserValues) => void;
 	onCancel: () => void;
 	isPending: boolean;
+	error?: string;
 }
 
 export function ImpersonateForm({
@@ -34,6 +36,7 @@ export function ImpersonateForm({
 	onSubmit,
 	onCancel,
 	isPending,
+	error,
 }: ImpersonateFormProps) {
 	const form = useForm<ImpersonateUserValues>({
 		resolver: zodResolver(impersonateUserSchema),
@@ -41,32 +44,44 @@ export function ImpersonateForm({
 	});
 
 	return (
-		<Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
+		<Dialog open={open} onOpenChange={(o) => !o && !isPending && onCancel()}>
 			<DialogContent className="sm:max-w-[425px]">
 				<DialogHeader>
-					<DialogTitle>Impersonate User</DialogTitle>
+					<DialogTitle>Act as user</DialogTitle>
 					<DialogDescription>
 						Act as <span className="font-medium">{userEmail}</span>. Your
 						justification is recorded on the audit trail alongside who you acted
 						as and when.
 					</DialogDescription>
 				</DialogHeader>
-				<form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-					<div className="space-y-2">
-						<Label htmlFor="reason">Justification</Label>
-						<Textarea
-							id="reason"
-							placeholder="Ticket reference and what you need to reproduce."
-							{...form.register("reason")}
-						/>
-						{form.formState.errors.reason && (
-							<p className="text-sm text-destructive">
-								{form.formState.errors.reason.message}
-							</p>
+				<form
+					noValidate
+					onSubmit={form.handleSubmit((values) => {
+						if (!isPending) onSubmit(values);
+					})}
+					className="space-y-4"
+				>
+					{error && <ErrorState title="Change wasn’t saved" detail={error} />}
+					<Field
+						label="Justification"
+						error={form.formState.errors.reason?.message}
+					>
+						{(control) => (
+							<Textarea
+								{...control}
+								disabled={isPending}
+								{...form.register("reason")}
+							/>
 						)}
-					</div>
+					</Field>
+
 					<DialogFooter>
-						<Button type="button" variant="outline" onClick={onCancel}>
+						<Button
+							type="button"
+							variant="outline"
+							disabled={isPending}
+							onClick={onCancel}
+						>
 							Cancel
 						</Button>
 						<Button type="submit" disabled={isPending}>

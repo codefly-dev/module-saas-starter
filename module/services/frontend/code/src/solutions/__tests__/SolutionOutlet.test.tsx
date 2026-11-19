@@ -63,14 +63,16 @@ afterEach(() => {
 describe("SolutionOutlet remote loading", () => {
 	// A failed load says why, and names a module page as one: "failed to load"
 	// alone left an operator nothing to act on.
-	it("gives the reason a module page's remote failed to load", async () => {
-		loadRemoteImpl = () => Promise.reject(new Error("remote exposed no default"));
+	it("gives safe administrator guidance when a remote fails to load", async () => {
+		loadRemoteImpl = () =>
+			Promise.reject(new Error("remote exposed no default"));
 
 		renderOutlet({ ...freshRemote(), kind: "module" });
 
 		const alert = await screen.findByRole("alert");
 		expect(alert.textContent).toContain("This module page failed to load.");
-		expect(alert.textContent).toContain("Reason: remote exposed no default");
+		expect(alert.textContent).not.toContain("remote exposed no default");
+		expect(alert.textContent).toContain("platform administrator");
 	});
 
 	it("does NOT retry a deterministic failure — loads once, then surfaces it", async () => {

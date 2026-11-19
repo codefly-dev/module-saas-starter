@@ -22,6 +22,7 @@ import {
 	Stack,
 	Switch,
 } from "@/shared/ui";
+import { DataTable } from "@/shared/ui/data-table";
 import { groupSolutionNavigation } from "@/solutions/solution-groups";
 import { catalogueGaps, unbuiltFacts } from "../model/facts";
 import { usePlatformCatalogue } from "../service/queries";

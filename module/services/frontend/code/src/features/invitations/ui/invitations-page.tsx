@@ -3,7 +3,9 @@
 import { MailPlus } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { OrgSelector } from "@/components/org-selector";
+import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
 import { useAuth } from "@/lib/auth";
+import { hasPermission } from "@/lib/permissions";
 import { readOutcome } from "@/shared/lib/read-outcome";
 import {
 	Button,
@@ -18,7 +20,12 @@ import { InvitationForm } from "./invitation-form";
 import { InvitationsTable } from "./invitations-table";
 
 export function InvitationsPage() {
-	const { organizationId: orgId = "" } = useAuth();
+	const { organizationId: orgId = "", platformRole, orgRole } = useAuth();
+	const canManage = hasPermission(
+		platformRole,
+		orgRole,
+		PERMISSIONS.INVITATIONS_WRITE,
+	);
 	const {
 		data: invitations = [],
 		isLoading,
@@ -37,7 +44,7 @@ export function InvitationsPage() {
 				description="Invite people to this organization and follow the invitations already sent."
 				actions={
 					<>
-						<InvitationForm orgId={orgId} />
+						{canManage && <InvitationForm key={orgId} orgId={orgId} />}
 						<OrgSelector />
 					</>
 				}
@@ -68,7 +75,12 @@ export function InvitationsPage() {
 					</Stack>
 				</Panel>
 			) : (
-				<InvitationsTable invitations={invitations} isLoading={isLoading} />
+				<InvitationsTable
+					key={orgId}
+					invitations={invitations}
+					isLoading={isLoading}
+					canManage={canManage}
+				/>
 			)}
 		</PageBody>
 	);

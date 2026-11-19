@@ -295,7 +295,11 @@ async function openGrant() {
 	);
 	const dialog = await screen.findByRole("dialog");
 	await choose(dialog, "Team", "Support");
-	await choose(dialog, "Role", "Solution user — solution:use");
+	await choose(
+		dialog,
+		"Role",
+		"Solution user — An activity without a description",
+	);
 	return dialog;
 }
 
@@ -340,6 +344,30 @@ function refusal(message: string, code = "permission_denied") {
 }
 
 describe("SolutionInstallationsPage admin container", () => {
+	it("pages a long catalogue without losing or repeating rows", async () => {
+		serve({
+			availableBody: {
+				solutions: Array.from({ length: 11 }, (_, index) => ({
+					...available.solutions[0],
+					kind: "solution",
+					targetId: `aaaaaaaa-0000-4000-8000-${String(index + 10).padStart(12, "0")}`,
+					routeAlias: `example-${index + 1}`,
+					installed: false,
+				})),
+			},
+			installationsBody: { installations: [] },
+		});
+		renderSolutionsPage();
+		const table = await findTable("Available solutions");
+		expect(within(table).getByText("example-1")).toBeTruthy();
+		expect(within(table).queryByText("example-11")).toBeNull();
+		fireEvent.click(screen.getByRole("button", { name: "Next" }));
+		expect(await within(table).findByText("example-11")).toBeTruthy();
+		expect(within(table).queryByText("example-1")).toBeNull();
+		fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+		expect(await within(table).findByText("example-1")).toBeTruthy();
+	});
+
 	it("lists what is available and what is installed, from the host's two reads", async () => {
 		serve();
 		renderModulesPage();
@@ -442,7 +470,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		fireEvent.click(within(confirm).getByRole("button", { name: "Uninstall" }));
 
 		const refusal = await screen.findByText(
-			"cannot uninstall solution: installation 0190a7c2 is still being installed",
+			"Couldn't complete this request. The current state doesn't allow this change. Refresh the page to review it.",
 		);
 		expect(screen.getByText("Couldn't uninstall expenses")).toBeTruthy();
 		expect(refusal).toBeTruthy();
@@ -495,7 +523,11 @@ describe("SolutionInstallationsPage admin container", () => {
 		);
 		const dialog = await screen.findByRole("dialog");
 		await choose(dialog, "Team", "Support");
-		await choose(dialog, "Role", "Solution user — solution:use");
+		await choose(
+			dialog,
+			"Role",
+			"Solution user — An activity without a description",
+		);
 		fireEvent.click(within(dialog).getByRole("button", { name: "Grant" }));
 
 		await waitFor(() => expect(granted).toBeDefined());
@@ -527,7 +559,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		);
 	});
 
-	it("shows the host's refusal of a grant in its own words", async () => {
+	it("explains a refused grant without exposing server diagnostics", async () => {
 		serve(solutionBodies());
 		server.use(
 			http.post(rpc("InstallationService", "GrantInstallationToTeam"), () =>
@@ -549,11 +581,15 @@ describe("SolutionInstallationsPage admin container", () => {
 		);
 		const dialog = await screen.findByRole("dialog");
 		await choose(dialog, "Team", "Support");
-		await choose(dialog, "Role", "Expense reader — expenses:read");
+		await choose(
+			dialog,
+			"Role",
+			"Expense reader — An activity without a description",
+		);
 		fireEvent.click(within(dialog).getByRole("button", { name: "Grant" }));
 		const alert = await within(dialog).findByRole("alert");
 		expect(alert.textContent).toContain(
-			"so a grant of it would expose nothing",
+			"Couldn't complete this request. Check the information you entered.",
 		);
 		expect(toast.success).not.toHaveBeenCalled();
 	});
@@ -586,7 +622,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		).toBeTruthy();
 		expect(
 			screen.getByText(
-				'cannot revoke installation from team: role "user" is not granted to that team here',
+				"Couldn't complete this request. The current state doesn't allow this change. Refresh the page to review it.",
 			),
 		).toBeTruthy();
 		expect(toast.success).not.toHaveBeenCalled();
@@ -628,7 +664,7 @@ describe("SolutionInstallationsPage admin container", () => {
 			),
 		).toBeTruthy();
 		expect(screen.getByRole("alert").textContent).toContain(
-			"requires organization admin",
+			"organization administrator",
 		);
 		expect(toast.success).not.toHaveBeenCalled();
 		expect(screen.queryByText(/Nothing is installed/)).toBeNull();
@@ -648,7 +684,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		).toBeTruthy();
 		expect(
 			await screen.findByText(
-				"Nothing is installed in this organization. Once a module or solution is available above, choose it to install it.",
+				"Nothing installed yet",
 			),
 		).toBeTruthy();
 	});
@@ -875,7 +911,7 @@ describe("host read refusals and retained data", () => {
 			/You don't have permission to see the available modules and solutions/,
 		);
 		const refusedAlert = refused.closest('[role="alert"]');
-		expect(refusedAlert?.textContent).toContain("requires organization admin");
+		expect(refusedAlert?.textContent).not.toContain("requires organization admin");
 		expect(refusedAlert?.textContent).toContain(
 			"Ask an organization administrator to give you access.",
 		);
@@ -943,7 +979,7 @@ describe("host read refusals and retained data", () => {
 				}),
 			);
 			renderModulesPage();
-			expect((await screen.findByRole("alert")).textContent).toContain(reason);
+			expect((await screen.findByRole("alert")).textContent).not.toContain(reason);
 			expect(queryTable(table)).toBeNull();
 			expect(toast.success).not.toHaveBeenCalled();
 		},
@@ -968,18 +1004,10 @@ describe("host read refusals and retained data", () => {
 				);
 			}
 			fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-			// A refusal is said as the host words it. A read that did not
-			// complete is not a refusal: its text is the transport's, never shown.
-			if (code === "permission_denied")
-				for (const method of [
-					"ListAvailableSolutions",
-					"ListOrganizationInstallations",
-				]) {
-					expect(
-						await screen.findByText(new RegExp(`${method} host explanation`)),
-					).toBeTruthy();
-				}
-			else {
+			if (code === "permission_denied") {
+				await waitFor(() => expect(screen.getAllByRole("alert")).toHaveLength(2));
+				expect(screen.queryByText(/host explanation/)).toBeNull();
+			} else {
 				await waitFor(() =>
 					expect(
 						screen
@@ -1023,7 +1051,7 @@ describe("host read refusals and retained data", () => {
 			service: "PermissionService",
 			method: "ListRoles",
 			key: ["roles", "org-1"],
-			selected: "Solution user — solution:use",
+			selected: "Solution user — An activity without a description",
 			action: "Grant",
 		},
 	];
@@ -1048,7 +1076,7 @@ describe("host read refusals and retained data", () => {
 			);
 			const dialog = await screen.findByRole("dialog");
 			expect((await within(dialog).findByRole("alert")).textContent).toContain(
-				`${method}: membership removed`,
+				"organization administrator",
 			);
 			expect(
 				(
@@ -1090,7 +1118,7 @@ describe("host read refusals and retained data", () => {
 				await client.invalidateQueries({ queryKey: key });
 			});
 			expect((await within(dialog).findByRole("alert")).textContent).toContain(
-				`${method}: permission withdrawn`,
+				"organization administrator",
 			);
 			const control = within(dialog).getByRole("combobox", { name: label });
 			expect((control as HTMLButtonElement).disabled).toBe(true);
@@ -1137,7 +1165,7 @@ describe("host read refusals and retained data", () => {
 			expect(notice.textContent).toContain("out of date");
 			// The transport's own text is for an engineer, never the page.
 			expect(notice.textContent).not.toContain("temporarily unavailable");
-			expect(notice.textContent).toContain("The request did not complete");
+			expect(notice.textContent).toContain("Couldn't complete this request");
 			await choose(dialog, label, selected);
 		},
 	);
@@ -1197,7 +1225,7 @@ describe("mutation results belong to the page", () => {
 			}
 			await waitFor(() =>
 				expect(toast.error).toHaveBeenCalledExactlyOnceWith(
-					`Couldn't ${kind} the team access to expenses: ${message}`,
+					`You don't have access to ${kind} the team access to expenses. Ask your organization administrator for access.`,
 				),
 			);
 			expect(toast.success).not.toHaveBeenCalled();
@@ -1555,7 +1583,7 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 		);
 		// The read did not complete; the transport's text is not the page's.
 		expect(screen.queryByText(/authority restarting/)).toBeNull();
-		expect(screen.getByText(/The request did not complete/)).toBeTruthy();
+		expect(screen.getByText(/Couldn't complete this request/)).toBeTruthy();
 		fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 		await waitFor(() => expect(banner.isConnected).toBe(false));
 

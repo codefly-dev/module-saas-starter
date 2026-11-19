@@ -28,8 +28,8 @@ export interface ProgressProps {
 
 const toneFill: Record<NonNullable<ProgressProps["tone"]>, string> = {
 	neutral: "bg-primary",
-	success: "bg-primary",
-	warning: "bg-amber-500 dark:bg-amber-400",
+	success: "bg-success",
+	warning: "bg-warning",
 	danger: "bg-destructive",
 };
 

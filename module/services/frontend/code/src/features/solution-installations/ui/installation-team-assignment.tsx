@@ -57,6 +57,7 @@ export function InstallationTeamAssignment({
 	/** How the host titles the target; each role reads as its ("<Title> admin"). */
 	title?: string;
 }) {
+	const checkboxPrefix = useId();
 	return (
 		<ReviewSection
 			title="Roles"

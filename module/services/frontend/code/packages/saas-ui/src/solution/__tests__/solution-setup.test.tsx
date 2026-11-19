@@ -333,11 +333,11 @@ describe("Roles", () => {
 		expect(
 			within(screen.getByLabelText("Status")).getByText("Installed"),
 		).toBeTruthy();
-		expect(role("admin").getByText("Read and edit pages")).toBeTruthy();
+		expect(screen.getByText("Read and edit pages")).toBeTruthy();
 		expect(
-			role("admin").getByText(
-				/Refused: installation administration requires an administrator/,
-			),
+			screen.getAllByText(
+				/Ask an organization administrator to grant access/,
+			)[0],
 		).toBeTruthy();
 		expect(screen.queryByRole("button", { name: /Give .* access/ })).toBeNull();
 	});
@@ -347,7 +347,7 @@ describe("Roles", () => {
 		for (const name of ["Status", "Roles"]) {
 			expect(
 				within(section(name)).getByText(
-					/Refused: reviewing "example-pages" requires an administrator or owner of organization "org-acme", or a role on its installation there/,
+					/Ask an organization administrator to grant access/,
 				),
 			).toBeTruthy();
 		}
@@ -396,9 +396,10 @@ describe("Who has each role", () => {
 		const fixture = await mounted(setupFixture({ grants: [] }), { subjects });
 		const admin = role("admin");
 		expect(admin.getByText("Nobody has it yet.")).toBeTruthy();
-		fireEvent.change(admin.getByLabelText("Person or team"), {
-			target: { value: "team:team-finance" },
-		});
+		fireEvent.click(admin.getByLabelText("Person or team"));
+		const team = await screen.findByRole("option", { name: "Team Finance" });
+		fireEvent.pointerDown(team, { pointerType: "mouse" });
+		fireEvent.click(team);
 		fireEvent.click(admin.getByRole("button", { name: "Give admin access" }));
 		await waitFor(() => expect(fixture.calls).toHaveLength(1));
 		expect(fixture.calls[0]).toMatchObject({
@@ -442,27 +443,21 @@ describe("Who has each role", () => {
 		// Jane is the admin's only holder: it asks before leaving nobody.
 		expect(fixture.calls).toHaveLength(0);
 		expect(
-			role("admin").getByText(
-				/Nobody will have admin access to example-pages\./,
-			),
+			screen.getByText(/Nobody will have admin access to example-pages\./),
 		).toBeTruthy();
-		fireEvent.click(
-			role("admin").getByRole("button", { name: "Remove anyway" }),
-		);
+		fireEvent.click(screen.getByRole("button", { name: "Remove access" }));
 		await waitFor(() => expect(fixture.calls).toHaveLength(1));
 		expect(fixture.calls[0]).toMatchObject({
 			method: "RevokeRole",
 			request: { role: "admin", personId: "person-jane", teamId: "" },
 		});
+		expect(await screen.findByText("Couldn’t change access")).toBeTruthy();
 		expect(
-			await screen.findByText("The authority refused the change"),
-		).toBeTruthy();
-		expect(
-			screen.getByText(/Refused: installation administration requires/),
+			screen.getByText(/Ask an organization administrator to grant access/),
 		).toBeTruthy();
 	});
 
-	it("removes one of several holders in one click, and keeps the last one when asked", async () => {
+	it("confirms every removal, and keeps the last holder when cancelled", async () => {
 		const fixture = await mounted(
 			setupFixture({
 				grants: [
@@ -476,12 +471,14 @@ describe("Who has each role", () => {
 		fireEvent.click(
 			screen.getByRole("button", { name: "Remove user from Jane Doe" }),
 		);
+		expect(fixture.calls).toHaveLength(0);
+		fireEvent.click(screen.getByRole("button", { name: "Remove access" }));
 		await waitFor(() => expect(fixture.calls).toHaveLength(1));
 		expect(screen.queryByText(/Nobody will have user access/)).toBeNull();
 		fireEvent.click(
 			screen.getByRole("button", { name: "Remove admin from Jane Doe" }),
 		);
-		fireEvent.click(role("admin").getByRole("button", { name: "Keep" }));
+		fireEvent.click(screen.getByRole("button", { name: "Keep access" }));
 		expect(fixture.calls).toHaveLength(1);
 		expect(
 			screen.getByRole("button", { name: "Remove admin from Jane Doe" }),
@@ -500,7 +497,9 @@ describe("Who has each role", () => {
 			}),
 		);
 		expect(
-			role("user").getByText("Unavailable: the store is unreachable"),
+			role("user").getByText(
+				"The service is temporarily unavailable. Try again in a moment.",
+			),
 		).toBeTruthy();
 	});
 });
@@ -537,7 +536,11 @@ describe("a binding instead of a transport", () => {
 			/>,
 		);
 		expect(
-			(await screen.findAllByText("Refused: not here")).length,
+			(
+				await screen.findAllByText(
+					/Ask an organization administrator to grant access/,
+				)
+			).length,
 		).toBeGreaterThan(0);
 		expect(seen[0].url).toBe(
 			"http://host.test/api/solutions/example/proxy/host.installation.v1.OfferService/ReviewOffer",

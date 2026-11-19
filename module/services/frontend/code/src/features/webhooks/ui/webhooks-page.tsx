@@ -19,10 +19,20 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
+import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
 import { useAuth } from "@/lib/auth";
+import { hasPermission } from "@/lib/permissions";
 import { failureText } from "@/shared/lib/failure-text";
 import { readOutcome } from "@/shared/lib/read-outcome";
 import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
 	Banner,
 	Button,
 	ErrorState,
@@ -46,7 +56,17 @@ export function WebhooksPage() {
 
 function WebhooksPageForOrganization({ orgId }: { orgId: string }) {
 	const queryClient = useQueryClient();
+	const { platformRole, orgRole } = useAuth();
+	const canManage = hasPermission(
+		platformRole,
+		orgRole,
+		PERMISSIONS.WEBHOOKS_WRITE,
+	);
 	const [showCreate, setShowCreate] = useState(false);
+	const [confirmation, setConfirmation] = useState<{
+		kind: "delete" | "rotate";
+		webhook: WebhookSubscription;
+	} | null>(null);
 	const [selectedWebhook, setSelectedWebhook] =
 		useState<WebhookSubscription | null>(null);
 	const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
@@ -90,6 +110,7 @@ function WebhooksPageForOrganization({ orgId }: { orgId: string }) {
 	const deleteMutation = useMutation({
 		mutationFn: (id: string) => webhookMutations.delete(id),
 		onSuccess: () => {
+			setConfirmation(null);
 			toast.success("Webhook deleted");
 			queryClient.invalidateQueries({ queryKey: ["webhooks"] });
 			setSelectedWebhook(null);
@@ -107,33 +128,32 @@ function WebhooksPageForOrganization({ orgId }: { orgId: string }) {
 	const rotateMutation = useMutation({
 		mutationFn: (id: string) => webhookMutations.rotateSecret(id),
 		onSuccess: (resp: { secret?: string }) => {
+			setConfirmation(null);
 			if (resp.secret) setRevealedSecret(resp.secret);
 		},
 		onError: (error) =>
 			toast.error(failureText("rotate the signing secret", error)),
 	});
 
+	const { mutate: testWebhook } = testMutation;
 	const handleTest = useCallback(
-		(webhook: WebhookSubscription) => testMutation.mutate(webhook.id),
-		[testMutation],
+		(webhook: WebhookSubscription) => {
+			if (canManage) testWebhook(webhook.id);
+		},
+		[canManage, testWebhook],
 	);
 
 	const handleDelete = useCallback(
-		(webhook: WebhookSubscription) => deleteMutation.mutate(webhook.id),
-		[deleteMutation],
+		(webhook: WebhookSubscription) =>
+			setConfirmation({ kind: "delete", webhook }),
+		[],
 	);
-
 	const handleRotate = useCallback(
-		(webhook: WebhookSubscription) => {
-			const ok = window.confirm(
-				`Rotate signing secret for ${webhook.url}?\n\n` +
-					"Deliveries will carry signatures for both the new and old keys for 24 hours. " +
-					"Deploy the new verifier during that overlap.",
-			);
-			if (ok) rotateMutation.mutate(webhook.id);
-		},
-		[rotateMutation],
+		(webhook: WebhookSubscription) =>
+			setConfirmation({ kind: "rotate", webhook }),
+		[],
 	);
+	const confirming = deleteMutation.isPending || rotateMutation.isPending;
 
 	return (
 		<PageBody>
@@ -143,12 +163,20 @@ function WebhooksPageForOrganization({ orgId }: { orgId: string }) {
 				actions={
 					<>
 						<OrgSelector />
-						{orgId && (
-							<Button onClick={() => setShowCreate(true)}>
-								<Plus className="mr-2 h-4 w-4" />
-								Create Webhook
-							</Button>
-						)}
+						{canManage &&
+							orgId &&
+							(isLoading || subscriptions.length > 0) &&
+							!isError && (
+								<Button
+									onClick={() => {
+										createMutation.reset();
+										setShowCreate(true);
+									}}
+								>
+									<Plus className="mr-2 h-4 w-4" />
+									Create webhook
+								</Button>
+							)}
 					</>
 				}
 			/>
@@ -181,8 +209,31 @@ function WebhooksPageForOrganization({ orgId }: { orgId: string }) {
 						)}
 					</Stack>
 				</Panel>
+			) : !isLoading && subscriptions.length === 0 ? (
+				<EmptyState
+					icon={WebhookIcon}
+					title="Connect your first webhook"
+					description={
+						canManage
+							? "Send events to an endpoint you control. Create a webhook to choose which events it receives."
+							: "No webhooks are configured. Ask your organization administrator to add one."
+					}
+					action={
+						canManage ? (
+							<Button
+								onClick={() => {
+									createMutation.reset();
+									setShowCreate(true);
+								}}
+							>
+								Create webhook
+							</Button>
+						) : undefined
+					}
+				/>
 			) : (
 				<WebhooksTable
+					canManage={canManage}
 					data={subscriptions}
 					isLoading={isLoading}
 					onTest={handleTest}
@@ -201,19 +252,67 @@ function WebhooksPageForOrganization({ orgId }: { orgId: string }) {
 
 			{selectedWebhook && (
 				<WebhookDeliveriesPanel
+					canManage={canManage}
 					subscription={selectedWebhook}
 					onClose={() => setSelectedWebhook(null)}
 				/>
 			)}
 
-			{showCreate && orgId && (
+			{canManage && showCreate && orgId && (
 				<WebhookForm
 					open
 					onSubmit={(vals) => createMutation.mutate(vals)}
 					onCancel={() => setShowCreate(false)}
 					isPending={createMutation.isPending}
+					error={
+						createMutation.isError
+							? failureText("create the webhook", createMutation.error)
+							: undefined
+					}
 				/>
 			)}
+			<AlertDialog
+				open={!!confirmation}
+				onOpenChange={(open) => {
+					if (!open && !confirming) setConfirmation(null);
+				}}
+			>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>
+							{confirmation?.kind === "delete"
+								? "Delete webhook?"
+								: "Rotate signing secret?"}
+						</AlertDialogTitle>
+						<AlertDialogDescription>
+							<span className="break-all">{confirmation?.webhook.url}</span>{" "}
+							{confirmation?.kind === "delete"
+								? "This endpoint will stop receiving events. This cannot be undone."
+								: "Deliveries will carry signatures for both the new and old keys for 24 hours. Update your endpoint to verify with the new key during that time."}
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel disabled={confirming}>Cancel</AlertDialogCancel>
+						<AlertDialogAction
+							variant="destructive"
+							disabled={confirming}
+							onClick={(event) => {
+								event.preventDefault();
+								if (!confirmation || confirming) return;
+								if (confirmation.kind === "delete")
+									deleteMutation.mutate(confirmation.webhook.id);
+								else rotateMutation.mutate(confirmation.webhook.id);
+							}}
+						>
+							{confirming
+								? "Saving…"
+								: confirmation?.kind === "delete"
+									? "Delete webhook"
+									: "Rotate secret"}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 		</PageBody>
 	);
 }

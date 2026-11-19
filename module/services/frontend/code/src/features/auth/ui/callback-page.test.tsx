@@ -43,7 +43,7 @@ describe("CallbackPage", () => {
 		expect(h.completeOAuth).toHaveBeenCalledWith("the-code", "the-state");
 	});
 
-	it("renders friendly copy plus an operator reference when the exchange fails", async () => {
+	it("renders friendly copy and a support reference without an internal error code", async () => {
 		h.completeOAuth.mockRejectedValue(
 			new AuthError(
 				"We couldn't verify your sign-in. Please start over and try again.",
@@ -58,9 +58,7 @@ describe("CallbackPage", () => {
 		);
 		// The operator-facing correlation handle is shown so an opaque credential
 		// rejection can be tied back to the server log with the real cause.
-		expect(
-			screen.getByText(/unauthenticated · request req-abc123/),
-		).toBeTruthy();
+		expect(screen.getByText(/req-abc123/)).toBeTruthy();
 	});
 
 	it("says a refused state check plainly, without the guard's own text or a reference line", async () => {
@@ -80,7 +78,7 @@ describe("CallbackPage", () => {
 		expect(screen.queryByText(/Reference:/)).toBeNull();
 	});
 
-	it("says a provider refusal plainly and keeps the provider's own error as the reference", () => {
+	it("says a provider refusal plainly without showing untrusted error text", () => {
 		h.params = new URLSearchParams({
 			error: "access_denied",
 			error_description: "user cancelled",
@@ -91,10 +89,8 @@ describe("CallbackPage", () => {
 		expect(
 			screen.getByText(/Your sign-in provider did not sign you in/),
 		).toBeTruthy();
-		// The provider's code and description are for whoever the person asks,
-		// so they sit on the reference line and nowhere else.
-		const reference = screen.getByText(/access_denied: user cancelled/);
-		expect(reference.className).toContain("font-mono");
+		// Query-string diagnostics must not become page content.
+		expect(screen.queryByText(/access_denied: user cancelled/)).toBeNull();
 		expect(h.completeOAuth).not.toHaveBeenCalled();
 	});
 
@@ -103,4 +99,16 @@ describe("CallbackPage", () => {
 
 		expect(screen.getByText(/Signing you in/)).toBeTruthy();
 	});
+});
+
+it("explains who grants access instead of offering sign-in again after a refusal", async () => {
+	h.completeOAuth.mockRejectedValue(
+		new AuthError("Access refused", { status: 403, code: "permission_denied" }),
+	);
+	render(<CallbackPage />);
+	await screen.findByText(
+		/Ask your organization administrator to grant access/,
+	);
+	expect(screen.queryByRole("link", { name: "Sign in again" })).toBeNull();
+	expect(screen.queryByText("permission_denied")).toBeNull();
 });

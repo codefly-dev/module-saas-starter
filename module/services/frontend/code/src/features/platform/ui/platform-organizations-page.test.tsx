@@ -79,3 +79,23 @@ describe("PlatformOrganizationsPage", () => {
 		expect(screen.getByText("Platform administrator required")).toBeTruthy();
 	});
 });
+
+it("shows a denied list as a kit error rather than an empty organization list", async () => {
+	server.use(
+		http.post(rpc("PlatformAdminService", "ListAllOrganizations"), () =>
+			HttpResponse.json(
+				{ code: "permission_denied", message: "private-server-detail" },
+				{ status: 403 },
+			),
+		),
+	);
+	renderInApp(<PlatformOrganizationsPage />);
+	expect(
+		await screen.findByText("Couldn't load the organizations"),
+	).toBeTruthy();
+	expect(
+		screen.getByText(/Ask a platform administrator to grant access/),
+	).toBeTruthy();
+	expect(screen.queryByText(/No organizations yet/)).toBeNull();
+	expect(screen.queryByText("private-server-detail")).toBeNull();
+});

@@ -80,115 +80,73 @@ describe("stepUpHref", () => {
 });
 
 describe("refusalMessage", () => {
-	it("shows the server's own words when the organization would lose its last administrator", () => {
-		expect(
-			refusalMessage(
-				new ConnectError(
-					"organization must keep at least one owner or admin",
-					Code.FailedPrecondition,
-				),
-				"Failed to remove member",
-			),
-		).toBe("organization must keep at least one owner or admin");
-	});
-
-	// The host sends the quota's own sentence, never the wrapped call path, so
-	// the person learns which limit they hit.
-	it("shows the quota the request hit", () => {
-		expect(
-			refusalMessage(
-				new ConnectError(
-					"seats quota exhausted: used 5 of 5",
-					Code.ResourceExhausted,
-				),
-				"Failed to add member",
-			),
-		).toBe("seats quota exhausted: used 5 of 5");
-	});
-
 	it.each([
-		[Code.InvalidArgument, "email: value must be a valid email address"],
-		[Code.NotFound, "invitation unavailable"],
-		[
-			Code.AlreadyExists,
-			"this address already has a pending invitation; find it in the invitations list to copy its link or resend it",
-		],
-		[Code.PermissionDenied, "this action needs a higher platform role"],
-		[Code.Unauthenticated, "sign in again to continue"],
-	])("shows the host's reason under %s", (code, message) => {
-		expect(
-			refusalMessage(new ConnectError(message, code), "Failed to invite"),
-		).toBe(message);
+		Code.InvalidArgument,
+		Code.NotFound,
+		Code.AlreadyExists,
+		Code.PermissionDenied,
+		Code.Unauthenticated,
+		Code.FailedPrecondition,
+		Code.ResourceExhausted,
+		Code.Internal,
+	])("keeps server diagnostics off screen for %s", (code) => {
+		const message = refusalMessage(
+			new ConnectError("private server detail and permission name", code),
+			"Couldn't save the change.",
+		);
+		expect(message).not.toContain("private server");
+		expect(message).not.toContain("permission name");
+		if (code === Code.PermissionDenied) {
+			expect(message).toContain("organization administrator");
+			expect(message).not.toContain("Try again");
+		}
 	});
-
-	it("shows the reason accounts sends for a duplicate invitation", async () => {
+	it("explains an existing item from a real transport refusal", async () => {
 		const error = await refusalFromTheWire({
 			code: "already_exists",
-			message: "this address already has a pending invitation",
+			message: "private invitation details",
 		});
-		expect(refusalMessage(error, "Failed to create invitation")).toBe(
-			"this address already has a pending invitation",
+		expect(refusalMessage(error, "Couldn't invite this person.")).toContain(
+			"An item with these details already exists.",
 		);
 	});
-
-	it("never shows the bare step-up reason", () => {
+	it("preserves passkey confirmation", () => {
 		expect(
 			refusalMessage(
 				new ConnectError("mfa_required", Code.FailedPrecondition),
-				"Failed to create key",
+				"Couldn't save.",
 			),
 		).toBe(STEP_UP_MESSAGE);
 	});
-
-	it("does not put server internals in front of the user", () => {
+	it("uses the screen's fallback for network failures", () => {
 		expect(
-			refusalMessage(
-				new ConnectError(
-					'cannot remove member: pq: connection refused "10.0.0.4:5432"',
-					Code.Internal,
-				),
-				"Failed to remove member",
-			),
-		).toBe("Failed to remove member");
-	});
-
-	it("falls back for an error that never reached the server", () => {
-		expect(
-			refusalMessage(new Error("network down"), "Failed to add member"),
-		).toBe("Failed to add member");
-	});
-
-	it("falls back when the server sent no message to show", () => {
-		expect(
-			refusalMessage(
-				new ConnectError("", Code.FailedPrecondition),
-				"Failed to remove member",
-			),
-		).toBe("Failed to remove member");
+			refusalMessage(new Error("private endpoint"), "Couldn't save."),
+		).toBe("Couldn't save.");
 	});
 });
 
 describe("refusalToast", () => {
-	it("shows the host's reason rather than the screen's fallback", () => {
+	it("shows safe validation guidance", () => {
 		toastError.mockClear();
 		refusalToast(
-			new ConnectError(
-				"impersonation requires a justification",
-				Code.InvalidArgument,
-			),
-			"Failed to impersonate user",
+			new ConnectError("private field details", Code.InvalidArgument),
+			"Couldn't save.",
 		);
 		expect(toastError).toHaveBeenCalledWith(
-			"impersonation requires a justification",
+			"Couldn't make this change. Check the information you entered.",
 		);
 	});
-
-	it("falls back for a fault", () => {
+	it("preserves the passkey action", () => {
 		toastError.mockClear();
 		refusalToast(
-			new ConnectError("the request could not be completed", Code.Internal),
-			"Failed to revoke role",
+			new ConnectError("mfa_required", Code.FailedPrecondition),
+			"Couldn't save.",
 		);
-		expect(toastError).toHaveBeenCalledWith("Failed to revoke role");
+		expect(toastError).toHaveBeenCalledWith(
+			STEP_UP_MESSAGE,
+			expect.objectContaining({
+				action: expect.objectContaining({ label: "Confirm passkey" }),
+			}),
+		);
 	});
 });

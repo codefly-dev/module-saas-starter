@@ -47,7 +47,7 @@ export function readOutcomeMessage(
 ): string {
 	switch (outcome) {
 		case "forbidden":
-			return `You don't have permission to see ${subject}. There may be some; this view can't show them.`;
+			return `You don't have permission to see ${subject}. Ask your administrator to grant access.`;
 		case "failed":
 			return `Couldn't load ${subject}, so whether there are any is unknown.`;
 		default:

@@ -63,6 +63,7 @@ export function PermissionsEditor({
 						{...control}
 						className="min-h-72 font-mono text-xs"
 						spellCheck={false}
+						disabled={saving}
 						value={text}
 						onChange={(event) => onChange(event.target.value)}
 					/>
@@ -72,7 +73,7 @@ export function PermissionsEditor({
 				<Button onClick={onSave} disabled={saving || problem !== null}>
 					{saving ? "Saving…" : "Save changes"}
 				</Button>
-				<Button variant="outline" onClick={onDiscard} disabled={!edited}>
+				<Button variant="outline" onClick={onDiscard} disabled={!edited || saving}>
 					Discard changes
 				</Button>
 			</Stack>

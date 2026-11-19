@@ -1,7 +1,10 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
+import { useAuditEventTypes } from "@/features/audit/service/queries";
+import { failureText } from "@/shared/lib/failure-text";
 import {
 	Button,
 	Checkbox,
@@ -11,15 +14,18 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
+	ErrorState,
+	Field,
 	Input,
 	Label,
+	Spinner,
 	Textarea,
+	useLoadingPhase,
 } from "@/shared/ui";
 import {
 	type CreateWebhookValues,
 	createWebhookSchema,
 } from "../model/schemas";
-import { useAuditEventTypes } from "@/features/audit/service/queries";
 import { formatEventType } from "../model/transforms";
 
 interface WebhookFormProps {
@@ -27,6 +33,7 @@ interface WebhookFormProps {
 	onSubmit: (values: CreateWebhookValues) => void;
 	onCancel: () => void;
 	isPending: boolean;
+	error?: string;
 }
 
 export function WebhookForm({
@@ -34,117 +41,182 @@ export function WebhookForm({
 	onSubmit,
 	onCancel,
 	isPending: isSubmitting,
+	error,
 }: WebhookFormProps) {
 	const form = useForm<CreateWebhookValues>({
 		resolver: zodResolver(createWebhookSchema),
 		defaultValues: { url: "", events: [], description: "" },
 	});
-
+	const [search, setSearch] = useState("");
 	const selectedEvents = form.watch("events");
-
-	// The registry decides what may be offered, not this build: only a type it
-	// reports as webhook-eligible can ever reach an endpoint, and CreateSubscription
-	// refuses any other name. Fetched only while the dialog is open, and sorted so
-	// the order does not depend on the server's.
-	const { data, isPending, isError } = useAuditEventTypes({ enabled: open });
-	const eventTypes = (data ?? [])
-		.filter((type) => type.webhookEligible && !type.deprecated)
-		.map((type) => type.name)
-		.sort();
-
-	const toggleEvent = (event: string) => {
-		const current = form.getValues("events");
-		if (current.includes(event)) {
-			form.setValue(
-				"events",
-				current.filter((e) => e !== event),
-				{ shouldValidate: true },
-			);
-		} else {
-			form.setValue("events", [...current, event], { shouldValidate: true });
+	const registry = useAuditEventTypes({ enabled: open });
+	const { quiet, indicator } = useLoadingPhase(open && registry.isPending);
+	// Eligibility remains the registry's decision, including runtime contributions.
+	const events = (registry.data ?? [])
+		.filter((event) => event.webhookEligible && !event.deprecated)
+		.sort((a, b) => a.name.localeCompare(b.name));
+	const visibleEvents = events.filter((event) =>
+		(event.description || formatEventType(event.name))
+			.toLowerCase()
+			.includes(search.trim().toLowerCase()),
+	);
+	const unavailable =
+		registry.isPending || registry.isError || events.length === 0;
+	const submit = (values: CreateWebhookValues) => {
+		if (isSubmitting || unavailable) return;
+		if (
+			values.events.some((name) => !events.some((event) => event.name === name))
+		) {
+			form.setError("events", {
+				message: "The available events changed. Review your selection.",
+			});
+			return;
 		}
+		onSubmit(values);
 	};
-
 	return (
-		<Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
-			<DialogContent className="sm:max-w-[500px]">
+		<Dialog
+			open={open}
+			onOpenChange={(next) => {
+				if (!next && !isSubmitting) onCancel();
+			}}
+		>
+			<DialogContent className="sm:max-w-lg">
 				<DialogHeader>
-					<DialogTitle>Create Webhook</DialogTitle>
+					<DialogTitle>Create webhook</DialogTitle>
 					<DialogDescription>
-						Subscribe to events and receive HTTP POST callbacks.
+						Send selected activity updates to another application.
 					</DialogDescription>
 				</DialogHeader>
-				<form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-					<div className="space-y-2">
-						<Label htmlFor="url">Endpoint URL</Label>
-						<Input
-							id="url"
-							placeholder="https://example.com/webhooks"
-							{...form.register("url")}
-						/>
-						{form.formState.errors.url && (
-							<p className="text-sm text-destructive">
-								{form.formState.errors.url.message}
-							</p>
+				<form
+					noValidate
+					onSubmit={form.handleSubmit(submit)}
+					className="space-y-4"
+				>
+					{error && (
+						<ErrorState title="Webhook wasn’t created" detail={error} />
+					)}
+					<Field
+						label="Endpoint URL"
+						error={form.formState.errors.url?.message}
+					>
+						{(control) => (
+							<Input
+								{...control}
+								disabled={isSubmitting}
+								placeholder="https://example.com/webhooks"
+								{...form.register("url")}
+							/>
 						)}
-					</div>
-
-					<div className="space-y-2">
-						<Label htmlFor="description">Description (optional)</Label>
-						<Textarea
-							id="description"
-							placeholder="What this webhook is used for..."
-							{...form.register("description")}
-							className="resize-none"
-							rows={2}
-						/>
-					</div>
-
-					<div className="space-y-2">
-						<Label>Events</Label>
+					</Field>
+					<Field
+						label="Description"
+						description="Optional. Explain what this webhook is used for."
+						error={form.formState.errors.description?.message}
+					>
+						{(control) => (
+							<Textarea
+								{...control}
+								disabled={isSubmitting}
+								rows={2}
+								{...form.register("description")}
+							/>
+						)}
+					</Field>
+					<fieldset
+						className="space-y-2"
+						aria-describedby={
+							form.formState.errors.events ? "webhook-events-error" : undefined
+						}
+					>
+						<legend className="type-label">Events</legend>
+						{!registry.isError && !registry.isPending && events.length > 0 && (
+							<Field label="Search events">
+								{(control) => (
+									<Input
+										{...control}
+										value={search}
+										onChange={(event) => setSearch(event.target.value)}
+										disabled={isSubmitting}
+										placeholder="Find an event"
+									/>
+								)}
+							</Field>
+						)}
 						{form.formState.errors.events && (
-							<p className="text-sm text-destructive">
+							<p
+								id="webhook-events-error"
+								role="alert"
+								className="text-sm text-destructive"
+							>
 								{form.formState.errors.events.message}
 							</p>
 						)}
-						<div className="grid grid-cols-2 gap-2 rounded-md border p-3 max-h-48 overflow-y-auto">
-							{isPending && (
-								<p className="col-span-2 text-sm text-muted-foreground">
-									Loading event types...
-								</p>
-							)}
-							{isError && (
-								<p className="col-span-2 text-sm text-destructive">
-									Event types could not be loaded. Try again in a moment.
-								</p>
-							)}
-							{!isPending && !isError && eventTypes.length === 0 && (
-								<p className="col-span-2 text-sm text-muted-foreground">
-									No event type in this deployment can be delivered to an
-									endpoint.
-								</p>
-							)}
-							{eventTypes.map((event) => (
-								<label
-									key={event}
-									className="flex items-center gap-2 text-sm cursor-pointer"
-								>
-									<Checkbox
-										checked={selectedEvents.includes(event)}
-										onCheckedChange={() => toggleEvent(event)}
-									/>
-									{formatEventType(event)}
-								</label>
-							))}
-						</div>
-					</div>
-
+						{indicator ? (
+							<Spinner label="Loading available events" />
+						) : quiet ? null : registry.isError ? (
+							<ErrorState
+								title="Events unavailable"
+								detail={failureText(
+									"load the available events",
+									registry.error,
+								)}
+							/>
+						) : events.length === 0 ? (
+							<p className="text-sm text-muted-foreground">
+								No events are available to send. Ask your administrator to
+								enable events for this organization.
+							</p>
+						) : (
+							<div className="grid max-h-48 grid-cols-1 gap-3 overflow-y-auto rounded-md border p-3 sm:grid-cols-2">
+								{visibleEvents.length === 0 && (
+									<p className="text-sm text-muted-foreground">
+										No events match your search. Try another word.
+									</p>
+								)}
+								{visibleEvents.map((event) => (
+									<div
+										key={event.name}
+										className="flex items-start gap-2 leading-relaxed"
+									>
+										<Checkbox
+											id={`webhook-event-${event.name}`}
+											disabled={isSubmitting}
+											checked={selectedEvents.includes(event.name)}
+											onCheckedChange={(checked) =>
+												form.setValue(
+													"events",
+													checked
+														? [...selectedEvents, event.name]
+														: selectedEvents.filter(
+																(name) => name !== event.name,
+															),
+													{ shouldValidate: true },
+												)
+											}
+										/>
+										<Label
+											htmlFor={`webhook-event-${event.name}`}
+											className="leading-relaxed"
+										>
+											{event.description || formatEventType(event.name)}
+										</Label>
+									</div>
+								))}
+							</div>
+						)}
+					</fieldset>
 					<DialogFooter>
-						<Button type="button" variant="outline" onClick={onCancel}>
+						<Button
+							type="button"
+							variant="outline"
+							disabled={isSubmitting}
+							onClick={onCancel}
+						>
 							Cancel
 						</Button>
-						<Button type="submit" disabled={isSubmitting}>
-							{isSubmitting ? "Creating..." : "Create Webhook"}
+						<Button type="submit" disabled={isSubmitting || unavailable}>
+							{isSubmitting ? "Creating…" : "Create webhook"}
 						</Button>
 					</DialogFooter>
 				</form>

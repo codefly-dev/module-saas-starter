@@ -19,25 +19,25 @@ describe("what a finished act tells the person", () => {
 		});
 	});
 
-	it("warns, in the host's sentences, when not every role's access was applied", () => {
+	it("offers recovery without exposing diagnostics when not every role's access was applied", () => {
 		const problems = ["The team example-admin could not be created."];
 		expect(
 			installOutcome(applied(InstallationStatus.ACTIVE, problems)),
 		).toEqual({
 			kind: "warning",
-			text: "Installed, but not every role's access was applied — grant the rest in Set up. The team example-admin could not be created.",
+			text: "Installed, but not every role's access was applied — grant the rest in Set up.",
 		});
 		expect(
 			setUpOutcome("ledger", applied(InstallationStatus.ACTIVE, problems)),
 		).toEqual({
 			kind: "warning",
-			text: "Set up, but not every role's access was applied — grant the rest in Set up. The team example-admin could not be created.",
+			text: "Set up, but not every role's access was applied — grant the rest in Set up.",
 		});
 		expect(
 			retryOutcome("payroll", applied(InstallationStatus.PENDING, problems)),
 		).toEqual({
 			kind: "warning",
-			text: "payroll: not every role's access was applied — grant the rest in Set up. The team example-admin could not be created.",
+			text: "payroll: not every role's access was applied — grant the rest in Set up.",
 		});
 	});
 

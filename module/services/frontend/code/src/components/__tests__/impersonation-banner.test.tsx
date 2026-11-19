@@ -24,6 +24,7 @@ vi.mock("@/lib/auth", () => ({
 		exitImpersonation,
 	}),
 }));
+vi.mock("../user-label", () => ({ UserLabel: () => <span>Jane Doe</span> }));
 vi.mock("sonner", () => ({ toast: { error: toastError } }));
 
 afterEach(() => {
@@ -60,7 +61,7 @@ describe("Impersonation banner", () => {
 
 		await waitFor(() =>
 			expect(toastError).toHaveBeenCalledWith(
-				"the impersonation session could not be ended on the server",
+				"Could not end the impersonation session. Try again; if it keeps failing, contact your administrator.",
 			),
 		);
 	});

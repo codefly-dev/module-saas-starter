@@ -30,6 +30,7 @@ const col = createColumnHelper<WebhookSubscription>();
 
 interface WebhooksTableProps {
 	data: WebhookSubscription[];
+	canManage?: boolean;
 	isLoading: boolean;
 	onTest: (webhook: WebhookSubscription) => void;
 	onDelete: (webhook: WebhookSubscription) => void;
@@ -44,6 +45,7 @@ export function WebhooksTable({
 	onDelete,
 	onSelect,
 	onRotateSecret,
+	canManage = false,
 }: WebhooksTableProps) {
 	const [sorting, setSorting] = useState<SortingState>([]);
 
@@ -96,6 +98,7 @@ export function WebhooksTable({
 				id: "actions",
 				cell: ({ row }) => {
 					const webhook = row.original;
+					if (!canManage) return null;
 					return (
 						<div onClick={(event) => event.stopPropagation()}>
 							<DropdownMenu>
@@ -139,7 +142,7 @@ export function WebhooksTable({
 				},
 			}),
 		],
-		[onTest, onDelete, onRotateSecret],
+		[onTest, onDelete, onRotateSecret, canManage],
 	);
 
 	const table = useReactTable({

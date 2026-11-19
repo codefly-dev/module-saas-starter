@@ -1,17 +1,17 @@
 "use client";
 
 import { createClient } from "@connectrpc/connect";
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { TurnstileWidget } from "@/components/turnstile-widget";
 import {
 	AcquisitionMode,
 	WaitlistService,
 } from "@/gen/saas/accounts/v1/waitlist_pb";
-import { apiTransport } from "@/lib/connect/transport";
 import { configuredAbuseProtection } from "@/lib/abuse-protection";
+import { apiTransport } from "@/lib/connect/transport";
 import { usePublicRuntimeConfig } from "@/lib/public-runtime-config-provider";
 import {
 	Button,
@@ -22,9 +22,14 @@ import {
 	CardHeader,
 	CardTitle,
 	Checkbox,
+	ErrorState,
+	Field,
 	Input,
 	Label,
+	Page,
+	Spinner,
 	Textarea,
+	useLoadingPhase,
 } from "@/shared/ui";
 
 const client = createClient(WaitlistService, apiTransport);
@@ -33,7 +38,12 @@ export function WaitlistPage() {
 	const params = useSearchParams();
 	const [mode, setMode] = useState<AcquisitionMode>();
 	const [submitting, setSubmitting] = useState(false);
-	const [message, setMessage] = useState("");
+	const [received, setReceived] = useState(false);
+	const [statusError, setStatusError] = useState(false);
+	const [statusAttempt, setStatusAttempt] = useState(0);
+	const [emailError, setEmailError] = useState("");
+	const pending = useRef(false);
+	const statusLoading = useLoadingPhase(mode === undefined && !statusError);
 	const [error, setError] = useState("");
 	const [policyVersion, setPolicyVersion] = useState("");
 	const [turnstileToken, setTurnstileToken] = useState("");
@@ -48,21 +58,57 @@ export function WaitlistPage() {
 	}, []);
 
 	useEffect(() => {
+		let active = true;
+		setStatusError(false);
 		client
 			.getAcquisitionStatus({})
 			.then((status) => {
+				if (!active) return;
+				if (
+					![
+						AcquisitionMode.OPEN_SIGNUP,
+						AcquisitionMode.INVITE_ONLY,
+						AcquisitionMode.APPROVAL_REQUIRED,
+						AcquisitionMode.CLOSED,
+					].includes(status.mode) ||
+					((status.mode === AcquisitionMode.INVITE_ONLY ||
+						status.mode === AcquisitionMode.APPROVAL_REQUIRED) &&
+						!status.consentPolicyVersion)
+				) {
+					setStatusError(true);
+					return;
+				}
 				setMode(status.mode);
 				setPolicyVersion(status.consentPolicyVersion);
 			})
-			.catch(() => setError("Access status is temporarily unavailable."));
-	}, []);
+			.catch(() => {
+				if (active) setStatusError(true);
+			});
+		return () => {
+			active = false;
+		};
+	}, [statusAttempt]);
 
 	async function submit(form: FormData) {
+		if (
+			pending.current ||
+			(mode !== AcquisitionMode.INVITE_ONLY &&
+				mode !== AcquisitionMode.APPROVAL_REQUIRED) ||
+			!policyVersion
+		)
+			return;
+		const email = String(form.get("email") ?? "").trim();
+		if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+			setEmailError("Enter a valid email address.");
+			return;
+		}
+		setEmailError("");
+		pending.current = true;
 		setSubmitting(true);
 		setError("");
 		try {
-			const response = await client.join({
-				email: String(form.get("email") ?? ""),
+			await client.join({
+				email,
 				name: String(form.get("name") ?? ""),
 				company: String(form.get("company") ?? ""),
 				useCase: String(form.get("useCase") ?? ""),
@@ -75,7 +121,7 @@ export function WaitlistPage() {
 				policyVersion,
 				turnstileToken,
 			});
-			setMessage(response.message);
+			setReceived(true);
 		} catch {
 			setTurnstileToken("");
 			setTurnstileAttempt((attempt) => attempt + 1);
@@ -83,18 +129,50 @@ export function WaitlistPage() {
 				"We could not submit this request. Check your connection and try again.",
 			);
 		} finally {
+			pending.current = false;
 			setSubmitting(false);
 		}
 	}
 
-	if (message) {
+	if (
+		mode === undefined ||
+		statusError ||
+		statusLoading.indicator ||
+		statusLoading.quiet
+	) {
 		return (
-			<div className="flex min-h-screen items-center justify-center p-4">
+			<Page className="min-h-screen flex items-center justify-center">
+				{statusError ? (
+					<Card className="w-full max-w-lg">
+						<CardContent className="space-y-4 pt-6">
+							<ErrorState
+								title="Couldn’t check registration availability"
+								detail="Check your connection and try again."
+							/>
+							<Button onClick={() => setStatusAttempt((value) => value + 1)}>
+								Try again
+							</Button>
+						</CardContent>
+					</Card>
+				) : statusLoading.indicator ? (
+					<Spinner label="Checking registration availability" />
+				) : null}
+			</Page>
+		);
+	}
+	if (received) {
+		return (
+			<Page className="flex min-h-screen items-center justify-center p-4">
 				<Card className="w-full max-w-md text-center">
 					<CardHeader>
 						<CheckCircle2 className="mx-auto h-12 w-12 text-primary" />
-						<CardTitle>Request received</CardTitle>
-						<CardDescription>{message}</CardDescription>
+						<CardTitle role="heading" aria-level={1}>
+							Request received
+						</CardTitle>
+						<CardDescription>
+							Your request has been received. Check your inbox for any next
+							steps.
+						</CardDescription>
 					</CardHeader>
 					<CardFooter className="justify-center">
 						<Button
@@ -106,16 +184,18 @@ export function WaitlistPage() {
 						</Button>
 					</CardFooter>
 				</Card>
-			</div>
+			</Page>
 		);
 	}
 
 	if (mode === AcquisitionMode.OPEN_SIGNUP) {
 		return (
-			<div className="flex min-h-screen items-center justify-center p-4">
+			<Page className="flex min-h-screen items-center justify-center p-4">
 				<Card className="w-full max-w-md text-center">
 					<CardHeader>
-						<CardTitle>Registration is open</CardTitle>
+						<CardTitle role="heading" aria-level={1}>
+							Registration is open
+						</CardTitle>
 						<CardDescription>
 							You do not need to join a waitlist.
 						</CardDescription>
@@ -126,30 +206,34 @@ export function WaitlistPage() {
 						</Button>
 					</CardFooter>
 				</Card>
-			</div>
+			</Page>
 		);
 	}
 
 	if (mode === AcquisitionMode.CLOSED) {
 		return (
-			<div className="flex min-h-screen items-center justify-center p-4">
+			<Page className="flex min-h-screen items-center justify-center p-4">
 				<Card className="w-full max-w-md text-center">
 					<CardHeader>
-						<CardTitle>Registration is closed</CardTitle>
+						<CardTitle role="heading" aria-level={1}>
+							Registration is closed
+						</CardTitle>
 						<CardDescription>
 							We are not accepting access requests right now.
 						</CardDescription>
 					</CardHeader>
 				</Card>
-			</div>
+			</Page>
 		);
 	}
 
 	return (
-		<div className="flex min-h-screen items-center justify-center bg-muted/20 p-4">
+		<Page className="flex min-h-screen items-center justify-center bg-muted/20 p-4">
 			<Card className="w-full max-w-lg">
 				<CardHeader>
-					<CardTitle>Request access</CardTitle>
+					<CardTitle role="heading" aria-level={1}>
+						Request access
+					</CardTitle>
 					<CardDescription>
 						Join the waitlist. If email verification is enabled, we will send a
 						time-limited confirmation link.
@@ -159,7 +243,11 @@ export function WaitlistPage() {
 					<form
 						id="waitlist-form"
 						className="space-y-4"
-						action={submit}
+						noValidate
+						onSubmit={(event) => {
+							event.preventDefault();
+							void submit(new FormData(event.currentTarget));
+						}}
 						aria-describedby={error ? "waitlist-error" : undefined}
 					>
 						<div className="hidden" aria-hidden="true">
@@ -171,36 +259,55 @@ export function WaitlistPage() {
 								autoComplete="off"
 							/>
 						</div>
-						<div className="space-y-2">
-							<Label htmlFor="email">Work email</Label>
-							<Input
-								id="email"
-								name="email"
-								type="email"
-								required
-								autoComplete="email"
-							/>
-						</div>
-						<div className="grid gap-4 sm:grid-cols-2">
-							<div className="space-y-2">
-								<Label htmlFor="name">Name</Label>
-								<Input id="name" name="name" autoComplete="name" />
-							</div>
-							<div className="space-y-2">
-								<Label htmlFor="company">Company</Label>
+						<Field label="Work email" required error={emailError || undefined}>
+							{(control) => (
 								<Input
-									id="company"
-									name="company"
-									autoComplete="organization"
+									{...control}
+									name="email"
+									type="email"
+									autoComplete="email"
+									disabled={submitting}
+									onChange={() => setEmailError("")}
 								/>
-							</div>
+							)}
+						</Field>
+						<div className="grid gap-4 sm:grid-cols-2">
+							<Field label="Name" description="Optional">
+								{(control) => (
+									<Input
+										{...control}
+										name="name"
+										autoComplete="name"
+										disabled={submitting}
+									/>
+								)}
+							</Field>
+							<Field label="Company" description="Optional">
+								{(control) => (
+									<Input
+										{...control}
+										name="company"
+										autoComplete="organization"
+										disabled={submitting}
+									/>
+								)}
+							</Field>
 						</div>
-						<div className="space-y-2">
-							<Label htmlFor="useCase">What would you like to build?</Label>
-							<Textarea id="useCase" name="useCase" maxLength={2000} />
-						</div>
+						<Field
+							label="What would you like to build?"
+							description="Optional. Up to 2,000 characters."
+						>
+							{(control) => (
+								<Textarea
+									{...control}
+									name="useCase"
+									maxLength={2000}
+									disabled={submitting}
+								/>
+							)}
+						</Field>
 						<div className="flex items-start gap-2 text-sm">
-							<Checkbox id="marketing" name="marketing" />
+							<Checkbox id="marketing" name="marketing" disabled={submitting} />
 							<Label htmlFor="marketing" className="font-normal">
 								I agree to receive optional product updates.
 							</Label>
@@ -208,7 +315,7 @@ export function WaitlistPage() {
 						<p className="text-xs text-muted-foreground">
 							See our{" "}
 							<Link className="underline" href="/legal/privacy">
-								Privacy Policy
+								Privacy policy
 							</Link>
 							.
 						</p>
@@ -218,13 +325,9 @@ export function WaitlistPage() {
 							onTokenChange={updateTurnstileToken}
 						/>
 						{error && (
-							<p
-								id="waitlist-error"
-								role="alert"
-								className="text-sm text-destructive"
-							>
-								{error}
-							</p>
+							<div id="waitlist-error">
+								<ErrorState title="Couldn’t request access" detail={error} />
+							</div>
 						)}
 					</form>
 				</CardContent>
@@ -240,11 +343,10 @@ export function WaitlistPage() {
 							(abuseProtection.enabled && !turnstileToken)
 						}
 					>
-						{submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-						Join waitlist
+						{submitting ? "Requesting access…" : "Join waitlist"}
 					</Button>
 				</CardFooter>
 			</Card>
-		</div>
+		</Page>
 	);
 }

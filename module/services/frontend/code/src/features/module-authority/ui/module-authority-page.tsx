@@ -3,7 +3,7 @@
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { DescriptionList, Disclosure } from "@codefly-dev/ui/layout";
 import { ShieldCheck } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 import { UserLabel } from "@/components/user-label";
 import { isMFARequired, stepUpToast } from "@/features/auth/model/step-up";
@@ -60,6 +60,7 @@ const header = (
 export function ModuleAuthorityPage() {
 	const read = useModuleEnvelope();
 	const write = usePutModuleEnvelope();
+	const pending = useRef(false);
 	const [draft, setDraft] = useState<Draft | null>(null);
 	const [confirmingSave, setConfirmingSave] = useState(false);
 	const [revoking, setRevoking] = useState<string | null>(null);
@@ -111,10 +112,15 @@ export function ModuleAuthorityPage() {
 		from: Refusal["from"],
 		input: { expectedRevision: bigint; document: string },
 		saved: string,
-	) =>
+	) => {
+		if (pending.current) return;
+		pending.current = true;
+		setRefusal(null);
 		write.mutate(input, {
 			onSuccess: () => {
 				toast.success(saved);
+				setConfirmingSave(false);
+				setRevoking(null);
 				if (from === "save") setDraft(null);
 				setRefusal(null);
 			},
@@ -123,10 +129,10 @@ export function ModuleAuthorityPage() {
 				setRefusal({ from, text: writeRefusal(error) });
 			},
 			onSettled: () => {
-				setConfirmingSave(false);
-				setRevoking(null);
+				pending.current = false;
 			},
 		});
+	};
 
 	return (
 		<PageBody>
@@ -152,7 +158,7 @@ export function ModuleAuthorityPage() {
 							} An approved module is still blocked if it is installed twice under one name or its installation can no longer be verified.`
 				}
 			>
-				{refusal?.from === "revoke" && (
+				{!revoking && refusal?.from === "revoke" && (
 					<Banner
 						tone="danger"
 						title="Not saved"
@@ -220,7 +226,7 @@ export function ModuleAuthorityPage() {
 						base={base}
 						edited={draft !== null}
 						saving={write.isPending}
-						refusal={refusal?.from === "save" ? refusal.text : null}
+						refusal={!confirmingSave && refusal?.from === "save" ? refusal.text : null}
 						onDismissRefusal={() => setRefusal(null)}
 						onChange={(next) => setDraft({ base, text: next })}
 						onSave={() => setConfirmingSave(true)}
@@ -234,6 +240,7 @@ export function ModuleAuthorityPage() {
 
 			<ConfirmDialog
 				open={confirmingSave}
+				error={refusal?.from === "save" ? refusal.text : undefined}
 				onOpenChange={setConfirmingSave}
 				title={saveQuestion(changes)}
 				description={saveConsequences(changes)}
@@ -258,6 +265,7 @@ export function ModuleAuthorityPage() {
 					description={`${revoking} will stop working for every organization on this platform within moments, and installations of it that are no longer permitted are removed. Work it has already finished is not undone. You can approve it again later.`}
 					confirmLabel="Revoke approval"
 					pendingLabel="Revoking…"
+					error={refusal?.from === "revoke" ? refusal.text : undefined}
 					isPending={write.isPending}
 					onConfirm={() => {
 						const next = withoutModule(document, current, revoking);

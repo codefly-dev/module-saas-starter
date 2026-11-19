@@ -64,7 +64,8 @@ export function InstallationSetupPage({
 	const { organizationId: orgId = "" } = useAuth();
 	const query = useInstallations(orgId);
 	const { indicator, quiet } = useLoadingPhase(query.isLoading);
-	const row = (query.data ?? []).find(
+	const denied = readOutcome(query.isError, query.error) === "forbidden";
+	const row = (denied ? [] : (query.data ?? [])).find(
 		(entry) => entry.installation?.id === installationId,
 	);
 	// Where this installation is listed follows what it declares, not its
@@ -107,14 +108,16 @@ export function InstallationSetupPage({
 					</>
 				}
 				actions={
-					<Button
-						variant="outline"
-						onClick={() => void query.refetch()}
-						disabled={query.isFetching}
-					>
-						<RefreshCw className="h-4 w-4" />
-						Refresh
-					</Button>
+					denied ? undefined : (
+						<Button
+							variant="outline"
+							onClick={() => void query.refetch()}
+							disabled={query.isFetching}
+						>
+							<RefreshCw className="h-4 w-4" />
+							Refresh
+						</Button>
+					)
 				}
 			>
 				<Link

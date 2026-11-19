@@ -12,7 +12,7 @@ vi.mock("@/lib/auth", () => ({
 afterEach(cleanup);
 
 describe("addMemberErrorMessage", () => {
-	it("shows the server's own words when the target is ineligible", () => {
+	it("explains an ineligible change without exposing server details", () => {
 		expect(
 			addMemberErrorMessage(
 				new ConnectError(
@@ -20,7 +20,9 @@ describe("addMemberErrorMessage", () => {
 					Code.FailedPrecondition,
 				),
 			),
-		).toBe("user is not a member of the team's organization");
+		).toBe(
+			"Couldn't add this member. The current state doesn't allow this change. Refresh the page to review it.",
+		);
 	});
 
 	it("does not put server internals in front of the user", () => {
@@ -31,12 +33,14 @@ describe("addMemberErrorMessage", () => {
 					Code.Internal,
 				),
 			),
-		).toBe("Failed to add member");
+		).toBe(
+			"Couldn't add this member. Try again; if it keeps failing, tell your administrator.",
+		);
 	});
 
 	it("falls back for an error that never reached the server", () => {
 		expect(addMemberErrorMessage(new Error("network down"))).toBe(
-			"Failed to add member",
+			"Couldn't add this member. Try again; if it keeps failing, tell your administrator.",
 		);
 	});
 });
@@ -139,5 +143,67 @@ describe("adding a member reports the write, not the read that follows it", () =
 			await screen.findByRole("heading", { name: /Members \(1\)/ }),
 		).toBeTruthy();
 		expect(screen.getByText("newbie@example.com")).toBeTruthy();
+	});
+});
+
+describe("pending membership changes", () => {
+	it("locks the selected person and role until adding completes", async () => {
+		let release = () => {};
+		server.use(
+			http.post(rpc("OrganizationService", "ListMembers"), () =>
+				HttpResponse.json({
+					members: [{ userId: "u-new", userEmail: "newbie@example.com" }],
+				}),
+			),
+			http.post(rpc("TeamService", "ListMembers"), () =>
+				HttpResponse.json({ members: [] }),
+			),
+			http.post(rpc("TeamService", "AddMember"), async () => {
+				await new Promise<void>((resolve) => {
+					release = resolve;
+				});
+				return HttpResponse.json({});
+			}),
+		);
+		renderInApp(
+			<TeamMembersPanel
+				orgId="org-example"
+				teamId="team-example"
+				teamName="Example team"
+				canManage
+			/>,
+		);
+		fireEvent.change(
+			await screen.findByPlaceholderText("Search members by email…"),
+			{ target: { value: "newbie" } },
+		);
+		fireEvent.click(
+			await screen.findByRole("option", { name: "newbie@example.com" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Add member" }));
+		try {
+			await waitFor(() =>
+				expect(
+					(screen.getByRole("button", { name: "Adding…" }) as HTMLButtonElement)
+						.disabled,
+				).toBe(true),
+			);
+			expect(
+				(
+					screen.getByRole("combobox", {
+						name: "Team role",
+					}) as HTMLButtonElement
+				).disabled,
+			).toBe(true);
+			expect(
+				screen.queryByRole("button", {
+					name: "Choose someone other than newbie@example.com",
+				}),
+			).toBeNull();
+			expect(screen.getByText("newbie@example.com")).toBeTruthy();
+		} finally {
+			release();
+		}
+		await screen.findByRole("button", { name: "Add member" });
 	});
 });

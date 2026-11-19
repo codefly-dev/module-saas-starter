@@ -12,11 +12,18 @@
  */
 
 import {
+	BarList,
 	type ChartSeries,
 	KPIRow,
 	type Metric,
 	MetricAreaChart,
 } from "@codefly-dev/ui/dashboard";
+import {
+	EmptyState,
+	ErrorState,
+	Page,
+	PageHeader,
+} from "@codefly-dev/ui/layout";
 import type { ReactNode } from "react";
 import { Sparkline } from "@/components/sparkline";
 import {
@@ -27,6 +34,7 @@ import {
 	CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { readOutcome } from "@/shared/lib/read-outcome";
 
 interface WidgetIdentity {
 	id: string;
@@ -106,30 +114,49 @@ function spanClass(span?: "full") {
 	return span === "full" ? "md:col-span-2" : undefined;
 }
 
-/**
- * Retained content wins over transient states: as long as the widget has
- * data to render, a background refetch or a refetch *error* never blanks
- * it — the last good content stays on screen. Only when there is nothing
- * to show do we surface error → loading → empty, in that order.
- */
+/** Retain useful data after transient failure, but never after access is denied. */
 function withState(
 	widget: CardWidgetBase,
 	isEmpty: boolean,
 	content: ReactNode,
 ): ReactNode {
-	if (!isEmpty) {
-		return content;
-	}
-	if (widget.error) {
-		return <p className="text-sm text-destructive">Failed to load.</p>;
-	}
-	if (widget.isLoading) {
-		return <Skeleton className="h-16 w-full" />;
-	}
+	if (widget.error && readOutcome(true, widget.error) === "forbidden")
+		return (
+			<ErrorState
+				title="Access is unavailable"
+				detail="You don't have access to this information. Ask your administrator to grant access."
+			/>
+		);
+	if (widget.isLoading && !widget.error)
+		return (
+			<div role="status" aria-label="Loading summary">
+				<Skeleton className="h-16 w-full" />
+			</div>
+		);
+	if (widget.error)
+		return (
+			<div className="space-y-3">
+				<ErrorState
+					title={
+						isEmpty
+							? "Couldn't load this summary"
+							: "Couldn't refresh this summary"
+					}
+					detail={
+						isEmpty
+							? "The information is unavailable. Refresh the page to try again."
+							: "The information below may be out of date. Refresh the page to try again."
+					}
+				/>
+				{!isEmpty && content}
+			</div>
+		);
+	if (!isEmpty) return content;
 	return (
-		<p className="text-sm text-muted-foreground">
-			{widget.emptyMessage ?? "No data."}
-		</p>
+		<EmptyState
+			heading={widget.emptyMessage ?? "No activity in this period"}
+			description="Choose a different time range or adjust the filters to look for activity."
+		/>
 	);
 }
 
@@ -147,7 +174,9 @@ function CardWidget({
 			{(widget.title || widget.description) && (
 				<CardHeader>
 					{widget.title && (
-						<CardTitle className="text-base">{widget.title}</CardTitle>
+						<CardTitle role="heading" aria-level={2} className="text-base">
+							{widget.title}
+						</CardTitle>
 					)}
 					{widget.description && (
 						<CardDescription>{widget.description}</CardDescription>
@@ -156,28 +185,6 @@ function CardWidget({
 			)}
 			<CardContent>{withState(widget, isEmpty, children)}</CardContent>
 		</Card>
-	);
-}
-
-function Bars({ items }: { items: BarsWidget["items"] }) {
-	const max = items.reduce((m, item) => Math.max(m, item.value), 0) || 1;
-	return (
-		<div className="space-y-2">
-			{items.map((item, i) => (
-				<div key={`${i}-${item.label}`} className="space-y-1">
-					<div className="flex items-center justify-between text-xs">
-						<span className="text-muted-foreground">{item.label}</span>
-						<span className="font-mono">{item.value}</span>
-					</div>
-					<div className="h-2 rounded-full bg-muted">
-						<div
-							className="h-2 rounded-full bg-primary/70"
-							style={{ width: `${(item.value / max) * 100}%` }}
-						/>
-					</div>
-				</div>
-			))}
-		</div>
 	);
 }
 
@@ -192,7 +199,12 @@ function Widget({ widget }: { widget: DashboardWidget }) {
 		case "bars":
 			return (
 				<CardWidget widget={widget} isEmpty={widget.items.length === 0}>
-					<Bars items={widget.items} />
+					<BarList
+						points={widget.items.map(({ label, value }) => ({
+							key: label,
+							value,
+						}))}
+					/>
 				</CardWidget>
 			);
 		case "metrics":
@@ -235,23 +247,15 @@ function Widget({ widget }: { widget: DashboardWidget }) {
 export function Dashboard({ data }: { data: DashboardData }) {
 	const hasHeader = data.title || data.description || data.actions;
 	return (
-		<div className="space-y-6">
+		<Page>
 			{hasHeader && (
-				<div className="flex items-center justify-between">
-					<div>
-						{data.title && (
-							<h1 data-slot="page-title" className="type-page-title">
-								{data.title}
-							</h1>
-						)}
-						{data.description && (
-							<p className="text-muted-foreground">{data.description}</p>
-						)}
-					</div>
+				<PageHeader title={data.title} description={data.description}>
 					{data.actions && (
-						<div className="flex items-center gap-2">{data.actions}</div>
+						<div className="flex flex-wrap items-center gap-2 pt-3">
+							{data.actions}
+						</div>
 					)}
-				</div>
+				</PageHeader>
 			)}
 
 			<div className="grid gap-4 md:grid-cols-2">
@@ -259,6 +263,6 @@ export function Dashboard({ data }: { data: DashboardData }) {
 					<Widget key={widget.id} widget={widget} />
 				))}
 			</div>
-		</div>
+		</Page>
 	);
 }

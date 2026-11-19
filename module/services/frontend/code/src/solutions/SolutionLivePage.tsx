@@ -3,6 +3,13 @@
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect } from "react";
 import {
+	ErrorState,
+	Page,
+	PageHeader,
+	Spinner,
+	useLoadingPhase,
+} from "@/shared/ui";
+import {
 	useRegisteredSolutions,
 	useRegisteredSolutionsRead,
 } from "./SolutionsMenu";
@@ -40,6 +47,7 @@ export function SolutionLivePage({
 	const read = useRegisteredSolutionsRead();
 	const changed = current?.assetVersion !== assetVersion;
 	const updating = !!current && current.available !== false && changed;
+	const loading = useLoadingPhase(read === "reading" || updating);
 	useEffect(() => {
 		if (!updating) return;
 		router.refresh();
@@ -48,36 +56,56 @@ export function SolutionLivePage({
 		const retry = setInterval(() => router.refresh(), 5_000);
 		return () => clearInterval(retry);
 	}, [updating, current?.assetVersion, router]);
-	if (read === "reading")
-		return <p className="p-6 text-sm opacity-70">Loading page…</p>;
-	// A listing that could not be read is said, never waited on for ever; a
-	// later poll that answers opens the page.
 	if (read === "failed") {
 		return (
-			<p role="alert" className="p-6 text-sm opacity-70">
-				Could not read the pages you hold, so this page is not shown. This is
-				not a statement about your access. It is asked again shortly; reload to
-				try now.
-			</p>
+			<Page>
+				<PageHeader title="Page unavailable" />
+				<ErrorState
+					title="Could not read the pages you hold"
+					detail="We couldn't check which pages you can open. This does not mean you lack access. The application will check again shortly."
+				/>
+			</Page>
+		);
+	}
+	if (read === "reading") {
+		return (
+			<Page>
+				<PageHeader title="Opening page" />
+				{loading.indicator && <Spinner label="Loading page" />}
+			</Page>
 		);
 	}
 	if (!current) {
 		return (
 			denied ?? (
-				<p className="p-6 text-sm opacity-70">
-					This page is not available to you.
-				</p>
+				<Page>
+					<PageHeader title="Access needed" />
+					<ErrorState
+						title="This page is not available to you."
+						detail="Ask your organization administrator to grant access."
+					/>
+				</Page>
 			)
 		);
 	}
-	// Entitled, but its installation does not serve right now.
 	if (current.available === false) {
 		return (
-			<p className="p-6 text-sm opacity-70">
-				This page is not available right now.
-			</p>
+			<Page>
+				<PageHeader title="Page unavailable" />
+				<ErrorState
+					title="This page is not available right now."
+					detail="Ask your platform administrator to check its installation."
+				/>
+			</Page>
 		);
 	}
-	if (changed) return <p className="p-6 text-sm opacity-70">Updating page…</p>;
+	if (changed || loading.quiet || loading.indicator) {
+		return (
+			<Page>
+				<PageHeader title="Updating page" />
+				{loading.indicator && <Spinner label="Updating page" />}
+			</Page>
+		);
+	}
 	return children;
 }

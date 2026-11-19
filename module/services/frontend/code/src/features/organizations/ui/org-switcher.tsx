@@ -23,6 +23,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SidebarMenuButton } from "@/components/ui/sidebar";
 import { useAuth } from "@/lib/auth";
+import { failureText } from "@/shared/lib/failure-text";
+import { readOutcome } from "@/shared/lib/read-outcome";
+import { Button, ErrorState } from "@/shared/ui";
 import { lifecycleErrorMessage } from "../model/errors";
 import { orgMutations } from "../service/mutations";
 import { orgQueries } from "../service/queries";
@@ -38,12 +41,14 @@ import { OrgForm } from "./org-form";
 export function OrgSwitcher() {
 	const queryClient = useQueryClient();
 	const { organizationId, switchOrganization } = useAuth();
-	const { data, isLoading } = useQuery(orgQueries.list());
+	const { data, isLoading, isError, error, refetch } = useQuery(
+		orgQueries.list(),
+	);
 	const [switching, setSwitching] = useState(false);
 	const [creating, setCreating] = useState(false);
 	const [leaving, setLeaving] = useState(false);
 
-	const organizations = data?.organizations ?? [];
+	const organizations = isError ? [] : (data?.organizations ?? []);
 	const current = organizations.find((org) => org.id === organizationId);
 
 	const createMutation = useMutation({
@@ -69,18 +74,20 @@ export function OrgSwitcher() {
 			await switchOrganization(id);
 		} catch (error) {
 			toast.error("Couldn't switch organization", {
-				description: error instanceof Error ? error.message : "Try again.",
+				description: failureText("switch organization", error),
 			});
 		} finally {
 			setSwitching(false);
 		}
 	}
 
-	const label = isLoading
-		? "Loading…"
-		: switching
-			? "Switching…"
-			: (current?.name ?? "No organization");
+	const label = isError
+		? "Organizations unavailable"
+		: isLoading
+			? "Loading…"
+			: switching
+				? "Switching…"
+				: (current?.name ?? "No organization");
 
 	return (
 		<>
@@ -95,6 +102,19 @@ export function OrgSwitcher() {
 				<DropdownMenuContent align="start" className="w-64">
 					<DropdownMenuGroup>
 						<DropdownMenuLabel>Organizations</DropdownMenuLabel>
+						{isError && (
+							<div className="space-y-2 p-2">
+								<ErrorState
+									title="Couldn’t load organizations"
+									detail={failureText("load your organizations", error)}
+								/>{" "}
+								{readOutcome(true, error) !== "forbidden" && (
+									<Button variant="outline" onClick={() => void refetch()}>
+										Try again
+									</Button>
+								)}
+							</div>
+						)}
 						{organizations.map((org) => (
 							<DropdownMenuItem
 								key={org.id}
@@ -109,7 +129,7 @@ export function OrgSwitcher() {
 						))}
 					</DropdownMenuGroup>
 					<DropdownMenuSeparator />
-					{data?.canCreate && (
+					{!isError && data?.canCreate && (
 						<DropdownMenuItem onClick={() => setCreating(true)}>
 							<Plus className="mr-2 h-4 w-4" />
 							Create organization

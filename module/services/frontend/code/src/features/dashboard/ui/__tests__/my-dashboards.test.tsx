@@ -1,9 +1,12 @@
-import { fireEvent, screen } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderInApp } from "@/test/container";
 import type { DashboardRecord } from "../../model/record";
 import { dashboard } from "../../model/schema";
-import { createMemoryDashboardLibrary } from "../../service/dashboard-library";
+import {
+	createMemoryDashboardLibrary,
+	type DashboardLibrary,
+} from "../../service/dashboard-library";
 import { MyDashboards } from "../my-dashboards";
 
 vi.mock("@/lib/auth", () => ({
@@ -42,6 +45,11 @@ describe("MyDashboards", () => {
 	it("creates a named dashboard and opens it in the editor", async () => {
 		renderInApp(<MyDashboards library={createMemoryDashboardLibrary()} />);
 
+		await waitFor(() =>
+			expect((screen.getByLabelText("Name") as HTMLInputElement).disabled).toBe(
+				false,
+			),
+		);
 		fireEvent.change(screen.getByLabelText("Name"), {
 			target: { value: "Weekly activity" },
 		});
@@ -78,5 +86,73 @@ describe("MyDashboards", () => {
 		renderInApp(<MyDashboards library={library} />);
 		expect(await screen.findByText("Shared")).toBeTruthy();
 		expect(screen.queryByText("Private")).toBeNull();
+	});
+	it("does not present a failed read as an empty library", async () => {
+		const library: DashboardLibrary = {
+			...createMemoryDashboardLibrary(),
+			list: () => {
+				throw new Error("private-storage-diagnostic");
+			},
+		};
+		renderInApp(<MyDashboards library={library} />);
+		expect(
+			await screen.findByText(/Couldn't view your dashboards/),
+		).toBeTruthy();
+		expect(screen.queryByText(/No dashboards yet/)).toBeNull();
+		expect(screen.queryByText(/private-storage-diagnostic/)).toBeNull();
+	});
+
+	it("shows no empty state while a library read is pending", async () => {
+		let resolve!: (records: DashboardRecord[]) => void;
+		const library: DashboardLibrary = {
+			...createMemoryDashboardLibrary(),
+			list: () =>
+				new Promise((done) => {
+					resolve = done;
+				}),
+		};
+		renderInApp(<MyDashboards library={library} />);
+		await waitFor(() => expect(resolve).toBeTypeOf("function"));
+		expect(screen.queryByText(/No dashboards yet/)).toBeNull();
+		resolve([]);
+		expect(await screen.findByText(/No dashboards yet/)).toBeTruthy();
+	});
+
+	it("keeps the name after a failed create", async () => {
+		const library: DashboardLibrary = {
+			...createMemoryDashboardLibrary(),
+			create: () => {
+				throw new Error("private-failure");
+			},
+		};
+		renderInApp(<MyDashboards library={library} />);
+		await screen.findByText(/No dashboards yet/);
+		fireEvent.change(screen.getByLabelText("Name"), {
+			target: { value: "Weekly activity" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Create" }));
+		await screen.findByText(/Couldn't save the dashboard change/);
+		expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(
+			"Weekly activity",
+		);
+		expect(screen.queryByText(/private-failure/)).toBeNull();
+	});
+
+	it("names a dashboard in its confirmation and keeps a failed deletion open", async () => {
+		const remove = vi.fn().mockRejectedValue(new Error("private-delete"));
+		const library = { ...createMemoryDashboardLibrary([record({})]), remove };
+		renderInApp(<MyDashboards library={library} />);
+		await screen.findByText("Sales");
+		fireEvent.click(
+			screen.getByRole("button", { name: 'More actions for "Sales"' }),
+		);
+		fireEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
+		const dialog = await screen.findByRole("alertdialog");
+		expect(dialog.textContent).toContain("Sales");
+		expect(remove).not.toHaveBeenCalled();
+		fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+		await within(dialog).findByText(/This change could not be saved/);
+		expect(remove).toHaveBeenCalledOnce();
+		expect(dialog.textContent).not.toContain("private-delete");
 	});
 });

@@ -1,7 +1,7 @@
 import { PackageX } from "lucide-react";
 import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
-import { buttonVariants } from "@/shared/ui";
+import { buttonVariants, Page, PageHeader } from "@/shared/ui";
 
 /**
  * An address nothing is registered at: no solution and no module page under
@@ -14,10 +14,12 @@ import { buttonVariants } from "@/shared/ui";
  */
 export default function SolutionNotFound() {
 	return (
-		<div className="p-6">
+		<Page>
+			<PageHeader title="Page not found" />
 			<EmptyState
+				headingAs="h2"
 				icon={PackageX}
-				title="Page not found"
+				title="No page at this address"
 				description="No solution or module page is served at this address."
 				action={
 					<Link href="/" className={buttonVariants({ variant: "outline" })}>
@@ -25,6 +27,6 @@ export default function SolutionNotFound() {
 					</Link>
 				}
 			/>
-		</div>
+		</Page>
 	);
 }

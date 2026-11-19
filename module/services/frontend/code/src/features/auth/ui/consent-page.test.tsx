@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
@@ -240,4 +246,27 @@ it("offers no decision when the stored resolution cannot be decoded", () => {
 
 	expect(screen.queryByRole("button", { name: /Allow/ })).toBeNull();
 	expect(screen.getByText(/could not be confirmed/)).toBeTruthy();
+});
+
+it("locks both choices while approval is pending and allows recovery after failure", async () => {
+	storePending();
+	let fail!: (error: Error) => void;
+	h.grantClientAuthorization.mockImplementationOnce(
+		() =>
+			new Promise((_resolve, reject) => {
+				fail = reject;
+			}),
+	);
+	render(<ConsentPage />);
+	const allow = screen.getByRole("button", { name: /Allow/ });
+	fireEvent.click(allow);
+	expect(allow.hasAttribute("disabled")).toBe(true);
+	expect(
+		screen.getByRole("button", { name: "Cancel" }).hasAttribute("disabled"),
+	).toBe(true);
+	fireEvent.click(allow);
+	expect(h.grantClientAuthorization).toHaveBeenCalledTimes(1);
+	fail(new Error("private diagnostics"));
+	await waitFor(() => expect(allow.hasAttribute("disabled")).toBe(false));
+	expect(screen.queryByText("private diagnostics")).toBeNull();
 });

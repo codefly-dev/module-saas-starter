@@ -134,3 +134,56 @@ describe("MFASetup enrolment step", () => {
 		expect(calls).toBe(2);
 	});
 });
+
+it("reports a backup-code failure after successful verification without asking to verify again", async () => {
+	let release!: () => void;
+	server.use(
+		setupReturns(SECRET, PROVISIONING_URI),
+		http.post(rpc("MFAService", "VerifyTOTP"), () => HttpResponse.json({})),
+		http.post(rpc("MFAService", "GenerateBackupCodes"), async () => {
+			await new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			return HttpResponse.json(
+				{ code: "permission_denied", message: "private backup policy" },
+				{ status: 403 },
+			);
+		}),
+	);
+	renderInApp(<MFASetup open onClose={() => undefined} />);
+	await screen.findByText(SECRET);
+	fireEvent.click(screen.getByRole("button", { name: "Next" }));
+	fireEvent.change(screen.getByRole("textbox", { name: "Verification code" }), {
+		target: { value: "123456" },
+	});
+	fireEvent.click(screen.getByRole("button", { name: "Verify" }));
+	await waitFor(() => expect(release).toBeTypeOf("function"));
+	expect(
+		(screen.getByRole("button", { name: "Done" }) as HTMLButtonElement)
+			.disabled,
+	).toBe(true);
+	release();
+	expect(
+		await screen.findByText(
+			"Authenticator app added, but backup codes are unavailable",
+		),
+	).toBeTruthy();
+	expect(screen.queryByRole("button", { name: "Verify" })).toBeNull();
+	expect(screen.queryByText(/Invalid code|private backup policy/)).toBeNull();
+});
+
+it("does not offer retries when authenticator setup is denied", async () => {
+	server.use(
+		http.post(rpc("MFAService", "SetupTOTP"), () =>
+			HttpResponse.json(
+				{ code: "permission_denied", message: "private rule" },
+				{ status: 403 },
+			),
+		),
+	);
+	renderInApp(<MFASetup open onClose={() => undefined} />);
+	expect(
+		await screen.findByText(/Ask your organization administrator for access/),
+	).toBeTruthy();
+	expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+});

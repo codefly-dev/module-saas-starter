@@ -8,6 +8,8 @@ import { isPersonalOrganization } from "@/features/organizations/model/leave-flo
 import { orgQueries } from "@/features/organizations/service/queries";
 import { useAuth } from "@/lib/auth";
 import { signOutAndLeave } from "@/lib/sign-out-journey";
+import { failureText } from "@/shared/lib/failure-text";
+import { readOutcome } from "@/shared/lib/read-outcome";
 import {
 	Button,
 	Card,
@@ -15,6 +17,8 @@ import {
 	CardDescription,
 	CardHeader,
 	CardTitle,
+	DelayedLoading,
+	ErrorState,
 } from "@/shared/ui";
 import type {
 	OnboardingController,
@@ -38,15 +42,15 @@ interface OnboardingEntryProps {
  */
 export function OnboardingEntry({ controller, model }: OnboardingEntryProps) {
 	const { organizationId, switchOrganization, logout } = useAuth();
-	const { data } = useQuery(orgQueries.list());
+	const { data, isPending, isError, error, refetch } = useQuery(
+		orgQueries.list(),
+	);
 	const [switching, setSwitching] = useState<string | null>(null);
 
 	const workspaces = (data?.organizations ?? []).filter(
 		(org) => org.id !== organizationId && !isPersonalOrganization(org),
 	);
-	// Until the list answers, keep today's behavior: the wizard. The server
-	// refuses a creation its policy forbids either way.
-	const mayCreate = data ? data.canCreate : true;
+	const mayCreate = data?.canCreate === true;
 
 	const continueIn = async (id: string) => {
 		setSwitching(id);
@@ -54,12 +58,29 @@ export function OnboardingEntry({ controller, model }: OnboardingEntryProps) {
 			await switchOrganization(id);
 		} catch (error) {
 			toast.error("Couldn't switch organization", {
-				description: error instanceof Error ? error.message : "Try again.",
+				description: failureText("switch organization", error),
 			});
 		} finally {
 			setSwitching(null);
 		}
 	};
+
+	if (isPending)
+		return <DelayedLoading active label="Loading your organizations" />;
+	if (isError)
+		return (
+			<div className="space-y-3">
+				<ErrorState
+					title="Couldn’t load your organizations"
+					detail={failureText("load your organizations", error)}
+				/>{" "}
+				{readOutcome(true, error) !== "forbidden" && (
+					<Button variant="outline" onClick={() => void refetch()}>
+						Try again
+					</Button>
+				)}
+			</div>
+		);
 
 	return (
 		<div className="mx-auto w-full max-w-xl space-y-6">

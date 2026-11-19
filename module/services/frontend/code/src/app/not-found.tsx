@@ -12,6 +12,7 @@ export default function NotFound() {
 	return (
 		<main className="flex min-h-screen items-center justify-center p-6">
 			<EmptyState
+				headingAs="h1"
 				icon={FileQuestion}
 				title="Page not found"
 				description="The page you asked for does not exist, or it has moved."

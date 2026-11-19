@@ -21,7 +21,7 @@ function withProblems(
 	if (!installation.accessProblems.length) return undefined;
 	return {
 		kind: "warning",
-		text: `${lead}, but not every role's access was applied — grant the rest in Set up. ${installation.accessProblems.join(" ")}`,
+		text: `${lead}, but not every role's access was applied — grant the rest in Set up.`,
 	};
 }
 
@@ -53,7 +53,7 @@ export function retryOutcome(name: string, installation: Applied): ActOutcome {
 	return installation.accessProblems.length
 		? {
 				kind: "warning",
-				text: `${name}: not every role's access was applied — grant the rest in Set up. ${installation.accessProblems.join(" ")}`,
+				text: `${name}: not every role's access was applied — grant the rest in Set up.`,
 			}
 		: { kind: "success", text: `${name} installation pending` };
 }

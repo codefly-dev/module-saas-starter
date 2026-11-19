@@ -1,11 +1,17 @@
 "use client";
 
-import { Code, ConnectError } from "@connectrpc/connect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+	createColumnHelper,
+	getCoreRowModel,
+	getPaginationRowModel,
+	useReactTable,
+} from "@tanstack/react-table";
 import { useState } from "react";
 import { toast } from "sonner";
 import { UserPicker } from "@/components/user-picker";
 import type { TeamMembership } from "@/gen/saas/accounts/v1/common_pb";
+import { failureText } from "@/shared/lib/failure-text";
 import { readOutcome, readOutcomeMessage } from "@/shared/lib/read-outcome";
 import { formatDate } from "@/shared/lib/utils";
 import {
@@ -17,8 +23,10 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
+	ErrorState,
+	Field,
 	Input,
-	Label,
+	Panel,
 	Select,
 	SelectContent,
 	SelectItem,
@@ -27,20 +35,14 @@ import {
 	Spinner,
 	useLoadingPhase,
 } from "@/shared/ui";
+import { DataTable } from "@/shared/ui/data-table";
 import { roleLabel } from "../model/transforms";
 import { fromTeamRole, type TeamRole, toTeamRole } from "../model/types";
 import { teamMutations } from "../service/mutations";
 import { teamQueries } from "../service/queries";
 
 export function addMemberErrorMessage(error: unknown): string {
-	const connectError = ConnectError.from(error);
-	if (
-		connectError.code === Code.FailedPrecondition &&
-		connectError.rawMessage
-	) {
-		return connectError.rawMessage;
-	}
-	return "Failed to add member";
+	return failureText("add this member", error);
 }
 
 export function TeamMembersPanel({
@@ -143,52 +145,63 @@ export function TeamMembersPanel({
 				</p>
 			</div>
 			{isError ? (
-				<div role="alert">
-					{readOutcomeMessage(
-						readOutcome(true, error),
-						"this team's members",
-						"",
-					)}{" "}
-					<Button onClick={() => void refetch()}>Retry</Button>
-				</div>
+				<Panel className="space-y-3">
+					<ErrorState
+						title="Couldn't load team members"
+						detail={readOutcomeMessage(
+							readOutcome(true, error),
+							"this team's members",
+							"",
+						)}
+					/>
+					{readOutcome(true, error) !== "forbidden" && (
+						<Button variant="outline" onClick={() => void refetch()}>
+							Retry
+						</Button>
+					)}
+				</Panel>
 			) : quiet ? null : indicator ? (
 				<Spinner label="Loading members" />
 			) : (
 				<>
 					{canManage && (
-						<div className="space-y-2 rounded-lg border p-4">
+						<Panel className="space-y-3">
 							<h3 className="font-medium">Add an organization member</h3>
-							<div className="flex flex-wrap items-end gap-3">
+							<div className="grid items-start gap-4 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
 								<UserPicker
 									key={pickerVersion}
 									orgId={orgId}
 									value={newUserId}
 									onChange={setNewUserId}
+									disabled={add.isPending || change.isPending}
 									exclude={members.map((member) => member.userId)}
 								/>
-								<div className="space-y-2">
-									<Label htmlFor="new-team-role">Team role</Label>
-									<Select
-										items={{ member: "Member", admin: "Admin" }}
-										value={newRole}
-										onValueChange={(value) => {
-											if (value === "member" || value === "admin")
-												setNewRole(value);
-										}}
-									>
-										<SelectTrigger id="new-team-role">
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											<SelectItem value="member">Member</SelectItem>
-											<SelectItem value="admin">Admin</SelectItem>
-										</SelectContent>
-									</Select>
-								</div>
+								<Field label="Team role">
+									{(control) => (
+										<Select
+											disabled={add.isPending || change.isPending}
+											items={{ member: "Member", admin: "Admin" }}
+											value={newRole}
+											onValueChange={(value) => {
+												if (value === "member" || value === "admin")
+													setNewRole(value);
+											}}
+										>
+											<SelectTrigger {...control}>
+												<SelectValue />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value="member">Member</SelectItem>
+												<SelectItem value="admin">Admin</SelectItem>
+											</SelectContent>
+										</Select>
+									)}
+								</Field>
 								<Button
 									disabled={!newUserId || add.isPending || change.isPending}
 									onClick={() => {
-										if (canManage) add.mutate();
+										if (canManage && !add.isPending && !change.isPending)
+											add.mutate();
 									}}
 								>
 									{add.isPending ? "Adding…" : "Add member"}
@@ -196,106 +209,34 @@ export function TeamMembersPanel({
 							</div>
 							{add.isError && (
 								<p role="alert" className="text-sm text-destructive">
-									Couldn&apos;t add member: {addMemberErrorMessage(add.error)}
+									{addMemberErrorMessage(add.error)}
 								</p>
 							)}
-						</div>
+						</Panel>
 					)}
-					<div className="space-y-2">
-						<Label htmlFor="team-member-search">Search members</Label>
-						<Input
-							id="team-member-search"
-							placeholder="Search by email…"
-							value={search}
-							onChange={(event) => setSearch(event.target.value)}
-							className="max-w-sm"
-						/>
-					</div>
-					<div className="overflow-x-auto rounded-lg border">
-						<table className="w-full text-sm">
-							<thead>
-								<tr className="border-b text-left">
-									<th className="p-3">Member</th>
-									<th className="p-3">Team role</th>
-									<th className="p-3">Joined</th>
-									{canManage && <th className="p-3">Actions</th>}
-								</tr>
-							</thead>
-							<tbody>
-								{visible.map((member) => {
-									const role = toTeamRole(member.role);
-									const label = member.userEmail || "User unavailable";
-									return (
-										<tr key={member.userId} className="border-b last:border-0">
-											<td className="p-3">
-												{label}
-												{member.userId === currentUserId && (
-													<span className="ml-2 text-muted-foreground">
-														(you)
-													</span>
-												)}
-											</td>
-											<td className="p-3">
-												<Badge
-													variant={role === "member" ? "outline" : "secondary"}
-												>
-													{roleLabel(role)}
-												</Badge>
-											</td>
-											<td className="p-3 text-muted-foreground">
-												{formatDate(member.joinedAt)}
-											</td>
-											{canManage && (
-												<td className="p-3">
-													<div className="flex flex-wrap gap-2">
-														{role !== "owner" && (
-															<Button
-																variant="outline"
-																size="sm"
-																disabled={change.isPending}
-																aria-label={`${role === "admin" ? "Make member" : "Make admin"}: ${label}`}
-																onClick={() =>
-																	confirm(
-																		member,
-																		role === "admin" ? "member" : "admin",
-																	)
-																}
-															>
-																{role === "admin"
-																	? "Make member"
-																	: "Make admin"}
-															</Button>
-														)}
-														<Button
-															variant="outline"
-															size="sm"
-															disabled={change.isPending}
-															aria-label={`Remove ${label}`}
-															onClick={() => confirm(member)}
-														>
-															Remove
-														</Button>
-													</div>
-												</td>
-											)}
-										</tr>
-									);
-								})}
-								{visible.length === 0 && (
-									<tr>
-										<td
-											className="p-8 text-center text-muted-foreground"
-											colSpan={canManage ? 4 : 3}
-										>
-											{members.length
-												? "No matching members."
-												: "No members in this team yet."}
-										</td>
-									</tr>
-								)}
-							</tbody>
-						</table>
-					</div>
+					<Field label="Search members">
+						{(control) => (
+							<Input
+								{...control}
+								placeholder="Search by email…"
+								value={search}
+								onChange={(event) => setSearch(event.target.value)}
+								className="max-w-sm"
+							/>
+						)}
+					</Field>
+					<MemberTable
+						members={visible}
+						currentUserId={currentUserId}
+						canManage={canManage}
+						pending={add.isPending || change.isPending}
+						onAction={confirm}
+						emptyMessage={
+							members.length
+								? "No matching members. Try a different search."
+								: "No members in this team yet. Add an organization member above to get started."
+						}
+					/>
 				</>
 			)}
 			<Dialog
@@ -319,7 +260,7 @@ export function TeamMembersPanel({
 					</DialogHeader>
 					{change.isError && (
 						<p role="alert" className="text-sm text-destructive">
-							{ConnectError.from(change.error).rawMessage}
+							{failureText("update this team membership", change.error)}
 						</p>
 					)}
 					<DialogFooter>
@@ -331,6 +272,7 @@ export function TeamMembersPanel({
 							Cancel
 						</Button>
 						<Button
+							variant={action?.role ? "default" : "destructive"}
 							disabled={change.isPending || !canManage}
 							onClick={() => {
 								if (action && canManage) change.mutate(action);
@@ -347,4 +289,97 @@ export function TeamMembersPanel({
 			</Dialog>
 		</section>
 	);
+}
+
+const memberColumn = createColumnHelper<TeamMembership>();
+function MemberTable({
+	members,
+	currentUserId,
+	canManage,
+	pending,
+	onAction,
+	emptyMessage,
+}: {
+	members: TeamMembership[];
+	currentUserId?: string;
+	canManage: boolean;
+	pending: boolean;
+	onAction: (member: TeamMembership, role?: TeamRole) => void;
+	emptyMessage: string;
+}) {
+	const columns = [
+		memberColumn.accessor("userEmail", {
+			header: "Member",
+			cell: ({ row }) => (
+				<span>
+					{row.original.userEmail || "User unavailable"}
+					{row.original.userId === currentUserId && (
+						<span className="ml-2 text-muted-foreground">(you)</span>
+					)}
+				</span>
+			),
+		}),
+		memberColumn.accessor("role", {
+			header: "Team role",
+			cell: ({ getValue }) => (
+				<Badge
+					variant={
+						toTeamRole(getValue()) === "member" ? "outline" : "secondary"
+					}
+				>
+					{roleLabel(toTeamRole(getValue()))}
+				</Badge>
+			),
+		}),
+		memberColumn.accessor("joinedAt", {
+			header: "Joined",
+			cell: ({ getValue }) => formatDate(getValue()),
+		}),
+		...(canManage
+			? [
+					memberColumn.display({
+						id: "actions",
+						header: "Actions",
+						cell: ({ row }) => {
+							const member = row.original;
+							const role = toTeamRole(member.role);
+							const label = member.userEmail || "User unavailable";
+							return (
+								<div className="flex flex-wrap gap-2">
+									{role !== "owner" && (
+										<Button
+											variant="outline"
+											size="sm"
+											disabled={pending}
+											aria-label={`${role === "admin" ? "Make member" : "Make admin"}: ${label}`}
+											onClick={() =>
+												onAction(member, role === "admin" ? "member" : "admin")
+											}
+										>
+											{role === "admin" ? "Make member" : "Make admin"}
+										</Button>
+									)}
+									<Button
+										variant="outline"
+										size="sm"
+										disabled={pending}
+										aria-label={`Remove ${label}`}
+										onClick={() => onAction(member)}
+									>
+										Remove
+									</Button>
+								</div>
+							);
+						},
+					}),
+				]
+			: []),
+	];
+	const table = useReactTable({
+		data: members,
+		columns,
+		getCoreRowModel: getCoreRowModel(),
+		getPaginationRowModel: getPaginationRowModel(),
+	});
+	return <DataTable table={table} emptyMessage={emptyMessage} />;
 }

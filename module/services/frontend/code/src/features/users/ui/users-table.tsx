@@ -109,7 +109,7 @@ export function UsersTable({
 						<DropdownMenu>
 							<DropdownMenuTrigger
 								render={
-									<Button variant="ghost" size="sm" className="h-8 w-8 p-0" />
+									<Button aria-label={`Actions for ${row.original.primaryEmail}`} variant="ghost" size="icon-sm" />
 								}
 							>
 								<MoreHorizontal className="h-4 w-4" />

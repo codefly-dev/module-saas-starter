@@ -201,7 +201,9 @@ it("keeps the identity through a failure, so a retry recovers the pass", async (
 	renderPanel(client);
 	await press();
 	await waitFor(() =>
-		expect(screen.getByRole("alert").textContent).toContain("gateway timeout"),
+		expect(screen.getByRole("alert").textContent).toContain(
+			"The request could not be completed",
+		),
 	);
 	await press();
 	await settled();

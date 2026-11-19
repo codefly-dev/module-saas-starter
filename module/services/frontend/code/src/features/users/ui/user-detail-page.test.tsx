@@ -103,8 +103,8 @@ describe("UserDetailPage", () => {
 
 		renderInApp(<UserDetailPage userId="user-1" />);
 
-		expect(await screen.findByText("content:write")).toBeTruthy();
-		expect(screen.getByText("audit:read")).toBeTruthy();
+		expect(await screen.findByText("Additional assigned access")).toBeTruthy();
+		expect(screen.getByText("View and export the activity log")).toBeTruthy();
 		expect(screen.getByText("Auditor via compliance")).toBeTruthy();
 		// Both the direct-assignment badge and the provenance badge name the
 		// scope, because acting on either one without it revokes nothing.
@@ -135,7 +135,15 @@ describe("UserDetailPage", () => {
 
 		renderInApp(<UserDetailPage userId="user-1" />);
 
-		fireEvent.click((await screen.findAllByLabelText("Revoke"))[0]);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Remove Editor" }),
+		);
+		expect(await screen.findByRole("alertdialog")).toBeTruthy();
+		expect(revocations).toHaveLength(0);
+		fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+		expect(revocations).toHaveLength(0);
+		fireEvent.click(screen.getByRole("button", { name: "Remove Editor" }));
+		fireEvent.click(await screen.findByRole("button", { name: "Remove role" }));
 
 		await waitFor(() => expect(revocations).toHaveLength(1));
 		expect(revocations[0]).toEqual({
@@ -155,10 +163,71 @@ describe("UserDetailPage", () => {
 
 		renderInApp(<UserDetailPage userId="user-1" />);
 
-		await screen.findByText("content:write");
+		await screen.findByText("Additional assigned access");
 		expect(assignmentRequests.every((body) => !!body.subjectId)).toBe(true);
 		expect(new Set(assignmentRequests.map((body) => body.subjectId))).toEqual(
 			new Set(["user-1", "team-1"]),
 		);
 	});
+});
+
+it("does not report no access when an assignment read is refused", async () => {
+	serveGrants();
+	server.use(
+		http.post(rpc("PermissionService", "ListRoleAssignments"), () =>
+			HttpResponse.json(
+				{ code: "permission_denied", message: "internal-grant-rule" },
+				{ status: 403 },
+			),
+		),
+	);
+	renderInApp(<UserDetailPage userId="user-1" />);
+	expect(
+		await screen.findByText("Couldn't load this person's access"),
+	).toBeTruthy();
+	expect(screen.queryByText("No roles are assigned directly.")).toBeNull();
+	expect(
+		screen.queryByText(
+			"No additional access from assigned roles in this organization.",
+		),
+	).toBeNull();
+	expect(screen.queryByText("internal-grant-rule")).toBeNull();
+});
+
+it("offers recovery for a failed read without treating it as empty access", async () => {
+	serveGrants();
+	server.use(
+		http.post(rpc("UserService", "GetUser"), () =>
+			HttpResponse.json(
+				{ code: "unavailable", message: "private upstream" },
+				{ status: 503 },
+			),
+		),
+	);
+	renderInApp(<UserDetailPage userId="user-1" />);
+	expect(
+		await screen.findByText("Couldn't load this person's access"),
+	).toBeTruthy();
+	expect(screen.queryByText("private upstream")).toBeNull();
+	serveGrants();
+	fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+	await screen.findByText("Additional assigned access");
+	expect(screen.getAllByRole("table")).toHaveLength(3);
+});
+
+it("does not offer retry or role controls after access is refused", async () => {
+	serveGrants();
+	server.use(
+		http.post(rpc("UserService", "GetUser"), () =>
+			HttpResponse.json(
+				{ code: "permission_denied", message: "private rule" },
+				{ status: 403 },
+			),
+		),
+	);
+	renderInApp(<UserDetailPage userId="user-1" />);
+	await screen.findByText("Couldn't load this person's access");
+	expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+	expect(screen.queryByRole("button", { name: "Manage roles" })).toBeNull();
+	expect(screen.queryByRole("table")).toBeNull();
 });

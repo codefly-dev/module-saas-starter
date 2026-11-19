@@ -306,7 +306,7 @@ it("grants once, and reports what that grant carried", async () => {
 
 	for (const [label, option] of [
 		["Team", "Support"],
-		["Role", "Solution user — solution:use"],
+		["Role", "Solution user — An activity without a description"],
 	] as const) {
 		const control = within(dialog).getByRole("combobox", { name: label });
 		await waitFor(() =>
@@ -571,10 +571,10 @@ it("a set-up module page's grants are edited from its Setup page", async () => {
 	);
 	// Support is the user role's only holder: it asks before leaving nobody.
 	expect(
-		user.getByText("Nobody will have Suite user access to suite."),
+		screen.getByText(/Nobody will have Suite user access to suite./),
 	).toBeTruthy();
 	expect(changes).toHaveLength(0);
-	fireEvent.click(user.getByRole("button", { name: "Remove anyway" }));
+	fireEvent.click(screen.getByRole("button", { name: "Remove access" }));
 	await waitFor(() => expect(changes).toHaveLength(1));
 	expect(changes[0]).toEqual({
 		procedure: "RevokeRole",
@@ -589,9 +589,10 @@ it("a set-up module page's grants are edited from its Setup page", async () => {
 	expect(admin.getByText("Nobody has it yet.")).toBeTruthy();
 	// The role reads as the page's, never as the organization's admin.
 	expect(admin.getByRole("heading", { name: "Suite admin" })).toBeTruthy();
-	fireEvent.change(admin.getByLabelText("Person or team"), {
-		target: { value: `team:${SUPPORT_TEAM}` },
-	});
+	fireEvent.click(admin.getByLabelText("Person or team"));
+	const team = await screen.findByRole("option", { name: "Team Support" });
+	fireEvent.pointerDown(team, { pointerType: "mouse" });
+	fireEvent.click(team);
 	fireEvent.click(
 		admin.getByRole("button", { name: "Give Suite admin access" }),
 	);
@@ -706,4 +707,46 @@ it("says what an update asks and what can't be reached, and reviews the update f
 	fireEvent.click(screen.getByRole("button", { name: "Review update" }));
 	const dialog = await screen.findByRole("dialog");
 	expect(within(dialog).getByText("Update suite")).toBeTruthy();
+});
+
+it("shows a refused installation read without retry or an empty claim", async () => {
+	serve({ installations: [] });
+	server.use(
+		http.post(rpc("InstallationService", "ListOrganizationInstallations"), () =>
+			HttpResponse.json(
+				{ code: "permission_denied", message: "private backend diagnostic" },
+				{ status: 403 },
+			),
+		),
+	);
+	render();
+	expect(
+		await screen.findByText(/permission to see this installation|Couldn't load this installation/),
+	).toBeTruthy();
+	expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+	expect(
+		screen.queryByText("This organization has no such installation"),
+	).toBeNull();
+	expect(screen.queryByText("private backend diagnostic")).toBeNull();
+});
+
+it("keeps recovery available after a temporary installation read failure", async () => {
+	serve({ installations: [] });
+	server.use(
+		http.post(rpc("InstallationService", "ListOrganizationInstallations"), () =>
+			HttpResponse.json(
+				{ code: "unavailable", message: "private backend diagnostic" },
+				{ status: 503 },
+			),
+		),
+	);
+	render();
+	expect(
+		await screen.findByText(/permission to see this installation|Couldn't load this installation/),
+	).toBeTruthy();
+	serve({ installations: [] });
+	fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+	expect(
+		await screen.findByText("This organization has no such installation"),
+	).toBeTruthy();
 });

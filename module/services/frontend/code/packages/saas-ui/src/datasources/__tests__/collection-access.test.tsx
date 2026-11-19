@@ -5,13 +5,13 @@ import {
 	fireEvent,
 	render,
 	screen,
- waitFor,
+	waitFor,
 } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-	CollectionReadBoundary,
 	CollectionGrants,
+	CollectionReadBoundary,
 } from "../collection-access.js";
 import { ConnectGitHubForm } from "../connect-github-form.js";
 import type { CollectionAccessView, DatasourceClient } from "../types.js";
@@ -77,7 +77,11 @@ describe("collection read access", () => {
 			});
 			render(
 				<QueryClientProvider client={cache}>
-					<CollectionReadBoundary client={api} orgId="org" nodeId="collection-id">
+					<CollectionReadBoundary
+						client={api}
+						orgId="org"
+						nodeId="collection-id"
+					>
 						<PrivateContent />
 					</CollectionReadBoundary>
 				</QueryClientProvider>,
@@ -95,7 +99,9 @@ describe("collection read access", () => {
 			expect(screen.queryByText("No indexed content yet.")).toBeNull();
 			expect(
 				await screen.findByText(
-					outcome === "failed" ? /Couldn’t verify/ : /don’t have read access/,
+					outcome === "failed"
+						? /Couldn’t check collection access/
+						: /don’t have read access/,
 				),
 			).toBeTruthy();
 			readable = true;
@@ -123,7 +129,7 @@ describe("collection read access", () => {
 		);
 		expect(screen.queryByText("Private")).toBeNull();
 	});
-	it("says who can already read the collection a source would land in", () => {
+	it("says who can already read the collection a source would land in", async () => {
 		render(
 			<ConnectGitHubForm
 				collections={[collection]}
@@ -133,10 +139,17 @@ describe("collection read access", () => {
 				isPending={false}
 			/>,
 		);
-		fireEvent.change(screen.getByLabelText("Collection"), {
-			target: { value: "collection-id" },
-		});
-		expect(screen.getByText(/Nobody can read this collection yet/)).toBeTruthy();
+		fireEvent.click(screen.getByLabelText("Collection"));
+		fireEvent.pointerDown(
+			await screen.findByRole("option", { name: "Example Collection" }),
+			{ pointerType: "mouse" },
+		);
+		fireEvent.click(
+			await screen.findByRole("option", { name: "Example Collection" }),
+		);
+		expect(
+			screen.getByText(/Nobody can read this collection yet/),
+		).toBeTruthy();
 		// An existing collection has its name; there is nothing to type.
 		expect(screen.queryByLabelText("New collection name")).toBeNull();
 	});
@@ -161,7 +174,7 @@ describe("collection read access", () => {
 			grantCollectionRead: vi.fn(async () => {}),
 			revokeCollectionRead: vi.fn(async () => {}),
 		});
-		vi.spyOn(window, "confirm").mockReturnValue(true);
+
 		render(
 			<QueryClientProvider client={new QueryClient()}>
 				<CollectionGrants
@@ -172,12 +185,10 @@ describe("collection read access", () => {
 			</QueryClientProvider>,
 		);
 		expect(screen.getByText(/from a wider grant/)).toBeTruthy();
-		await screen.findByRole("option", { name: "Example Team" });
+		await screen.findByRole("checkbox", { name: /Example Team/ });
 		selectSubjects("team:team");
 		await act(async () => {
-			fireEvent.click(
-				screen.getByRole("button", { name: "Let them read it" }),
-			);
+			fireEvent.click(screen.getByRole("button", { name: "Let them read it" }));
 		});
 		expect(api.grantCollectionRead).toHaveBeenCalledWith(
 			"org",
@@ -185,9 +196,26 @@ describe("collection read access", () => {
 			subject,
 		);
 		await act(async () => {
-			fireEvent.click(screen.getByRole("button", { name: "Remove Example Team" }));
+			fireEvent.click(
+				screen.getByRole("button", { name: "Remove Example Team" }),
+			);
 		});
-		expect(api.revokeCollectionRead).toHaveBeenCalledWith("org", grant);
+		expect(api.revokeCollectionRead).not.toHaveBeenCalled();
+		expect(screen.getByRole("alertdialog").textContent).toContain(
+			"Example Collection",
+		);
+		expect(screen.getByRole("alertdialog").textContent).toContain(
+			"other collections",
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+		expect(api.revokeCollectionRead).not.toHaveBeenCalled();
+		fireEvent.click(
+			screen.getByRole("button", { name: "Remove Example Team" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Remove access" }));
+		await waitFor(() =>
+			expect(api.revokeCollectionRead).toHaveBeenCalledWith("org", grant),
+		);
 	});
 
 	// Bulk is the half of this flow that made it unreasonable: an administrator
@@ -208,16 +236,12 @@ describe("collection read access", () => {
 				<CollectionGrants client={api} orgId="org" collection={collection} />
 			</QueryClientProvider>,
 		);
-		await screen.findByRole("option", { name: "Example Team" });
+		await screen.findByRole("checkbox", { name: /Example Team/ });
 		selectSubjects("team:team", "principal:u1");
 
-		expect(
-			screen.getByRole("button", { name: /Let 2 read it/ }),
-		).toBeTruthy();
+		expect(screen.getByRole("button", { name: /Let 2 read it/ })).toBeTruthy();
 		await act(async () => {
-			fireEvent.click(
-				screen.getByRole("button", { name: /^Let / }),
-			);
+			fireEvent.click(screen.getByRole("button", { name: /^Let / }));
 		});
 
 		expect(api.grantCollectionRead).toHaveBeenCalledTimes(2);
@@ -260,18 +284,14 @@ describe("collection read access", () => {
 				<CollectionGrants client={api} orgId="org" collection={collection} />
 			</QueryClientProvider>,
 		);
-		await screen.findByRole("option", { name: "Example Team" });
+		await screen.findByRole("checkbox", { name: /Example Team/ });
 		selectSubjects("team:team", "principal:u1");
 		await act(async () => {
-			fireEvent.click(
-				screen.getByRole("button", { name: /^Let / }),
-			);
+			fireEvent.click(screen.getByRole("button", { name: /^Let / }));
 		});
 
 		expect(screen.getByText(/Example Team can now read/)).toBeTruthy();
-		expect(
-			screen.getByText(/Couldn’t share with Jane Doe/),
-		).toBeTruthy();
+		expect(screen.getByText(/Couldn’t share with Jane Doe/)).toBeTruthy();
 		// The retry is the same press: the one that landed is dropped from the
 		// selection, the one that did not stays in it. Read through what pressing
 		// Grant again actually does, rather than through the DOM's
@@ -279,9 +299,7 @@ describe("collection read access", () => {
 		// controlled value no longer agrees with them.
 		(api.grantCollectionRead as ReturnType<typeof vi.fn>).mockClear();
 		await act(async () => {
-			fireEvent.click(
-				screen.getByRole("button", { name: /^Let / }),
-			);
+			fireEvent.click(screen.getByRole("button", { name: /^Let / }));
 		});
 		expect(api.grantCollectionRead).toHaveBeenCalledTimes(1);
 		expect(api.grantCollectionRead).toHaveBeenCalledWith(
@@ -308,9 +326,7 @@ describe("collection read access", () => {
 				/>
 			</QueryClientProvider>,
 		);
-		expect(
-			screen.getByText(/acme\/handbook is connected/),
-		).toBeTruthy();
+		expect(screen.getByText(/acme\/handbook is connected/)).toBeTruthy();
 		expect(screen.getByText(/Connecting doesn't share anything/)).toBeTruthy();
 		fireEvent.click(screen.getByRole("button", { name: "Not now" }));
 		expect(dismiss).toHaveBeenCalled();
@@ -333,32 +349,56 @@ describe("collection read access", () => {
 	});
 });
 
-// jsdom does not apply a value assignment to a <select multiple>, so the
-// selection is made the way a person makes it: by marking the options.
 function selectSubjects(...values: string[]) {
-	const picker = screen.getByLabelText(
-		"People and teams",
-	) as HTMLSelectElement;
-	for (const option of Array.from(picker.options)) {
-		option.selected = values.includes(option.value);
-	}
-	fireEvent.change(picker);
+	const labels: Record<string, RegExp> = {
+		"team:team": /Example Team/,
+		"principal:u1": /Jane Doe/,
+		"principal:u2": /John Roe/,
+	};
+	for (const value of values)
+		fireEvent.click(screen.getByRole("checkbox", { name: labels[value] }));
 }
 
 it("observes a grant revoked elsewhere while the collection stays open", async () => {
- vi.useFakeTimers();
- try {
-  let readable = true;
-  const api = client({listAccessibleScopes: async () => readable ? [{nodeId: "collection-id", label: "Example Collection", kind: "collection", actions: ["read"]}] : []});
-  const cache = new QueryClient({defaultOptions: {queries: {retry: false}}});
-  render(<QueryClientProvider client={cache}><CollectionReadBoundary client={api} orgId="org" nodeId="collection-id"><p>Private document</p></CollectionReadBoundary></QueryClientProvider>);
-  await act(async () => {await vi.advanceTimersByTimeAsync(10);});
-  expect(screen.getByText("Private document")).toBeTruthy();
-  readable = false;
-  await act(async () => {await vi.advanceTimersByTimeAsync(5010);});
-  expect(screen.queryByText("Private document")).toBeNull();
-  expect(screen.getByText(/don’t have read access/)).toBeTruthy();
-  cleanup();
-  cache.clear();
- } finally {vi.useRealTimers();}
+	vi.useFakeTimers();
+	try {
+		let readable = true;
+		const api = client({
+			listAccessibleScopes: async () =>
+				readable
+					? [
+							{
+								nodeId: "collection-id",
+								label: "Example Collection",
+								kind: "collection",
+								actions: ["read"],
+							},
+						]
+					: [],
+		});
+		const cache = new QueryClient({
+			defaultOptions: { queries: { retry: false } },
+		});
+		render(
+			<QueryClientProvider client={cache}>
+				<CollectionReadBoundary client={api} orgId="org" nodeId="collection-id">
+					<p>Private document</p>
+				</CollectionReadBoundary>
+			</QueryClientProvider>,
+		);
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(10);
+		});
+		expect(screen.getByText("Private document")).toBeTruthy();
+		readable = false;
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(5010);
+		});
+		expect(screen.queryByText("Private document")).toBeNull();
+		expect(screen.getByText(/don’t have read access/)).toBeTruthy();
+		cleanup();
+		cache.clear();
+	} finally {
+		vi.useRealTimers();
+	}
 });

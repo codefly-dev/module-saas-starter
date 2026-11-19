@@ -1,7 +1,7 @@
 "use client";
 
-import { AlertCircle, Check, Loader2, ShieldCheck, X } from "lucide-react";
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { AlertCircle, Check, ShieldCheck, X } from "lucide-react";
+import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { BrandMark } from "@/components/brand-mark";
 import {
 	declineClientAuthorization,
@@ -21,7 +21,10 @@ import {
 	CardFooter,
 	CardHeader,
 	ErrorState,
+	Page,
+	PageHeader,
 	Panel,
+	Spinner,
 } from "@/shared/ui";
 
 // sessionStorage is an external store, and this page's whole job is to render
@@ -78,6 +81,7 @@ export function ConsentPage() {
 	const { branding } = useAppearance();
 	const [deciding, setDeciding] = useState<"allow" | "deny" | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const pending = useRef(false);
 
 	const storedRequest = useSessionItem(PENDING_REQUEST_KEY);
 	const storedResolution = useSessionItem(PENDING_RESOLUTION_KEY);
@@ -102,7 +106,8 @@ export function ConsentPage() {
 	}, [resolution]);
 
 	async function allow() {
-		if (!request) return;
+		if (!request || pending.current) return;
+		pending.current = true;
 		setError(null);
 		setDeciding("allow");
 		try {
@@ -111,6 +116,7 @@ export function ConsentPage() {
 				consentGranted: true,
 			});
 		} catch (err) {
+			pending.current = false;
 			setDeciding(null);
 			// Said in this page's own words whatever was thrown: the cause is the
 			// host's or the network's, and neither's text is for the person.
@@ -122,7 +128,8 @@ export function ConsentPage() {
 	}
 
 	function deny() {
-		if (!request) return;
+		if (!request || pending.current) return;
+		pending.current = true;
 		setDeciding("deny");
 		declineClientAuthorization(request);
 	}
@@ -132,19 +139,16 @@ export function ConsentPage() {
 	// the same honest answer: this page does not know yet.
 	if (isLoading) {
 		return (
-			<div className="flex min-h-screen w-full items-center justify-center p-4">
+			<Page className="flex min-h-screen w-full items-center justify-center p-4">
 				<Card className="w-full max-w-md">
+					<CardHeader>
+						<PageHeader title="Application access" />
+					</CardHeader>
 					<CardContent>
-						<p
-							role="status"
-							className="flex items-center gap-2 text-sm text-muted-foreground"
-						>
-							<Loader2 className="size-4 shrink-0 animate-spin" />
-							Loading…
-						</p>
+						<Spinner label="Loading approval request" />
 					</CardContent>
 				</Card>
-			</div>
+			</Page>
 		);
 	}
 
@@ -161,8 +165,11 @@ export function ConsentPage() {
 	// person is told to start again.
 	if (!request || !resolution || !isAuthenticated) {
 		return (
-			<div className="flex min-h-screen w-full items-center justify-center p-4">
+			<Page className="flex min-h-screen w-full items-center justify-center p-4">
 				<Card className="w-full max-w-md">
+					<CardHeader>
+						<PageHeader title="Application access" />
+					</CardHeader>
 					<CardContent>
 						<ErrorState
 							title="Nothing to approve"
@@ -170,12 +177,12 @@ export function ConsentPage() {
 						/>
 					</CardContent>
 				</Card>
-			</div>
+			</Page>
 		);
 	}
 
 	return (
-		<div className="flex min-h-screen w-full items-center justify-center p-4">
+		<Page className="flex min-h-screen w-full items-center justify-center p-4">
 			<div className="w-full max-w-md space-y-6">
 				<div className="flex items-center justify-center gap-3">
 					<BrandMark
@@ -189,9 +196,7 @@ export function ConsentPage() {
 
 				<Card>
 					<CardHeader>
-						<h1 data-slot="page-title" className="type-page-title">
-							Allow {clientName}?
-						</h1>
+						<PageHeader title={`Allow ${clientName}?`} />
 						{/* The name above comes from the client's own document and is
 						    not verified. The origin here is: it is where the host
 						    actually fetched that document from, and it is shown
@@ -255,7 +260,7 @@ export function ConsentPage() {
 							disabled={deciding !== null}
 						>
 							{deciding === "allow" ? (
-								<Loader2 className="animate-spin" />
+								<Spinner label="Authorizing application" />
 							) : (
 								<Check />
 							)}
@@ -274,6 +279,6 @@ export function ConsentPage() {
 					</CardFooter>
 				</Card>
 			</div>
-		</div>
+		</Page>
 	);
 }

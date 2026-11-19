@@ -6,6 +6,7 @@ import {
 	useOrganizationService,
 	usePlatformAdminService,
 } from "@/lib/hooks/use-api-client";
+import { failureText } from "@/shared/lib/failure-text";
 import {
 	Chip,
 	Command,
@@ -51,11 +52,13 @@ export function UserPicker({
 	onChange,
 	orgId,
 	exclude = [],
+	disabled = false,
 }: {
 	value: string;
 	onChange: (id: string) => void;
 	orgId?: string;
 	exclude?: string[];
+	disabled?: boolean;
 }) {
 	const [search, setSearch] = useState("");
 	const [query, setQuery] = useState("");
@@ -122,16 +125,21 @@ export function UserPicker({
 
 	if (value) {
 		const chosen =
-			found.find((user) => user.id === value)?.label ?? (search || value);
+			found.find((user) => user.id === value)?.label ??
+			(search || "Selected person");
 		return (
 			<div className="w-full max-w-sm space-y-2">
 				<p className="text-sm font-medium">User</p>
 				<Chip
-					onRemove={() => {
-						onChange("");
-						setSearch("");
-					}}
-					removeLabel={`Choose someone other than ${chosen}`}
+					{...(disabled
+						? { onRemove: undefined, removeLabel: undefined }
+						: {
+								onRemove: () => {
+									onChange("");
+									setSearch("");
+								},
+								removeLabel: `Choose someone other than ${chosen}`,
+							})}
 				>
 					{chosen}
 				</Chip>
@@ -146,20 +154,21 @@ export function UserPicker({
 				description={tooShort ?? truncated}
 				error={
 					result.isError
-						? "Couldn't read the directory. Edit the search to ask again."
+						? failureText("load the people you can choose", result.error)
 						: undefined
 				}
 			>
 				{(control) => (
 					<Command value={search} onValueChange={setSearch}>
 						<CommandInput
+							disabled={disabled}
 							{...control}
 							placeholder={
 								orgId ? "Search members by email…" : "Search by name or email…"
 							}
 						/>
-						{!tooShort && (
-							<CommandList>
+						{!tooShort && !result.isError && (
+							<CommandList className="max-h-40">
 								{result.isPending || !settled ? (
 									<CommandEmpty>Searching…</CommandEmpty>
 								) : options.length === 0 ? (
@@ -168,8 +177,10 @@ export function UserPicker({
 									options.map((user) => (
 										<CommandItem
 											key={user.id}
+											disabled={disabled}
 											value={user.id}
 											onSelect={() => {
+												if (disabled) return;
 												setSearch(user.label);
 												onChange(user.id);
 											}}

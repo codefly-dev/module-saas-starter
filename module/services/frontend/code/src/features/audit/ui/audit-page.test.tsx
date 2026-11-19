@@ -6,7 +6,7 @@ import {
 	within,
 } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
 
@@ -23,7 +23,23 @@ vi.mock("@/lib/auth", () => ({
 	useAuth: () => ({ platformRole: "super_admin", organizationId: "org-1" }),
 }));
 
-afterEach(cleanup);
+afterEach(() => {
+	cleanup();
+	vi.restoreAllMocks();
+});
+beforeEach(() => {
+	server.use(
+		http.post(rpc("AuditService", "ListAuditEventTypes"), () =>
+			HttpResponse.json({ types: [] }),
+		),
+		http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+			HttpResponse.json({ buckets: [] }),
+		),
+		http.post(rpc("PrincipalService", "ListPrincipals"), () =>
+			HttpResponse.json({ principals: [] }),
+		),
+	);
+});
 
 function auditEvent(overrides: Record<string, unknown> = {}) {
 	return {
@@ -70,11 +86,14 @@ describe("AuditPage admin container", () => {
 			http.post(rpc("AuditService", "ListAuditEventTypes"), () =>
 				HttpResponse.json({ types: [] }),
 			),
-			http.post(rpc("AuditService", "AggregateAuditLog"), async ({ request }) => {
-				const body = (await request.json()) as { orgId?: unknown };
-				seen.push({ rpc: "aggregate", orgId: body.orgId });
-				return HttpResponse.json({ buckets: [] });
-			}),
+			http.post(
+				rpc("AuditService", "AggregateAuditLog"),
+				async ({ request }) => {
+					const body = (await request.json()) as { orgId?: unknown };
+					seen.push({ rpc: "aggregate", orgId: body.orgId });
+					return HttpResponse.json({ buckets: [] });
+				},
+			),
 			http.post(rpc("AuditService", "QueryAuditLog"), async ({ request }) => {
 				const body = (await request.json()) as { orgId?: unknown };
 				seen.push({ rpc: "query", orgId: body.orgId });
@@ -328,7 +347,13 @@ describe("AuditPage admin container", () => {
 			await waitFor(() =>
 				expect(queryAuditLog.mock.calls.at(-1)?.[0]?.category).toBe("security"),
 			);
-			expect(security.getAttribute("aria-pressed")).toBe("true");
+			await waitFor(() =>
+				expect(
+					screen
+						.getByRole("button", { name: /Security events/ })
+						.getAttribute("aria-pressed"),
+				).toBe("true"),
+			);
 		});
 
 		// The regression this pins: the tiles are controls, so each one's number
@@ -430,10 +455,16 @@ describe("AuditPage admin container", () => {
 			);
 			// Every marked type and nothing else: a provisioning the registry
 			// does not mark must not be swept in by the click either.
-			expect(
-				queryAuditLog.mock.calls.at(-1)?.[0]?.eventTypes,
-			).not.toContain("saas.auth.sso_jit_provisioned");
-			expect(newUsers.getAttribute("aria-pressed")).toBe("true");
+			expect(queryAuditLog.mock.calls.at(-1)?.[0]?.eventTypes).not.toContain(
+				"saas.auth.sso_jit_provisioned",
+			);
+			await waitFor(() =>
+				expect(
+					screen
+						.getByRole("button", { name: /New users/ })
+						.getAttribute("aria-pressed"),
+				).toBe("true"),
+			);
 
 			// No dropdown can show a set, so the page says the narrowing is on
 			// and how to undo it — otherwise the table, the series and the
@@ -442,11 +473,17 @@ describe("AuditPage admin container", () => {
 				screen.getByText(/Select the tile again to clear it/),
 			).toBeTruthy();
 
-			fireEvent.click(newUsers);
+			fireEvent.click(screen.getByRole("button", { name: /New users/ }));
 			await waitFor(() =>
 				expect(queryAuditLog.mock.calls.at(-1)?.[0]?.eventTypes).toBeFalsy(),
 			);
-			expect(newUsers.getAttribute("aria-pressed")).toBe("false");
+			await waitFor(() =>
+				expect(
+					screen
+						.getByRole("button", { name: /New users/ })
+						.getAttribute("aria-pressed"),
+				).toBe("false"),
+			);
 		});
 
 		// With no registered new-user type there is no set to select, so the
@@ -482,9 +519,7 @@ describe("AuditPage admin container", () => {
 				expect(queryAuditLog.mock.calls.at(-1)?.[0]?.eventTypes).toBeTruthy(),
 			);
 
-			fireEvent.click(
-				screen.getByRole("button", { name: /Security events/ }),
-			);
+			fireEvent.click(screen.getByRole("button", { name: /Security events/ }));
 			await waitFor(() =>
 				expect(queryAuditLog.mock.calls.at(-1)?.[0]?.category).toBe("security"),
 			);
@@ -496,6 +531,9 @@ describe("AuditPage admin container", () => {
 		// days downloaded every category, for all of history, with nothing in
 		// the file saying so.
 		it("exports the filters and the window the page is showing", async () => {
+			const download = vi
+				.spyOn(HTMLAnchorElement.prototype, "click")
+				.mockImplementation(() => {});
 			const queryAuditLog = vi.fn();
 			serveAudit({ queryAuditLog });
 			renderInApp(<AuditPage />);
@@ -515,8 +553,44 @@ describe("AuditPage admin container", () => {
 			);
 			const exported = queryAuditLog.mock.calls.at(-1)?.[0];
 			expect(exported?.category).toBe("security");
+			expect(exported?.orgId).toBe("org-1");
 			expect(exported?.from).toBeTruthy();
 			expect(exported?.to).toBeTruthy();
+			await waitFor(() => expect(download).toHaveBeenCalledOnce());
 		});
 	});
+});
+
+it("does not present a refused activity read as an empty log or allow export", async () => {
+	server.use(
+		http.post(rpc("AuditService", "QueryAuditLog"), () =>
+			HttpResponse.json(
+				{ code: "permission_denied", message: "private rule" },
+				{ status: 403 },
+			),
+		),
+	);
+	renderInApp(<AuditPage />);
+	await screen.findByText("Couldn't load the activity log");
+	expect(screen.queryByText("private rule")).toBeNull();
+	expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+	expect(
+		screen.getByRole("button", { name: "Export" }).hasAttribute("disabled"),
+	).toBe(true);
+});
+it("recovers a failed activity read without reporting an empty log", async () => {
+	server.use(
+		http.post(rpc("AuditService", "QueryAuditLog"), () =>
+			HttpResponse.json({ code: "unavailable" }, { status: 503 }),
+		),
+	);
+	renderInApp(<AuditPage />);
+	await screen.findByText("Couldn't load the activity log");
+	server.use(
+		http.post(rpc("AuditService", "QueryAuditLog"), () =>
+			HttpResponse.json({ events: [auditEvent()], totalCount: 1 }),
+		),
+	);
+	fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+	await screen.findByText("203.0.113.7");
 });

@@ -8,8 +8,9 @@ import {
 	useReactTable,
 } from "@tanstack/react-table";
 import { Ban, Link2, RefreshCw } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { failureText } from "@/shared/lib/failure-text";
 import { formatDate } from "@/shared/lib/utils";
 import {
 	AlertDialog,
@@ -20,9 +21,9 @@ import {
 	AlertDialogFooter,
 	AlertDialogHeader,
 	AlertDialogTitle,
-	AlertDialogTrigger,
 	Badge,
 	Button,
+	ErrorState,
 } from "@/shared/ui";
 import { DataTable } from "@/shared/ui/data-table";
 import {
@@ -43,13 +44,20 @@ const col = createColumnHelper<Invitation>();
 export function InvitationsTable({
 	invitations,
 	isLoading,
+	canManage = false,
 }: {
 	invitations: Invitation[];
 	isLoading: boolean;
+	canManage?: boolean;
 }) {
+	"use no memo";
 	const revokeInvitation = useRevokeInvitation();
-	const resendInvitation = useResendInvitation();
-	const issueLink = useIssueInvitationLink();
+	const [confirming, setConfirming] = useState<Invitation | null>(null);
+	const [failure, setFailure] = useState<string | null>(null);
+	const submitting = useRef(false);
+	const { mutate: resend, isPending: resending } = useResendInvitation();
+	const { mutate: createLink, isPending: creatingLink } =
+		useIssueInvitationLink();
 	const [link, setLink] = useState<{ url: string; email: string } | null>(null);
 
 	const columns = useMemo(
@@ -96,6 +104,7 @@ export function InvitationsTable({
 				cell: ({ row }) => {
 					const inv = row.original;
 					// status 1 = PENDING
+					if (!canManage) return null;
 					if (inv.status !== 1) return null;
 					return (
 						<div className="flex justify-end gap-1">
@@ -103,13 +112,15 @@ export function InvitationsTable({
 								variant="ghost"
 								size="sm"
 								aria-label={`Copy invitation link for ${inv.email}`}
-								disabled={issueLink.isPending}
+								disabled={creatingLink}
 								onClick={() =>
-									issueLink.mutate(inv.id, {
+									createLink(inv.id, {
 										onSuccess: (response) =>
 											setLink({ url: response.acceptUrl, email: inv.email }),
-										onError: () =>
-											toast.error("Couldn't issue an invitation link"),
+										onError: (error) =>
+											toast.error(
+												failureText("create an invitation link", error),
+											),
 									})
 								}
 							>
@@ -119,62 +130,34 @@ export function InvitationsTable({
 								variant="ghost"
 								size="sm"
 								aria-label={`Resend invitation to ${inv.email}`}
-								disabled={resendInvitation.isPending}
+								disabled={resending}
 								onClick={() =>
-									resendInvitation.mutate(inv.id, {
+									resend(inv.id, {
 										onSuccess: () => toast.success("Invitation resent"),
-										onError: () =>
-											toast.error(
-												"Invitation could not be resent yet. Try again later.",
-											),
+										onError: (error) =>
+											toast.error(failureText("resend the invitation", error)),
 									})
 								}
 							>
 								<RefreshCw className="h-4 w-4" />
 							</Button>
-							<AlertDialog>
-								<AlertDialogTrigger
-									render={
-										<Button
-											variant="ghost"
-											size="sm"
-											aria-label={`Revoke invitation to ${inv.email}`}
-										/>
-									}
-								>
-									<Ban className="h-4 w-4 text-destructive" />
-								</AlertDialogTrigger>
-								<AlertDialogContent>
-									<AlertDialogHeader>
-										<AlertDialogTitle>Revoke invitation</AlertDialogTitle>
-										<AlertDialogDescription>
-											This will revoke the invitation sent to {inv.email}. They
-											will no longer be able to join the organization with this
-											invite.
-										</AlertDialogDescription>
-									</AlertDialogHeader>
-									<AlertDialogFooter>
-										<AlertDialogCancel>Cancel</AlertDialogCancel>
-										<AlertDialogAction
-											onClick={() =>
-												revokeInvitation.mutate(inv.id, {
-													onSuccess: () => toast.success("Invitation revoked"),
-													onError: () =>
-														toast.error("Failed to revoke invitation"),
-												})
-											}
-										>
-											Revoke
-										</AlertDialogAction>
-									</AlertDialogFooter>
-								</AlertDialogContent>
-							</AlertDialog>
+							<Button
+								variant="ghost"
+								size="sm"
+								aria-label={`Revoke invitation to ${inv.email}`}
+								onClick={() => {
+									setFailure(null);
+									setConfirming(inv);
+								}}
+							>
+								<Ban className="h-4 w-4 text-destructive" />
+							</Button>
 						</div>
 					);
 				},
 			}),
 		],
-		[issueLink, resendInvitation, revokeInvitation],
+		[createLink, creatingLink, resend, resending, canManage],
 	);
 
 	const table = useReactTable({
@@ -190,8 +173,65 @@ export function InvitationsTable({
 			<DataTable
 				table={table}
 				isLoading={isLoading}
-				emptyMessage="No invitations"
+				ariaLabel="Invitations"
+				emptyMessage={
+					canManage
+						? "No invitations yet. Invite someone to join this organization."
+						: "No invitations yet. An organization administrator can invite people."
+				}
 			/>
+			<AlertDialog
+				open={confirming !== null}
+				onOpenChange={(open) => {
+					if (!open && !submitting.current) {
+						setConfirming(null);
+						setFailure(null);
+					}
+				}}
+			>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>
+							Revoke invitation to {confirming?.email}?
+						</AlertDialogTitle>
+						<AlertDialogDescription>
+							This person will no longer be able to join the organization using
+							this invitation.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					{failure && (
+						<ErrorState title="Invitation not revoked" detail={failure} />
+					)}
+					<AlertDialogFooter>
+						<AlertDialogCancel disabled={revokeInvitation.isPending}>
+							Cancel
+						</AlertDialogCancel>
+						<AlertDialogAction
+							variant="destructive"
+							disabled={revokeInvitation.isPending}
+							onClick={(event) => {
+								event.preventDefault();
+								if (!confirming || !canManage || submitting.current) return;
+								submitting.current = true;
+								setFailure(null);
+								revokeInvitation.mutate(confirming.id, {
+									onSuccess: () => {
+										toast.success("Invitation revoked");
+										setConfirming(null);
+									},
+									onError: (error) =>
+										setFailure(failureText("revoke the invitation", error)),
+									onSettled: () => {
+										submitting.current = false;
+									},
+								});
+							}}
+						>
+							{revokeInvitation.isPending ? "Revoking…" : "Revoke"}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 			<InvitationLinkDialog
 				url={link?.url ?? null}
 				email={link?.email ?? ""}

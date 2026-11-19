@@ -4,7 +4,7 @@ import {
 	type LegalContentConfig,
 	legalContentConfigured,
 } from "@/lib/legal-config";
-import { Button, Page as PageBody, PageHeader, Panel } from "@/shared/ui";
+import { Button, EmptyState, Page as PageBody, PageHeader } from "@/shared/ui";
 
 export function LegalDocument({
 	kind,
@@ -15,7 +15,7 @@ export function LegalDocument({
 }) {
 	const configured = legalContentConfigured(legal);
 	const content = kind === "terms" ? legal.termsContent : legal.privacyContent;
-	const title = kind === "terms" ? "Terms of Service" : "Privacy Policy";
+	const title = kind === "terms" ? "Terms of service" : "Privacy policy";
 
 	return (
 		<main className="mx-auto min-h-screen w-full max-w-3xl px-4 py-12">
@@ -33,12 +33,10 @@ export function LegalDocument({
 				{/* This page is public. A visitor can do nothing about a document
 				    that has not been published, so that is all it says. */}
 				{!configured ? (
-					<Panel>
-						<p className="font-medium">This document is not available yet.</p>
-						<p className="mt-1 text-sm text-muted-foreground">
-							The {title} has not been published. Please check back later.
-						</p>
-					</Panel>
+					<EmptyState
+						heading="This document is not available yet"
+						description={`The ${title.toLowerCase()} has not been published. Please check back later.`}
+					/>
 				) : (
 					<>
 						<div className="whitespace-pre-wrap leading-7">{content}</div>

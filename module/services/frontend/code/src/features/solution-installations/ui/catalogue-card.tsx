@@ -1,6 +1,6 @@
 "use client";
 
-import { getCoreRowModel, useReactTable } from "@tanstack/react-table";
+import { getCoreRowModel, getPaginationRowModel, useReactTable } from "@tanstack/react-table";
 import { useMemo } from "react";
 import type { AvailableSolution } from "@/gen/saas/accounts/v1/installations_pb";
 import { mayKeepRetainedRows, readOutcome } from "@/shared/lib/read-outcome";
@@ -118,6 +118,7 @@ export function CatalogueCard({
 		data: rows,
 		columns: words.columns,
 		getCoreRowModel: getCoreRowModel(),
+		getPaginationRowModel: getPaginationRowModel(),
 		getRowId: (row) => row.targetId,
 		meta,
 	});
@@ -129,7 +130,7 @@ export function CatalogueCard({
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle>{words.title}</CardTitle>
+				<CardTitle role="heading" aria-level={2}>{words.title}</CardTitle>
 				<CardDescription>{words.description}</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-3">
@@ -159,13 +160,12 @@ export function CatalogueCard({
 							subject={SUBJECT}
 							error={query.error}
 						/>
-						{/* biome-ignore lint/a11y/useSemanticElements: the kit's DataTable takes no accessible name, so the region around it carries the list's. */}
 						<div
 							role="region"
 							aria-label={words.label}
 							aria-busy={waiting || undefined}
 						>
-							<DataTable table={table} isLoading={query.isLoading} />
+							<DataTable ariaLabel={words.label} table={table} isLoading={query.isLoading} />
 						</div>
 					</>
 				)}

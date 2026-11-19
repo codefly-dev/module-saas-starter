@@ -1,5 +1,4 @@
 export * from "./use-api-client";
-export * from "./use-api-keys";
 // use-roles was a duplicate of features/roles/service/{queries,mutations}.
 // Canonical hooks now live in @/features/roles/service.
 export * from "./use-audit";

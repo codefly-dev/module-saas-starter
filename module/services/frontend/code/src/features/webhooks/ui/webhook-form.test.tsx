@@ -1,6 +1,6 @@
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
 
@@ -82,7 +82,83 @@ describe("WebhookForm event choices", () => {
 		);
 
 		expect(
-			await screen.findByText(/no event type in this deployment/i),
+			await screen.findByText(/No events are available to send/i),
 		).toBeTruthy();
 	});
+});
+
+it("withholds event controls and submission after an access refusal", async () => {
+	server.use(
+		http.post(rpc("AuditService", "ListAuditEventTypes"), () =>
+			HttpResponse.json(
+				{ code: "permission_denied", message: "private event scope" },
+				{ status: 403 },
+			),
+		),
+	);
+	const submit = vi.fn();
+	renderInApp(
+		<WebhookForm
+			open
+			onSubmit={submit}
+			onCancel={() => {}}
+			isPending={false}
+		/>,
+	);
+	expect(
+		await screen.findByText(/Ask your organization administrator for access/),
+	).toBeTruthy();
+	expect(screen.queryByRole("checkbox")).toBeNull();
+	expect(
+		(
+			screen.getByRole("button", {
+				name: "Create webhook",
+			}) as HTMLButtonElement
+		).disabled,
+	).toBe(true);
+	expect(screen.queryByText(/private event scope/)).toBeNull();
+	expect(submit).not.toHaveBeenCalled();
+});
+it("keeps pending webhook fields and cancellation locked", async () => {
+	registryReturns([{ name: "saas.user.created", webhookEligible: true }]);
+	const cancel = vi.fn();
+	renderInApp(
+		<WebhookForm open onSubmit={() => {}} onCancel={cancel} isPending />,
+	);
+	const event = await screen.findByRole("checkbox", { name: /user created/i });
+	expect(event.getAttribute("aria-disabled")).toBe("true");
+	expect(
+		(screen.getByRole("textbox", { name: "Endpoint URL" }) as HTMLInputElement)
+			.disabled,
+	).toBe(true);
+	fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+	expect(cancel).not.toHaveBeenCalled();
+});
+
+it("filters event choices without losing the selected events", async () => {
+	registryReturns([
+		{ name: "saas.user.created", webhookEligible: true },
+		{ name: "example.item.created", webhookEligible: true },
+	]);
+	renderInApp(
+		<WebhookForm
+			open
+			onSubmit={() => {}}
+			onCancel={() => {}}
+			isPending={false}
+		/>,
+	);
+	fireEvent.click(
+		await screen.findByRole("checkbox", { name: /user created/i }),
+	);
+	const search = screen.getByRole("textbox", { name: "Search events" });
+	fireEvent.change(search, { target: { value: "item" } });
+	expect(screen.queryByRole("checkbox", { name: /user created/i })).toBeNull();
+	expect(screen.getByRole("checkbox", { name: /item created/i })).toBeTruthy();
+	fireEvent.change(search, { target: { value: "" } });
+	expect(
+		screen
+			.getByRole("checkbox", { name: /user created/i })
+			.getAttribute("aria-checked"),
+	).toBe("true");
 });

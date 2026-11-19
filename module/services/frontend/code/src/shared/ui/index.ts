@@ -1,15 +1,35 @@
 // Host convenience imports; presentation is implemented by the shared kit.
 
 // Metric charts for the template dashboard — take metric `data`, not raw RPC.
+// Dashboard value-display widgets — bound to a metric's presentational data.
 export {
-	MetricAreaChart as AreaChart,
-	MetricBarChart as BarChart,
 	type ChartDatum,
 	type ChartSeries,
 	chartSeriesColor,
-	MetricLineChart as LineChart,
+	formatMetricValue,
+	KPIRow,
+	type Metric,
+	MetricAreaChart as AreaChart,
+	MetricBarChart as BarChart,
+	MetricCard,
 	type MetricChartProps,
+	type MetricFormat,
+	MetricLineChart as LineChart,
+	StatTile,
 } from "@codefly-dev/ui/dashboard";
+// The removable token a confirmed choice reads as, so a selection is visible
+// and reversible rather than a string left sitting in a search box.
+// The kit's filter list (Base UI Autocomplete): combobox and listbox roles,
+// arrow keys, Enter and active-descendant. A surface choosing one row out of
+// many composes this instead of stacking buttons under an Input.
+// The label, description and error of one control, and the `aria-describedby`
+// wiring between them, so no call site invents its own.
+// The never-flash loading primitive: nothing for the first 200ms of a wait, then
+// an indicator that stays long enough to read. Re-exported here because this
+// file is the host's one import surface for the kit, and a rule with no import
+// path is a rule surfaces cannot follow — before this, `src/` had zero call
+// sites and every surface hand-rolled a "Loading…" that flashed. Prefer
+// `useLoadingPhase` wherever an empty state sits below the wait.
 export {
 	AlertDialog,
 	AlertDialogAction,
@@ -20,43 +40,33 @@ export {
 	AlertDialogHeader,
 	AlertDialogTitle,
 	AlertDialogTrigger,
-} from "@codefly-dev/ui/layout";
-export { Avatar, AvatarFallback, AvatarImage } from "@codefly-dev/ui/layout";
-export { Badge, badgeVariants } from "@codefly-dev/ui/layout";
-export { Button, buttonVariants } from "@codefly-dev/ui/layout";
-export {
-	SegmentedControl,
-	type SegmentedControlOption,
-} from "@codefly-dev/ui/layout";
-export {
-	CardRoot as Card,
+	Avatar,
+	AvatarFallback,
+	AvatarImage,
+	Badge,
+	Banner,
+	Button,
+	badgeVariants,
+	buttonVariants,
 	CardContent,
 	CardDescription,
 	CardFooter,
 	CardHeader,
+	CardRoot as Card,
 	CardTitle,
-} from "@codefly-dev/ui/layout";
-export { Checkbox } from "@codefly-dev/ui/layout";
-// The removable token a confirmed choice reads as, so a selection is visible
-// and reversible rather than a string left sitting in a search box.
-export { Chip, ChipGroup, type ChipProps } from "@codefly-dev/ui/layout";
-// The kit's filter list (Base UI Autocomplete): combobox and listbox roles,
-// arrow keys, Enter and active-descendant. A surface choosing one row out of
-// many composes this instead of stacking buttons under an Input.
-export {
+	Checkbox,
+	Chip,
+	ChipGroup,
+	type ChipProps,
 	Command,
 	CommandEmpty,
 	CommandGroup,
 	CommandInput,
 	CommandItem,
 	CommandList,
-	useCommandFilter,
-} from "@codefly-dev/ui/layout";
-export { ErrorState, type ErrorStateProps } from "@codefly-dev/ui/layout";
-// The label, description and error of one control, and the `aria-describedby`
-// wiring between them, so no call site invents its own.
-export { Field, type FieldControlProps } from "@codefly-dev/ui/layout";
-export {
+	DelayedLoading,
+	type DelayedLoadingOptions,
+	type DelayedLoadingProps,
 	Dialog,
 	DialogContent,
 	DialogDescription,
@@ -64,8 +74,6 @@ export {
 	DialogHeader,
 	DialogTitle,
 	DialogTrigger,
-} from "@codefly-dev/ui/layout";
-export {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuGroup,
@@ -73,91 +81,64 @@ export {
 	DropdownMenuLabel,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
-} from "@codefly-dev/ui/layout";
-export { Input } from "@codefly-dev/ui/layout";
-export { Label } from "@codefly-dev/ui/layout";
-export { QRCode, type QRCodeProps } from "@codefly-dev/ui/layout";
-export {
+	EmptyState,
+	type EmptyStateProps,
+	ErrorState,
+	type ErrorStateProps,
+	Field,
+	type FieldControlProps,
+	Grid,
+	Input,
+	Label,
+	Layout,
+	LOADING_DELAY_MS,
+	LOADING_MIN_VISIBLE_MS,
+	type LoadingPhase,
+	Notice,
+	Page,
+	PageHeader,
+	Panel,
+	Popover,
+	PopoverContent,
+	PopoverDescription,
+	PopoverTitle,
+	PopoverTrigger,
+	QRCode,
+	type QRCodeProps,
+	Section,
+	SegmentedControl,
+	type SegmentedControlOption,
 	Select,
 	SelectContent,
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
-} from "@codefly-dev/ui/layout";
-export { Separator } from "@codefly-dev/ui/layout";
-export { Sheet, SheetContent, SheetTrigger } from "@codefly-dev/ui/layout";
-export { Skeleton } from "@codefly-dev/ui/layout";
-// The never-flash loading primitive: nothing for the first 200ms of a wait, then
-// an indicator that stays long enough to read. Re-exported here because this
-// file is the host's one import surface for the kit, and a rule with no import
-// path is a rule surfaces cannot follow — before this, `src/` had zero call
-// sites and every surface hand-rolled a "Loading…" that flashed. Prefer
-// `useLoadingPhase` wherever an empty state sits below the wait.
-export {
-	DelayedLoading,
-	type DelayedLoadingOptions,
-	type DelayedLoadingProps,
-	LOADING_DELAY_MS,
-	LOADING_MIN_VISIBLE_MS,
-	type LoadingPhase,
+	Separator,
+	Sheet,
+	SheetContent,
+	SheetTrigger,
+	Skeleton,
 	Spinner,
 	type SpinnerProps,
-	useDelayedLoading,
-	useLoadingPhase,
-} from "@codefly-dev/ui/layout";
-export { Toaster } from "@/components/ui/sonner";
-export { Switch } from "@codefly-dev/ui/layout";
-export {
+	Stack,
+	Switch,
 	Table,
 	TableBody,
 	TableCell,
 	TableHead,
 	TableHeader,
 	TableRow,
-} from "@codefly-dev/ui/layout";
-export {
-	TabsRoot as Tabs,
 	TabsContent,
 	TabsList,
+	TabsRoot as Tabs,
 	TabsTrigger,
-} from "@codefly-dev/ui/layout";
-export { Textarea } from "@codefly-dev/ui/layout";
-export {
+	Textarea,
 	Tooltip,
 	TooltipContent,
 	TooltipProvider,
 	TooltipTrigger,
+	useCommandFilter,
+	useDelayedLoading,
+	useLoadingPhase,
 } from "@codefly-dev/ui/layout";
-export {
-	Popover,
-	PopoverContent,
-	PopoverDescription,
-	PopoverTitle,
-	PopoverTrigger,
-} from "@codefly-dev/ui/layout";
-export {
-	Grid,
-	Layout,
-	Page,
-	PageHeader,
-	Panel,
-	Section,
-	Stack,
-} from "@codefly-dev/ui/layout";
-
-// Dashboard value-display widgets — bound to a metric's presentational data.
-export {
-	formatMetricValue,
-	KPIRow,
-	type Metric,
-	MetricCard,
-	type MetricFormat,
-	StatTile,
-} from "@codefly-dev/ui/dashboard";
-
-export { Banner } from "@codefly-dev/ui/layout";
-export { Notice } from "@codefly-dev/ui/layout";
-// The one confirmation before an act that cannot be taken back: the kit's
-// AlertDialog with the wording contract fixed (see the file).
 export { ConfirmDialog } from "./confirm-dialog";
-export { EmptyState, type EmptyStateProps } from "@codefly-dev/ui/layout";

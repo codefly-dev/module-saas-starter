@@ -436,3 +436,44 @@ describe("ModuleAuthorityPage", () => {
 		).toBeTruthy();
 	});
 });
+
+it("locks the module configuration while saving and preserves a refused draft", async () => {
+	serveEnvelope({ envelope: revision3, requested: [] });
+	let release = () => {};
+	let calls = 0;
+	server.use(
+		http.post(rpc("PlatformAdminService", "PutModuleEnvelope"), async () => {
+			calls += 1;
+			await new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			return HttpResponse.json(
+				{ code: "permission_denied", message: "private diagnostic" },
+				{ status: 403 },
+			);
+		}),
+	);
+	renderInApp(<ModuleAuthorityPage />);
+	const draft = (await screen.findByLabelText(
+		"Approved permissions",
+	)) as HTMLTextAreaElement;
+	const changed = JSON.stringify({ revision: 4, principals: {} });
+	fireEvent.change(draft, { target: { value: changed } });
+	await save();
+	try {
+		await waitFor(() => expect(calls).toBe(1));
+		expect(draft.disabled).toBe(true);
+		expect(
+			(screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement)
+				.disabled,
+		).toBe(true);
+		fireEvent.keyDown(screen.getByRole("alertdialog"), { key: "Escape" });
+		expect(screen.getByRole("alertdialog")).toBeTruthy();
+	} finally {
+		release();
+	}
+	await screen.findByText("Not saved");
+	expect(screen.getByRole("alertdialog")).toBeTruthy();
+	expect(draft.value).toBe(changed);
+	expect(screen.queryByText("private diagnostic")).toBeNull();
+});

@@ -4888,6 +4888,20 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/features/roles/ui/revoke-role-button.tsx",
+      "imports": [
+        "react",
+        "@/shared/ui",
+        "../service/mutations"
+      ],
+      "owner": "roles feature",
+      "disposition": "keep feature-local",
+      "reason": "Business-specific role removal composes kit AlertDialog and Button; preserves assignment identity and pending/error behavior.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Interaction coverage in user-detail-page.test.tsx; standalone story and keyboard/browser review remain."
+    },
+    {
       "source": "src/features/roles/ui/role-detail-page.tsx",
       "imports": [
         "@tanstack/react-query",

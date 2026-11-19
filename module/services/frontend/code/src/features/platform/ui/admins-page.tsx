@@ -8,24 +8,23 @@ import {
 	useReactTable,
 } from "@tanstack/react-table";
 import { Plus, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-
-import { refusalToast } from "@/features/auth/model/step-up";
 import { UserLabel } from "@/components/user-label";
 import { UserPicker } from "@/components/user-picker";
+import { refusalMessage, refusalToast } from "@/features/auth/model/step-up";
+import { useAuth } from "@/lib/auth";
+import { isSuperAdmin } from "@/lib/permissions";
 import { readOutcome } from "@/shared/lib/read-outcome";
 import { formatDate } from "@/shared/lib/utils";
 import {
 	AlertDialog,
-	AlertDialogAction,
 	AlertDialogCancel,
 	AlertDialogContent,
 	AlertDialogDescription,
 	AlertDialogFooter,
 	AlertDialogHeader,
 	AlertDialogTitle,
-	AlertDialogTrigger,
 	Badge,
 	Button,
 	Dialog,
@@ -36,7 +35,7 @@ import {
 	DialogTitle,
 	DialogTrigger,
 	ErrorState,
-	Label,
+	Field,
 	Page as PageBody,
 	PageHeader,
 	Panel,
@@ -69,6 +68,10 @@ const platformRoleLabels: Record<string, string> = {
 };
 
 export function AdminsPage() {
+	const { platformRole } = useAuth();
+	const canManage = isSuperAdmin(platformRole);
+	const busy = useRef(false);
+	const [revokeTarget, setRevokeTarget] = useState<PlatformAdmin | null>(null);
 	const {
 		data: admins = NO_ADMINS,
 		isLoading,
@@ -83,19 +86,30 @@ export function AdminsPage() {
 
 	const [open, setOpen] = useState(false);
 	const [userId, setUserId] = useState("");
-	const [role, setRole] = useState<string>(PLATFORM_ROLES[0]);
+	const [role, setRole] = useState<string>("");
 
 	function handleGrant() {
-		if (!userId.trim()) return;
+		if (
+			!canManage ||
+			busy.current ||
+			!userId.trim() ||
+			!PLATFORM_ROLES.some((value) => value === role)
+		)
+			return;
+		busy.current = true;
 		grantRole.mutate(
 			{ userId: userId.trim(), platformRole: role },
 			{
 				onSuccess: () => {
 					toast.success("Platform role granted");
 					setUserId("");
+					setRole("");
 					setOpen(false);
 				},
 				onError: (error) => refusalToast(error, "Couldn't grant the role"),
+				onSettled: () => {
+					busy.current = false;
+				},
 			},
 		);
 	}
@@ -117,7 +131,9 @@ export function AdminsPage() {
 								? "default"
 								: "secondary";
 					return (
-						<Badge variant={variant}>{platformRoleLabels[r] ?? r}</Badge>
+						<Badge variant={variant}>
+							{platformRoleLabels[r] ?? "Custom role"}
+						</Badge>
 					);
 				},
 			}),
@@ -141,46 +157,22 @@ export function AdminsPage() {
 			col.display({
 				id: "actions",
 				header: "",
-				cell: ({ row }) => {
-					const admin = row.original;
-					return (
-						<AlertDialog>
-							<AlertDialogTrigger render={<Button variant="ghost" size="sm" />}>
-								<Trash2 className="h-4 w-4 text-destructive" />
-							</AlertDialogTrigger>
-							<AlertDialogContent>
-								<AlertDialogHeader>
-									<AlertDialogTitle>Revoke platform role</AlertDialogTitle>
-									<AlertDialogDescription>
-										This will revoke the &quot;
-										{platformRoleLabels[admin.platformRole] ??
-											admin.platformRole}
-										&quot; role
-										from this user. They will lose all associated platform
-										permissions.
-									</AlertDialogDescription>
-								</AlertDialogHeader>
-								<AlertDialogFooter>
-									<AlertDialogCancel>Cancel</AlertDialogCancel>
-									<AlertDialogAction
-										onClick={() =>
-											revokeRole.mutate(admin.userId, {
-												onSuccess: () => toast.success("Role revoked"),
-												onError: (error) =>
-													refusalToast(error, "Couldn't revoke the role"),
-											})
-										}
-									>
-										Revoke
-									</AlertDialogAction>
-								</AlertDialogFooter>
-							</AlertDialogContent>
-						</AlertDialog>
-					);
-				},
+				cell: ({ row }) =>
+					canManage ? (
+						<Button
+							variant="ghost"
+							size="sm"
+							onClick={() => setRevokeTarget(row.original)}
+						>
+							<Trash2 aria-hidden="true" className="h-4 w-4 text-destructive" />
+							<span className="sr-only">
+								Remove access for <UserLabel userId={row.original.userId} />
+							</span>
+						</Button>
+					) : null,
 			}),
 		],
-		[revokeRole],
+		[canManage],
 	);
 
 	const table = useReactTable({
@@ -195,13 +187,22 @@ export function AdminsPage() {
 		<PageBody>
 			<PageHeader
 				title="Platform admins"
-				description="Grant and revoke platform-level admin roles."
+				description="Manage who can administer all organizations."
 				actions={
-					<Dialog open={open} onOpenChange={setOpen}>
-						<DialogTrigger render={<Button />}>
-							<Plus className="mr-2 h-4 w-4" />
-							Grant role
-						</DialogTrigger>
+					<Dialog
+						open={open}
+						onOpenChange={(next) => {
+							if (busy.current || grantRole.isPending) return;
+							grantRole.reset();
+							setOpen(next);
+						}}
+					>
+						{canManage && (
+							<DialogTrigger render={<Button />}>
+								<Plus className="mr-2 h-4 w-4" />
+								Grant role
+							</DialogTrigger>
+						)}
 						<DialogContent className="sm:max-w-md">
 							<DialogHeader>
 								<DialogTitle>Grant platform role</DialogTitle>
@@ -211,40 +212,61 @@ export function AdminsPage() {
 							</DialogHeader>
 							<div className="space-y-4 py-4">
 								<div className="space-y-2">
-									<UserPicker value={userId} onChange={setUserId} />
+									<UserPicker
+										value={userId}
+										onChange={setUserId}
+										disabled={grantRole.isPending}
+									/>
 								</div>
-								<div className="space-y-2">
-									<Label>Role</Label>
-									<Select
-										value={role}
-										items={PLATFORM_ROLES.map((value) => ({
-											value,
-											label: platformRoleLabels[value] ?? value,
-										}))}
-										onValueChange={(v) => {
-											if (v) setRole(v);
-										}}
-									>
-										<SelectTrigger>
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											{PLATFORM_ROLES.map((r) => (
-												<SelectItem key={r} value={r}>
-													{platformRoleLabels[r] ?? r}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
-								</div>
+								<Field label="Role">
+									{(control) => (
+										<Select
+											value={role}
+											disabled={grantRole.isPending}
+											items={PLATFORM_ROLES.map((value) => ({
+												value,
+												label: platformRoleLabels[value] ?? value,
+											}))}
+											onValueChange={(v) => {
+												if (v) setRole(v);
+											}}
+										>
+											<SelectTrigger {...control}>
+												<SelectValue placeholder="Choose a role" />
+											</SelectTrigger>
+											<SelectContent>
+												{PLATFORM_ROLES.map((r) => (
+													<SelectItem key={r} value={r}>
+														{platformRoleLabels[r] ?? "Custom role"}
+													</SelectItem>
+												))}
+											</SelectContent>
+										</Select>
+									)}
+								</Field>
 							</div>
+							{grantRole.isError && (
+								<ErrorState
+									title="Couldn't grant the role"
+									detail={refusalMessage(
+										grantRole.error,
+										"Your choice has been kept. Try saving it again.",
+									)}
+								/>
+							)}
 							<DialogFooter>
-								<Button variant="outline" onClick={() => setOpen(false)}>
+								<Button
+									variant="outline"
+									disabled={grantRole.isPending}
+									onClick={() => setOpen(false)}
+								>
 									Cancel
 								</Button>
 								<Button
 									onClick={handleGrant}
-									disabled={grantRole.isPending || !userId.trim()}
+									disabled={
+										grantRole.isPending || !userId.trim() || !role || !canManage
+									}
 								>
 									{grantRole.isPending ? "Granting..." : "Grant"}
 								</Button>
@@ -260,7 +282,7 @@ export function AdminsPage() {
 						title="Couldn't load the platform admins"
 						detail={
 							outcome === "forbidden"
-								? "Your account doesn't have the platform role this list needs."
+								? "You don't have access to this list. Ask a platform administrator to grant access."
 								: "Reload the page to try again. If it keeps failing, tell your administrator."
 						}
 					/>
@@ -269,9 +291,68 @@ export function AdminsPage() {
 				<DataTable
 					table={table}
 					isLoading={isLoading}
-					emptyMessage="No platform admins"
+					emptyMessage="No platform administrators yet. Grant a role to give someone access."
 				/>
 			)}
+			<AlertDialog
+				open={!!revokeTarget}
+				onOpenChange={(next) => {
+					if (busy.current || revokeRole.isPending) return;
+					if (!next) {
+						setRevokeTarget(null);
+						revokeRole.reset();
+					}
+				}}
+			>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Remove platform access?</AlertDialogTitle>
+						<AlertDialogDescription>
+							{revokeTarget && <UserLabel userId={revokeTarget.userId} />} will
+							lose their{" "}
+							{revokeTarget &&
+								(platformRoleLabels[revokeTarget.platformRole] ??
+									"custom")}{" "}
+							role and its access across organizations.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					{revokeRole.isError && (
+						<ErrorState
+							title="Couldn't remove access"
+							detail={refusalMessage(
+								revokeRole.error,
+								"Access has not been removed. Try again.",
+							)}
+						/>
+					)}
+					<AlertDialogFooter>
+						<AlertDialogCancel disabled={revokeRole.isPending}>
+							Cancel
+						</AlertDialogCancel>
+						<Button
+							variant="destructive"
+							disabled={revokeRole.isPending || !canManage}
+							onClick={() => {
+								if (!canManage || !revokeTarget || busy.current) return;
+								busy.current = true;
+								revokeRole.mutate(revokeTarget.userId, {
+									onSuccess: () => {
+										setRevokeTarget(null);
+										toast.success("Platform access removed");
+									},
+									onError: (error) =>
+										refusalToast(error, "Couldn't remove access"),
+									onSettled: () => {
+										busy.current = false;
+									},
+								});
+							}}
+						>
+							{revokeRole.isPending ? "Removing…" : "Remove access"}
+						</Button>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 		</PageBody>
 	);
 }

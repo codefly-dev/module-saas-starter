@@ -10,8 +10,9 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
+	ErrorState,
+	Field,
 	Input,
-	Label,
 	Textarea,
 } from "@/shared/ui";
 import { type CreateTeamValues, createTeamSchema } from "../model/schemas";
@@ -51,19 +52,21 @@ export function TeamForm({
 		<Dialog open={open} onOpenChange={(o) => !o && !isPending && onCancel()}>
 			<DialogContent className="sm:max-w-[425px]">
 				<DialogHeader>
-					<DialogTitle>{editing ? "Rename team" : "Create Team"}</DialogTitle>
+					<DialogTitle>{editing ? "Rename team" : "Create team"}</DialogTitle>
 					<DialogDescription>
 						{editing
 							? "Update this team's name and description."
 							: "Add a new team to the selected organization."}
 					</DialogDescription>
 				</DialogHeader>
-				<form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-					{error && (
-						<p role="alert" className="text-sm text-destructive">
-							{error}
-						</p>
-					)}
+				<form
+					noValidate
+					onSubmit={form.handleSubmit((values) => {
+						if (!isPending) onSubmit(values);
+					})}
+					className="space-y-4"
+				>
+					{error && <ErrorState title="Team wasn’t saved" detail={error} />}
 					{existingTeam && (
 						<Button
 							type="button"
@@ -74,32 +77,31 @@ export function TeamForm({
 							Use existing {existingTeam.name}
 						</Button>
 					)}
-					<div className="space-y-2">
-						<Label htmlFor="team-name">Name</Label>
-						<Input
-							id="team-name"
-							placeholder="Engineering"
-							{...form.register("name")}
-						/>
-						{form.formState.errors.name && (
-							<p className="text-sm text-destructive">
-								{form.formState.errors.name.message}
-							</p>
+
+					<Field label="Name" error={form.formState.errors.name?.message}>
+						{(control) => (
+							<Input
+								{...control}
+								disabled={isPending}
+								placeholder="Engineering"
+								{...form.register("name")}
+							/>
 						)}
-					</div>
-					<div className="space-y-2">
-						<Label htmlFor="team-desc">Description</Label>
-						<Textarea
-							id="team-desc"
-							placeholder="Optional description..."
-							{...form.register("description")}
-						/>
-						{form.formState.errors.description && (
-							<p className="text-sm text-destructive">
-								{form.formState.errors.description.message}
-							</p>
+					</Field>
+					<Field
+						label="Description"
+						description="Optional. Describe what this team does."
+						error={form.formState.errors.description?.message}
+					>
+						{(control) => (
+							<Textarea
+								{...control}
+								disabled={isPending}
+								{...form.register("description")}
+							/>
 						)}
-					</div>
+					</Field>
+
 					<DialogFooter>
 						<Button
 							type="button"
