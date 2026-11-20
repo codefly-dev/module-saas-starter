@@ -257,6 +257,8 @@ async function handler(
 	}
 
 	const responseHeaders = new Headers();
+	const retryAfter = upstream.headers.get("retry-after");
+	if (retryAfter !== null) responseHeaders.set("retry-after", retryAfter);
 	if (moduleCall) {
 		for (const name of ["connect-content-encoding", "connect-accept-encoding"]) {
 			const value = upstream.headers.get(name);

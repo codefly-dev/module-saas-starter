@@ -1170,6 +1170,17 @@ describe("the dedicated browser module edge", () => {
 
 
 describe("generated clients through the browser module forwarder", () => {
+	it("passes the gateway retry interval to a rate-limited browser call", async () => {
+		withGateway();
+		withTrustContext();
+		registerAudit();
+		fetchMock.mockResolvedValue(new Response(null, { status: 429, headers: { "Retry-After": "42" } }));
+		const res = await POST(proxyRequest("http://frontend/api/solutions/audit/proxy/_browser", { method: "POST" }),
+			context("audit", ["_browser", "example.v1.Service", "List"]));
+		expect(res.status).toBe(429);
+		expect(res.headers.get("retry-after")).toBe("42");
+	});
+
 	it("keeps the marker, generated procedure, base path and protocol headers", async () => {
 		withGateway();
 		withTrustContext();
