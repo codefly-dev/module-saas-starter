@@ -85,6 +85,10 @@ func rateLimitInterceptor(limiter *redisstate.RateLimiter) connect.UnaryIntercep
 					connect.CodeResourceExhausted,
 					ErrRateLimited,
 				)
+				// gRPC clients of this Connect listener receive status details.
+				if detail, err := connect.NewErrorDetail(&errdetails.RetryInfo{RetryDelay: durationpb.New(retryAfter)}); err == nil {
+					cerr.AddDetail(detail)
+				}
 				cerr.Meta().Set("Retry-After",
 					strconv.Itoa(int(retryAfter.Seconds())+1))
 				cerr.Meta().Set("X-RateLimit-Reset",
