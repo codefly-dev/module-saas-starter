@@ -109,7 +109,7 @@ func (h *delegationConnectHandler) WaitForDelegation(ctx context.Context, req *c
 	w := wool.Get(ctx).In("Connect.WaitForDelegation",
 		wool.Field("grant_id", req.Msg.GetId()))
 
-	events, err := service.WaitForDelegation(ctx, req.Msg.GetId(), req.Msg.GetOrgId())
+	events, err := service.WaitForDelegation(ctx, req.Msg.GetId(), req.Msg.GetOrgId(), actorID)
 	if err != nil {
 		return translateGRPCError(status.Error(codes.Internal, err.Error()))
 	}

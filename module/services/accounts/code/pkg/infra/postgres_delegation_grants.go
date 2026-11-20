@@ -224,7 +224,7 @@ func (s *PostgresStore) ListPending(ctx context.Context, orgID string, pageSize 
 //  4. Loop on conn.WaitForNotification until terminal status or
 //     ctx cancellation.
 //  5. Release the connection on exit.
-func (s *PostgresStore) Subscribe(ctx context.Context, id, orgID string) (<-chan business.DelegationDecisionEvent, error) {
+func (s *PostgresStore) Subscribe(ctx context.Context, id, orgID, actorID string) (<-chan business.DelegationDecisionEvent, error) {
 	w := wool.Get(ctx).In("SubscribeDelegation",
 		wool.Field("grant_id", id))
 
@@ -251,11 +251,11 @@ func (s *PostgresStore) Subscribe(ctx context.Context, id, orgID string) (<-chan
 	readGrant := func(ctx context.Context) (*business.DelegationGrant, error) {
 		var grant *business.DelegationGrant
 		err := pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
-			if err := bindRequestScope(ctx, tx, orgID, ""); err != nil {
+			if err := bindRequestScope(ctx, tx, orgID, actorID); err != nil {
 				return err
 			}
 			var err error
-			grant, err = scanDelegationGrant(ctx, tx.QueryRow(ctx, delegationSelectByID, id, orgID))
+			grant, err = scanDelegationGrant(ctx, tx.QueryRow(ctx, delegationSelectByID+" AND actor_principal_id = $3", id, orgID, actorID))
 			return err
 		})
 		return grant, err
