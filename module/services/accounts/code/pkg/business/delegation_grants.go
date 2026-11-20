@@ -270,7 +270,7 @@ type DelegationStore interface {
 	// given grant id. The channel closes when the grant reaches
 	// a terminal status OR the context is cancelled. Backed by
 	// Postgres LISTEN; no polling.
-	Subscribe(ctx context.Context, id, orgID string) (<-chan DelegationDecisionEvent, error)
+	Subscribe(ctx context.Context, id, orgID, actorID string) (<-chan DelegationDecisionEvent, error)
 
 	// MatchPattern returns the most-recently-created active
 	// pattern grant whose (action_pattern, resource_pattern)
@@ -433,12 +433,12 @@ func (s *Service) RequestDelegation(ctx context.Context, in *RequestDelegationIn
 // and emits the terminal event immediately, then closes. No
 // missed-NOTIFY race — even if the trigger fired before LISTEN
 // started, the snapshot read catches it.
-func (s *Service) WaitForDelegation(ctx context.Context, id, orgID string) (<-chan DelegationDecisionEvent, error) {
+func (s *Service) WaitForDelegation(ctx context.Context, id, orgID, actorID string) (<-chan DelegationDecisionEvent, error) {
 	w := wool.Get(ctx).In("WaitForDelegation", wool.Field("grant_id", id))
 	if id == "" {
 		return nil, w.NewError("grant id required")
 	}
-	return s.delegationStore().Subscribe(ctx, id, orgID)
+	return s.delegationStore().Subscribe(ctx, id, orgID, actorID)
 }
 
 // DecideDelegation transitions a pending grant. Returns the
