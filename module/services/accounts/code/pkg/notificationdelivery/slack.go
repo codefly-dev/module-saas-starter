@@ -30,7 +30,21 @@ func NewSlack(botToken string) *Slack {
 
 var slackConversation = regexp.MustCompile(`^[CDG][A-Z0-9]{1,79}$`)
 
+var slackTimestamp = regexp.MustCompile(`^[0-9]{1,20}\.[0-9]{1,6}$`)
+
 func (s *Slack) Send(ctx context.Context, message Message) (Result, error) {
+	return s.send(ctx, message, "")
+}
+
+// SendReply posts to the root message selected by the host's authorized thread binding.
+func (s *Slack) SendReply(ctx context.Context, message Message, rootMessageID string) (Result, error) {
+	if !slackTimestamp.MatchString(rootMessageID) {
+		return Result{}, ErrInvalidMessage
+	}
+	return s.send(ctx, message, rootMessageID)
+}
+
+func (s *Slack) send(ctx context.Context, message Message, rootMessageID string) (Result, error) {
 	if s.token == "" {
 		return Result{}, ErrNotConfigured
 	}
@@ -44,10 +58,14 @@ func (s *Slack) Send(ctx context.Context, message Message) (Result, error) {
 	if message.Body != "" {
 		blocks = append(blocks, map[string]any{"type": "section", "text": map[string]any{"type": "plain_text", "text": message.Body, "emoji": false}})
 	}
-	body, err := json.Marshal(map[string]any{
+	payload := map[string]any{
 		"channel": message.Destination, "text": escape.Replace(message.Title + "\n" + message.Body),
 		"blocks": blocks, "parse": "none", "mrkdwn": false, "unfurl_links": false, "unfurl_media": false,
-	})
+	}
+	if rootMessageID != "" {
+		payload["thread_ts"] = rootMessageID
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return Result{}, ErrInvalidMessage
 	}

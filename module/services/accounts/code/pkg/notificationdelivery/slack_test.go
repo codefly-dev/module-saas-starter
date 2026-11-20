@@ -34,6 +34,7 @@ func TestSlackPlainTextAndFixedEndpoint(t *testing.T) {
 		var payload map[string]any
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
 		require.Equal(t, "C12345", payload["channel"])
+		require.NotContains(t, payload, "thread_ts")
 		require.Equal(t, "none", payload["parse"])
 		require.Equal(t, false, payload["mrkdwn"])
 		require.Equal(t, false, payload["unfurl_links"])
@@ -144,4 +145,25 @@ func TestSMSPreparedButNeverAcknowledgedWithoutProvider(t *testing.T) {
 	result, err := (UnconfiguredSMS{}).Send(context.Background(), Message{EffectID: "effect-1", Destination: "+12025550123", Body: "Source updated"})
 	require.ErrorIs(t, err, ErrNotConfigured)
 	require.Empty(t, result.ProviderMessageID)
+}
+
+func TestSlackReplyUsesBoundRoot(t *testing.T) {
+	client := NewSlack("test-secret")
+	calls := 0
+	client.client.Transport = roundTrip(func(r *http.Request) (*http.Response, error) {
+		calls++
+		var payload map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+		require.Equal(t, "123.456789", payload["thread_ts"])
+		require.Equal(t, "C12345", payload["channel"])
+		return response(200, `{"ok":true,"ts":"123.999999"}`), nil
+	})
+	for _, invalid := range []string{"", "channel/123.456", "123.456?broadcast=true"} {
+		_, err := client.SendReply(context.Background(), message(), invalid)
+		require.ErrorIs(t, err, ErrInvalidMessage)
+	}
+	result, err := client.SendReply(context.Background(), message(), "123.456789")
+	require.NoError(t, err)
+	require.Equal(t, "123.999999", result.ProviderMessageID)
+	require.Equal(t, 1, calls)
 }
