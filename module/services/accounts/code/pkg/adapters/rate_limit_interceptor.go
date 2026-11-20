@@ -7,11 +7,13 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"accounts/pkg/redisstate"
 
@@ -119,7 +121,7 @@ func grpcRateLimitInterceptor() grpc.UnaryServerInterceptor {
 		if key == "" {
 			return handler(ctx, req)
 		}
-		allowed, _, _, err := rateLimiter.Allow(
+		allowed, _, resetAt, err := rateLimiter.Allow(
 			ctx, key, cfg.defaultLimit, cfg.defaultWindow,
 		)
 		if err != nil {
@@ -128,7 +130,12 @@ func grpcRateLimitInterceptor() grpc.UnaryServerInterceptor {
 			return handler(ctx, req)
 		}
 		if !allowed {
-			return nil, status.Errorf(codes.ResourceExhausted, "rate_limited")
+			refusal := status.New(codes.ResourceExhausted, ErrRateLimited.Error())
+			hint := &errdetails.RetryInfo{RetryDelay: durationpb.New(max(0, time.Until(resetAt)))}
+			if detailed, err := refusal.WithDetails(hint); err == nil {
+				refusal = detailed
+			}
+			return nil, refusal.Err()
 		}
 		return handler(ctx, req)
 	}
