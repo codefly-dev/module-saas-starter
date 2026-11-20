@@ -44,7 +44,7 @@ registered, installed nowhere, tenant moved, another registry binding) answers
 `TENANT_MEMBERSHIP_MISSING` is final.
 
 The Go notification facade belongs to `codefly-dev/saas-sdk-go`. The journal
-consumer belongs to `obin-ai/module-annotations` and calls the generated Accounts
+consumer belongs to the annotations module and calls the generated Accounts
 client. Its current release checks selected precondition reasons but overlooks
 the domain and treats permission denial as a final refusal. Adoption of the
 typed SDK classifier is tracked by [SDK PR #49](https://github.com/codefly-dev/saas-sdk-go/pull/49).
@@ -107,5 +107,5 @@ encrypted token lifecycle, user-to-Slack recipient binding, preferences, durable
 inbound event acceptance and Runtime-driven delivery remain outstanding there.
 The host queue retirement is #835: new notification delivery must use the journal
 and internal idempotent operations consumed by Runtime, not new host jobs,
-retry tables or a private receipt ledger. SDK-Go [#32](https://github.com/codefly-dev/sdk-go/pull/32) merged transactional effect receipts and replay support. Runtime tracks the generic operation adapter in [#119](https://github.com/obin-ai/module-runtime/issues/119), now closed. External delivery still needs a composed test covering a provider acceptance followed by a process crash before the host records the outcome.
+retry tables or a private receipt ledger. SDK-Go [#32](https://github.com/codefly-dev/sdk-go/pull/32) merged transactional effect receipts and replay support. Runtime tracks the generic operation adapter in its issue #119, now closed. External delivery still needs a composed test covering a provider acceptance followed by a process crash before the host records the outcome.
 Email also remains limited to the host's existing transactional flows.
