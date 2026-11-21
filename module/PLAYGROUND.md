@@ -8,8 +8,13 @@ server.
 ```bash
 codefly run service --fixture dev-admin          # from the repository root
 codefly endpoint saas-starter/frontend --require-up   # the address, never typed
-scripts/playground-check.sh                      # the journeys marked as checked, asserted
+make playground-journeys                         # the journeys marked as checked, asserted
 ```
+
+`make playground-journeys` is `scripts/playground-check.sh`: the Go suite in
+`module/tools/playground`, which asks the CLI where the run's frontend is and
+makes every call itself, so no address is typed or handed between processes.
+The people it signs in as are declared once, in that package's `cast.go`.
 
 Use the CLI release in `scripts/ci/install-codefly.sh` or newer: an older build
 fails at boot with `no configuration found for egress`. Add `--naming-scope
@@ -60,7 +65,7 @@ expands to nothing and the casting walk needs a composed target (below).
 |---|---|---|
 | Create an organization | manual: sign in as Sarah Chen, Platform → Organizations → Create | the new organization lists with its owner; the workspace slug follows the name (Dana Lee is a member of Acme Corp now, so the onboarding wizard of a person with no organization has no fixture person) |
 | Create a team | manual: Admin, Teams, as Sarah Chen | the team lists |
-| Grant a person a role explicitly, access follows | checked: `playground-check.sh` | Maya Rossi reads the example collection by her grant and Bob, who holds none, reads nothing; Remi Laurent reads it after the grant and not after it is revoked |
+| Grant a person a role explicitly, access follows | checked: `playground-check.sh` | Maya Rossi reads the example collection by her grant and the three people the sign-in page offers (Dana, Carol and Bob), who hold none, read nothing; Remi Laurent reads it after the grant and not after it is revoked |
 | Refusal names its reason | manual: Bob Williams opens Admin | "You don't have access to Admin", with his role and who can change it |
 | An administrator gets nothing for free | checked: `playground-check.sh` | organization admins (Alice, Alex) and a platform `super_admin` with her own grant removed read nothing; a platform role reads no other organization's audit trail |
 
