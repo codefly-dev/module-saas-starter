@@ -192,7 +192,7 @@ func (s *DelegationServer) WaitForDelegation(req *gen.WaitForDelegationRequest, 
 	w := wool.Get(ctx).In("WaitForDelegation",
 		wool.Field("grant_id", req.GetId()))
 
-	events, err := service.WaitForDelegation(ctx, req.GetId(), req.GetOrgId())
+	events, err := service.WaitForDelegation(ctx, req.GetId(), req.GetOrgId(), actorID)
 	if err != nil {
 		return status.Error(codes.Internal, err.Error())
 	}

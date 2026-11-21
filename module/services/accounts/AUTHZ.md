@@ -300,3 +300,12 @@ cannot mint one, and the role catalog importer leaves it alone.
 
 Boundary-level RLS inside module stores (an `app.current_boundaries` GUC) stays
 deferred (RFC-0001 resolution 2); the org remains the RLS floor.
+
+## Delegation decision streams
+
+An organization administrator can decide a pending delegation. Only its actor can
+receive the token-bearing decision through `WaitForDelegation`. The Connect and
+gRPC handlers pass the authenticated principal to the subscription. Both the
+initial snapshot and every read after a notification match the organization,
+grant ID and actor before exposing a decision. A same-organization grantor
+receives an empty stream when subscribing to another actor’s grant.

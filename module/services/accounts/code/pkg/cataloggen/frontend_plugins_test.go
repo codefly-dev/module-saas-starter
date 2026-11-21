@@ -148,7 +148,10 @@ func TestFrontendPluginBindingsRejectUnsafeDrift(t *testing.T) {
 	_, err = cataloggen.BuildFrontendPluginArtifacts(serviceCatalog, topology, []byte(unknownPermission), codeRoot)
 	require.ErrorContains(t, err, "unknown permission")
 
-	weakerAccess := strings.Replace(bindings, "    path: /admin/users\n    icon: Users\n    group: Users & access\n    access: admin", "    path: /admin/users\n    icon: Users\n    group: Users & access\n    access: authenticated", 1)
+	// Change the access requirement independently of the translated display labels.
+	const usersAccess = "    access: admin\n    permission: users:read"
+	require.Contains(t, bindings, usersAccess)
+	weakerAccess := strings.Replace(bindings, usersAccess, "    access: authenticated\n    permission: users:read", 1)
 	_, err = cataloggen.BuildFrontendPluginArtifacts(serviceCatalog, topology, []byte(weakerAccess), codeRoot)
 	require.ErrorContains(t, err, "weakens route access")
 

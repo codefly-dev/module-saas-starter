@@ -267,7 +267,15 @@ func TestDelegation_Subscribe_AlreadyDecided(t *testing.T) {
 	// closes. Subscribe binds the org for each of its own reads.
 	ctx, cancel := context.WithTimeout(testCtx, 3*time.Second)
 	defer cancel()
-	events, err := testStore.Subscribe(ctx, id, orgID)
+	other, err := testStore.Subscribe(ctx, id, orgID, grantor)
+	require.NoError(t, err)
+	select {
+	case _, ok := <-other:
+		require.False(t, ok, "only the grant actor may receive the token-bearing decision")
+	case <-ctx.Done():
+		t.Fatal("other principal's stream stayed open")
+	}
+	events, err := testStore.Subscribe(ctx, id, orgID, actor)
 	require.NoError(t, err)
 
 	select {
@@ -305,7 +313,7 @@ func TestDelegation_Subscribe_DeliversALaterDecision(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(testCtx, 5*time.Second)
 	defer cancel()
-	events, err := testStore.Subscribe(ctx, id, orgID)
+	events, err := testStore.Subscribe(ctx, id, orgID, actor)
 	require.NoError(t, err)
 
 	require.NoError(t, sc.Within(testCtx, func(ctx context.Context) error {
