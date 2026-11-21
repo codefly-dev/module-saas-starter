@@ -256,6 +256,11 @@ func (s *PostgresStore) mergeUserProfile(ctx context.Context, executor QueryExec
 			return w.Wrapf(err, "malformed profile json")
 		}
 	}
+	// An account registered without a profile stores JSON null, which
+	// unmarshals to a nil map: the first merge into it must not panic.
+	if current == nil {
+		current = map[string]string{}
+	}
 	for key, value := range fields {
 		if value == "" {
 			delete(current, key)
