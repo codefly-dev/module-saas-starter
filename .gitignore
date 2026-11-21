@@ -57,3 +57,6 @@ module-saas-starter
 # `target/` here is a scratch build some tool left behind, and 1.1MB of it was
 # committed once by a `git add -A` (removed in the commit that added this line).
 /target/
+
+# Machine-local Makefile selection (GO, CODEFLY, NODE).
+/local.mk

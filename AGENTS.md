@@ -198,6 +198,12 @@ Skills in `.claude/skills/`, loaded when the task calls for them:
   hands a service that declares `hop-routes` the group with an empty `ROUTES`
   when the composition names no module behind the hop — which this workspace
   does not, so an earlier release refused `auth-gateway` outright.
+- On this machine first: `make verify` (the [Makefile](./Makefile)) runs what
+  needs no host — the Go and frontend unit suites, the tree gates, the role
+  plan (`make role-plan`: every accounts procedure against an administrator, a
+  member, a person with no role, the platform administrator and a signed-out
+  visitor) and the permission scenarios on a Codefly-started store (`make
+  scenarios`). The Makefile's `verify` comment lists what stays CI's.
 - Canonical **service** gate: `codefly ci run`. It owns lint, compile/typecheck,
   tests, dependency/vuln audit, SBOM, and container build for every service in
   the graph. See [RELEASE_GATES.md](./RELEASE_GATES.md).
