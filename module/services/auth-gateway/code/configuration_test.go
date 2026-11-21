@@ -25,5 +25,8 @@ func TestWorkspaceEnvResolvesConfigurationSecretAndFallback(t *testing.T) {
 	require.Equal(t, "secret", workspaceEnv("internal-auth", key))
 
 	t.Setenv(configurationKey, "configuration")
+	require.Empty(t, workspaceEnv("internal-auth", key), "conflicting carriers must not fall back to the raw token")
+
+	t.Setenv(secretKey, "")
 	require.Equal(t, "configuration", workspaceEnv("internal-auth", key))
 }

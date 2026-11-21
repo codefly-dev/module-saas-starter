@@ -84,16 +84,14 @@ each invocation fresh database state. Do not opt into `WithSharedControlChannel`
 which is only for older CLIs and reuses fixed local database directories across
 otherwise independent runs and migration revisions.
 
-Core is pinned per Go module. The module agent, tooling and frontend payload
-select released Core **v0.19.7**. The services — accounts, auth-gateway and
-store — select one Core together, released **v0.19.22**: the gateway reads the module
-manifests accounts accepts with Core's strict parser, so a gateway on an older
-Core drops every manifest carrying a field it does not know (a dropped manifest
-is logged and shown as `refusal` in `/solutions/_registry`). Move the three
-together. Accounts and auth-gateway use released SDK v0.4.1, which owns tracing
-startup and shutdown. Never ship a host release on an untagged Core candidate:
-these services move to a tagged Core that contains that commit before one. Run qualification with
-`GOWORK=off` so a workspace cannot mask the pins.
+Every Go module that requires Core selects the same revision. Move the module
+agent, tooling, frontend payload and services together. The gateway reads the
+module manifests accounts accepts with Core's strict parser, so a gateway on
+an older Core drops any manifest carrying a field it does not know and reports
+`refusal` in `/solutions/_registry`. Accounts and auth-gateway also share one
+SDK revision for tracing startup and shutdown. Before a host release, move to
+a tagged Core release that contains the qualified commit. Run qualification
+with `GOWORK=off` so a workspace cannot mask the pins.
 Accounts requires Go 1.27.4. All go-grpc services pin released agent 0.1.74,
 whose builder uses Go 1.27.4 under `GOTOOLCHAIN=local`; CI uses the same patch.
 Go 1.27.0 is affected by [GO-2026-6613](https://pkg.go.dev/vuln/GO-2026-6613),

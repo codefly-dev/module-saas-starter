@@ -3,7 +3,7 @@ module store-migrator
 go 1.27.4
 
 require (
-	github.com/codefly-dev/sdk-go v0.4.1
+	github.com/codefly-dev/sdk-go v0.4.5-0.20261121101950-387a613100c4
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/lib/pq v1.12.3
 )
@@ -18,7 +18,7 @@ require (
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/codefly-dev/core v0.19.22 // indirect
+	github.com/codefly-dev/core v0.19.36-0.20261121094328-95a426c5096f // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/analysis v1.0.1 // indirect

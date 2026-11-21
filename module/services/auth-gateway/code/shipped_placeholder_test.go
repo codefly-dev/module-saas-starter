@@ -146,10 +146,8 @@ func TestR1019AbsentCurrentPerimeterCredentialRefusesDeployedStartup(t *testing.
 	})
 }
 
-// blankWorkspaceKey and provisionWorkspaceKey write the carriers workspaceEnv
-// actually reads. Both have to be set: codefly CI injects the configuration group,
-// a bare `go test` does not, and a shipped .secret.env default reaching either
-// carrier would otherwise decide the result instead of the test.
+// Control both spellings and namespaces so an injected Codefly configuration
+// cannot override the test. Provision only the secret namespace.
 func blankWorkspaceKey(t *testing.T, group, key string) {
 	t.Helper()
 	provisionWorkspaceKey(t, group, key, "")
@@ -157,8 +155,11 @@ func blankWorkspaceKey(t *testing.T, group, key string) {
 
 func provisionWorkspaceKey(t *testing.T, group, key, value string) {
 	t.Helper()
-	upper := strings.ReplaceAll(strings.ToUpper(group), "-", "_")
-	t.Setenv(key, value)
-	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__"+upper+"__"+key, value)
-	t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__"+upper+"__"+key, value)
+	exact := strings.ToUpper(group)
+	normalized := strings.ReplaceAll(exact, "-", "_")
+	t.Setenv(key, "")
+	for _, name := range []string{exact, normalized} {
+		t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__"+name+"__"+key, "")
+		t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__"+name+"__"+key, value)
+	}
 }
