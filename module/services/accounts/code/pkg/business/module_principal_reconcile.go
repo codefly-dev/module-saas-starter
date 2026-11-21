@@ -732,14 +732,54 @@ func deriveModulePrincipalGrant(
 		if len(headless) > 0 && allowed.HeadlessScopes != nil {
 			derived.HeadlessScopes = nilIfEmpty(intersectUnitScopes(allowed.HeadlessScopes, headless))
 		}
+		lookup := scopeSet(asked.Operations[modulecontract.OperationLookup])
 		// Lookup and source delegation act as a person, so they exist only
 		// beside a granted invoke: a headless-only binding carries neither.
 		if derived.InvokeScopes != nil {
-			if lookup := scopeSet(asked.Operations[modulecontract.OperationLookup]); len(lookup) > 0 {
+			if len(lookup) > 0 {
 				derived.LookupScopes = intersectUnitScopes(allowed.LookupScopes, lookup)
 			}
 			if allowed.SourceDelegationScopes != nil {
 				derived.SourceDelegationScopes = nilIfEmpty(intersectUnitScopes(allowed.SourceDelegationScopes, invoke))
+			}
+		}
+		// What the envelope allows of a binding it DOES name, scope by scope,
+		// SAID — the same reason the three dimensions above are said, applied one
+		// level down.
+		//
+		// `intersectUnitScopes` is an intersection per (kind, action), so an
+		// action the manifest asks for and the envelope omits is simply gone, and
+		// until now it went in silence. That silence is the expensive one: a
+		// binding that keeps most of what it asked for still LOOKS granted, so
+		// the operator reads a working binding and a refusal whose message is
+		// about the CALLER's scopes. On 2026-11-10 one such action
+		// (robin.conversations:delete) emptied an invoke arm entirely and took a
+		// whole binding with it, and the surface named an unrelated scope.
+		//
+		// Logged before the binding is validated, so it is said whether the
+		// binding survives this attenuated or is omitted for having nothing left:
+		// in the second case the omission reason records that no valid audience
+		// remained, and these lines are the only place the scopes are named.
+		//
+		// LOGGED, not joined into the pass's error, for the reason the dimensions
+		// above give: the ceiling is unchanged either way, and a pass that failed
+		// on it would freeze the registry.
+		for _, arm := range []struct {
+			operation string
+			asked     map[string]bool
+			kept      []ModuleOperationScope
+		}{
+			{modulecontract.OperationInvoke, invoke, derived.InvokeScopes},
+			{modulecontract.OperationHeadless, headless, derived.HeadlessScopes},
+			{modulecontract.OperationLookup, lookup, derived.LookupScopes},
+		} {
+			for _, dropped := range attenuated(arm.asked, arm.kept) {
+				wool.Get(context.Background()).In("deriveModulePrincipalGrant").Warn(
+					"the envelope allows none of a scope this manifest declares on this operation, so this binding carries none of it",
+					wool.Field("module", prefix), wool.Field("binding", asked.ID),
+					wool.Field("audience", allowed.Audience), wool.Field("operation", arm.operation),
+					wool.Field("declared", dropped), wool.Field("manifest", manifest.Binding),
+					wool.Field("generation", manifest.Generation))
 			}
 		}
 		if err := validateOperationAudiences(prefix, map[string]ModuleOperationAudience{asked.ID: derived}); err != nil {
@@ -782,6 +822,29 @@ func scopeSet(scopes []string) map[string]bool {
 		set[scope] = true
 	}
 	return set
+}
+
+// attenuated is, sorted, each "<resource kind>:<action>" the manifest asked for
+// on one operation that the grant derived for it does not carry. It is the
+// difference intersectUnitScopes throws away.
+func attenuated(asked map[string]bool, kept []ModuleOperationScope) []string {
+	if len(asked) == 0 {
+		return nil
+	}
+	held := make(map[string]bool, len(kept))
+	for _, scope := range kept {
+		for _, action := range scope.Actions {
+			held[scope.ResourceKind+":"+action] = true
+		}
+	}
+	var out []string
+	for scope := range asked {
+		if !held[scope] {
+			out = append(out, scope)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // intersectUnitScopes keeps, per allowed resource kind, the actions the
