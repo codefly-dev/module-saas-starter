@@ -98,7 +98,9 @@ describe("JobOperationsPage admin container", () => {
 			http.post(admin("ListJobs"), () => delay("infinite")),
 		);
 		renderInApp(<JobOperationsPage />);
-		expect(await screen.findAllByLabelText("Loading table")).toHaveLength(2);
+		await waitFor(() =>
+			expect(screen.getAllByLabelText("Loading table")).toHaveLength(2),
+		);
 		expect(screen.queryByText("No queues yet")).toBeNull();
 		expect(screen.queryByText("No jobs yet")).toBeNull();
 	});
