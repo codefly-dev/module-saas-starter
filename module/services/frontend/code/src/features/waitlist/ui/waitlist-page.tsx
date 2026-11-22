@@ -59,7 +59,6 @@ export function WaitlistPage() {
 
 	useEffect(() => {
 		let active = true;
-		setStatusError(false);
 		client
 			.getAcquisitionStatus({})
 			.then((status) => {
@@ -149,7 +148,12 @@ export function WaitlistPage() {
 								title="Couldn’t check registration availability"
 								detail="Check your connection and try again."
 							/>
-							<Button onClick={() => setStatusAttempt((value) => value + 1)}>
+							<Button
+								onClick={() => {
+									setStatusError(false);
+									setStatusAttempt((value) => value + 1);
+								}}
+							>
 								Try again
 							</Button>
 						</CardContent>

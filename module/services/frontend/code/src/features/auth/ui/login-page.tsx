@@ -132,7 +132,6 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 	useEffect(() => {
 		if (!devMode || clientRefusal) return;
 		const controller = new AbortController();
-		setFixtureState("loading");
 		fetch("/api/fixtures", { signal: controller.signal })
 			.then(async (res) => {
 				if (!res.ok) throw new Error("Fixture list unavailable");
@@ -298,7 +297,10 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 									/>
 									<Button
 										variant="outline"
-										onClick={() => setFixtureAttempt((value) => value + 1)}
+										onClick={() => {
+											setFixtureState("loading");
+											setFixtureAttempt((value) => value + 1);
+										}}
 									>
 										Try again
 									</Button>

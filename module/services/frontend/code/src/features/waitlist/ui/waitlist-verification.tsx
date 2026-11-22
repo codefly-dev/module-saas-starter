@@ -23,8 +23,6 @@ export function WaitlistVerification() {
 	const [attempt, setAttempt] = useState(0);
 
 	useEffect(() => {
-		setLoading(true);
-		setRetryable(false);
 		let live = true;
 		fetch("/waitlist/verify/api", { method: "POST", cache: "no-store" })
 			.then(async (response) => {
@@ -93,7 +91,13 @@ export function WaitlistVerification() {
 				{!loading && (
 					<CardFooter className="justify-center">
 						{retryable && (
-							<Button onClick={() => setAttempt((value) => value + 1)}>
+							<Button
+								onClick={() => {
+									setLoading(true);
+									setRetryable(false);
+									setAttempt((value) => value + 1);
+								}}
+							>
 								Try again
 							</Button>
 						)}
