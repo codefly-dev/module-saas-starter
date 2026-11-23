@@ -94,6 +94,21 @@ describe("CallbackPage", () => {
 		expect(h.completeOAuth).not.toHaveBeenCalled();
 	});
 
+	it("offers the way back to sign-in as a link when the return carries nothing to redeem", () => {
+		h.params = new URLSearchParams();
+
+		render(<CallbackPage />);
+
+		expect(
+			screen.getByText("This sign-in link is incomplete. Start again."),
+		).toBeTruthy();
+		expect(
+			screen.getByRole("link", { name: "Sign in again" }).getAttribute("href"),
+		).toBe("/auth/login");
+		expect(screen.queryByRole("button", { name: "Sign in again" })).toBeNull();
+		expect(h.completeOAuth).not.toHaveBeenCalled();
+	});
+
 	it("shows the in-progress state while the exchange runs", () => {
 		render(<CallbackPage />);
 

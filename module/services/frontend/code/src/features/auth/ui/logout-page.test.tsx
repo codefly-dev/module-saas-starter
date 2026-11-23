@@ -8,13 +8,46 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 
 const logout = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/auth", () => ({ useAuth: () => ({ logout }) }));
+const session = vi.hoisted(() => ({ isLoading: false }));
+// A fresh function each render, as the real logout becomes whenever the session
+// it reads changes.
+vi.mock("@/lib/auth", () => ({
+	useAuth: () => ({
+		logout: () => logout(),
+		isLoading: session.isLoading,
+	}),
+}));
 
 import { LogoutPage } from "./logout-page";
 
 afterEach(() => {
 	cleanup();
 	logout.mockReset();
+	session.isLoading = false;
+	vi.unstubAllGlobals();
+});
+it("signs out only once the session has been read, so the sign-out carries it", async () => {
+	logout.mockImplementation(() => new Promise(() => {}));
+	session.isLoading = true;
+	const { rerender } = render(<LogoutPage />);
+	expect(screen.getByRole("heading", { name: "Signing out" })).toBeTruthy();
+	expect(logout).not.toHaveBeenCalled();
+
+	session.isLoading = false;
+	rerender(<LogoutPage />);
+	await waitFor(() => expect(logout).toHaveBeenCalledTimes(1));
+});
+it("signs out once even when logout changes identity, and returns to sign-in", async () => {
+	const replace = vi.fn();
+	vi.stubGlobal("location", { replace });
+	logout.mockResolvedValue({ complete: true });
+	const { rerender } = render(<LogoutPage />);
+	rerender(<LogoutPage />);
+	rerender(<LogoutPage />);
+
+	await waitFor(() => expect(replace).toHaveBeenCalledWith("/auth/login"));
+	expect(replace).toHaveBeenCalledTimes(1);
+	expect(logout).toHaveBeenCalledTimes(1);
 });
 it("keeps an incomplete sign-out explicit and disables repeat actions while retrying", async () => {
 	logout

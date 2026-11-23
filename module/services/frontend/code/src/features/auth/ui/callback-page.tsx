@@ -117,7 +117,11 @@ function CallbackHandler() {
 					</CardContent>
 					{!failure.denied && (
 						<CardFooter>
+							{/* It goes to another page, so it is announced as the link it
+							    is: rendered as an anchor alone, the button names it a
+							    button, which promises an action on this page. */}
 							<Button
+								role="link"
 								variant="outline"
 								size="lg"
 								className="w-full"
