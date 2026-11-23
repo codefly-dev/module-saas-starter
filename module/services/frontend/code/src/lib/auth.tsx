@@ -17,6 +17,7 @@ import {
 import { completePendingClientAuthorization } from "@/features/auth/model/client-authorization";
 import {
 	type RoleViewEntry,
+	type Session,
 	SessionService,
 } from "@/gen/host/session/v1/session_pb";
 import { AuthService } from "@/gen/saas/accounts/v1/authentication_pb";
@@ -614,6 +615,16 @@ interface AuthContextType extends AuthState {
 	 * an authority; never read for what the session holds.
 	 */
 	authority: string;
+	/**
+	 * What the host says the installed session is (`Session.Current`), asked
+	 * once per installed token and shared by everything on the page that needs
+	 * the answer: the provider reads it to confirm the session, and a second
+	 * reader that asked the host itself made the same call again on every page
+	 * load. `again` asks the host anew when the answer it gave is no longer one
+	 * to rely on (the session reached its stated end); it still joins a read in
+	 * flight. A read that failed is not kept.
+	 */
+	hostSession: (again?: boolean) => Promise<Session>;
 	/** The team a confirmed session is cast onto (`cast_team_id`), else empty. A cast holds none of the person's roles: they read as undefined. */
 	castTeamId: string;
 	/** The role view a confirmed session was opened with, else empty. */
@@ -1687,6 +1698,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		};
 	}, [setTokens, landSignedOut, sayNarrowedEnded]);
 
+	// One read of the host's answer per installed token (see `hostSession` on
+	// the context). Held by this provider, so it goes when the provider does.
+	const hostSessionRead = useRef<{
+		token: string | null;
+		answer: Promise<Session>;
+		settled: boolean;
+	} | null>(null);
+	const hostSession = useCallback((again = false): Promise<Session> => {
+		const token = getConnectToken();
+		const held = hostSessionRead.current;
+		if (held?.token === token && !(again && held.settled)) return held.answer;
+		const read = { token, settled: false, answer: sessionClient.current({}) };
+		hostSessionRead.current = read;
+		read.answer.then(
+			() => {
+				read.settled = true;
+			},
+			() => {
+				if (hostSessionRead.current === read) hostSessionRead.current = null;
+			},
+		);
+		return read.answer;
+	}, []);
+
 	// What the host says this session is, keyed by the token it was read for
 	// so a token swap never shows the previous token's answer. Until the read
 	// for THIS token succeeds the session is unconfirmed, never the token's
@@ -1696,8 +1731,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		const token = state.accessToken;
 		if (!token) return;
 		let current = true;
-		sessionClient
-			.current({})
+		hostSession()
 			.then(
 				(s) =>
 					current &&
@@ -1712,7 +1746,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		return () => {
 			current = false;
 		};
-	}, [state.accessToken]);
+	}, [state.accessToken, hostSession]);
 	const answered = read.token === state.accessToken ? read : null;
 	const sessionRead: AuthContextType["sessionRead"] = !state.accessToken
 		? "confirmed"
@@ -1789,6 +1823,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			...state,
 			authority,
 			sessionRead,
+			hostSession,
 			castTeamId,
 			roleView,
 			...(rolesHidden ? { platformRole: undefined, orgRole: undefined } : {}),
@@ -1812,6 +1847,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			state,
 			authority,
 			sessionRead,
+			hostSession,
 			castTeamId,
 			roleView,
 			rolesHidden,

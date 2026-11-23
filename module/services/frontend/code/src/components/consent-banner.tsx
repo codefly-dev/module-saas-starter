@@ -1,15 +1,16 @@
 "use client";
 
 import { createClient } from "@connectrpc/connect";
+import { useQuery } from "@tanstack/react-query";
 import { Cookie } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { consentQueries } from "@/features/consent/service/queries";
 import {
 	ConsentPurpose,
 	ConsentService,
 	type ConsentStatus,
 } from "@/gen/saas/accounts/v1/consent_pb";
-import { WaitlistService } from "@/gen/saas/accounts/v1/waitlist_pb";
 import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
 import { signOutAndLeave } from "@/lib/sign-out-journey";
@@ -17,9 +18,15 @@ import { Button, Notice, Switch } from "@/shared/ui";
 
 const STORAGE_KEY = "saas-starter:consent-preferences";
 const client = createClient(ConsentService, apiTransport);
-const acquisitionClient = createClient(WaitlistService, apiTransport);
 
 type Choices = { analytics: boolean; marketing: boolean };
+const NOTHING_OPTIONAL: Choices = { analytics: false, marketing: false };
+/** What a read of the person's consent says: the notice to draw, and the choices to tell the page of, if it states any. */
+type Asked = {
+	banner: Banner;
+	consent?: { choices: Choices; policyVersion: string };
+};
+const NOT_ASKED: Asked = { banner: { kind: "hidden" } };
 type Banner =
 	| { kind: "hidden" }
 	| { kind: "terms"; status: ConsentStatus }
@@ -56,74 +63,93 @@ export function ConsentBanner({
 	legalConfigured: boolean;
 }) {
 	const { isAuthenticated, isLoading, logout } = useAuth();
-	const [banner, setBanner] = useState<Banner>({ kind: "hidden" });
 	const termsEnabled = legalConfigured;
+	// Both reads go through the shared query layer: one request for everything
+	// on the page that reads the same thing, and one where an effect of this
+	// component's own made two as it mounted in a development build.
+	const signedIn = useQuery({
+		...consentQueries.status(),
+		enabled: !isLoading && isAuthenticated,
+	});
+	const visitor = useQuery({
+		...consentQueries.acquisition(),
+		enabled: !isLoading && !isAuthenticated,
+	});
+	const status = isAuthenticated ? signedIn.data : undefined;
+	const failed = isAuthenticated ? signedIn.isError : visitor.isError;
+	const policy = isAuthenticated ? undefined : visitor.data;
 
-	useEffect(() => {
-		if (isLoading) return;
-		let cancelled = false;
-		if (isAuthenticated) {
-			client
-				.getStatus({})
-				.then((status) => {
-					if (cancelled) return;
-					if (status.termsAcceptedVersion !== status.currentTermsVersion) {
-						setBanner({ kind: "terms", status });
-						return;
-					}
-					const choices = {
-						analytics: purposeChoice(status, ConsentPurpose.ANALYTICS),
-						marketing: purposeChoice(status, ConsentPurpose.MARKETING),
-					};
-					notifyConsent(choices, status.policyVersion);
-					if (
-						!status.preferencesRecorded ||
-						status.preferencesPolicyVersion !== status.policyVersion
-					) {
-						setBanner({
-							kind: "preferences",
-							choices,
-							configure: false,
-							policyVersion: status.policyVersion,
-						});
-					}
-				})
-				.catch(() => notifyConsent({ analytics: false, marketing: false }, ""));
-			return () => {
-				cancelled = true;
+	const asked = useMemo<Asked>(() => {
+		if (isLoading) return NOT_ASKED;
+		// A read that failed permits nothing optional, and asks nothing.
+		if (failed)
+			return {
+				banner: { kind: "hidden" },
+				consent: { choices: NOTHING_OPTIONAL, policyVersion: "" },
 			};
+		if (status) {
+			if (status.termsAcceptedVersion !== status.currentTermsVersion)
+				return { banner: { kind: "terms", status } };
+			const choices = {
+				analytics: purposeChoice(status, ConsentPurpose.ANALYTICS),
+				marketing: purposeChoice(status, ConsentPurpose.MARKETING),
+			};
+			const consent = { choices, policyVersion: status.policyVersion };
+			if (
+				!status.preferencesRecorded ||
+				status.preferencesPolicyVersion !== status.policyVersion
+			)
+				return {
+					banner: {
+						kind: "preferences",
+						choices,
+						configure: false,
+						policyVersion: status.policyVersion,
+					},
+					consent,
+				};
+			return { banner: { kind: "hidden" }, consent };
 		}
-
-		acquisitionClient
-			.getAcquisitionStatus({})
-			.then((status) => {
-				if (cancelled) return;
-				const policyVersion = status.consentPolicyVersion;
-				const stored = JSON.parse(
-					window.localStorage.getItem(STORAGE_KEY) ?? "null",
-				) as (Choices & { policyVersion?: string }) | null;
-				if (stored?.policyVersion === policyVersion) {
-					notifyConsent(
-						{
+		if (policy) {
+			const policyVersion = policy.consentPolicyVersion;
+			const stored = JSON.parse(
+				window.localStorage.getItem(STORAGE_KEY) ?? "null",
+			) as (Choices & { policyVersion?: string }) | null;
+			if (stored?.policyVersion === policyVersion)
+				return {
+					banner: { kind: "hidden" },
+					consent: {
+						choices: {
 							analytics: Boolean(stored.analytics),
 							marketing: Boolean(stored.marketing),
 						},
 						policyVersion,
-					);
-				} else {
-					setBanner({
-						kind: "preferences",
-						choices: { analytics: false, marketing: false },
-						configure: false,
-						policyVersion,
-					});
-				}
-			})
-			.catch(() => notifyConsent({ analytics: false, marketing: false }, ""));
-		return () => {
-			cancelled = true;
-		};
-	}, [isAuthenticated, isLoading]);
+					},
+				};
+			return {
+				banner: {
+					kind: "preferences",
+					choices: NOTHING_OPTIONAL,
+					configure: false,
+					policyVersion,
+				},
+			};
+		}
+		return NOT_ASKED;
+	}, [isLoading, failed, status, policy]);
+
+	// The page is told what the read states, once per read.
+	useEffect(() => {
+		if (asked.consent)
+			notifyConsent(asked.consent.choices, asked.consent.policyVersion);
+	}, [asked]);
+
+	// What the person has done with the notice since the read that drew it.
+	const [answered, setBanner] = useState<{ to: Asked; banner: Banner } | null>(
+		null,
+	);
+	const banner = answered?.to === asked ? answered.banner : asked.banner;
+	const show = (next: Banner) => setBanner({ to: asked, banner: next });
 
 	async function savePreferences(choices: Choices, policyVersion: string) {
 		if (isAuthenticated) {
@@ -140,7 +166,7 @@ export function ConsentBanner({
 			);
 		}
 		notifyConsent(choices, policyVersion);
-		setBanner({ kind: "hidden" });
+		show({ kind: "hidden" });
 	}
 
 	if (banner.kind === "hidden") return null;
@@ -169,7 +195,7 @@ export function ConsentBanner({
 								version: status.currentTermsVersion,
 								context: "consent_banner",
 							});
-							setBanner({
+							show({
 								kind: "preferences",
 								choices: {
 									analytics: purposeChoice(accepted, ConsentPurpose.ANALYTICS),
@@ -213,7 +239,7 @@ export function ConsentBanner({
 			escape={{
 				label: "Decide later",
 				presentation: "dismiss",
-				onSelect: () => setBanner({ kind: "hidden" }),
+				onSelect: () => show({ kind: "hidden" }),
 			}}
 			actions={
 				banner.configure ? (
@@ -239,7 +265,7 @@ export function ConsentBanner({
 						</Button>
 						<Button
 							variant="outline"
-							onClick={() => setBanner({ ...banner, configure: true })}
+							onClick={() => show({ ...banner, configure: true })}
 						>
 							Configure
 						</Button>
@@ -274,7 +300,7 @@ export function ConsentBanner({
 							aria-label="Allow analytics"
 							checked={banner.choices.analytics}
 							onCheckedChange={(checked) =>
-								setBanner({
+								show({
 									...banner,
 									choices: { ...banner.choices, analytics: checked },
 								})
@@ -292,7 +318,7 @@ export function ConsentBanner({
 							aria-label="Allow marketing"
 							checked={banner.choices.marketing}
 							onCheckedChange={(checked) =>
-								setBanner({
+								show({
 									...banner,
 									choices: { ...banner.choices, marketing: checked },
 								})

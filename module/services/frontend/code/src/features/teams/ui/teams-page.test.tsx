@@ -30,7 +30,10 @@ const auth = vi.hoisted(() => ({
 	exitRoleView: vi.fn(async () => undefined),
 	switchOrganization: vi.fn(async () => undefined),
 }));
-vi.mock("@/lib/auth", () => ({ useAuth: () => auth }));
+vi.mock("@/lib/auth", async () => {
+	const { askHostForSession } = await import("@/test/host-session");
+	return { useAuth: () => ({ ...auth, hostSession: askHostForSession }) };
+});
 
 import { HostCasting } from "@/features/role-view/team-casting";
 import { TeamsPage } from "./teams-page";

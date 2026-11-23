@@ -212,3 +212,78 @@ describe("the sign-out page's boot", () => {
 		expect(await handles.logout()).toEqual({ complete: false });
 	});
 });
+
+// The provider confirms a session by asking the host what it is. Everything
+// else on the page that needs that answer is given the same one.
+describe("what the host says the session is", () => {
+	const reads: { hostSession: (again?: boolean) => Promise<unknown> } = {
+		hostSession: async () => undefined,
+	};
+	function Reader() {
+		const { hostSession } = useAuth();
+		useEffect(() => {
+			reads.hostSession = hostSession;
+		});
+		return null;
+	}
+	function boot(answer: () => Response) {
+		let asked = 0;
+		server.use(
+			http.post("/v1/auth/refresh", () =>
+				HttpResponse.json({ accessToken: ADMIN, refreshToken: "r" }),
+			),
+			http.post(CURRENT, () => {
+				asked += 1;
+				return answer();
+			}),
+		);
+		render(
+			<AuthProvider>
+				<Probe />
+				<Reader />
+			</AuthProvider>,
+		);
+		return () => asked;
+	}
+
+	it("is asked once per installed token, however many read it", async () => {
+		const asked = boot(() => HttpResponse.json({ personId: "user-1" }));
+		await waitFor(() => expect(session()).toBe("in confirmed org:admin"));
+
+		const [first, second] = await Promise.all([
+			reads.hostSession(),
+			reads.hostSession(),
+		]);
+		expect(first).toMatchObject({ personId: "user-1" });
+		expect(second).toBe(first);
+		expect(asked()).toBe(1);
+	});
+
+	it("is asked anew when a reader says the answer it was given has ended", async () => {
+		const asked = boot(() => HttpResponse.json({ personId: "user-1" }));
+		await waitFor(() => expect(session()).toBe("in confirmed org:admin"));
+
+		await Promise.all([reads.hostSession(true), reads.hostSession(true)]);
+		expect(asked()).toBe(2);
+	});
+
+	it("does not keep a read that failed", async () => {
+		let fail = true;
+		const asked = boot(() =>
+			fail
+				? HttpResponse.json(
+						{ code: "unavailable", message: "down" },
+						{ status: 503 },
+					)
+				: HttpResponse.json({ personId: "user-1" }),
+		);
+		await waitFor(() => expect(session()).toBe("in failed org:none"));
+		const failed = asked();
+
+		fail = false;
+		await expect(reads.hostSession()).resolves.toMatchObject({
+			personId: "user-1",
+		});
+		expect(asked()).toBe(failed + 1);
+	});
+});

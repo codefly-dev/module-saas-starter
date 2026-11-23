@@ -15,6 +15,10 @@ const auth = vi.hoisted(() => ({
 	organizationId: "org-example",
 	enterRoleView: vi.fn(),
 	exitRoleView: vi.fn(() => Promise.resolve()),
+	// The provider's one read of the host's answer: here, the host asked each time.
+	hostSession: vi.fn(
+		async (_again?: boolean): Promise<Record<string, unknown>> => ({}),
+	),
 }));
 vi.mock("@/lib/auth", () => ({ useAuth: () => auth }));
 const router = vi.hoisted(() => ({ push: vi.fn(), path: "/admin/teams" }));
@@ -31,9 +35,17 @@ const own = {
 	organizationId: "org-example",
 };
 let cast = "";
+let askedOfTheHost = 0;
 
 beforeEach(() => {
 	cast = "";
+	askedOfTheHost = 0;
+	auth.hostSession.mockReset();
+	auth.hostSession.mockImplementation(async () => ({
+		...own,
+		castTeamId: cast,
+		roleView: [],
+	}));
 	sessionStorage.clear();
 	auth.enterRoleView.mockReset();
 	auth.enterRoleView.mockImplementation((bearer: string) => {
@@ -45,9 +57,10 @@ beforeEach(() => {
 		http.get("http://localhost:3000/api/solutions", () =>
 			HttpResponse.json({ solutions: [{ id: "records", nav: { title: "Records" } }] }),
 		),
-		http.post(session("Current"), () =>
-			HttpResponse.json(cast ? { ...own, castTeamId: cast } : own),
-		),
+		http.post(session("Current"), () => {
+			askedOfTheHost += 1;
+			return HttpResponse.json(cast ? { ...own, castTeamId: cast } : own);
+		}),
 		http.post(session("ListCastableTeams"), () =>
 			HttpResponse.json({
 				teams: [
@@ -86,5 +99,27 @@ describe("this host's team casting", () => {
 		);
 		fireEvent.click(screen.getByRole("button", { name: /Back to my view/ }));
 		await waitFor(() => expect(auth.exitRoleView).toHaveBeenCalledTimes(1));
+	});
+
+	// The auth provider reads the session for every installed token. The kit's
+	// read here is that answer, never a second ask of the host for the same
+	// thing; once it has been given, a later read asks for it anew.
+	it("reads the session the provider already read, and asks anew only afterwards", async () => {
+		renderInApp(
+			<HostCasting>
+				<CastBar />
+				<TeamSwitcher />
+			</HostCasting>,
+		);
+		act(() => openTeamSwitcher());
+		await screen.findByText("Stewards");
+		expect(auth.hostSession.mock.calls[0]).toEqual([false]);
+
+		fireEvent.click(screen.getByText("Stewards"));
+		await waitFor(() =>
+			expect(screen.getByRole("status").textContent).toContain("Viewing as Stewards"),
+		);
+		expect(auth.hostSession.mock.calls.at(-1)).toEqual([true]);
+		expect(askedOfTheHost).toBe(0);
 	});
 });

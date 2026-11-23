@@ -46,10 +46,26 @@ vi.mock("@connectrpc/connect", () => ({
 	),
 }));
 
-import { ConsentBanner } from "./consent-banner";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { StrictMode } from "react";
+import { ConsentBanner as Banner } from "./consent-banner";
+
+// The banner reads through the page's query layer, so it is drawn inside one,
+// and as a development build draws it: mounted, unmounted and mounted again.
+function ConsentBanner(props: { legalConfigured: boolean }) {
+	return (
+		<StrictMode>
+			<QueryClientProvider client={queries}>
+				<Banner {...props} />
+			</QueryClientProvider>
+		</StrictMode>
+	);
+}
+let queries = new QueryClient();
 
 afterEach(() => {
 	cleanup();
+	queries = new QueryClient();
 	window.localStorage.clear();
 	vi.clearAllMocks();
 	authState.isAuthenticated = false;
@@ -225,5 +241,68 @@ describe("ConsentBanner", () => {
 				marketing: false,
 			}),
 		);
+	});
+
+	// Each read is one request, however the page mounts: an effect of the
+	// banner's own asked twice in a development build.
+	it("asks for a signed-in person's consent once", async () => {
+		authState.isAuthenticated = true;
+		clients.consent.getStatus.mockResolvedValue({
+			currentTermsVersion: "terms-v1",
+			termsAcceptedVersion: "",
+			policyVersion: "policy-v2",
+			purposes: [],
+		});
+
+		render(<ConsentBanner legalConfigured />);
+
+		await screen.findByRole("button", { name: "Accept Terms" });
+		expect(clients.consent.getStatus).toHaveBeenCalledTimes(1);
+		expect(clients.acquisition.getAcquisitionStatus).not.toHaveBeenCalled();
+	});
+
+	it("asks for a visitor's consent policy once", async () => {
+		clients.acquisition.getAcquisitionStatus.mockResolvedValue({
+			consentPolicyVersion: "policy-v2",
+		});
+
+		render(<ConsentBanner legalConfigured />);
+
+		await screen.findByRole("button", { name: "Accept all" });
+		expect(clients.acquisition.getAcquisitionStatus).toHaveBeenCalledTimes(1);
+		expect(clients.consent.getStatus).not.toHaveBeenCalled();
+	});
+
+	it("asks nothing while the session is still being read", () => {
+		authState.isLoading = true;
+
+		render(<ConsentBanner legalConfigured />);
+
+		expect(clients.consent.getStatus).not.toHaveBeenCalled();
+		expect(clients.acquisition.getAcquisitionStatus).not.toHaveBeenCalled();
+	});
+
+	// A read that failed permits nothing optional, says so to the page, and is
+	// not asked again.
+	it("permits nothing optional when the read fails, without asking again", async () => {
+		authState.isAuthenticated = true;
+		clients.consent.getStatus.mockRejectedValue(new Error("unavailable"));
+		const told: unknown[] = [];
+		const listen = (event: Event) => told.push((event as CustomEvent).detail);
+		window.addEventListener("consentchange", listen);
+
+		render(<ConsentBanner legalConfigured />);
+
+		await waitFor(() =>
+			expect(told.at(-1)).toEqual({
+				necessary: true,
+				analytics: false,
+				marketing: false,
+				policyVersion: "",
+			}),
+		);
+		window.removeEventListener("consentchange", listen);
+		expect(clients.consent.getStatus).toHaveBeenCalledTimes(1);
+		expect(screen.queryByRole("button", { name: "Accept all" })).toBeNull();
 	});
 });

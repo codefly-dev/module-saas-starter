@@ -33,14 +33,19 @@ vi.mock("next/navigation", () => ({
 }));
 // The cast is the provider's reading of the host's Session.cast_team_id; the
 // card reads it from the same place the menus do.
-vi.mock("@/lib/auth", () => ({
-	useAuth: () => ({
-		...auth,
-		castTeamId: (current.castTeamId as string) ?? "",
-		roleView:
-			(current.roleView as { installationId: string; roles: string[] }[]) ?? [],
-	}),
-}));
+vi.mock("@/lib/auth", async () => {
+	const { askHostForSession } = await import("@/test/host-session");
+	return {
+		useAuth: () => ({
+			...auth,
+			hostSession: askHostForSession,
+			castTeamId: (current.castTeamId as string) ?? "",
+			roleView:
+				(current.roleView as { installationId: string; roles: string[] }[]) ??
+				[],
+		}),
+	};
+});
 
 const session = (method: string) =>
 	`http://localhost:3000/host.session.v1.SessionService/${method}`;
