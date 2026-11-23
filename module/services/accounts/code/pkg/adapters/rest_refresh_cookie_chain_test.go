@@ -168,3 +168,45 @@ func TestOptionalCookieRefreshStartsSignedOut(t *testing.T) {
 		})
 	}
 }
+
+// A browser cannot read its HttpOnly cookie, so it cannot know whether it has a
+// session to sign out of. A sign-out that presents nothing at all is done
+// already; anything it does present still reaches Logout.
+func TestOptionalCookieLogoutWithNothingToEndIsDone(t *testing.T) {
+	reached := false
+	handler := refreshTokenCookie(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	for _, tc := range []struct {
+		name, mode, body, bearer, cookie string
+		status                           int
+		reaches                          bool
+	}{
+		{name: "signed-out browser", mode: "optional", status: http.StatusNoContent},
+		{name: "not said to be optional", status: http.StatusBadRequest, reaches: true},
+		{name: "a body is presented", mode: "optional", body: "{}", status: http.StatusBadRequest, reaches: true},
+		{name: "a bearer is presented", mode: "optional", bearer: "Bearer an-access-token", status: http.StatusBadRequest, reaches: true},
+		{name: "a cookie is presented", mode: "optional", cookie: "refresh-1", status: http.StatusBadRequest, reaches: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reached = false
+			r := httptest.NewRequest(http.MethodPost, logoutRESTPath, strings.NewReader(tc.body))
+			r.Header.Set("X-Codefly-Cookie-Session", tc.mode)
+			if tc.bearer != "" {
+				r.Header.Set("Authorization", tc.bearer)
+			}
+			if tc.cookie != "" {
+				r.AddCookie(&http.Cookie{Name: refreshTokenCookieName, Value: tc.cookie})
+			}
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, r)
+			if w.Code != tc.status || reached != tc.reaches {
+				t.Fatalf("logout returned %d (reached Logout: %v), want %d (%v)", w.Code, reached, tc.status, tc.reaches)
+			}
+			if tc.status == http.StatusNoContent && len(w.Result().Cookies()) != 0 {
+				t.Fatalf("a sign-out with nothing to end set a cookie: %v", w.Result().Cookies())
+			}
+		})
+	}
+}

@@ -8,6 +8,7 @@ import {
 	type ReactNode,
 	useContext,
 	useEffect,
+	useRef,
 	useState,
 } from "react";
 import { ThemePreferenceProvider } from "@/features/user-settings/ui/theme-preference-provider";
@@ -51,18 +52,13 @@ export function FrontendConfigProvider({
 // A different authority must never reuse queries or local component state from
 // the previous session. Changing this key replaces the entire authenticated
 // subtree atomically, before its children can read a previous authority's cache.
+//
+// The key is the session's authority as the provider states it (`authority`),
+// which does not change when the host confirms the session it already is. Built
+// here from the roles the context shows, it changed on every page load as that
+// confirmation arrived, and each load made the shell's reads twice.
 function AuthorityBoundary({ children }: { children: ReactNode }) {
-	const auth = useAuth();
-	const authority = JSON.stringify([
-		auth.isAuthenticated,
-		auth.user?.id,
-		auth.organizationId,
-		auth.orgRole,
-		auth.platformRole,
-		auth.impersonation.isImpersonating,
-		auth.impersonation.impersonatorId,
-		auth.impersonation.subjectId,
-	]);
+	const { authority } = useAuth();
 	return <AuthorityQueries key={authority}>{children}</AuthorityQueries>;
 }
 
@@ -78,12 +74,20 @@ function AuthorityQueries({ children }: { children: ReactNode }) {
 				},
 			}),
 	);
-	useEffect(
-		() => () => {
-			queryClient.clear();
-		},
-		[queryClient],
-	);
+	// The cache goes with the authority it was read under. It is dropped once
+	// this boundary is really gone, not on the unmount React's development build
+	// rehearses as it mounts (StrictMode): dropping it there discarded reads
+	// already in flight, and every query of the shell was made twice.
+	const mounted = useRef(false);
+	useEffect(() => {
+		mounted.current = true;
+		return () => {
+			mounted.current = false;
+			queueMicrotask(() => {
+				if (!mounted.current) queryClient.clear();
+			});
+		};
+	}, [queryClient]);
 	return (
 		<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 	);

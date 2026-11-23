@@ -239,6 +239,57 @@ async function performRefreshExchange(): Promise<RefreshOutcome> {
 	};
 }
 
+// Whether the provider restores the person's session as a page loads. Every
+// page does but the sign-out page, which exists to end it: restoring it first
+// made the tab signed in for the moment before the sign-out, which started the
+// signed-in reads of the whole shell and then refused them (401) as the
+// session ended under them, and rebuilt the page around each change so that it
+// signed out a second time with nothing left to present. The sign-out there
+// needs no restored session: it presents the refresh cookie, and the server
+// ends the session that cookie names with everything opened from it.
+// Exported for tests.
+export function restoresSessionAtBoot(pathname: string): boolean {
+	return pathname !== "/auth/logout";
+}
+
+// The authority a session acts with, as one comparable value: whether anyone
+// is signed in, who, in which organization, holding what, impersonating whom,
+// and for a narrowed session (a role view or a team cast) what narrows it:
+// the bearer itself, because each of those is an authority of its own from the
+// moment it is installed, or what the host says of a bearer this tab did not
+// know to be narrowed. It is a key, never something to show or decide from.
+//
+// The roles are the installed token's own, not the ones the context shows. The
+// context hides them until the host confirms the session (sessionRead), and a
+// key built from the shown roles changed when that confirmation arrived: the
+// same authority, read as a new one, so everything beneath the boundary was
+// discarded and every read of the shell made a second time on each page load.
+// Exported for tests.
+export function sessionAuthority(
+	session: Pick<
+		AuthState,
+		| "isAuthenticated"
+		| "user"
+		| "organizationId"
+		| "orgRole"
+		| "platformRole"
+		| "impersonation"
+	>,
+	narrowed: string,
+): string {
+	return JSON.stringify([
+		session.isAuthenticated,
+		session.user?.id,
+		session.organizationId,
+		session.orgRole,
+		session.platformRole,
+		session.impersonation.isImpersonating,
+		session.impersonation.impersonatorId,
+		session.impersonation.subjectId,
+		narrowed,
+	]);
+}
+
 // Where an expired-session redirect sends the browser: back to login, with the
 // current location preserved in `next` so sign-in returns here — the same
 // contract the server middleware (proxy.ts) uses on a missing session cookie.
@@ -556,6 +607,13 @@ interface AuthContextType extends AuthState {
 	 * rest of this block is the host's answer.
 	 */
 	sessionRead: "reading" | "failed" | "confirmed";
+	/**
+	 * The authority this session acts with, as one comparable value
+	 * (sessionAuthority). It changes when the authority does, and not when the
+	 * host confirms the session it already is. A key for what must not outlive
+	 * an authority; never read for what the session holds.
+	 */
+	authority: string;
 	/** The team a confirmed session is cast onto (`cast_team_id`), else empty. A cast holds none of the person's roles: they read as undefined. */
 	castTeamId: string;
 	/** The role view a confirmed session was opened with, else empty. */
@@ -1138,11 +1196,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			const response = await fetch("/v1/auth/logout", {
 				method: "POST",
 				credentials: "include",
+				// No body, as the refresh sends none: the server reads the
+				// credential from the cookie. A sign-out that presents nothing
+				// at all (no cookie, no bearer: nobody is signed in on this
+				// browser) is said to be optional, and is answered as done
+				// rather than refused as a request missing its credential.
 				headers: {
 					"Content-Type": "application/json",
+					"X-Codefly-Cookie-Session": "optional",
 					...(present ? { Authorization: `Bearer ${present}` } : {}),
 				},
-				body: JSON.stringify({}),
 			});
 			complete = response.ok && ended;
 		} catch {
@@ -1472,6 +1535,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		// only suppresses this effect's state writes after unmount — it does not
 		// cancel the shared exchange, which a still-mounted caller may be awaiting.
 		let cancelled = false;
+		if (!restoresSessionAtBoot(window.location.pathname)) {
+			// Nothing is restored, so nothing is loading: the page says what it
+			// does next. What this tab kept is left for the sign-out to forget.
+			void Promise.resolve().then(() => {
+				if (!cancelled) setState((s) => ({ ...s, isLoading: false }));
+			});
+			return () => {
+				cancelled = true;
+			};
+		}
 		// The narrowed session this tab has open, if any, comes first: while its
 		// bearer is live it is what the person chose to act as, and the refresh
 		// cookie — their own session — is NOT exchanged, which would widen them
@@ -1702,9 +1775,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	const rolesHidden =
 		!!state.accessToken && (sessionRead !== "confirmed" || !!castTeamId);
 
+	const authority = sessionAuthority(
+		state,
+		state.accessToken && isNarrowed(state.accessToken)
+			? state.accessToken
+			: castTeamId || roleView.length
+				? JSON.stringify([castTeamId, roleView])
+				: "",
+	);
+
 	const value = useMemo<AuthContextType>(
 		() => ({
 			...state,
+			authority,
 			sessionRead,
 			castTeamId,
 			roleView,
@@ -1727,6 +1810,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		}),
 		[
 			state,
+			authority,
 			sessionRead,
 			castTeamId,
 			roleView,

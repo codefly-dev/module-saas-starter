@@ -20,10 +20,21 @@ const state = vi.hoisted(() => ({
 	},
 }));
 
-vi.mock("../auth", () => ({
-	AuthProvider: ({ children }: { children: ReactNode }) => children,
-	useAuth: () => state.auth,
-}));
+// The boundary is keyed by the authority the provider states, so the provider's
+// own statement of it is what these cases run on.
+vi.mock("../auth", async (original) => {
+	const { sessionAuthority } = await original<typeof import("../auth")>();
+	return {
+		AuthProvider: ({ children }: { children: ReactNode }) => children,
+		useAuth: () => ({
+			...state.auth,
+			authority: sessionAuthority(
+				state.auth as Parameters<typeof sessionAuthority>[0],
+				"",
+			),
+		}),
+	};
+});
 vi.mock("../../../frontend.config", () => ({
 	default: { appearance: { defaultTheme: "system" } },
 }));
@@ -147,4 +158,25 @@ it("does not admit an old in-flight response into the new authority", async () =
 	});
 	expect(screen.queryByText("old organization")).toBeNull();
 	expect(screen.getByText("new organization")).toBeTruthy();
+});
+
+// React's development build rehearses an unmount as it mounts. The cache is
+// dropped when the boundary is gone, not then: a read already in flight is the
+// one its query settles with.
+it("makes a read once as it mounts", async () => {
+	const read = vi.fn().mockResolvedValue("private");
+	render(tree(read));
+	await screen.findByText("private");
+	expect(read).toHaveBeenCalledTimes(1);
+});
+
+it("drops the cache of an authority that is gone", async () => {
+	const read = vi.fn().mockResolvedValue("private before");
+	const view = render(tree(read));
+	await screen.findByText("private before");
+	state.auth.organizationId = "org-b";
+	read.mockResolvedValue("private after");
+	view.rerender(tree(read));
+	await screen.findByText("private after");
+	expect(read).toHaveBeenCalledTimes(2);
 });

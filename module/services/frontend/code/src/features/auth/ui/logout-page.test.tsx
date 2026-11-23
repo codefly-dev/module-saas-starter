@@ -18,15 +18,16 @@ vi.mock("@/lib/auth", () => ({
 	}),
 }));
 
-import { LogoutPage } from "./logout-page";
+import { LogoutPage, resetSignOutForTests } from "./logout-page";
 
 afterEach(() => {
 	cleanup();
 	logout.mockReset();
+	resetSignOutForTests();
 	session.isLoading = false;
 	vi.unstubAllGlobals();
 });
-it("signs out only once the session has been read, so the sign-out carries it", async () => {
+it("signs out only once the provider is done loading", async () => {
 	logout.mockImplementation(() => new Promise(() => {}));
 	session.isLoading = true;
 	const { rerender } = render(<LogoutPage />);
@@ -47,6 +48,33 @@ it("signs out once even when logout changes identity, and returns to sign-in", a
 
 	await waitFor(() => expect(replace).toHaveBeenCalledWith("/auth/login"));
 	expect(replace).toHaveBeenCalledTimes(1);
+	expect(logout).toHaveBeenCalledTimes(1);
+});
+// The shell rebuilds what is beneath it when the session's authority changes,
+// and a sign-out changes it: the rebuilt page must not sign out again.
+it("signs out once even when the page is rebuilt around the sign-out", async () => {
+	const replace = vi.fn();
+	vi.stubGlobal("location", { replace });
+	logout.mockResolvedValue({ complete: true });
+	const first = render(<LogoutPage />);
+	await waitFor(() => expect(logout).toHaveBeenCalledTimes(1));
+	first.unmount();
+	render(<LogoutPage />);
+
+	await waitFor(() => expect(replace).toHaveBeenCalledWith("/auth/login"));
+	expect(logout).toHaveBeenCalledTimes(1);
+	expect(
+		screen.queryByRole("heading", { name: "Sign-out incomplete" }),
+	).toBeNull();
+});
+it("says an incomplete sign-out on the rebuilt page too, without another attempt", async () => {
+	logout.mockResolvedValue({ complete: false });
+	const first = render(<LogoutPage />);
+	await screen.findByRole("button", { name: "Try again" });
+	first.unmount();
+	render(<LogoutPage />);
+
+	await screen.findByRole("heading", { name: "Sign-out incomplete" });
 	expect(logout).toHaveBeenCalledTimes(1);
 });
 it("keeps an incomplete sign-out explicit and disables repeat actions while retrying", async () => {

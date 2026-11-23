@@ -70,6 +70,19 @@ func refreshTokenCookie(next http.Handler) http.Handler {
 				w.Header().Set("Cache-Control", "no-store")
 				w.WriteHeader(http.StatusNoContent)
 				return
+			} else if isLogout && r.Method == http.MethodPost &&
+				r.Header.Get("X-Codefly-Cookie-Session") == "optional" && r.ContentLength == 0 &&
+				r.Header.Get("Authorization") == "" {
+				// And a browser can sign out while already signed out: it cannot
+				// read the HttpOnly cookie to know. With no cookie, no body and no
+				// bearer the request names no session and no token, so there is
+				// nothing to revoke and nothing to refuse — answered as done, the
+				// same for every such caller, rather than as a request missing its
+				// credential. A request that presents a bearer is not this case:
+				// it goes on to Logout and is answered there.
+				w.Header().Set("Cache-Control", "no-store")
+				w.WriteHeader(http.StatusNoContent)
+				return
 			}
 		}
 
