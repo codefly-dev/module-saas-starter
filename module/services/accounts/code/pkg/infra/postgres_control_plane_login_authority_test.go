@@ -49,31 +49,37 @@ func TestStartupRefusesAControlPlaneLoginBeyondItsDeclaredRoles(t *testing.T) {
 
 	for name, tc := range map[string]struct {
 		change, restore, want string
+		// superuser names an arrangement only a superuser can make.
+		superuser string
 	}{
 		"bypassrls": {
-			"ALTER ROLE " + login + " BYPASSRLS",
-			"ALTER ROLE " + login + " NOBYPASSRLS",
-			login + " (BYPASSRLS)",
+			change:    "ALTER ROLE " + login + " BYPASSRLS",
+			restore:   "ALTER ROLE " + login + " NOBYPASSRLS",
+			want:      login + " (BYPASSRLS)",
+			superuser: "give a login BYPASSRLS",
 		},
 		"createdb": {
-			"ALTER ROLE " + login + " CREATEDB",
-			"ALTER ROLE " + login + " NOCREATEDB",
-			login + " (CREATEDB)",
+			change:  "ALTER ROLE " + login + " CREATEDB",
+			restore: "ALTER ROLE " + login + " NOCREATEDB",
+			want:    login + " (CREATEDB)",
 		},
 		"undeclared role": {
-			"GRANT app_tenant TO " + login,
-			"REVOKE app_tenant FROM " + login,
-			"app_tenant (a role other than app_control_plane",
+			change:  "GRANT app_tenant TO " + login,
+			restore: "REVOKE app_tenant FROM " + login,
+			want:    "app_tenant (a role other than app_control_plane",
 		},
 		// No declared role may truncate: PostgreSQL applies no row-level
 		// security to TRUNCATE.
 		"direct table grant": {
-			"GRANT TRUNCATE ON public.platform_admins TO " + login,
-			"REVOKE ALL ON public.platform_admins FROM " + login,
-			"TRUNCATE on table public.platform_admins (held by the login",
+			change:  "GRANT TRUNCATE ON public.platform_admins TO " + login,
+			restore: "REVOKE ALL ON public.platform_admins FROM " + login,
+			want:    "TRUNCATE on table public.platform_admins (held by the login",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			if tc.superuser != "" {
+				requireSuperuserStoreOwner(t, tc.superuser)
+			}
 			asStoreOwner(t, tc.change)
 			t.Cleanup(func() { asStoreOwner(t, tc.restore) })
 

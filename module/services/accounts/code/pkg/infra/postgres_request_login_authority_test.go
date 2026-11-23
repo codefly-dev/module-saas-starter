@@ -210,6 +210,28 @@ func openWithRequestLogin(t *testing.T, request string) (*infra.PostgresStore, e
 	return store, err
 }
 
+// requireSuperuserStoreOwner skips a case whose arrangement only a superuser can
+// make: handing out BYPASSRLS, or a privilege on the system catalog or on a
+// parameter. The store's owner is a superuser where the store runs in its own
+// container. On a server it shares, as in a deployed cell, it is an ordinary
+// role that may create roles, and PostgreSQL refuses it the statement. The
+// refusal under test is the service's, so it is proven where the arrangement
+// can be made and skipped by name elsewhere, never passed without running.
+func requireSuperuserStoreOwner(t *testing.T, arrangement string) {
+	t.Helper()
+	conn, err := pgx.Connect(testCtx, storeSecret(t, "owner-connection"))
+	require.NoError(t, err)
+	defer conn.Close(context.Background()) //nolint:errcheck // closing a test fixture connection
+	var owner string
+	var superuser bool
+	require.NoError(t, conn.QueryRow(testCtx, `
+		SELECT role.rolname::text, role.rolsuper
+		FROM pg_catalog.pg_roles role WHERE role.rolname = current_user`).Scan(&owner, &superuser))
+	if !superuser {
+		t.Skipf("the store owner %q is not a superuser, so it cannot %s; this case runs where the store's owner is one", owner, arrangement)
+	}
+}
+
 // A privilege granted to the request login itself, rather than to app_tenant,
 // is reachable from any request session: `SET ROLE NONE` drops the session to
 // the bare login, and on a table without row-level security — platform_admins,
@@ -307,8 +329,8 @@ func TestStartupRefusesARequestLoginHoldingItsOwnPrivileges(t *testing.T) {
 // has selected. So does a parameter privilege: SET on session_replication_role
 // switches off every trigger, and ALTER SYSTEM on archive_command runs a server
 // command. Startup refuses a request login holding one. Only a superuser can
-// grant on the catalog or on a parameter; the local store's owner connection is
-// one, which each case checks before relying on its grant.
+// grant on the catalog or on a parameter, so each case runs where the store's
+// owner connection is one and checks that its grant took before relying on it.
 func TestStartupRefusesARequestLoginHoldingACatalogGrant(t *testing.T) {
 	const login = "accounts_test_catalog_request"
 	request, err := testdb.CreateLogin(testCtx, login, "app_tenant")
@@ -349,6 +371,7 @@ func TestStartupRefusesARequestLoginHoldingACatalogGrant(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			requireSuperuserStoreOwner(t, "grant on the system catalog or on a parameter")
 			asStoreOwner(t, tc.grant)
 			t.Cleanup(func() { asStoreOwner(t, tc.revoke) })
 			var holds bool

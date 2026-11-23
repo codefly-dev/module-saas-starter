@@ -342,6 +342,11 @@ func TestMembershipDiagnosticRefusesACallerThatCannotSpanOrganizations(t *testin
 			`GRANT SELECT ON organizations, organization_members, users TO %s`, role))
 		mustExec(t, ctx, conn, fmt.Sprintf(
 			`GRANT INSERT, UPDATE, DELETE, SELECT ON membership_integrity_findings TO %s`, role))
+		// Creating a role does not let its creator assume it: only a superuser
+		// may SET ROLE to a role it holds no SET membership of, and the store's
+		// owner is one only where the store runs in its own container.
+		mustExec(t, ctx, conn, fmt.Sprintf(
+			`GRANT %s TO CURRENT_USER WITH INHERIT FALSE, SET TRUE`, role))
 		mustExec(t, ctx, conn, fmt.Sprintf(`SET ROLE %s`, role))
 
 		var outstanding int

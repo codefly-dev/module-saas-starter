@@ -292,7 +292,17 @@ func TestBringingAPartitionInStepLocksThePartitionNotItsName(t *testing.T) {
 	// the transaction ends; only the wait event is read live. Read from inside
 	// the reader's transaction, a first read taken before provisioning sent its
 	// statement hid provisioning for the rest of the test.
-	observer := retentionSession(t)
+	//
+	// It is a session of the login provisioning runs on, as that login.
+	// PostgreSQL shows a backend's statement and wait event to a role holding
+	// that backend's login, to a superuser and to pg_read_all_stats. The
+	// tables' owner is none of those where the store shares its server, and
+	// neither is the role the login starts as.
+	observer, err := pgx.Connect(testCtx, storeSecret(t, "control-plane-connection"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = observer.Close(testCtx) })
+	_, err = observer.Exec(testCtx, `SET ROLE NONE`)
+	require.NoError(t, err)
 	readerPID := int32(reader.PgConn().PID())
 	require.Eventually(t, func() bool {
 		var waiting int

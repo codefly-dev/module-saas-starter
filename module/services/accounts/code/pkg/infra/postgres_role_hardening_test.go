@@ -390,6 +390,14 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 				"datasource_object_manifests":
 				want = relationPrivileges{}
 			}
+			// email_delivery_events is the one worker relation the control plane
+			// holds anything on: record_delivery_event runs as that role
+			// (migration 80), so it appends to the ledger. It holds no table-wide
+			// SELECT, only the two columns of the replay key its ON CONFLICT
+			// reads, and never updates or deletes an event.
+			if relation == "email_delivery_events" {
+				want = relationPrivileges{insertRows: true}
+			}
 			// audit_events is append-only: the control plane reads and inserts
 			// (system NULL-org events) but never updates or deletes rows.
 			// Retention drops whole partitions via a SECURITY DEFINER function,

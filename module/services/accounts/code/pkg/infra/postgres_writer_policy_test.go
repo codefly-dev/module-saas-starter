@@ -103,8 +103,17 @@ func TestScopedWriterPolicyRefusesAWidenedBackendAtTheNextCheckout(t *testing.T)
 			// security to it unless forced, and the owner may drop FORCE. The
 			// library judges DATABASE ownership, not this.
 			"owns a relation",
-			"CREATE TABLE scoped_writer_owned(id int); ALTER TABLE scoped_writer_owned OWNER TO scoped_writer_policy",
-			"DROP TABLE IF EXISTS scoped_writer_owned",
+			// A table is given to a role its owner may assume, and that may
+			// create in the table's schema; the store's owner is granted the
+			// login it created for the length of the statement, and the login
+			// the schema privilege, which the next case judges on its own.
+			`GRANT scoped_writer_policy TO CURRENT_USER WITH INHERIT FALSE, SET TRUE;
+			 GRANT CREATE ON SCHEMA public TO scoped_writer_policy;
+			 CREATE TABLE public.scoped_writer_owned(id int);
+			 ALTER TABLE public.scoped_writer_owned OWNER TO scoped_writer_policy;
+			 REVOKE CREATE ON SCHEMA public FROM scoped_writer_policy;
+			 REVOKE scoped_writer_policy FROM CURRENT_USER`,
+			"DROP TABLE IF EXISTS public.scoped_writer_owned",
 			"owns a relation",
 		},
 		{

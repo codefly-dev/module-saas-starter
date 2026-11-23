@@ -33,7 +33,8 @@ var loginName = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
 // roles, and the first of them as its session default. It returns a connection
 // string for the login, built from the store's read-write connection with a
 // fresh random password. It uses the store's local owner connection, so it works
-// only against a local, password-authenticated store.
+// only against a local, password-authenticated store; the owner needs the right
+// to create roles and no more, so it need not be a superuser.
 func CreateLogin(ctx context.Context, name string, roles ...string) (string, error) {
 	for _, role := range append([]string{name}, roles...) {
 		if !loginName.MatchString(role) {
@@ -84,14 +85,37 @@ func CreateLogin(ctx context.Context, name string, roles ...string) (string, err
 		return "", err
 	}
 	login := pgx.Identifier{name}.Sanitize()
+	// The store's owner is a superuser only where the store runs in its own
+	// container. On a server it shares, as in a deployed cell, it is an ordinary
+	// role that may create roles, and such a role may not name SUPERUSER,
+	// REPLICATION or BYPASSRLS in ALTER ROLE even to restate the value already
+	// there. So the attributes are stated where the role is created, and a role
+	// kept from an earlier run has only the elevated ones it actually holds
+	// cleared, the way the Postgres agent reconciles its own logins. A role
+	// holding one this owner cannot clear still fails, as it must.
+	var exists, superuser, createDB, createRole, replication, bypassRLS bool
+	if err := tx.QueryRow(ctx, `
+		SELECT true, rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls
+		FROM pg_catalog.pg_roles WHERE rolname = $1`, name).Scan(
+		&exists, &superuser, &createDB, &createRole, &replication, &bypassRLS); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", err
+	}
+	// The password is hex, so it needs no escaping inside the literal.
+	role := `CREATE ROLE ` + login + ` LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD '` + password + `'`
+	if exists {
+		role = `ALTER ROLE ` + login + ` WITH LOGIN NOINHERIT`
+		for _, attribute := range []struct {
+			held  bool
+			clear string
+		}{{superuser, "NOSUPERUSER"}, {createDB, "NOCREATEDB"}, {createRole, "NOCREATEROLE"}, {replication, "NOREPLICATION"}, {bypassRLS, "NOBYPASSRLS"}} {
+			if attribute.held {
+				role += ` ` + attribute.clear
+			}
+		}
+		role += ` PASSWORD '` + password + `'`
+	}
 	statements := []string{
-		`DO $$ BEGIN
-			IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '` + name + `') THEN
-				CREATE ROLE ` + login + `;
-			END IF;
-		END $$`,
-		// The password is hex, so it needs no escaping inside the literal.
-		`ALTER ROLE ` + login + ` WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD '` + password + `'`,
+		role,
 		`REVOKE ALL PRIVILEGES ON DATABASE ` + pgx.Identifier{database}.Sanitize() + ` FROM ` + login,
 		`GRANT CONNECT ON DATABASE ` + pgx.Identifier{database}.Sanitize() + ` TO ` + login,
 		`GRANT USAGE ON SCHEMA public TO ` + login,

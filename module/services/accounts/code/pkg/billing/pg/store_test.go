@@ -22,9 +22,12 @@ import (
 	"accounts/pkg/billing"
 	pgbilling "accounts/pkg/billing/pg"
 	"accounts/pkg/business"
+	"accounts/pkg/infra"
 )
 
-var testPool *pgxpool.Pool
+// testPool arranges and observes across tenants as the control plane;
+// workerPool is the billing worker's, which the store under test runs on.
+var testPool, workerPool *pgxpool.Pool
 
 func TestMain(m *testing.M) {
 	exitCode, err := testdb.RunWithPackageLock(func() int {
@@ -60,11 +63,21 @@ func runBillingStoreTests(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "codefly.Init: %v\n", err)
 		return 1
 	}
-	// Billing SQL tests need deterministic cross-tenant setup and teardown.
-	// Resolve the test-only migration-owner capability through the Codefly SDK;
-	// production code continues to use the managed read/write capability and
-	// assumes app_billing_worker in infra.NewBillingWorkerPool.
-	conn, err := codefly.For(ctx).Service("store").Secret("postgres", "owner-connection")
+	// The store under test runs on the pool production gives it: the
+	// control-plane login as app_billing_worker (work.go). Nothing here reaches
+	// it as the tables' owner, which row-level security binds like any other
+	// role wherever the owner is not a superuser.
+	worker, err := infra.NewBillingWorkerPool(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "billing worker pool: %v\n", err)
+		return 1
+	}
+	defer worker.Close()
+	workerPool = worker
+
+	// Seeding and resetting span tenants, which is the control plane's
+	// authority: the same login, starting as app_control_plane.
+	conn, err := codefly.For(ctx).Service("store").Secret("postgres", "control-plane-connection")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "connection: %v\n", err)
 		return 1
@@ -169,7 +182,7 @@ func seedPlanWithPrice(t *testing.T, planName, stripePriceID string) uuid.UUID {
 func TestPlanByStripePriceID_Happy(t *testing.T) {
 	resetBilling(t)
 	ctx := context.Background()
-	s := pgbilling.New(testPool)
+	s := pgbilling.New(workerPool)
 
 	planID := seedPlanWithPrice(t, "pro", "price_test_pro")
 	plan, err := s.PlanByStripePriceID(ctx, "price_test_pro")
@@ -195,7 +208,7 @@ func TestResetBillingDoesNotRequireExclusiveTableLocks(t *testing.T) {
 func TestPlanByStripePriceID_NotFound(t *testing.T) {
 	resetBilling(t)
 	ctx := context.Background()
-	s := pgbilling.New(testPool)
+	s := pgbilling.New(workerPool)
 
 	_, err := s.PlanByStripePriceID(ctx, "price_does_not_exist")
 	require.Error(t, err)
@@ -205,7 +218,7 @@ func TestPlanByStripePriceID_NotFound(t *testing.T) {
 func TestOrgByStripeCustomerID_Happy(t *testing.T) {
 	resetBilling(t)
 	ctx := context.Background()
-	s := pgbilling.New(testPool)
+	s := pgbilling.New(workerPool)
 
 	_, orgID, customerID := seedOrg(t, "cus_test_01")
 	resolved, err := s.OrgByStripeCustomerID(ctx, customerID)
@@ -216,7 +229,7 @@ func TestOrgByStripeCustomerID_Happy(t *testing.T) {
 func TestOrgByStripeCustomerID_NotFound(t *testing.T) {
 	resetBilling(t)
 	ctx := context.Background()
-	s := pgbilling.New(testPool)
+	s := pgbilling.New(workerPool)
 
 	_, err := s.OrgByStripeCustomerID(ctx, "cus_nope")
 	require.Error(t, err)
@@ -226,7 +239,7 @@ func TestOrgByStripeCustomerID_NotFound(t *testing.T) {
 func TestBillingRecipientByStripeCustomerID(t *testing.T) {
 	resetBilling(t)
 	ctx := context.Background()
-	s := pgbilling.New(testPool)
+	s := pgbilling.New(workerPool)
 
 	userID, orgID, customerID := seedOrg(t, "cus_recipient")
 	recipient, err := s.BillingRecipientByStripeCustomerID(ctx, customerID)
@@ -239,7 +252,7 @@ func TestBillingRecipientByStripeCustomerID(t *testing.T) {
 
 func TestBillingRecipientByStripeCustomerIDNotFound(t *testing.T) {
 	resetBilling(t)
-	s := pgbilling.New(testPool)
+	s := pgbilling.New(workerPool)
 
 	_, err := s.BillingRecipientByStripeCustomerID(context.Background(), "cus_nope")
 
@@ -253,7 +266,7 @@ func TestBillingRecipientByStripeCustomerIDNotFound(t *testing.T) {
 func TestUpsertSubscription_Insert_New(t *testing.T) {
 	resetBilling(t)
 	ctx := context.Background()
-	s := pgbilling.New(testPool)
+	s := pgbilling.New(workerPool)
 
 	_, orgID, _ := seedOrg(t, "cus_01")
 	planID := seedPlanWithPrice(t, "pro", "price_pro")
@@ -283,7 +296,7 @@ func TestUpsertSubscription_Insert_New(t *testing.T) {
 func TestUpsertSubscription_Update_SameStripeID(t *testing.T) {
 	resetBilling(t)
 	ctx := context.Background()
-	s := pgbilling.New(testPool)
+	s := pgbilling.New(workerPool)
 
 	_, orgID, _ := seedOrg(t, "cus_01")
 	planID := seedPlanWithPrice(t, "pro", "price_pro")
@@ -321,7 +334,7 @@ func TestUpsertSubscription_Update_SameStripeID(t *testing.T) {
 func TestUpsertSubscription_Rotate_DifferentStripeID(t *testing.T) {
 	resetBilling(t)
 	ctx := context.Background()
-	s := pgbilling.New(testPool)
+	s := pgbilling.New(workerPool)
 
 	_, orgID, _ := seedOrg(t, "cus_01")
 	planID := seedPlanWithPrice(t, "pro", "price_pro")
@@ -363,7 +376,7 @@ func TestUpsertSubscription_MarkPastDue_NoPlanID(t *testing.T) {
 	// it should only update status.
 	resetBilling(t)
 	ctx := context.Background()
-	s := pgbilling.New(testPool)
+	s := pgbilling.New(workerPool)
 
 	_, orgID, _ := seedOrg(t, "cus_01")
 	planID := seedPlanWithPrice(t, "pro", "price_pro")
@@ -395,7 +408,7 @@ func TestUpsertSubscription_MarkPastDue_NoPlanID(t *testing.T) {
 func TestUpsertSubscription_OlderObservationCannotOverwriteNewerState(t *testing.T) {
 	resetBilling(t)
 	ctx := context.Background()
-	s := pgbilling.New(testPool)
+	s := pgbilling.New(workerPool)
 	_, orgID, _ := seedOrg(t, "cus_monotonic")
 	proPlanID := seedPlanWithPrice(t, "pro", "price_pro")
 	enterprisePlanID := seedPlanWithPrice(t, "enterprise", "price_enterprise")
@@ -432,7 +445,7 @@ func TestUpsertSubscription_OlderObservationCannotOverwriteNewerState(t *testing
 func TestUpsertSubscription_LateOldSubscriptionCannotCancelNewCurrentSubscription(t *testing.T) {
 	resetBilling(t)
 	ctx := context.Background()
-	s := pgbilling.New(testPool)
+	s := pgbilling.New(workerPool)
 	_, orgID, _ := seedOrg(t, "cus_resubscribed")
 	planID := seedPlanWithPrice(t, "pro", "price_pro")
 	firstObserved := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
@@ -468,7 +481,7 @@ func TestUpsertSubscription_LateOldSubscriptionCannotCancelNewCurrentSubscriptio
 func TestUpsertSubscription_ConcurrentReverseCompletionConvergesToNewerObservation(t *testing.T) {
 	resetBilling(t)
 	ctx := context.Background()
-	s := pgbilling.New(testPool)
+	s := pgbilling.New(workerPool)
 	_, orgID, _ := seedOrg(t, "cus_converges")
 	proPlanID := seedPlanWithPrice(t, "pro", "price_pro")
 	enterprisePlanID := seedPlanWithPrice(t, "enterprise", "price_enterprise")

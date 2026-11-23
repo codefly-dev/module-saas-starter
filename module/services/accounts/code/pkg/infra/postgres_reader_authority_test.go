@@ -108,8 +108,14 @@ func TestStartupRefusesAReaderThatCanExecuteAControlPlaneDefiner(t *testing.T) {
 		ORDER BY 1 LIMIT 1`, infra.ControlPlaneDatabaseRole).Scan(&signature))
 	require.NotEmpty(t, signature)
 
-	asStoreOwner(t, "GRANT EXECUTE ON FUNCTION "+signature+" TO "+login)
-	t.Cleanup(func() { asStoreOwner(t, "REVOKE EXECUTE ON FUNCTION "+signature+" FROM "+login) })
+	// The function is the control-plane role's, so the grant is that role's to
+	// make. The store's owner may assume it, as its migrations do; only a
+	// superuser could grant on a function it does not own.
+	asControlPlaneRole := "SET LOCAL ROLE " + infra.ControlPlaneDatabaseRole
+	asStoreOwner(t, asControlPlaneRole, "GRANT EXECUTE ON FUNCTION "+signature+" TO "+login)
+	t.Cleanup(func() {
+		asStoreOwner(t, asControlPlaneRole, "REVOKE EXECUTE ON FUNCTION "+signature+" FROM "+login)
+	})
 
 	_, err = openWithReaderLogin(t, reader)
 	require.ErrorContains(t, err, "reaches beyond a read-only capability")
@@ -128,48 +134,71 @@ func TestStartupRefusesAWidenedReaderCapability(t *testing.T) {
 	_, err = openWithReaderLogin(t, reader)
 	require.NoError(t, err, "the fixture reader is read-only before any widening")
 
+	const assumeLogin = "GRANT " + login + " TO CURRENT_USER WITH INHERIT FALSE, SET TRUE"
+	const releaseLogin = "REVOKE " + login + " FROM CURRENT_USER"
 	for name, tc := range map[string]struct {
-		widen, restore, want string
+		widen, restore []string
+		want           string
+		// superuser names an arrangement only a superuser can make.
+		superuser string
 	}{
 		"bypasses row-level security": {
-			"ALTER ROLE " + login + " BYPASSRLS",
-			"ALTER ROLE " + login + " NOBYPASSRLS",
-			login + " (BYPASSRLS)",
+			widen:     []string{"ALTER ROLE " + login + " BYPASSRLS"},
+			restore:   []string{"ALTER ROLE " + login + " NOBYPASSRLS"},
+			want:      login + " (BYPASSRLS)",
+			superuser: "give a login BYPASSRLS",
 		},
 		"reaches the control-plane role": {
-			"GRANT app_control_plane TO " + login,
-			"REVOKE app_control_plane FROM " + login,
-			"app_control_plane (a role other than the login itself",
+			widen:   []string{"GRANT app_control_plane TO " + login},
+			restore: []string{"REVOKE app_control_plane FROM " + login},
+			want:    "app_control_plane (a role other than the login itself",
 		},
 		"reaches the tenant role": {
-			"GRANT app_tenant TO " + login,
-			"REVOKE app_tenant FROM " + login,
-			"app_tenant (a role other than the login itself",
+			widen:   []string{"GRANT app_tenant TO " + login},
+			restore: []string{"REVOKE app_tenant FROM " + login},
+			want:    "app_tenant (a role other than the login itself",
 		},
 		"owns a schema": {
-			"CREATE SCHEMA " + schema + " AUTHORIZATION " + login,
-			"DROP SCHEMA " + schema + " CASCADE",
-			"owns a schema",
+			// A schema is given to a role its creator may assume, and dropped
+			// by its owner; the store's owner is neither until it is granted
+			// the login, which it created and so administers.
+			widen: []string{
+				assumeLogin,
+				"CREATE SCHEMA " + schema + " AUTHORIZATION " + login,
+				releaseLogin,
+			},
+			restore: []string{
+				assumeLogin,
+				"SET LOCAL ROLE " + login,
+				"DROP SCHEMA " + schema + " CASCADE",
+				"RESET ROLE",
+				releaseLogin,
+			},
+			want: "owns a schema",
 		},
 		"may write a tenant table": {
-			"GRANT INSERT ON public.organization_members TO " + login,
-			"REVOKE INSERT ON public.organization_members FROM " + login,
-			"INSERT on table public.organization_members",
+			widen:   []string{"GRANT INSERT ON public.organization_members TO " + login},
+			restore: []string{"REVOKE INSERT ON public.organization_members FROM " + login},
+			want:    "INSERT on table public.organization_members",
 		},
 		"may write a table with no row-level security": {
-			"GRANT UPDATE ON public.platform_admins TO " + login,
-			"REVOKE UPDATE ON public.platform_admins FROM " + login,
-			"UPDATE on table public.platform_admins",
+			widen:   []string{"GRANT UPDATE ON public.platform_admins TO " + login},
+			restore: []string{"REVOKE UPDATE ON public.platform_admins FROM " + login},
+			want:    "UPDATE on table public.platform_admins",
 		},
 		"may read the role catalog": {
-			"GRANT SELECT ON pg_catalog.pg_authid TO " + login,
-			"REVOKE SELECT ON pg_catalog.pg_authid FROM " + login,
-			"granted to the login on table pg_catalog.pg_authid",
+			widen:     []string{"GRANT SELECT ON pg_catalog.pg_authid TO " + login},
+			restore:   []string{"REVOKE SELECT ON pg_catalog.pg_authid FROM " + login},
+			want:      "granted to the login on table pg_catalog.pg_authid",
+			superuser: "grant on the system catalog",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			asStoreOwner(t, tc.widen)
-			t.Cleanup(func() { asStoreOwner(t, tc.restore) })
+			if tc.superuser != "" {
+				requireSuperuserStoreOwner(t, tc.superuser)
+			}
+			asStoreOwner(t, tc.widen...)
+			t.Cleanup(func() { asStoreOwner(t, tc.restore...) })
 
 			_, err := openWithReaderLogin(t, reader)
 			require.ErrorContains(t, err, "reaches beyond a read-only capability")
