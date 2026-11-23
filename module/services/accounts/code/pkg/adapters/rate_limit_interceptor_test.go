@@ -13,6 +13,7 @@ import (
 	"github.com/codefly-dev/core/wool"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
@@ -29,7 +30,7 @@ func TestGRPCRateLimitReportsWindowReset(t *testing.T) {
 		WithRateLimiter(redisstate.NewRateLimiter(redisstate.NewMemory()))
 		var reset time.Time
 		for i := 0; i < cfg.defaultLimit; i++ {
-			allowed, _, deadline, err := rateLimiter.Allow(ctx, grpcRateLimitKey(ctx), cfg.defaultLimit, cfg.defaultWindow)
+			allowed, _, deadline, err := rateLimiter.Allow(ctx, ipRateLimitKey("127.0.0.1"), cfg.defaultLimit, cfg.defaultWindow)
 			require.NoError(t, err)
 			require.True(t, allowed)
 			reset = deadline
@@ -54,7 +55,7 @@ func TestConnectRateLimitReportsWindowResetToGRPCClients(t *testing.T) {
 		limiter := redisstate.NewRateLimiter(redisstate.NewMemory())
 		req := connect.NewRequest(&emptypb.Empty{})
 		ctx := wool.WithOrgID(context.Background(), "qa-tenant")
-		key := rateLimitKey(ctx, req)
+		key := rateLimitKeyFromCtx(ctx)
 		require.NotEmpty(t, key)
 		var reset time.Time
 		for i := 0; i < cfg.defaultLimit; i++ {
@@ -108,4 +109,50 @@ type exhaustedWindow struct{ redisstate.State }
 
 func (exhaustedWindow) Incr(context.Context, string, time.Duration) (int64, error) {
 	return int64(defaultRateLimitConfig().defaultLimit + 1), nil
+}
+
+// Every workload of a cell reaches the authority from one address (loopback,
+// or a mesh proxy), and one person's action costs a Check per hop. Counted
+// in the anonymous visitor's budget, a busy minute refused every module's
+// reads; a visitor spending that budget must not refuse them either.
+func TestAuthorityChecksAreNotChargedToTheAnonymousBudget(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		cfg := defaultRateLimitConfig()
+		time.Sleep(13 * time.Second)
+		ctx := peer.NewContext(context.Background(), &peer.Peer{Addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)}})
+		saved := rateLimiter
+		defer WithRateLimiter(saved)
+		WithRateLimiter(redisstate.NewRateLimiter(redisstate.NewMemory()))
+		call := func(procedure string) error {
+			_, err := grpcRateLimitInterceptor()(ctx, nil, &grpc.UnaryServerInfo{FullMethod: procedure}, func(context.Context, any) (any, error) {
+				return nil, nil
+			})
+			return err
+		}
+		const check = "/host.authority.v1.AuthorityService/Check"
+		const signIn = "/host.session.v1.SessionService/SignIn"
+		for i := 0; i < cfg.defaultLimit; i++ {
+			require.NoError(t, call(signIn))
+		}
+		require.Equal(t, codes.ResourceExhausted, status.Code(call(signIn)))
+		// The checks of the same minute are admitted, well past the anonymous budget.
+		for i := 0; i < 2*cfg.defaultLimit; i++ {
+			require.NoError(t, call(check))
+		}
+		// The machine budget is still a budget.
+		for i := 2 * cfg.defaultLimit; i < cfg.machineLimit; i++ {
+			require.NoError(t, call(check))
+		}
+		require.Equal(t, codes.ResourceExhausted, status.Code(call(check)))
+	})
+}
+
+func TestRateLimitBudgetNamesTheCaller(t *testing.T) {
+	cfg := defaultRateLimitConfig()
+	const check = "/host.authority.v1.AuthorityService/Check"
+	// A verified identity is the bucket, whatever the procedure.
+	require.Equal(t, rateLimitBudget{key: "auth:dana", limit: cfg.defaultLimit}, rateLimitBudgetFor(cfg, "auth:dana", check, "10.0.0.1"))
+	require.Equal(t, rateLimitBudget{key: "machine:10.0.0.1", limit: cfg.machineLimit}, rateLimitBudgetFor(cfg, "", check, "10.0.0.1"))
+	require.Equal(t, rateLimitBudget{key: "ip:10.0.0.1", limit: cfg.defaultLimit}, rateLimitBudgetFor(cfg, "", "/saas.accounts.v1.WaitlistService/JoinWaitlist", "10.0.0.1"))
+	require.Equal(t, rateLimitBudget{}, rateLimitBudgetFor(cfg, "", check, ""))
 }

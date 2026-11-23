@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 
+	"accounts/pkg/business"
 	"accounts/pkg/redisstate"
 
 	"github.com/codefly-dev/core/wool"
@@ -40,16 +41,32 @@ import (
 // On reject, surfaces connect.CodeResourceExhausted with a Retry-After
 // hint computed from the window reset — Connect propagates this to
 // gRPC clients as code 8 and to HTTP clients as 429.
+//
+// A workload's call that carries its proof in the request (the authority's
+// Check, Keys and the workload-credential procedures) names no session, so
+// it has none of the identifiers above. It is budgeted per source address
+// in a bucket of its own, at machineLimit: one person's action costs one
+// such call per hop it crosses, every workload of a cell shares an address
+// behind a mesh or on loopback, and charging them to the anonymous
+// visitor's budget refused every module's reads once a busy minute spent it.
 type rateLimitConfig struct {
 	defaultLimit  int
+	machineLimit  int
 	defaultWindow time.Duration
 }
 
 func defaultRateLimitConfig() rateLimitConfig {
 	return rateLimitConfig{
 		defaultLimit:  1000,
+		machineLimit:  60000,
 		defaultWindow: time.Minute,
 	}
+}
+
+// rateLimitBudget is the bucket a call is counted in and its size.
+type rateLimitBudget struct {
+	key   string
+	limit int
 }
 
 // rateLimitInterceptor builds the Connect interceptor. limiter may be
@@ -61,15 +78,16 @@ func rateLimitInterceptor(limiter *redisstate.RateLimiter) connect.UnaryIntercep
 			if limiter == nil {
 				return next(ctx, req)
 			}
-			key := rateLimitKey(ctx, req)
-			if key == "" {
+			budget := rateLimitBudgetFor(cfg, rateLimitKeyFromCtx(ctx), req.Spec().Procedure,
+				clientIP(req.Peer().Addr, req.Header().Get("X-Forwarded-For")))
+			if budget.key == "" {
 				// Only when even the peer address is unparseable — the
 				// budget needs a key to bucket on. Anonymous callers
 				// otherwise fall through to a per-IP key below.
 				return next(ctx, req)
 			}
 			allowed, remaining, resetAt, err := limiter.Allow(
-				ctx, key, cfg.defaultLimit, cfg.defaultWindow,
+				ctx, budget.key, budget.limit, cfg.defaultWindow,
 			)
 			if err != nil {
 				wool.Get(ctx).In("rateLimitInterceptor").
@@ -100,7 +118,7 @@ func rateLimitInterceptor(limiter *redisstate.RateLimiter) connect.UnaryIntercep
 			resp, err := next(ctx, req)
 			if err == nil && resp != nil {
 				resp.Header().Set("X-RateLimit-Limit",
-					strconv.Itoa(cfg.defaultLimit))
+					strconv.Itoa(budget.limit))
 				resp.Header().Set("X-RateLimit-Remaining",
 					strconv.Itoa(remaining))
 				resp.Header().Set("X-RateLimit-Reset",
@@ -121,12 +139,17 @@ func grpcRateLimitInterceptor() grpc.UnaryServerInterceptor {
 		if rateLimiter == nil {
 			return handler(ctx, req)
 		}
-		key := grpcRateLimitKey(ctx)
-		if key == "" {
+		procedure := ""
+		if info != nil {
+			procedure = info.FullMethod
+		}
+		budget := rateLimitBudgetFor(cfg, rateLimitKeyFromCtx(ctx), procedure,
+			clientIP(grpcPeerAddr(ctx), grpcForwardedFor(ctx)))
+		if budget.key == "" {
 			return handler(ctx, req)
 		}
 		allowed, _, resetAt, err := rateLimiter.Allow(
-			ctx, key, cfg.defaultLimit, cfg.defaultWindow,
+			ctx, budget.key, budget.limit, cfg.defaultWindow,
 		)
 		if err != nil {
 			wool.Get(ctx).In("grpcRateLimitInterceptor").
@@ -145,26 +168,23 @@ func grpcRateLimitInterceptor() grpc.UnaryServerInterceptor {
 	}
 }
 
-// rateLimitKey picks the most specific identifier available on the
-// context and, for anonymous callers (Authenticate / BeginOAuth /
-// RegisterUser / JoinWaitlist), falls back to a per-IP key
-// so pre-auth traffic still gets an app-layer budget rather than being
-// skipped. Returns "" only when the peer address can't be parsed either.
-func rateLimitKey(ctx context.Context, req connect.AnyRequest) string {
-	if key := rateLimitKeyFromCtx(ctx); key != "" {
-		return key
+// rateLimitBudgetFor picks the bucket for one call: the caller's verified
+// identity when it has one; otherwise its source address, in the machine
+// bucket for a procedure a workload proves itself to in the request and in
+// the anonymous bucket for everything else (Authenticate, BeginOAuth,
+// RegisterUser, JoinWaitlist). The key is "" only when the peer address
+// cannot be parsed either.
+func rateLimitBudgetFor(cfg rateLimitConfig, identity, procedure, ip string) rateLimitBudget {
+	if identity != "" {
+		return rateLimitBudget{key: identity, limit: cfg.defaultLimit}
 	}
-	return ipRateLimitKey(clientIP(req.Peer().Addr, req.Header().Get("X-Forwarded-For")))
-}
-
-// grpcRateLimitKey is the gRPC twin of rateLimitKey: identity first, then
-// a per-IP fallback derived from the transport peer and forwarded-for
-// metadata.
-func grpcRateLimitKey(ctx context.Context) string {
-	if key := rateLimitKeyFromCtx(ctx); key != "" {
-		return key
+	if ip == "" {
+		return rateLimitBudget{}
 	}
-	return ipRateLimitKey(clientIP(grpcPeerAddr(ctx), grpcForwardedFor(ctx)))
+	if business.CredentialInRequest(procedure) {
+		return rateLimitBudget{key: "machine:" + ip, limit: cfg.machineLimit}
+	}
+	return rateLimitBudget{key: ipRateLimitKey(ip), limit: cfg.defaultLimit}
 }
 
 func ipRateLimitKey(ip string) string {

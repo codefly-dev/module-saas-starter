@@ -91,6 +91,34 @@ func ServedInClusterOnly(procedure string) bool {
 	return ok
 }
 
+// credentialInRequest lists the interface procedures a workload calls with
+// its proof in the request itself: the capability being checked, a workload
+// credential, or (Keys) nothing, because it answers public keys. No session
+// names their caller, and one person's action costs one such call per hop it
+// crosses, so they are budgeted as machine traffic and never from the budget
+// an anonymous visitor's address is given.
+var credentialInRequest = map[string]struct{}{
+	"/host.authority.v1.AuthorityService/Check":         {},
+	"/host.authority.v1.AuthorityService/Keys":          {},
+	"/host.authority.v1.AuthorityService/ListResources": {},
+	HostRegisterAdmissionKeyMethod:                      {},
+	HostAttachResourceMethod:                            {},
+	HostDetachResourceMethod:                            {},
+	HostAuthorizeTransferMethod:                         {},
+	HostApplyManifestMethod:                             {},
+	"/host.installation.v1.InstallationService/Current": {},
+	"/host.artifact.v1.ArtifactService/Approve":         {},
+	"/host.artifact.v1.ArtifactService/Authorize":       {},
+	"/host.artifact.v1.ArtifactService/Revoke":          {},
+}
+
+// CredentialInRequest reports whether procedure is one a workload calls with
+// its proof in the request, with no session naming the caller.
+func CredentialInRequest(procedure string) bool {
+	_, ok := credentialInRequest[procedure]
+	return ok
+}
+
 func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 	authenticatedMint := func(event string) *policyv1.MethodPolicy {
 		return &policyv1.MethodPolicy{
