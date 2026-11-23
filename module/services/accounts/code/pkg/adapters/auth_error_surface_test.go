@@ -138,6 +138,11 @@ func (m *partiallyRevokingMinter) RevokeSessionAccess(context.Context, string) e
 	return m.sessionErr
 }
 
+// The refresh credential here names no session, so there is none to end.
+func (m *partiallyRevokingMinter) RefreshSession(context.Context, string) (auth.RefreshSession, error) {
+	return auth.RefreshSession{}, auth.ErrRefreshRevoked
+}
+
 func (m *partiallyRevokingMinter) Revoke(context.Context, string) error {
 	m.revoked = append(m.revoked, "family")
 	return m.familyErr

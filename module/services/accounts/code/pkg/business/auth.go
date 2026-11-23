@@ -487,6 +487,14 @@ func (s *Service) BeginOAuth(ctx context.Context, provider, redirectURI string) 
 // logout that reaches here revokes the presented session's access tokens whether
 // or not a refresh credential came with it.
 //
+// The refresh credential names a session too, and that session is ENDED, as
+// SessionService.End ends one (EndSession): its family and every role view and
+// cast opened from it, each a family of its own that the family revocation
+// below never reached. A sign-out that presented only its refresh credential —
+// a browser opening the sign-out address before it holds a bearer — left those
+// bearers accepted until they expired, and was acknowledged. Ending the session
+// is not something the caller has to ask for separately, or hold a bearer for.
+//
 // EVERY revocation is required, and a sign-out is acknowledged only when all of
 // them held. SP-IDENT-05 is that after signing out the presented access token no
 // longer authenticates — so reporting success while the access half failed tells
@@ -517,8 +525,18 @@ func (s *Service) Logout(ctx context.Context, req *gen.LogoutRequest, accessToke
 			incomplete = append(incomplete, "the presented session's access tokens")
 		}
 	}
+	ended := s.endRefreshSession(ctx, req.GetRefreshToken())
+	if errors.Is(ended, ErrSessionEndIncomplete) {
+		w.Warn("ending the refresh credential's session left a bearer accepted", wool.ErrField(ended))
+		incomplete = append(incomplete, "the sessions opened from this one")
+		ended = nil
+	}
 	if err := s.minter.Revoke(ctx, req.RefreshToken); err != nil {
 		return err
+	}
+	if ended != nil {
+		// The family is revoked; what was opened from it could not be ended.
+		return ended
 	}
 	if len(incomplete) > 0 {
 		// The family is revoked, so nothing can be refreshed; what is still live is
@@ -532,6 +550,34 @@ func (s *Service) Logout(ctx context.Context, req *gen.LogoutRequest, accessToke
 	// browser and in nothing accounts can send. GetProviderSignOut answers the
 	// URL that does it.
 	return nil
+}
+
+// endRefreshSession ends the session refreshToken was issued to, through
+// EndSession, the one path that ends a session with what was opened from it. A
+// token that belongs to no session, and a session already ended (the caller
+// asked End first, or signed out twice), leave nothing to end and are no error:
+// the answer is the same for both, so a sign-out tells nobody whether a token
+// was ever a session's.
+func (s *Service) endRefreshSession(ctx context.Context, refreshToken string) error {
+	if refreshToken == "" {
+		return nil
+	}
+	session, err := s.minter.RefreshSession(ctx, refreshToken)
+	if errors.Is(err, auth.ErrRefreshRevoked) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	organization := ""
+	if session.OrgID != uuid.Nil {
+		organization = session.OrgID.String()
+	}
+	err = s.EndSession(ctx, session.UserID.String(), organization, session.ID.String())
+	if errors.Is(err, ErrNoOpenSession) {
+		return nil
+	}
+	return err
 }
 
 // GetProviderSignOut answers the identity provider's RP-initiated logout URL,

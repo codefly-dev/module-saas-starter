@@ -144,8 +144,11 @@ func (*fixedAccessMinter) SwitchOrganization(
 func (*fixedAccessMinter) Revoke(context.Context, string) error              { return nil }
 func (*fixedAccessMinter) RevokeAccess(context.Context, string) error        { return nil }
 func (*fixedAccessMinter) RevokeSessionAccess(context.Context, string) error { return nil }
-func (*fixedAccessMinter) AccessRevocationEnabled() bool                     { return true }
-func (*fixedAccessMinter) JWKS() (string, error)                             { return `{}`, nil }
+func (*fixedAccessMinter) RefreshSession(context.Context, string) (auth.RefreshSession, error) {
+	return auth.RefreshSession{}, auth.ErrRefreshRevoked
+}
+func (*fixedAccessMinter) AccessRevocationEnabled() bool { return true }
+func (*fixedAccessMinter) JWKS() (string, error)         { return `{}`, nil }
 
 func recentBillingIdentity() *auth.Identity {
 	return &auth.Identity{

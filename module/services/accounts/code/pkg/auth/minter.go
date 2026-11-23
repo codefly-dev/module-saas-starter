@@ -98,6 +98,13 @@ type JWTMinter interface {
 	// the `exp` that token was signed with.
 	SwitchOrganization(ctx context.Context, userID, sessionID, organizationID uuid.UUID) (string, time.Time, error)
 
+	// RefreshSession names the session a refresh token was issued to, whether
+	// or not that session still stands, and consumes nothing: the token is not
+	// rotated and no reuse is recorded. It is how a sign-out that presents only
+	// its refresh credential names the session to end. ErrRefreshRevoked when
+	// the token belongs to no session, exactly as an unknown token refreshes.
+	RefreshSession(ctx context.Context, refreshToken string) (RefreshSession, error)
+
 	// Revoke marks all sessions in a family as revoked. Called by /auth/logout.
 	Revoke(ctx context.Context, refreshToken string) error
 
@@ -127,4 +134,12 @@ type JWTMinter interface {
 	// Set for external tooling. The sidecar loads its key from Vault
 	// directly; this endpoint is non-authoritative.
 	JWKS() (string, error)
+}
+
+// RefreshSession is the session a refresh token was issued to: its row, the
+// person it is of, and the organization it selected (zero when it named none).
+type RefreshSession struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+	OrgID  uuid.UUID
 }

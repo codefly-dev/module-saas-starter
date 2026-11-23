@@ -392,9 +392,10 @@ export async function deriveOAuthNonce(state: string): Promise<string> {
  * so a retry still has the credential it needs.
  *
  * It is also `false` when the host could not end the session itself
- * (SessionService.End): the logout revokes the refresh family and the presented
- * session's access tokens, never the role views and casts opened from the
- * session, which only End ends.
+ * (SessionService.End), which is asked first and as the person's own session:
+ * a narrowed session's bearer ends only itself. The logout ends the session its
+ * refresh cookie names too, with the role views and casts opened from it, so a
+ * sign-out that reaches the server without a bearer still ends them.
  */
 export interface SignOutResult {
 	complete: boolean;

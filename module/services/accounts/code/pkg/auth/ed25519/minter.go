@@ -632,6 +632,19 @@ func familyAccessClaim(familyID uuid.UUID) string {
 	return familyID.String()
 }
 
+// RefreshSession implements auth.JWTMinter.RefreshSession: the row the token's
+// hash is stored on, read and nothing else.
+func (m *Minter) RefreshSession(ctx context.Context, refreshToken string) (auth.RefreshSession, error) {
+	rec, err := m.store.FindByRefreshHash(ctx, hashRefresh(refreshToken))
+	if err != nil {
+		if errors.Is(err, auth.ErrRefreshRevoked) {
+			return auth.RefreshSession{}, err
+		}
+		return auth.RefreshSession{}, fmt.Errorf("ed25519minter: refresh session lookup: %w", err)
+	}
+	return auth.RefreshSession{ID: rec.ID, UserID: rec.UserID, OrgID: rec.OrgID}, nil
+}
+
 // Revoke implements auth.JWTMinter.Revoke by revoking the family backing the
 // given refresh token. Safe to call with an already-revoked token.
 func (m *Minter) Revoke(ctx context.Context, refreshToken string) error {
