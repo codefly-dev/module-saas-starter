@@ -2,9 +2,18 @@ package redisstate
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strconv"
 	"time"
 )
+
+// ErrCounterUnavailable is Allow's error when a budget is set and the hit
+// could not be counted: the backing store failed, or there is none. The call
+// is not allowed. A caller that admitted it would turn every budget off for as
+// long as the store is down, which is the moment a flood is most likely and
+// least visible.
+var ErrCounterUnavailable = errors.New("rate limit counter unavailable")
 
 // RateLimiter is a Redis-backed fixed-window counter — the simplest
 // shape that gives correct per-key request budgets across multiple api
@@ -13,9 +22,10 @@ import (
 // fits the typical SaaS rate-limit policy ("1000 reqs/min per org"
 // is a window, not a sustained-rate guarantee).
 //
-// Falls back to allow-all when no state is wired. The DB / business
-// gates are the real correctness guard; rate limiting is overload protection,
-// not authorization.
+// Fails closed: a hit that cannot be counted is refused with
+// ErrCounterUnavailable, whether the store answered with an error or was never
+// wired. The budgets guard sign-in, registration and the authority's checks,
+// so "the counter is down" must not mean "there is no budget".
 type RateLimiter struct {
 	state State
 }
@@ -35,7 +45,9 @@ const rateLimitPrefix = "ratelimit:"
 //   - remaining: budget left in the current window
 //   - resetAt: when the current window rolls over
 //
-// limit ≤ 0 disables the check (unlimited). nil state = unlimited.
+// limit ≤ 0 or window ≤ 0 is a caller that set no budget (unlimited). With a
+// budget set, a nil limiter, a nil state or a failing store returns
+// allowed=false and an error matching ErrCounterUnavailable.
 //
 // Window keys are bucketed to the floor of (now / window) so two api
 // instances using the same wall clock land on the same Redis key —
@@ -46,8 +58,11 @@ func (r *RateLimiter) Allow(
 	limit int,
 	window time.Duration,
 ) (allowed bool, remaining int, resetAt time.Time, err error) {
-	if r == nil || r.state == nil || limit <= 0 || window <= 0 {
+	if limit <= 0 || window <= 0 {
 		return true, limit, time.Time{}, nil
+	}
+	if r == nil || r.state == nil {
+		return false, 0, time.Time{}, fmt.Errorf("%w: no counter is wired", ErrCounterUnavailable)
 	}
 
 	bucket := time.Now().Truncate(window)
@@ -61,10 +76,7 @@ func (r *RateLimiter) Allow(
 	// clock skew between instances doesn't evict a live bucket early.
 	count, err := r.state.Incr(ctx, bucketKey, window+5*time.Second)
 	if err != nil {
-		// Soft-fail: treat backing-store errors as allow. Rate limiting
-		// is best-effort overload protection; we don't want a Redis blip
-		// to mass-reject traffic.
-		return true, limit, resetAt, nil
+		return false, 0, resetAt, fmt.Errorf("%w: %w", ErrCounterUnavailable, err)
 	}
 
 	if count > int64(limit) {

@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -42,6 +43,11 @@ import (
 // hint computed from the window reset — Connect propagates this to
 // gRPC clients as code 8 and to HTTP clients as 429.
 //
+// A hit the limiter cannot count is refused, not admitted: Unavailable
+// (HTTP 503) with a Retry-After of rateLimitUnavailableRetry, and one WARN
+// line naming the cause. Admitting it would lift every budget, sign-in and
+// registration included, for as long as the counter's store is down.
+//
 // A workload's call that carries its proof in the request (the authority's
 // Check, Keys and the workload-credential procedures) names no session, so
 // it has none of the identifiers above. It is budgeted per source address
@@ -69,8 +75,10 @@ type rateLimitBudget struct {
 	limit int
 }
 
-// rateLimitInterceptor builds the Connect interceptor. limiter may be
-// nil (no Redis wired) — interceptor falls through to allow-all.
+// rateLimitInterceptor builds the Connect interceptor. A nil limiter is a
+// chain built without one, which only tests do: the service's start-up wires
+// the limiter unconditionally or fails. A limiter that is wired and cannot
+// count refuses.
 func rateLimitInterceptor(limiter *redisstate.RateLimiter) connect.UnaryInterceptorFunc {
 	cfg := defaultRateLimitConfig()
 	return func(next connect.UnaryFunc) connect.UnaryFunc {
@@ -91,8 +99,13 @@ func rateLimitInterceptor(limiter *redisstate.RateLimiter) connect.UnaryIntercep
 			)
 			if err != nil {
 				wool.Get(ctx).In("rateLimitInterceptor").
-					Debug("limiter error (allowing)", wool.ErrField(err))
-				return next(ctx, req)
+					Warn(rateLimitUnavailableLog, wool.ErrField(err), wool.Field("procedure", req.Spec().Procedure))
+				cerr := connect.NewError(connect.CodeUnavailable, errors.New(rateLimitUnavailableMessage))
+				if detail, err := connect.NewErrorDetail(&errdetails.RetryInfo{RetryDelay: durationpb.New(rateLimitUnavailableRetry)}); err == nil {
+					cerr.AddDetail(detail)
+				}
+				cerr.Meta().Set("Retry-After", strconv.Itoa(int(rateLimitUnavailableRetry.Seconds())))
+				return nil, cerr
 			}
 			if !allowed {
 				retryAfter := time.Until(resetAt)
@@ -130,7 +143,7 @@ func rateLimitInterceptor(limiter *redisstate.RateLimiter) connect.UnaryIntercep
 }
 
 // grpcRateLimitInterceptor is the gRPC twin of rateLimitInterceptor.
-// Same key derivation, same fall-through semantics; the package-level
+// Same key derivation, same refusals; the package-level
 // `rateLimiter` is shared so a single org budget covers Connect AND
 // gRPC traffic together rather than per-protocol.
 func grpcRateLimitInterceptor() grpc.UnaryServerInterceptor {
@@ -153,8 +166,13 @@ func grpcRateLimitInterceptor() grpc.UnaryServerInterceptor {
 		)
 		if err != nil {
 			wool.Get(ctx).In("grpcRateLimitInterceptor").
-				Debug("limiter error (allowing)", wool.ErrField(err))
-			return handler(ctx, req)
+				Warn(rateLimitUnavailableLog, wool.ErrField(err), wool.Field("procedure", procedure))
+			refusal := status.New(codes.Unavailable, rateLimitUnavailableMessage)
+			hint := &errdetails.RetryInfo{RetryDelay: durationpb.New(rateLimitUnavailableRetry)}
+			if detailed, err := refusal.WithDetails(hint); err == nil {
+				refusal = detailed
+			}
+			return nil, refusal.Err()
 		}
 		if !allowed {
 			refusal := status.New(codes.ResourceExhausted, ErrRateLimited.Error())
@@ -229,6 +247,17 @@ func rateLimitKeyFromCtx(ctx context.Context) string {
 	}
 	return ""
 }
+
+// rateLimitUnavailableMessage is what a caller is told when its hit could not
+// be counted. It names no store and no cause; the cause is in the log line.
+const rateLimitUnavailableMessage = "rate limiting temporarily unavailable"
+
+// rateLimitUnavailableLog is the one line each such refusal leaves.
+const rateLimitUnavailableLog = "rate limit counter unavailable, refusing (fail-closed)"
+
+// rateLimitUnavailableRetry is the delay a refused caller is asked to wait.
+// The counter has no window to report, so this is a fixed, short pause.
+const rateLimitUnavailableRetry = 5 * time.Second
 
 // ErrRateLimited is the sentinel error returned to clients hit by
 // the rate limiter. The string is intentionally short — Connect

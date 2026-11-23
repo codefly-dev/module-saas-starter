@@ -2,6 +2,7 @@ package redisstate_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -98,23 +99,53 @@ func TestRateLimiter_ZeroLimitIsUnlimited(t *testing.T) {
 	}
 }
 
-func TestRateLimiter_NilCacheIsAllowAll(t *testing.T) {
-	// Production fallback: if Redis is unwired, the limiter must
-	// degrade gracefully to allow-all rather than mass-rejecting.
-	rl := redisstate.NewRateLimiter(nil)
-	ctx := context.Background()
-	for i := 0; i < 50; i++ {
-		if allowed, _, _, _ := rl.Allow(ctx, "k", 1, time.Minute); !allowed {
-			t.Fatalf("nil cache must allow-all; rejected at #%d", i)
-		}
+// A budget whose hits cannot be counted is not a budget that is off: the
+// call is refused and the error says why.
+func TestRateLimiter_RefusesWhenTheCounterFails(t *testing.T) {
+	outage := errors.New("dial tcp: connection refused")
+	rl := redisstate.NewRateLimiter(failingCounter{err: outage})
+	allowed, remaining, _, err := rl.Allow(context.Background(), "k", 1000, time.Minute)
+	if allowed {
+		t.Fatal("a hit the store could not count was allowed")
+	}
+	if remaining != 0 {
+		t.Errorf("remaining = %d, want 0", remaining)
+	}
+	if !errors.Is(err, redisstate.ErrCounterUnavailable) {
+		t.Fatalf("err = %v, want ErrCounterUnavailable", err)
+	}
+	if !errors.Is(err, outage) {
+		t.Fatalf("err = %v, want it to carry the store's error", err)
 	}
 }
 
-func TestRateLimiter_NilReceiverIsAllowAll(t *testing.T) {
-	// Defensive: forgetting to construct the limiter must NOT panic.
-	var rl *redisstate.RateLimiter
-	allowed, _, _, err := rl.Allow(context.Background(), "k", 1, time.Minute)
-	if err != nil || !allowed {
-		t.Errorf("nil receiver must allow without error; got allowed=%v err=%v", allowed, err)
+func TestRateLimiter_RefusesWithoutACounter(t *testing.T) {
+	var unbuilt *redisstate.RateLimiter
+	for name, rl := range map[string]*redisstate.RateLimiter{
+		"no state":     redisstate.NewRateLimiter(nil),
+		"nil receiver": unbuilt,
+	} {
+		t.Run(name, func(t *testing.T) {
+			allowed, _, _, err := rl.Allow(context.Background(), "k", 1, time.Minute)
+			if allowed {
+				t.Fatal("a limiter with no counter allowed a budgeted call")
+			}
+			if !errors.Is(err, redisstate.ErrCounterUnavailable) {
+				t.Fatalf("err = %v, want ErrCounterUnavailable", err)
+			}
+			// No budget set is still no budget: nothing needs counting.
+			if allowed, _, _, err := rl.Allow(context.Background(), "k", 0, time.Minute); !allowed || err != nil {
+				t.Fatalf("limit 0: allowed=%v err=%v, want allowed without error", allowed, err)
+			}
+		})
 	}
+}
+
+type failingCounter struct {
+	redisstate.State
+	err error
+}
+
+func (f failingCounter) Incr(context.Context, string, time.Duration) (int64, error) {
+	return 0, f.err
 }

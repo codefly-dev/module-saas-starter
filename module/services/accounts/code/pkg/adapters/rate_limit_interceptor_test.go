@@ -2,8 +2,13 @@ package adapters
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -109,6 +114,89 @@ type exhaustedWindow struct{ redisstate.State }
 
 func (exhaustedWindow) Incr(context.Context, string, time.Duration) (int64, error) {
 	return int64(defaultRateLimitConfig().defaultLimit + 1), nil
+}
+
+type failingCounter struct{ redisstate.State }
+
+var errCounterOutage = errors.New("dial tcp 10.0.0.9:6379: connect: connection refused")
+
+func (failingCounter) Incr(context.Context, string, time.Duration) (int64, error) {
+	return 0, errCounterOutage
+}
+
+// A hit that cannot be counted is refused. Admitting it lifted every budget,
+// sign-in and registration included, for as long as the store was down.
+func TestConnectRateLimitRefusesWhenTheCounterFails(t *testing.T) {
+	limiter := redisstate.NewRateLimiter(failingCounter{})
+	ctx, sink := capturingContext(wool.WithOrgID(context.Background(), "qa-tenant"))
+	_, err := rateLimitInterceptor(limiter)(func(context.Context, connect.AnyRequest) (connect.AnyResponse, error) {
+		t.Fatal("an uncounted call reached the handler")
+		return nil, nil
+	})(ctx, connect.NewRequest(&emptypb.Empty{}))
+
+	var ce *connect.Error
+	require.ErrorAs(t, err, &ce)
+	require.Equal(t, connect.CodeUnavailable, ce.Code())
+	require.Equal(t, rateLimitUnavailableMessage, ce.Message())
+	require.Equal(t, "5", ce.Meta().Get("Retry-After"))
+	require.Len(t, ce.Details(), 1)
+	message, err := ce.Details()[0].Value()
+	require.NoError(t, err)
+	hint, ok := message.(*errdetails.RetryInfo)
+	require.True(t, ok)
+	require.Equal(t, rateLimitUnavailableRetry, hint.GetRetryDelay().AsDuration())
+
+	// The caller is told nothing of the store; the operator is told the cause.
+	require.NotContains(t, ce.Message(), "6379")
+	line, fields := sink.only(t)
+	require.Equal(t, wool.WARN, line.Level)
+	require.Equal(t, rateLimitUnavailableLog, line.Message)
+	require.Contains(t, fmt.Sprint(fields), errCounterOutage.Error())
+}
+
+func TestGRPCRateLimitRefusesWhenTheCounterFails(t *testing.T) {
+	saved := rateLimiter
+	defer WithRateLimiter(saved)
+	WithRateLimiter(redisstate.NewRateLimiter(failingCounter{}))
+	ctx, sink := capturingContext(peer.NewContext(context.Background(), &peer.Peer{Addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)}}))
+	_, err := grpcRateLimitInterceptor()(ctx, nil, &grpc.UnaryServerInfo{FullMethod: "/host.session.v1.SessionService/SignIn"}, func(context.Context, any) (any, error) {
+		t.Fatal("an uncounted call reached the handler")
+		return nil, nil
+	})
+
+	st := status.Convert(err)
+	require.Equal(t, codes.Unavailable, st.Code())
+	require.Equal(t, rateLimitUnavailableMessage, st.Message())
+	require.Len(t, st.Details(), 1)
+	hint, ok := st.Details()[0].(*errdetails.RetryInfo)
+	require.True(t, ok)
+	require.Equal(t, rateLimitUnavailableRetry, hint.GetRetryDelay().AsDuration())
+	line, _ := sink.only(t)
+	require.Equal(t, wool.WARN, line.Level)
+	require.Equal(t, rateLimitUnavailableLog, line.Message)
+}
+
+// Over the wire the refusal is 503 with Retry-After, and the refusal
+// interceptor outside it neither rewrites it nor logs it a second time as a
+// fault of the host.
+func TestCounterOutageIs503OnTheWire(t *testing.T) {
+	limiter := redisstate.NewRateLimiter(failingCounter{})
+	handler := connect.NewUnaryHandler(refusalProcedure, func(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[emptypb.Empty], error) {
+		t.Error("an uncounted request reached the handler")
+		return nil, nil
+	}, connect.WithInterceptors(connectRefusalInterceptor(), rateLimitInterceptor(limiter)))
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	response, err := server.Client().Post(server.URL+refusalProcedure, "application/json", strings.NewReader("{}"))
+	require.NoError(t, err)
+	defer response.Body.Close()
+	require.Equal(t, http.StatusServiceUnavailable, response.StatusCode)
+	require.Equal(t, "5", response.Header.Get("Retry-After"))
+	body, err := io.ReadAll(response.Body)
+	require.NoError(t, err)
+	require.Contains(t, string(body), rateLimitUnavailableMessage)
+	require.NotContains(t, string(body), "6379")
 }
 
 // Every workload of a cell reaches the authority from one address (loopback,

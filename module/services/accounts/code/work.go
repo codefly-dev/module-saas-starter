@@ -878,8 +878,8 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 	// replayed within its TTL across replicas (the in-memory default only
 	// covers a single process).
 	stateSigner.SetNonceConsumer(redisstate.NewOAuthNonceConsumer(state))
-	// Per-org / per-API-key rate limiting. Falls back to
-	// allow-all if the Redis call fails.
+	// Per-identity rate limiting. A hit Redis cannot count is refused
+	// (fail-closed), like the revocation list above.
 	adapters.WithRateLimiter(redisstate.NewRateLimiter(state))
 	rateLimiterWired = true
 	closeCache = func() error {

@@ -210,6 +210,7 @@ func TestRefusalLevels(t *testing.T) {
 		"unauthenticated":              {codes.Unauthenticated, "invalid or expired access token", wool.DEBUG},
 		"rate limited":                 {codes.ResourceExhausted, ErrRateLimited.Error(), wool.DEBUG},
 		"revocation list outage":       {codes.Unavailable, authorizationUnavailableMessage, wool.DEBUG},
+		"rate limit counter outage":    {codes.Unavailable, rateLimitUnavailableMessage, wool.DEBUG},
 		"seat quota is the caller's":   {codes.ResourceExhausted, "seats quota exhausted: used 5 of 5", wool.WARN},
 		"permission is the caller's":   {codes.PermissionDenied, "permission denied", wool.WARN},
 		"another outage is the host's": {codes.Unavailable, "job operations are unavailable", wool.ERROR},

@@ -140,15 +140,17 @@ func refusalError(err error) error {
 // The interceptor sits outside authentication and the rate limit, so it sees
 // every anonymous or flooding request. Those refusals are DEBUG: an
 // unauthenticated flood must not become an unbounded WARN stream, and the
-// revocation-list outage behind "authorization temporarily unavailable" is
-// already logged once by the auth interceptor that refused it. Any other
+// revocation-list outage behind "authorization temporarily unavailable" and
+// the counter outage behind "rate limiting temporarily unavailable" are
+// already logged once by the interceptor that refused them. Any other
 // refusal is the caller's (WARN) unless it is the host's fault (ERROR): an
 // operator has something to fix.
 func refusalLevel(code codes.Code, message string) wool.Loglevel {
 	switch {
 	case code == codes.Unauthenticated,
 		code == codes.ResourceExhausted && message == ErrRateLimited.Error(),
-		code == codes.Unavailable && message == authorizationUnavailableMessage:
+		code == codes.Unavailable && message == authorizationUnavailableMessage,
+		code == codes.Unavailable && message == rateLimitUnavailableMessage:
 		return wool.DEBUG
 	}
 	switch code {
