@@ -147,9 +147,16 @@ func (r *redisBackend) Close() error {
 // consistency. Otherwise it falls back to an in-memory backend that is
 // fine for local dev where only one process runs.
 type RateLimiter struct {
-	backend                    rateLimitBackend
-	limit                      int // requests per minute
-	burst                      int // burst allowance above limit
+	backend rateLimitBackend
+	// limit and burst are one caller's budget: a signed-in person's within
+	// their organization, an anonymous client address's, or an organization's
+	// when its caller names no subject.
+	limit int // requests per minute
+	burst int // burst allowance above limit
+	// organizationLimit is the ceiling every caller of one organization counts
+	// under together, above their own budgets; organizationBurst its allowance.
+	organizationLimit          int
+	organizationBurst          int
 	authenticationAttemptLimit int
 	stop                       chan struct{}
 	proxies                    proxyTrust
@@ -157,6 +164,7 @@ type RateLimiter struct {
 
 type rateLimiterOptions struct {
 	redisURL                   string
+	organizationLimit          int
 	authenticationAttemptLimit int
 	allowInProcessBackend      bool
 }
@@ -165,6 +173,12 @@ type RateLimiterOption func(*rateLimiterOptions)
 
 func WithRedisURL(redisURL string) RateLimiterOption {
 	return func(options *rateLimiterOptions) { options.redisURL = redisURL }
+}
+
+// WithOrganizationLimit sets the ceiling an organization's callers count under
+// together, in requests per minute.
+func WithOrganizationLimit(limit int) RateLimiterOption {
+	return func(options *rateLimiterOptions) { options.organizationLimit = limit }
 }
 
 func WithAuthenticationAttemptLimit(limit int) RateLimiterOption {
@@ -185,25 +199,41 @@ func WithInProcessBackendAllowed(allowed bool) RateLimiterOption {
 	return func(options *rateLimiterOptions) { options.allowInProcessBackend = allowed }
 }
 
+// personRateLimitPerMinute and organizationRateLimitPerMinute are the budgets a
+// gateway enforces when its configuration names none: what one signed-in person
+// may ask in a minute, and what everyone in one organization may ask together.
+const (
+	personRateLimitPerMinute       = 1000
+	organizationRateLimitPerMinute = 20000
+)
+
+// burstOf is the allowance above a budget: 20% of it, and never none.
+func burstOf(requestsPerMinute int) int {
+	if burst := requestsPerMinute / 5; burst >= 1 {
+		return burst
+	}
+	return 1
+}
+
 // NewRateLimiter creates a rate limiter allowing requestsPerMinute requests
-// per key per minute, with a 20% burst allowance. If REDIS_URL is set it
-// connects to Redis; otherwise it uses in-memory counters with a background
-// cleanup goroutine.
+// per caller per minute, under the organization ceiling (WithOrganizationLimit,
+// organizationRateLimitPerMinute when unset), each with a 20% burst allowance.
+// If REDIS_URL is set it connects to Redis; otherwise it uses in-memory
+// counters with a background cleanup goroutine.
 func NewRateLimiter(requestsPerMinute int, optionFns ...RateLimiterOption) (*RateLimiter, error) {
 	options := rateLimiterOptions{
 		redisURL:                   os.Getenv("REDIS_URL"),
+		organizationLimit:          organizationRateLimitPerMinute,
 		authenticationAttemptLimit: authenticationAttemptLimitPerMinute,
 	}
 	for _, option := range optionFns {
 		option(&options)
 	}
-	burst := requestsPerMinute / 5 // 20% burst
-	if burst < 1 {
-		burst = 1
-	}
 	rl := &RateLimiter{
 		limit:                      requestsPerMinute,
-		burst:                      burst,
+		burst:                      burstOf(requestsPerMinute),
+		organizationLimit:          options.organizationLimit,
+		organizationBurst:          burstOf(options.organizationLimit),
 		authenticationAttemptLimit: options.authenticationAttemptLimit,
 		stop:                       make(chan struct{}),
 		proxies:                    newProxyTrust(workspaceEnv("gateway", "TRUSTED_PROXY_CIDRS")),
@@ -275,22 +305,40 @@ const (
 
 const authenticationAttemptLimitPerMinute = 10
 
-// Middleware returns an http.Handler that enforces rate limiting. It reads the
-// X-Org-Id header (set by the ext_authz check after auth) to determine the rate limit
-// key. If no org ID is present, it falls back to the client IP.
+// Middleware returns an http.Handler that enforces rate limiting.
+//
+// Who is counted is read from the identity headers, which on every path that
+// reaches here are the gateway's own: each strips what the caller sent under
+// those names and stamps them again from the ext_authz check of the verified
+// credential (stripAllIdentityHeaders, injectHeaders). A caller therefore
+// cannot choose its bucket by sending a header.
+//
+//   - A signed-in person (X-Org-Id and X-User-Id, the token's organization and
+//     subject) has a budget of their own within that organization. One budget
+//     for the whole organization, which this was, is spent by a handful of
+//     people using the product at once and refuses the rest of them.
+//   - Every caller of an organization also counts under that organization's
+//     ceiling, so no number of members or keys lets one organization take the
+//     gateway from the others.
+//   - An organization's caller that names no subject keeps the organization's
+//     single bucket, and a caller with no organization its client address.
 //
 // On 429 Too Many Requests it sets standard rate limit headers:
 //
 //	Retry-After, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset
 func (rl *RateLimiter) Middleware(mode limiterFailureMode, class edgeRateLimitClass, authenticationFactorAttempt bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		key := r.Header.Get("X-Org-Id")
-		keyKind := "org"
+		organization := r.Header.Get("X-Org-Id")
+		key := organization
+		keyKind := "org-no-subject"
 		limit := rl.limit
 		burst := rl.burst
 		if key == "" {
 			key = rl.proxies.clientIP(r)
 			keyKind = "ip"
+		} else if subject := r.Header.Get("X-User-Id"); subject != "" {
+			key = "person:" + organization + ":" + subject
+			keyKind = "person"
 		}
 		if class == edgeRateLimitClassWebhook {
 			// A signed provider delivery carries no org and no bearer, so
@@ -311,6 +359,7 @@ func (rl *RateLimiter) Middleware(mode limiterFailureMode, class edgeRateLimitCl
 			// one the caller chose and could mint fresh buckets from at will.
 			key = "webhook:" + rl.proxies.clientIP(r)
 			keyKind = "webhook-ip"
+			organization = ""
 		}
 		if authenticationFactorAttempt {
 			// Login MFA completion is public and has no canonical user/org
@@ -324,9 +373,21 @@ func (rl *RateLimiter) Middleware(mode limiterFailureMode, class edgeRateLimitCl
 				limit = authenticationAttemptLimitPerMinute
 			}
 			burst = 0
+			organization = ""
 		}
 
+		// The caller's own budget first: a request it refuses is not counted
+		// against the organization, so one person past their budget spends
+		// none of what their colleagues share.
 		allowed, remaining, resetUnix, err := rl.allowWithBudget(key, limit, burst)
+		if err == nil && allowed && organization != "" && rl.organizationLimit > 0 {
+			var underCeiling bool
+			underCeiling, _, resetUnix, err = rl.allowWithBudget("org-ceiling:"+organization, rl.organizationLimit, rl.organizationBurst)
+			if err == nil && !underCeiling {
+				allowed, remaining = false, 0
+				key, keyKind, limit = organization, "org", rl.organizationLimit
+			}
+		}
 		if err != nil {
 			if mode == limiterFailOpen {
 				log.Printf("rate limiter backend unavailable for availability route: %v", err)

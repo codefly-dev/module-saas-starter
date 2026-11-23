@@ -31,6 +31,22 @@ Each refuses at boot outside local development, naming what to provision. Local
 development keeps all three fallbacks: one replica, no ingress hop, no cache
 service, and the alternative is a gateway that cannot start.
 
+## Whose budget a request spends
+
+The general budget is a caller's, not an organization's: a signed-in person has
+their own within their organization (`gateway/RATE_LIMIT_PER_PERSON_PER_MINUTE`,
+1,000 when unset), and everyone in an organization also counts under its ceiling
+(`gateway/RATE_LIMIT_PER_ORGANIZATION_PER_MINUTE`, 20,000 when unset), each with
+a 20% burst. A request the person's budget refuses is not counted against the
+ceiling. A caller with no organization is counted by client address, and the
+webhook and authentication-factor budgets are their own, as before. The refusal's
+log line names the limit that was hit: `key=… (person)` or `key=… (org)`.
+
+The limiter reads who is asking from `X-Org-Id` and `X-User-Id`, and those are
+this gateway's: every path that reaches the limiter strips them from the caller's
+request and stamps them from the check of the verified credential. A new path to
+the limiter must do the same before it, or its callers choose their own bucket.
+
 ## Reading declared solution upstreams
 
 An installation delivery may race withdrawal or an unavailable registry. Failed

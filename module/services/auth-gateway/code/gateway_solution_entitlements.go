@@ -240,11 +240,11 @@ func (g *Gateway) handleSolutionEntitlements(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Every read here fans into the authority — the grant union plus health for
-	// each entitled installation — so it draws on the same per-org budget as the
-	// equivalent catalog read. Without it this would be the one unmetered path
+	// each entitled installation — so it draws on the same budgets as the
+	// equivalent catalog read: the viewer's own, under the organization's ceiling. Without it this would be the one unmetered path
 	// from a signed-in browser into accounts (the defect #513 closed for the
 	// solution proxy): the menu polls, and nothing in front of it limits a poll.
-	// The limiter keys on the X-Org-Id the check just stamped, and fails open on
+	// The limiter keys on the identity the check just stamped, and fails open on
 	// a limiter-backend outage exactly as a StandardRead catalog route does.
 	entry := &RouteEntry{
 		Service:        "solution:_entitlements",

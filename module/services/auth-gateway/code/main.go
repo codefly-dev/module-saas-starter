@@ -256,8 +256,15 @@ func main() {
 		if err := requireProxyTrust(workspaceEnv("gateway", "TRUSTED_PROXY_CIDRS"), codefly.IsLocal()); err != nil {
 			panic(err.Error())
 		}
-		// 1000 req/min per org/IP; stricter MFA budget is configured separately.
-		rateLimiter, err = NewRateLimiter(1000,
+		// One budget per signed-in person (or anonymous client address), under
+		// one ceiling per organization; the stricter MFA budget is configured
+		// separately.
+		personLimit, organizationLimit, err := configuredRateLimits()
+		if err != nil {
+			panic(err)
+		}
+		rateLimiter, err = NewRateLimiter(personLimit,
+			WithOrganizationLimit(organizationLimit),
 			WithRedisURL(redisURL),
 			WithAuthenticationAttemptLimit(authenticationAttemptLimit),
 			WithInProcessBackendAllowed(codefly.IsLocal()),
@@ -441,6 +448,38 @@ func canonicalPublicOrigin(candidate string) (string, error) {
 		return "", fmt.Errorf("expected an HTTP(S) origin, got %q", candidate)
 	}
 	return strings.TrimSuffix(candidate, "/"), nil
+}
+
+// configuredRateLimits reads the two general budgets from the `gateway`
+// configuration group: what one caller may ask in a minute, and the ceiling an
+// organization's callers count under together. Unset, each is its default. A
+// ceiling below one caller's budget would refuse a single person at the
+// organization's limit before their own, so it is a configuration error and the
+// gateway does not start on it.
+func configuredRateLimits() (person, organization int, err error) {
+	read := func(key, raw string, fallback int) (int, error) {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return fallback, nil
+		}
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 1 {
+			return 0, fmt.Errorf("%s must be a positive integer", key)
+		}
+		return limit, nil
+	}
+	if person, err = read("RATE_LIMIT_PER_PERSON_PER_MINUTE",
+		workspaceEnv("gateway", "RATE_LIMIT_PER_PERSON_PER_MINUTE"), personRateLimitPerMinute); err != nil {
+		return 0, 0, err
+	}
+	if organization, err = read("RATE_LIMIT_PER_ORGANIZATION_PER_MINUTE",
+		workspaceEnv("gateway", "RATE_LIMIT_PER_ORGANIZATION_PER_MINUTE"), organizationRateLimitPerMinute); err != nil {
+		return 0, 0, err
+	}
+	if organization < person {
+		return 0, 0, fmt.Errorf("RATE_LIMIT_PER_ORGANIZATION_PER_MINUTE (%d) is below RATE_LIMIT_PER_PERSON_PER_MINUTE (%d): the organization's ceiling is what its people share", organization, person)
+	}
+	return person, organization, nil
 }
 
 func configuredAuthenticationAttemptLimit() (int, error) {
