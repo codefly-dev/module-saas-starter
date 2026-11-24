@@ -8,6 +8,9 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
+	corescope "github.com/codefly-dev/authority/libraries/authority-core/go/scope"
+	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -54,23 +57,36 @@ type operationBindingProjection struct {
 // Through a module that declares no roles, what the person holds at the target
 // is what their own session holds there, as the core reads a binding
 // (throughSolutions): nothing at a target that declares no roles
-// (ownSessionRule). Through a role-gated module the core reads its roles,
-// which this mint does not, so that projection is left as it was.
+// (ownSessionRule). Through a role-gated module it is what the person's role
+// on that module's installation holds at the target, as the core issues it
+// over the binding (heldThroughBinding): organization RBAC bounds the
+// projection and never widens it past the role, so a role's grant addressed
+// to one module is projected through the binding to that module alone.
 func (s *WorkContextAuthorityServer) withOperationBindingScopes(ctx context.Context, orgID, audience string, asked []*gen.WorkContextScope, names []string) (*operationBindingProjection, error) {
 	ownerID, err := s.authorizeOwner(ctx, orgID)
 	if err != nil {
 		return nil, err
 	}
-	through, err := ownSessionThrough(ctx, audience)
+	composed, isComposed, err := composedAudience(ctx, audience)
 	if err != nil {
 		return nil, err
 	}
+	through, gated := isComposed && !decide.RoleGated(composed), isComposed && decide.RoleGated(composed)
 	module := business.ModuleCaller{PrincipalID: business.ModulePrincipalID(audience), BoundOrg: orgID}
 	out := &operationBindingProjection{scopes: slices.Clone(asked)}
 	for _, name := range names {
 		binding, err := service.ModuleOperationAudience(ctx, module, orgID, audience, name)
 		if err != nil {
 			return nil, err
+		}
+		// What the person's role on a role-gated module's installation holds
+		// at the binding's target; the core's refusal is that it holds
+		// nothing there.
+		var byRole []*basev0.WorkScopeV1
+		if gated {
+			if byRole, err = heldThroughBinding(ctx, orgID, ownerID, composed, name); err != nil && !coreRefused(err) {
+				return nil, err
+			}
 		}
 		held := 0
 		for _, scope := range binding.InvokeScopes {
@@ -82,6 +98,11 @@ func (s *WorkContextAuthorityServer) withOperationBindingScopes(ctx context.Cont
 				if kept, err = heldProjection(ctx, binding.Audience, kept); err != nil {
 					return nil, err
 				}
+			}
+			if gated {
+				kept = slices.DeleteFunc(kept, func(part *gen.WorkContextScope) bool {
+					return !corescope.Attenuates([]*basev0.WorkScopeV1{{ResourceKind: part.GetResourceKind(), Actions: part.GetActions()}}, byRole)
+				})
 			}
 			for _, part := range kept {
 				held++

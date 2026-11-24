@@ -1,4 +1,4 @@
-.PHONY: unit unit-go unit-frontend gates catalog-check role-plan playground-check playground-journeys scenarios verify
+.PHONY: unit unit-go unit-frontend gates catalog-check role-plan playground-check playground-journeys scenarios verify verify-host
 
 # Optional machine-local selection (GO, CODEFLY, NODE); no paths or
 # credentials in Git.
@@ -17,8 +17,9 @@ FRONTEND = module/services/frontend/code
 
 # Everything a change here passes before it is proposed, on this machine
 # first: the unit tests and the tree gates, the role plan, the playground's
-# host-free checks, and the permission scenarios on the real store. It is the
-# local half of .github/workflows; what it leaves to CI is listed in
+# host-free checks, the permission scenarios on the real store, and accounts
+# as a host of the authority interface on that store (`verify-host`). It is
+# the local half of .github/workflows; what it leaves to CI is listed in
 # RELEASE_GATES.md and summarized under `verify` below.
 #
 # Left to CI, because each needs the pinned Codefly release, a registry
@@ -26,12 +27,13 @@ FRONTEND = module/services/frontend/code
 # service's lint, the DB-backed accounts suites other than the scenarios, the
 # frontend pipeline tests and build, the store and vault suites), golangci-lint,
 # the supply-chain audit and SBOM, the image builds, the module package and its
-# generators, the host-interface conformance suite at authority main, the
+# generators, the host-interface conformance suite at authority main (the
+# suite at the pinned authority is `verify-host`, here), the
 # scoped-pool and store-baseline qualifications on native PostgreSQL, the
 # migration history against the merge reference, the marketing isolation
 # build, the kit-version and release-contract gates, the commit-identity and
 # record-naming checks, and the repository-root module agent's tests.
-verify: unit role-plan playground-check scenarios
+verify: unit role-plan playground-check scenarios verify-host
 
 unit: unit-go unit-frontend gates
 
@@ -113,3 +115,17 @@ playground-journeys:
 scenarios:
 	cd $(ACCOUNTS) && $(GOENV) $(GO) test -count=1 -timeout 30m $(GOTESTFLAGS) ./pkg/business \
 	  -run 'TestAccessMatrix|TestAProfileIsWritten|TestDirectory_|PlatformAdmin|TestAssignRoleRequires|TestGrantScopeRefuses|Impersonat'
+
+# accounts as a host of the authority interface, on the real store: the shared
+# host-interface conformance suite at the authority revision go.mod pins, with
+# the cases beyond it (accounts' own Work Context mints held to what the
+# shared core would issue), and the store contract the authority core's store
+# meets over accounts' Postgres. Both are excluded by `-tags pure`, so `unit`
+# never starts them. Each test starts its own PostgreSQL through Codefly and
+# removes it; the suite has measured five to nineteen minutes here and is held to
+# its own ceiling (conformanceCeiling). Needs Docker and a codefly on PATH.
+verify-host:
+	cd $(ACCOUNTS) && $(GOENV) $(GO) test -count=1 -timeout 30m $(GOTESTFLAGS) ./pkg/adapters \
+	  -run '^TestAccountsPassesTheHostInterfaceConformanceSuite$$'
+	cd $(ACCOUNTS) && $(GOENV) $(GO) test -count=1 -timeout 30m $(GOTESTFLAGS) ./pkg/infra \
+	  -run '^TestTheAuthorityCoreStoreMeetsTheStoreContract$$'

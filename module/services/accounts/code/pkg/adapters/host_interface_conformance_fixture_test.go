@@ -139,6 +139,9 @@ type conformanceModule struct {
 	// through are the scopes a page's role names through each of the
 	// module's bindings, by role name, then binding id.
 	through map[string]map[string][]*authorityv1.WorkScopeV1
+	// audiences are the scopes a page's role holds addressed to one module
+	// alone, by role name, then that module's principal.
+	audiences map[string]map[string][]*authorityv1.WorkScopeV1
 	// methods are what each operation the module serves requires.
 	methods []*compositionv1.MethodPolicyV1
 	// ownerUnaware: the module checks no owner (owner_aware false);
@@ -181,6 +184,9 @@ func tryDeliverModule(t *testing.T, ctx context.Context, conn grpc.ClientConnInt
 		role := &compositionv1.RoleV1{Name: name, Scopes: m.roles[name]}
 		for _, binding := range slices.Sorted(maps.Keys(m.through[name])) {
 			role.Through = append(role.Through, &compositionv1.RoleThroughV1{Binding: binding, Scopes: m.through[name][binding]})
+		}
+		for _, audience := range slices.Sorted(maps.Keys(m.audiences[name])) {
+			role.Audiences = append(role.Audiences, &compositionv1.RoleAudienceV1{Audience: audience, Scopes: m.audiences[name][audience]})
 		}
 		document.Roles = append(document.Roles, role)
 	}

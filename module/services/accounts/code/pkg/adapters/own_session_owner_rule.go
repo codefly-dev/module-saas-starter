@@ -27,7 +27,8 @@ import (
 // what their role on its installation holds. A module that declares no roles
 // is reached through the binding of an installation whose role the person
 // holds, which the core issues (IssueForPerson naming the binding,
-// IssueChild).
+// IssueChild); what these mints project and exchange through a role-gated
+// module's binding is held to that issue too (heldThroughBinding).
 
 // composedAudience is the module the core composed under audience, read by
 // principal as the core reads an audience. ok is false when the core composes
@@ -143,15 +144,6 @@ func ownSession(wc *basev0.WorkContextV1) bool {
 	return wc.GetOwnerPrincipalKind() == business.PrincipalKindHuman && len(wc.GetActorChain()) == 0
 }
 
-// ownSessionThrough reports whether a person's own session reaches past
-// module through its bindings as their own session, as the core reads a hop
-// (throughSolutions): through a composed module that declares no roles. A
-// role-gated module is decided by its roles, which these mints do not read.
-func ownSessionThrough(ctx context.Context, module string) (bool, error) {
-	m, composed, err := composedAudience(ctx, module)
-	return composed && !decide.RoleGated(m), err
-}
-
 // heldThrough is scopes, carried by a person's own session through a module
 // that declares no roles to audience: nothing at an audience that declares no
 // roles either, refused by the rule's name.
@@ -166,12 +158,70 @@ func heldThrough(ctx context.Context, audience string, scopes []*basev0.WorkScop
 	return scopes, nil
 }
 
+// heldThroughBinding is what the authority core would issue person, in
+// organization org, at the target of binding of m, a role-gated module, on
+// the roles they hold on m's installation: the core is asked as a hop asks
+// it (IssueForPerson naming the binding, then IssueChild over it), so a
+// role's scopes are read at the binding's target (decide.RoleScopesAt), a
+// grant addressed to one module is held at that module alone, and the reach
+// the installation's consent approved bounds it. Owner selection aside, as
+// in holdOwnSession. Both operations a person causes are asked, since these
+// mints carry a binding's invoke or its lookup scopes. What the core signs to
+// answer is discarded; its refusal is returned as the core names it.
+func heldThroughBinding(ctx context.Context, org, person string, m domain.Module, binding string) ([]*basev0.WorkScopeV1, error) {
+	core, err := service.AuthorityCore()
+	if err != nil {
+		return nil, coreStatus(err)
+	}
+	ctx = business.AuthorityProbe(ctx)
+	root, err := core.IssueForPerson(ctx, authority.Person{ID: person, Organization: org}, authority.IssueRequest{Audience: m.Principal, Binding: binding})
+	if err != nil {
+		return nil, coreStatus(err)
+	}
+	var held []*basev0.WorkScopeV1
+	var refusal error
+	for _, operation := range []string{"invoke", "lookup"} {
+		child, err := core.IssueChild(ctx, root.Token, authority.Workload{Module: m.Name}, authority.IssueRequest{Binding: binding, Operation: operation})
+		if err != nil {
+			if refusal == nil {
+				refusal = err
+			}
+			continue
+		}
+		effective := child.Context.GetAuthorityScopes()
+		if chain := child.Context.GetActorChain(); len(chain) > 0 {
+			effective = chain[len(chain)-1].GetGrantedScopes()
+		}
+		held = append(held, effective...)
+	}
+	if len(held) == 0 {
+		return nil, coreStatus(refusal)
+	}
+	return corescope.Unowned(held), nil
+}
+
+// coreRefused reports whether err is the core's refusal of the ask, as
+// against a failure to read what decides it: a refusal is an answer ("holds
+// nothing there"), and a failure is never one.
+func coreRefused(err error) bool {
+	switch status.Code(err) {
+	case codes.PermissionDenied, codes.NotFound, codes.FailedPrecondition:
+		return true
+	}
+	return false
+}
+
 // holdOwnSessionExchange holds what a person's own session is re-issued with
 // at audience. The owner's own exchange (no module exercising a binding)
 // carries it there as their own session, refused by the rule's name. A module
 // that declares no roles exchanging it through its binding carries nothing of
-// the person's own to a module that declares no roles either. Scopes empty
-// re-issue the parent's.
+// the person's own to a module that declares no roles either. A role-gated
+// module exchanging it through its operation binding carries what the core
+// would issue the person over that binding (heldThroughBinding): what their
+// role on the module's installation holds at the binding's target, so a
+// grant addressed to one module is carried to no sibling, and an organisation
+// role over the kind carries nothing a role on the installation does not
+// hold. Scopes empty re-issue the parent's.
 func holdOwnSessionExchange(ctx context.Context, parent *basev0.WorkContextV1, audience string, scopes []*basev0.WorkScopeV1, exercised moduleBindingSeal) ([]*basev0.WorkScopeV1, error) {
 	if !ownSession(parent) {
 		return scopes, nil
@@ -183,9 +233,26 @@ func holdOwnSessionExchange(ctx context.Context, parent *basev0.WorkContextV1, a
 	if exercised == (moduleBindingSeal{}) {
 		return scopes, holdOwnSession(ctx, parent.GetTenantId(), parent.GetOwnerPrincipalId(), audience, carried)
 	}
-	through, err := ownSessionThrough(ctx, parent.GetAudience())
-	if err != nil || !through {
+	m, composed, err := composedAudience(ctx, parent.GetAudience())
+	if err != nil || !composed {
 		return scopes, err
 	}
-	return heldThrough(ctx, audience, carried)
+	if !decide.RoleGated(m) {
+		return heldThrough(ctx, audience, carried)
+	}
+	if exercised.BindingID == "" {
+		// A read binding names no operation binding of the module's: the
+		// core has none to be asked about.
+		return scopes, nil
+	}
+	held, err := heldThroughBinding(ctx, parent.GetTenantId(), parent.GetOwnerPrincipalId(), m, exercised.BindingID)
+	if err != nil {
+		return nil, err
+	}
+	if !corescope.Attenuates(corescope.Unowned(carried), held) {
+		return nil, status.Errorf(codes.PermissionDenied,
+			"the person's role on %s holds less at %s than operation binding %q carries there: a role's grant is held at the module it is addressed to, and an organisation role adds nothing to it",
+			m.Name, audience, exercised.BindingID)
+	}
+	return scopes, nil
 }

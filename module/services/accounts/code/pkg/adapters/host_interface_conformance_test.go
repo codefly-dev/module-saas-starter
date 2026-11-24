@@ -1723,6 +1723,19 @@ installations:
 			func(target, role string) { seat(target, role, conformanceAlex) })
 	})
 
+	// Beyond the suite: a role's grant addressed to one module is that
+	// module's alone on accounts' own mints too, which the suite never drives.
+	t.Run("a role's grant addressed to one module reaches no sibling on this host's own mints", func(t *testing.T) {
+		testAudienceGrantOwnSession(t, conn, signIn("fixture-alex"), conformanceAlex, credential, func(m conformanceModule) {
+			deliverModule(t, ctx, conn, signer, m)
+			require.NoError(t, installModule(ctx, m.alias))
+		}, &solutionhost.Frontend{Title: "Grant page", ExposedModule: "./Page", HostContract: 1, Payload: pagePayload},
+			func(target, role string) { seat(target, role, conformanceAlex) })
+		const dev = "00000000-0000-7000-8000-0000000000b4"
+		seat("conformance-grant-page", domain.UserRole, dev)
+		testAudienceGrantNeedsItsRole(t, conn, signIn("fixture-alex"), signIn("fixture-dev"), dev, credential)
+	})
+
 	// An organisation role administers and reaches no module on this host's
 	// own mints either: an administrator is refused at a module page until a
 	// role on its installation is granted, whatever organisation role they hold.

@@ -202,8 +202,12 @@ Skills in `.claude/skills/`, loaded when the task calls for them:
   needs no host — the Go and frontend unit suites, the tree gates, the role
   plan (`make role-plan`: every accounts procedure against an administrator, a
   member, a person with no role, the platform administrator and a signed-out
-  visitor) and the permission scenarios on a Codefly-started store (`make
-  scenarios`). The Makefile's `verify` comment lists what stays CI's.
+  visitor), the permission scenarios on a Codefly-started store (`make
+  scenarios`) and accounts as a host of the authority interface on that store
+  (`make verify-host`: the host-interface conformance suite at the pinned
+  authority and the authority core's store contract, which `-tags pure`
+  excludes from the unit lane). The Makefile's `verify` comment lists what
+  stays CI's.
 - Canonical **service** gate: `codefly ci run`. It owns lint, compile/typecheck,
   tests, dependency/vuln audit, SBOM, and container build for every service in
   the graph. See [RELEASE_GATES.md](./RELEASE_GATES.md).
