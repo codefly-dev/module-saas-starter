@@ -1736,6 +1736,41 @@ installations:
 		testAudienceGrantNeedsItsRole(t, conn, signIn("fixture-alex"), signIn("fixture-dev"), dev, credential)
 	})
 
+	// Beyond the suite: what the case above left open on this host's own
+	// mints. A capability an agent acts on, a child and a renewal of one
+	// minted before a role was revoked or narrowed, the installation's agent,
+	// and the callee's kind named outright.
+	residue := residueHarness{conn: conn, admin: signIn("fixture-alex"), user: signIn("fixture-dev"), adminID: conformanceAlex, userID: "00000000-0000-7000-8000-0000000000b4",
+		credential: credential,
+		deliver: func(m conformanceModule) {
+			deliverModule(t, ctx, conn, signer, m)
+			require.NoError(t, installModule(ctx, m.alias))
+		},
+		page: &solutionhost.Frontend{Title: "Residue page", ExposedModule: "./Page", HostContract: 1, Payload: pagePayload},
+		seat: func(target, role, person string) { seat(target, role, person) },
+		unseat: func(target, role, person string) {
+			_, err := core.RevokeRole(ctx, alex, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: installedModule(t, ctx, core, alex, target), Role: role, PersonID: person})
+			require.NoError(t, err)
+		},
+		agent: func(identifier string) string {
+			registered, err := svc.CreateAgentPrincipal(ctx, business.CreateAgentRequest{OrgID: fixtureOrganization, AgentIdentifier: identifier, CreatedBy: conformanceAlex})
+			require.NoError(t, err)
+			return registered.ID
+		},
+		solution: func(s conformanceSolution, role string) string {
+			deliverSolution(t, ctx, conn, signer, s)
+			inst, err := installConformanceSolution(ctx, svc, core, s.alias, role, conformanceAlex)
+			require.NoError(t, err)
+			return inst.ID
+		},
+		reconsent: func(module string) {
+			require.NoError(t, reconsentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module))
+		},
+	}
+	t.Run("a role's addressed grant on this host's own mints: agents, revocation, narrowing, the installation's agent", func(t *testing.T) {
+		testAudienceGrantResidue(t, residue)
+	})
+
 	// An organisation role administers and reaches no module on this host's
 	// own mints either: an administrator is refused at a module page until a
 	// role on its installation is granted, whatever organisation role they hold.
@@ -1838,39 +1873,49 @@ installations:
 		require.Error(t, err, "and the capability issued before stays refused")
 	})
 
+	// writeEnvelope writes the next envelope revision with principals (a JSON
+	// object body keyed by module) and derives the registry from it: every
+	// module it does not name is omitted from the registry.
+	writeEnvelope := func(principals string) {
+		var latest uint64
+		require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
+			var err error
+			latest, err = store.LatestModuleEnvelopeRevision(ctx)
+			return err
+		}))
+		doc := []byte(fmt.Sprintf(`{"revision":%d,"principals":{%s}}`, latest+1, principals))
+		_, err := business.ParseModuleEnvelope(doc)
+		require.NoError(t, err)
+		require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
+			return store.AppendModuleEnvelopeRecord(ctx, &business.ModuleEnvelopeRecord{Revision: latest + 1, Document: doc, WrittenBy: conformanceAlex}, latest)
+		}))
+		pass, err := business.NewSolutionHostBindingReconciler(svc, business.SolutionHostBindingReconcilerConfig{
+			Source: business.NewDeliveredSolutionHostBindings(svc), Verifier: verifier, Coordinate: "conformance-host", Envelopes: svc,
+		})
+		require.NoError(t, err)
+		// The envelope names two modules: every other is omitted from the registry.
+		if err := pass.RunOnce(ctx); err != nil {
+			require.ErrorContains(t, err, "omitted from the registry")
+		}
+	}
 	// After the envelope narrowing, for the same reason: this case writes the
 	// envelope every module's ceiling is derived from.
 	t.Run("a module with an installed actor binding and no roles holds nothing for a person's own session", func(t *testing.T) {
 		testInstalledActorOwnSession(t, installedActorHarness{
 			admin: signIn("fixture-alex"), contexts: gen.NewWorkContextServiceClient(conn), credential: credential,
-			grant: func(principals string) {
-				var latest uint64
-				require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
-					var err error
-					latest, err = store.LatestModuleEnvelopeRevision(ctx)
-					return err
-				}))
-				doc := []byte(fmt.Sprintf(`{"revision":%d,"principals":{%s}}`, latest+1, principals))
-				_, err := business.ParseModuleEnvelope(doc)
-				require.NoError(t, err)
-				require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
-					return store.AppendModuleEnvelopeRecord(ctx, &business.ModuleEnvelopeRecord{Revision: latest + 1, Document: doc, WrittenBy: conformanceAlex}, latest)
-				}))
-				pass, err := business.NewSolutionHostBindingReconciler(svc, business.SolutionHostBindingReconcilerConfig{
-					Source: business.NewDeliveredSolutionHostBindings(svc), Verifier: verifier, Coordinate: "conformance-host", Envelopes: svc,
-				})
-				require.NoError(t, err)
-				// The envelope names two modules: every other is omitted from the registry.
-				if err := pass.RunOnce(ctx); err != nil {
-					require.ErrorContains(t, err, "omitted from the registry")
-				}
-			},
+			grant:    writeEnvelope,
 			withdraw: func(module string) error { return core.WithdrawModule(ctx, module) },
 			registered: func(module string) bool {
 				_, carried := svc.ModulePrincipals()[business.ModulePrincipalID(module)]
 				return carried
 			},
 		})
+	})
+
+	// Last, for the same reason: a read binding is an envelope's to declare.
+	t.Run("a role-gated module's read binding carries what the person's role holds at its target", func(t *testing.T) {
+		residue.grant = writeEnvelope
+		testReadBindingHeldToTheRole(t, residue)
 	})
 }
 

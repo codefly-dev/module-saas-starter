@@ -24,13 +24,23 @@ func (s *PostgresStore) sealRead(ctx context.Context, read func(context.Context,
 	})
 }
 
+// WorkContextHeldInstallation answers the revision a capability of principalID
+// is sealed to installationID at: the installation's own revision, moved on by
+// every change the authority core records to the roles principalID holds on
+// it (its grant epoch there, which a grant or a revocation of a role on the
+// installation, or on one whose bindings reach it, advances). The core seals
+// what it issues a person the same way, so a capability this host minted
+// before a person's role was revoked is refused at its next use, renewal or
+// derivation as the core's own is, and not at its expiry. Both terms only
+// grow, so the sum moves exactly when either does.
 func (s *PostgresStore) WorkContextHeldInstallation(
 	ctx context.Context, orgID, principalID, installationID string,
 ) (uint64, error) {
 	var revision int64
 	err := s.sealRead(ctx, func(ctx context.Context, q QueryExecutor) error {
 		return q.QueryRow(ctx, `
-			SELECT i.revision
+			SELECT i.revision + COALESCE((SELECT e.epoch FROM public.authority_core_grant_epochs e
+			                               WHERE e.person_id = $2 AND e.installation_id = $3), 0)
 			  FROM public.installations i
 			 WHERE i.org_id = $1::uuid
 			   AND i.id::text = $3

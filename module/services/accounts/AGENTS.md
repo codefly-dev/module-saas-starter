@@ -608,6 +608,18 @@ the parent's seal) refuses a person's child for an audience sealed elsewhere. It
 holds a child of a service principal's capability as it is, and refuses a child
 of any other owner kind.
 
+The revision of that seal is the installation's own, moved on by the authority
+core's grant epoch for the person there (`WorkContextHeldInstallation`), as the
+core seals what it issues: a role granted or revoked on the installation, or on
+one whose bindings reach it, ends every capability this host minted the person
+at that audience before it, at its next use, exchange, child or renewal.
+
+What a role-gated module's binding carries for a person is decided by the
+person's role on the module's installation, as the core issues it over the
+binding (`heldThroughBinding`), for the person's own session and for a
+capability an agent acts on alike; a read binding carries what the module's
+operation bindings to the same module do (`heldThroughReadBinding`).
+
 Several person-owned kinds are sealed elsewhere by design, each behind its own
 gate:
 

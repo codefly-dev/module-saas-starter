@@ -51,7 +51,8 @@ var ErrWorkContextNoAudienceInstallation = errors.New("the audience names no ins
 type WorkContextSealStore interface {
 	// WorkContextHeldInstallation answers the live revision of installationID
 	// when it is active in orgID and principalID is an active member there, and
-	// ErrWorkContextSealUnheld otherwise.
+	// ErrWorkContextSealUnheld otherwise. The revision moves with the
+	// installation and with the roles principalID holds on it.
 	WorkContextHeldInstallation(ctx context.Context, orgID, principalID, installationID string) (uint64, error)
 	// WorkContextPrincipalEpoch answers principalID's authorization revision in
 	// orgID, which every change to its authority advances, and

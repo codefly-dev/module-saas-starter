@@ -75,9 +75,12 @@ type conformanceSolution struct {
 	owned map[string][]*authorityv1.WorkScopeV1
 	// through are the scopes a role names through each of the solution's
 	// bindings, by role name, then binding id.
-	through  map[string]map[string][]*authorityv1.WorkScopeV1
-	methods  []*compositionv1.MethodPolicyV1
-	bindings []solutionhost.AuthorityBinding
+	through map[string]map[string][]*authorityv1.WorkScopeV1
+	// audiences are the scopes a role holds addressed to one module alone,
+	// by role name, then that module's principal.
+	audiences map[string]map[string][]*authorityv1.WorkScopeV1
+	methods   []*compositionv1.MethodPolicyV1
+	bindings  []solutionhost.AuthorityBinding
 	// governance are the scopes that govern the solution's sources, as core's
 	// signed manifest carries them ("<kind>:<action>").
 	governance []string
@@ -108,6 +111,9 @@ func deliverSolution(t *testing.T, ctx context.Context, conn grpc.ClientConnInte
 		role := &compositionv1.RoleV1{Name: name, Scopes: scopes, InstallationOwnedScopes: s.owned[name]}
 		for _, binding := range slices.Sorted(maps.Keys(s.through[name])) {
 			role.Through = append(role.Through, &compositionv1.RoleThroughV1{Binding: binding, Scopes: s.through[name][binding]})
+		}
+		for _, audience := range slices.Sorted(maps.Keys(s.audiences[name])) {
+			role.Audiences = append(role.Audiences, &compositionv1.RoleAudienceV1{Audience: audience, Scopes: s.audiences[name][audience]})
 		}
 		document.Roles = append(document.Roles, role)
 	}
