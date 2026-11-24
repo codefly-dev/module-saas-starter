@@ -8,7 +8,7 @@
  */
 import "server-only";
 
-import { getCurrentFixture } from "codefly";
+import { getCurrentFixture, isLocal } from "codefly";
 import { existsSync, readFileSync } from "fs";
 import yaml from "js-yaml";
 import { resolve } from "path";
@@ -21,7 +21,7 @@ const FIXTURES_DIR =
 const SAFE_NAME = /^[a-zA-Z0-9_-]+$/;
 
 export function loadFixture(name: string): FixtureFile | null {
-	if (!SAFE_NAME.test(name)) return null;
+	if (!isLocal() || !SAFE_NAME.test(name)) return null;
 	const path = resolve(FIXTURES_DIR, `${name}.yaml`);
 	if (!existsSync(path)) return null;
 	const raw = readFileSync(path, "utf-8");
@@ -29,7 +29,14 @@ export function loadFixture(name: string): FixtureFile | null {
 	return FixtureFileSchema.parse(parsed);
 }
 
+/**
+ * The fixture this process may serve, or null. A fixture file carries every
+ * fixture person's sign-in token, so a selected fixture is served only by a
+ * local run: selecting one on a deployed host (by mistake or otherwise) yields
+ * nothing here, exactly as if none were selected.
+ */
 export function activeFixtureName(): string | null {
+	if (!isLocal()) return null;
 	return getCurrentFixture() || null;
 }
 

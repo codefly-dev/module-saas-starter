@@ -80,6 +80,8 @@ export default defineConfig({
 			// Fixture dev-login mode (no real WorkOS); without it the login page
 			// renders no fixture sign-in choices.
 			CODEFLY__FIXTURE: "dev-admin",
+			// The fixture list (sign-in tokens) is served by a local run only.
+			CODEFLY__ENVIRONMENT: "local",
 			// Browser talks same-origin to the frontend; the Next server forwards
 			// API traffic to the auth-gateway (src/proxy.ts). Keeps auth cookies
 			// first-party so full-page loads re-auth instead of bouncing to login.
