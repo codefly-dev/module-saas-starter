@@ -25,7 +25,9 @@ import (
 	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -39,7 +41,11 @@ import (
 // role: the origin is delivered as a module page declaring admin and user, as
 // the composition delivers one (its manifest and its signed authority
 // document), and the person holds user on the organization's installation of
-// it. Their collection grant is what the content read then carries.
+// it. That role holds a read of the target's documents addressed to the
+// target, so the person's task carries it by naming the origin's binding
+// there (operation_bindings) and never by naming the target's kind outright,
+// which a capability addressed to the origin does not carry. Their collection
+// grant is what the content read then carries.
 func TestInstalledContentReadPostgresRetainedBinding(t *testing.T) {
 	s := newRegistryScenario(t, "contentreader")
 	target := newRegistryBinding(t, "contenttarget")
@@ -50,7 +56,8 @@ func TestInstalledContentReadPostgresRetainedBinding(t *testing.T) {
 	pageKind := s.prefix + ".page"
 	// deliverOrigin delivers the origin as the CLI delivers a module page:
 	// core's manifest and, bound to it, the authority document that declares
-	// its roles. admin reads and writes the page; user reads it.
+	// its roles. admin reads and writes the page; user reads it, and reads
+	// the target's documents at the target.
 	signer := deliverytest.Signer(t, productionPathSigner)
 	deliverOrigin := func(m *solutionhost.ModuleManifest) {
 		t.Helper()
@@ -62,7 +69,8 @@ func TestInstalledContentReadPostgresRetainedBinding(t *testing.T) {
 		doc, err := (proto.MarshalOptions{Deterministic: true}).Marshal(&compositionv1.AuthorityManifestV1{
 			Module: m.Alias, Generation: m.Generation, CoreManifestDigest: authoritydelivery.Digest(raw),
 			ScopeCeilings: scope("read", "write"), OwnerAware: true, InstallationRole: domain.NoInstallationRole,
-			Roles: []*compositionv1.RoleV1{{Name: domain.AdminRole, Scopes: scope("read", "write")}, {Name: domain.UserRole, Scopes: scope("read")}},
+			Roles: []*compositionv1.RoleV1{{Name: domain.AdminRole, Scopes: scope("read", "write")}, {Name: domain.UserRole, Scopes: scope("read"),
+				Audiences: []*compositionv1.RoleAudienceV1{{Audience: target.solutionID, Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "documents", Actions: []string{"read"}}}}}}},
 		})
 		require.NoError(t, err)
 		envelope, err := authoritydelivery.Sign(doc, signer.KeyID(), signer.Sign)
@@ -172,7 +180,10 @@ func TestInstalledContentReadPostgresRetainedBinding(t *testing.T) {
 		require.NoError(t, err)
 	}
 	seat()
-	root, err := issuer.StartTask(caller, &gen.StartTaskWorkContextRequest{OrgId: s.tenant, TaskId: business.NewIDString(), Audience: s.prefix, AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "documents", Actions: []string{"read"}}}})
+	_, err = issuer.StartTask(caller, &gen.StartTaskWorkContextRequest{OrgId: s.tenant, TaskId: business.NewIDString(), Audience: s.prefix, AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "documents", Actions: []string{"read"}}}})
+	require.Equal(t, codes.PermissionDenied, status.Code(err), "the target's kind named outright on a capability addressed to the origin: %v", err)
+	require.Contains(t, status.Convert(err).Message(), "asked beyond what the owner holds")
+	root, err := issuer.StartTask(caller, &gen.StartTaskWorkContextRequest{OrgId: s.tenant, TaskId: business.NewIDString(), Audience: s.prefix, OperationBindings: []string{"evidence"}})
 	require.NoError(t, err)
 	moduleToken, _, err := issuer.StartModuleTask(testCtx, business.ModuleWorkContextAuthority{PrincipalID: s.principalID(), Tenant: s.tenant, InstallationID: originInstall.Id})
 	require.NoError(t, err)
@@ -237,7 +248,7 @@ func TestInstalledContentReadPostgresRetainedBinding(t *testing.T) {
 	freshRead := func() string {
 		t.Helper()
 		seat()
-		root, err = issuer.StartTask(caller, &gen.StartTaskWorkContextRequest{OrgId: s.tenant, TaskId: business.NewIDString(), Audience: s.prefix, AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "documents", Actions: []string{"read"}}}})
+		root, err = issuer.StartTask(caller, &gen.StartTaskWorkContextRequest{OrgId: s.tenant, TaskId: business.NewIDString(), Audience: s.prefix, OperationBindings: []string{"evidence"}})
 		require.NoError(t, err)
 		moduleToken, _, err = issuer.StartModuleTask(testCtx, business.ModuleWorkContextAuthority{PrincipalID: s.principalID(), Tenant: s.tenant, InstallationID: originInstall.Id})
 		require.NoError(t, err)
@@ -329,6 +340,6 @@ func TestInstalledContentReadPostgresRetainedBinding(t *testing.T) {
 	require.NoError(t, testStore.WithOrgTx(testCtx, s.tenant, func(ctx context.Context) error {
 		return testStore.RevokeScope(ctx, s.tenant, owner, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, path, role)
 	}))
-	_, err = issuer.StartTask(caller, &gen.StartTaskWorkContextRequest{OrgId: s.tenant, TaskId: business.NewIDString(), Audience: s.prefix, AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "documents", Actions: []string{"read"}}}})
+	_, err = issuer.StartTask(caller, &gen.StartTaskWorkContextRequest{OrgId: s.tenant, TaskId: business.NewIDString(), Audience: s.prefix, OperationBindings: []string{"evidence"}})
 	require.Error(t, err, "collection-only standing is not a visibility grant")
 }

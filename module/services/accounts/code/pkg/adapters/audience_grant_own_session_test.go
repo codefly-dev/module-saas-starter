@@ -24,14 +24,16 @@ import (
 // addressed to and nowhere else (the suite's reachThroughConsent); these
 // mints are a second issuance path the suite never drives.
 //
-// These mints are bounded twice. Organization RBAC bounds every kind the
-// audience does not itself serve: the administrator holds nothing of the
-// relays' kind until an organisation role names it, and is refused by that
-// bound whatever role they hold on the page. Once an organisation role names
-// the kind, RBAC refuses nothing here, and what decides is the role held on
-// the page's installation, read by the core at the binding's target: the
-// grant reaches the relay it is addressed to and no sibling, and a role
-// without the grant reaches neither.
+// These mints are bounded twice. Organization RBAC bounds what a binding
+// projects: the administrator holds nothing of the relays' kind until an
+// organisation role names it, and is refused by that bound whatever role
+// they hold on the page. Once an organisation role names the kind, RBAC
+// refuses nothing here, and what decides is the role held on the page's
+// installation, read by the core at the binding's target: the grant reaches
+// the relay it is addressed to and no sibling, and a role without the grant
+// reaches neither. The relays' kind named outright is refused before and
+// after, as the core refuses it: an organisation role adds no kind of
+// another module to a capability addressed to the page.
 //
 // admin is the administrator's session and adminID their person id; seat
 // grants them a role on a module page's installation.
@@ -82,8 +84,7 @@ func testAudienceGrantOwnSession(t *testing.T, conn grpc.ClientConnInterface, ad
 			require.Contains(t, status.Convert(err).Message(), "holds nothing under operation binding")
 		}
 		_, err := named()
-		denied(t, err, "the relays' kind named outright")
-		require.Contains(t, status.Convert(err).Message(), "beyond what the owner holds")
+		refusedOutright(t, err, "the relays' kind named outright")
 	})
 
 	// An organisation role now names the relays' kind: RBAC refuses nothing
@@ -130,18 +131,22 @@ func testAudienceGrantOwnSession(t *testing.T, conn grpc.ClientConnInterface, ad
 
 	// The relays' kind named outright on a capability addressed to the page.
 	// The core never signs an audience grant onto a token addressed to its
-	// caller. Here a kind the audience does not serve is inert at it and
-	// bounded by organization RBAC alone, as every such kind is on these
-	// mints (an exchange attenuates from its parent, so a parent carries
-	// what its exchanges will): it is admitted, and carried only where the
-	// role's grant is addressed.
-	t.Run("the relays' kind named outright is inert at the page and carried only to the relay", func(t *testing.T) {
-		outright, err := named()
-		require.NoError(t, err, "bounded by organization RBAC, which names the kind")
-		require.Equal(t, []string{turn}, carriedKinds(t, outright))
-		_, err = exchangeAs("other", outright.GetToken())
+	// caller, and neither does this mint: it is refused as the core refuses
+	// it, though an organisation role names the kind and the admin role's
+	// grant is addressed to the relay. The kind is carried by naming the
+	// binding that reaches the relay, and naming it beside that binding asks
+	// nothing more.
+	t.Run("the relays' kind named outright is refused; the binding to the relay carries it", func(t *testing.T) {
+		_, err := named()
+		refusedOutright(t, err, "an organisation role names the kind, and the page serves none of it")
+		_, err = start([]*gen.WorkContextScope{ask}, "other")
+		denied(t, err, "named beside the binding to the sibling, which projects nothing")
+		through, err := start([]*gen.WorkContextScope{ask}, "relay")
+		require.NoError(t, err, "named beside the binding to the relay the grant is addressed to")
+		require.Equal(t, []string{turn}, carriedKinds(t, through))
+		_, err = exchangeAs("other", through.GetToken())
 		denied(t, err, "the page's exchange through its binding to the sibling")
-		child, err := exchangeAs("relay", outright.GetToken())
+		child, err := exchangeAs("relay", through.GetToken())
 		require.NoError(t, err, "the page's exchange through its binding to the relay the grant is addressed to")
 		require.Equal(t, []string{turn}, carriedKinds(t, child))
 	})
@@ -149,10 +154,11 @@ func testAudienceGrantOwnSession(t *testing.T, conn grpc.ClientConnInterface, ad
 
 // testAudienceGrantNeedsItsRole: the organisation role that names the relays'
 // kind reaches neither relay through the page for a person whose role on the
-// page's installation holds no grant there. It runs after
-// testAudienceGrantOwnSession, on the page it delivered, as a person who
-// holds the page's user role and the same organisation role.
-func testAudienceGrantNeedsItsRole(t *testing.T, conn grpc.ClientConnInterface, admin, user context.Context, userID string, credential func(string) string) {
+// page's installation holds no grant there: no projection, and no kind named
+// outright, so no capability of theirs carries it for the page to exchange.
+// It runs after testAudienceGrantOwnSession, on the page it delivered, as a
+// person who holds the page's user role and the same organisation role.
+func testAudienceGrantNeedsItsRole(t *testing.T, conn grpc.ClientConnInterface, admin, user context.Context, userID string) {
 	const (
 		module = "conformance-grant-page"
 		turn   = "conformance-grant-relay.turn"
@@ -181,10 +187,8 @@ func testAudienceGrantNeedsItsRole(t *testing.T, conn grpc.ClientConnInterface, 
 		_, err := start(nil, binding)
 		require.Equal(t, codes.PermissionDenied, status.Code(err), "a projection through binding %s on a role that holds nothing there: %v", binding, err)
 	}
-	outright, err := start([]*gen.WorkContextScope{{ResourceKind: turn, Actions: []string{"run"}}})
-	require.NoError(t, err, "inert at the page, bounded by organization RBAC")
-	for _, binding := range []string{"relay", "other"} {
-		_, err := moduleExchange(t, credential, module, binding, outright.GetToken())
-		require.Equal(t, codes.PermissionDenied, status.Code(err), "the page's exchange through binding %s of a kind the person's role does not hold there: %v", binding, err)
-	}
+	// Named outright it is refused as well, so no capability of this person
+	// carrying the relays' kind exists for the page to exchange.
+	_, err = start([]*gen.WorkContextScope{{ResourceKind: turn, Actions: []string{"run"}}})
+	refusedOutright(t, err, "the relays' kind named outright on a role that holds nothing there")
 }

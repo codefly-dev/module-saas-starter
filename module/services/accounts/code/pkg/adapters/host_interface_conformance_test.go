@@ -1733,7 +1733,7 @@ installations:
 			func(target, role string) { seat(target, role, conformanceAlex) })
 		const dev = "00000000-0000-7000-8000-0000000000b4"
 		seat("conformance-grant-page", domain.UserRole, dev)
-		testAudienceGrantNeedsItsRole(t, conn, signIn("fixture-alex"), signIn("fixture-dev"), dev, credential)
+		testAudienceGrantNeedsItsRole(t, conn, signIn("fixture-alex"), signIn("fixture-dev"), dev)
 	})
 
 	// Beyond the suite: what the case above left open on this host's own

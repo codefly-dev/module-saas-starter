@@ -18,7 +18,7 @@ import (
 	"accounts/pkg/business"
 )
 
-// A person's own Work Context mints here (StartTask, StartRootSession and the
+// A person's Work Context mints here (StartTask, StartRootSession and the
 // owner's ExchangeAudience) draw on accounts' organization RBAC, beside the
 // host Issue the shared authority core decides (IssueForPerson). An
 // organisation role decides administration only and reaches no module, so at
@@ -33,6 +33,13 @@ import (
 // module's binding is held to that issue too (heldThroughBinding), whether the
 // person acts or an agent acts for them, and through a read binding as
 // through an operation binding (heldThroughReadBinding).
+//
+// A mint that names its scopes (StartTask) is held whoever acts, the person
+// or an agent named as its actor, and carries no kind of another module the
+// caller names outright (holdMint): the core signs a role's grant on another
+// module's kind at that module, never onto a capability addressed to the
+// unit, so here such a kind arrives only as the projection of a binding the
+// mint names (operation_bindings), held at the binding's target.
 
 // composedAudience is the module the core composed under audience, read by
 // principal as the core reads an audience. ok is false when the core composes
@@ -115,7 +122,7 @@ func holdOwnSession(ctx context.Context, org, person, audience string, scopes []
 	}
 	var served []*basev0.WorkScopeV1
 	for _, sc := range scopes {
-		if slices.ContainsFunc(m.ResourceKinds, func(kind *basev0.WorkScopeV1) bool { return kind.GetResourceKind() == sc.GetResourceKind() }) {
+		if servesKind(m, sc) {
 			served = append(served, sc)
 		}
 	}
@@ -140,6 +147,57 @@ func holdOwnSession(ctx context.Context, org, person, audience string, scopes []
 		return nil
 	}
 	return coreStatus(err)
+}
+
+// holdMint holds a mint that names its scopes (StartTask) at audience, for
+// person in organization org, whether the person acts or an agent acts for
+// them: an agent's mint is the person's capability, and holds no more than
+// the person's own session does (holdOwnSession), so it is refused at a
+// module that declares no roles by the core's name for it and reaches such a
+// module only through the binding of an installation whose role the person
+// holds.
+//
+// At a role-gated audience it also refuses a kind the audience does not serve
+// that the caller names outright. The core issues a person there the kinds
+// the audience serves, on their role, and never signs a role's grant on
+// another module's kind onto a capability addressed to the unit: organization
+// RBAC naming the kind adds nothing. projected is what the bindings the mint
+// names carry (withOperationBindingScopes), each part already held to the
+// role at its binding's target, and is the one way such a kind is carried.
+// The refusal is the core's own, asked the same question.
+func holdMint(ctx context.Context, org, person, audience string, scopes, projected []*basev0.WorkScopeV1) error {
+	m, composed, err := composedAudience(ctx, audience)
+	if err != nil || !composed {
+		return err
+	}
+	if decide.RoleGated(m) {
+		var outright []*basev0.WorkScopeV1
+		for _, sc := range scopes {
+			if !servesKind(m, sc) && !corescope.Attenuates([]*basev0.WorkScopeV1{sc}, projected) {
+				outright = append(outright, sc)
+			}
+		}
+		if len(outright) > 0 {
+			core, err := service.AuthorityCore()
+			if err != nil {
+				return coreStatus(err)
+			}
+			_, err = core.IssueForPerson(business.AuthorityProbe(ctx), authority.Person{ID: person, Organization: org}, authority.IssueRequest{Audience: m.Principal, Scopes: outright})
+			if err == nil {
+				// The core issues a person nothing an audience does not
+				// serve; were it ever to, this mint still names no binding
+				// that carries the kind.
+				err = status.Errorf(codes.PermissionDenied, "%s serves no %s: another module's kind is carried only through an operation binding the mint names", m.Name, outright[0].GetResourceKind())
+			}
+			return coreStatus(err)
+		}
+	}
+	return holdOwnSession(ctx, org, person, audience, scopes)
+}
+
+// servesKind reports whether m serves the kind sc names.
+func servesKind(m domain.Module, sc *basev0.WorkScopeV1) bool {
+	return slices.ContainsFunc(m.ResourceKinds, func(kind *basev0.WorkScopeV1) bool { return kind.GetResourceKind() == sc.GetResourceKind() })
 }
 
 // ownSession reports whether wc is a person's own session: owned by a person,
@@ -282,10 +340,9 @@ func coreRefused(err error) bool {
 // at the binding's target, so a grant addressed to one module is carried to
 // no sibling, and an organisation role over the kind carries nothing a role
 // on the installation does not hold. That is decided by the person's role
-// whoever acts: a capability an agent acts on for the person (minted on
-// organization RBAC, and never held to a role) carries through a role-gated
-// module's binding no more than the person's own session does. Scopes empty
-// re-issue the parent's.
+// whoever acts: a capability an agent acts on for the person carries through
+// a role-gated module's binding no more than the person's own session does.
+// Scopes empty re-issue the parent's.
 func holdOwnSessionExchange(ctx context.Context, parent *basev0.WorkContextV1, audience string, scopes []*basev0.WorkScopeV1, exercised moduleBindingSeal) ([]*basev0.WorkScopeV1, error) {
 	if !personsCapability(parent) {
 		return scopes, nil

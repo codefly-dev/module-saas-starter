@@ -52,7 +52,16 @@ const (
 	residueRelay   = "conformance-residue-relay"
 	residueSibling = "conformance-residue-other-relay"
 	residueTurn    = residueRelay + ".turn"
+	// Two more pages of the same shape, for the cases that revoke a role and
+	// narrow a grant.
+	residueRevoked = "conformance-residue-revoked"
+	residueMoving  = "conformance-residue-moving"
 )
+
+// residueNote is a read of the notes a residue page itself serves.
+func residueNote(page string) []*gen.WorkContextScope {
+	return []*gen.WorkContextScope{{ResourceKind: page + ".note", Actions: []string{"read"}}}
+}
 
 func residueBindings() []solutionhost.AuthorityBinding {
 	invoke := map[string][]string{"invoke": {residueTurn + ":run", residueTurn + ":read"}}
@@ -68,12 +77,15 @@ func residueBindings() []solutionhost.AuthorityBinding {
 // addressed to, through a binding of the unit: never on a capability
 // addressed to the unit, never at a sibling serving the same kind.
 //
-// Two authorities bound these mints, and the cases name which decides. The
-// role a person holds on a role-gated module's installation decides what
-// their own session holds there and what the module's bindings carry for
-// them. Organization RBAC alone decides a kind the audience does not serve
-// named outright, and every mint an agent acts on (StartTask naming an
-// actor): the two admissions pinned below as pending the owner's decision.
+// Two authorities bound these mints, and both must hold. Organization RBAC
+// bounds every kind a mint carries, and never adds one: the role a person
+// holds on a role-gated module's installation decides what a capability of
+// theirs holds there and what the module's bindings carry for them, whether
+// the person acts or an agent acts for them (StartTask naming an actor). So a
+// callee's kind named outright at the page is refused as the core refuses it,
+// and an agent's mint is refused at a module that declares no roles, which is
+// reached only through the binding of an installation whose role the person
+// holds.
 func testAudienceGrantResidue(t *testing.T, h residueHarness) {
 	turn := wireScope(residueTurn, "read", "run")
 	for _, alias := range []string{residueRelay, residueSibling} {
@@ -89,8 +101,9 @@ func testAudienceGrantResidue(t *testing.T, h residueHarness) {
 	h.seat(residuePage, domain.AdminRole, h.adminID)
 	h.seat(residuePage, domain.UserRole, h.userID)
 
-	// An organisation role names the relays' kind, held by both people and by
-	// the agent that acts for them: organization RBAC refuses nothing below.
+	// An organisation role names the relays' kind and the pages' notes, held
+	// by both people and by the agent that acts for them: organization RBAC
+	// refuses nothing below.
 	agent := h.agent("conformance/residue-agent:0.1.0")
 	residueOperators(t, h, h.adminID, h.userID, agent)
 
@@ -137,98 +150,97 @@ func testAudienceGrantResidue(t *testing.T, h residueHarness) {
 		require.Equal(t, []string{residueTurn}, carriedKinds(t, issued), why)
 	}
 
-	// PENDING THE OWNER'S DECISION, and pinned as it stands: the callee's kind
-	// named outright on a StartTask at the role-gated page. The core never
-	// signs a role's addressed grant onto a capability addressed to the unit;
-	// this mint does, whenever an organisation role names the kind, whatever
-	// role the person holds on the page (the user below holds none over it).
-	// The scope is inert at the page, which serves no such kind, and what is
-	// pinned with it is that the capability reaches nothing beyond the role:
-	// it verifies at no other audience, the page's bindings carry it only to
-	// the relay the role's grant is addressed to, and the owner's own
-	// exchange, root session and child reach neither relay. The decision
-	// pending is whether this mint should refuse a kind the audience does not
-	// serve and the person's role holds only addressed elsewhere, as the core
-	// does (the scope would then arrive at the page by projection through a
-	// binding alone, operation_bindings), or keep carrying what organization
-	// RBAC names. Until then nothing here changes that admission.
-	t.Run("the callee's kind named outright is admitted on organization RBAC and reaches no sibling", func(t *testing.T) {
-		outright, err := start(h.admin, residuePage, "", ask)
-		carries(t, outright, err, "admitted: an organisation role names the kind, and it is inert at the page")
-		_, err = authorityv1.NewAuthorityServiceClient(h.conn).Check(h.admin, &authorityv1.CheckRequest{Token: outright.GetToken(), Audience: residueSibling})
+	// The callee's kind named outright on a StartTask at the role-gated page.
+	// The core never signs a role's addressed grant onto a capability
+	// addressed to the unit, and neither does this mint: it is refused as the
+	// core refuses it, whatever organisation role names the kind and whatever
+	// role the person holds on the page. The kind is obtained at the callee
+	// through the binding: named on the mint, a binding projects what the
+	// person's role holds at its target, and the page exchanges it there and
+	// at no sibling.
+	t.Run("the callee's kind named outright is refused; it is carried through the binding to the relay alone", func(t *testing.T) {
+		for name, who := range map[string]context.Context{"the admin, whose role holds the kind at the relay": h.admin, "the user, whose role holds nothing of it": h.user} {
+			_, err := start(who, residuePage, "", ask)
+			refusedOutright(t, err, "named outright by "+name)
+			_, err = start(who, residuePage, "", append(residueNote(residuePage), ask...))
+			refusedOutright(t, err, "named outright beside the page's own kind by "+name)
+		}
+		_, err := start(h.admin, residuePage, "", ask, "other")
+		denied(t, err, "named beside the binding to the sibling, which projects nothing")
+		for _, binding := range []string{"relay", "other"} {
+			_, err := start(h.user, residuePage, "", nil, binding)
+			denied(t, err, "a projection through binding "+binding+" for a role that holds nothing there")
+		}
+
+		beside, err := start(h.admin, residuePage, "", ask, "relay")
+		require.NoError(t, err, "named beside the binding to the relay, which projects it: the ask adds nothing")
+		require.Contains(t, carriedKinds(t, beside), residueTurn)
+		through, err := start(h.admin, residuePage, "", nil, "relay")
+		carries(t, through, err, "projected through the binding to the relay the grant is addressed to")
+		_, err = authorityv1.NewAuthorityServiceClient(h.conn).Check(h.admin, &authorityv1.CheckRequest{Token: through.GetToken(), Audience: residueSibling})
 		require.Equal(t, codes.Unauthenticated, status.Code(err), "addressed to the page, it is no capability at the sibling: %v", err)
 		require.Contains(t, status.Convert(err).Message(), "minted for audience")
 
-		_, err = exchange(residuePage, "other", outright)
+		_, err = exchange(residuePage, "other", through)
 		denied(t, err, "the page's exchange through its binding to the sibling")
-		through, err := exchange(residuePage, "relay", outright)
-		carries(t, through, err, "the page's exchange through its binding to the relay the grant is addressed to")
+		atRelay, err := exchange(residuePage, "relay", through)
+		carries(t, atRelay, err, "the page's exchange through its binding to the relay the grant is addressed to")
 		for _, audience := range []string{residueRelay, residueSibling} {
 			_, err := contexts.ExchangeAudience(h.admin, &gen.ExchangeWorkContextAudienceRequest{OrgId: fixtureOrganization,
-				ParentWorkContextToken: outright.GetToken(), Audience: audience, AttenuatedScopes: ask})
+				ParentWorkContextToken: through.GetToken(), Audience: audience, AttenuatedScopes: ask})
 			refusedAtNoRoles(t, err, audience)
 			_, err = contexts.StartRootSession(h.admin, &gen.StartRootSessionWorkContextRequest{OrgId: fixtureOrganization,
-				ParentWorkContextToken: outright.GetToken(), SessionId: uuid.NewString(), Audience: audience})
+				ParentWorkContextToken: through.GetToken(), SessionId: uuid.NewString(), Audience: audience})
 			refusedAtNoRoles(t, err, audience)
-			_, err = child(outright.GetToken(), audience, ask)
+			_, err = child(through.GetToken(), audience, ask)
 			denied(t, err, "a child keeps its parent's audience")
 		}
 		// What the page was exchanged for the relay is addressed to the relay:
 		// the page exchanges it no further.
-		_, err = exchange(residuePage, "other", through)
+		_, err = exchange(residuePage, "other", atRelay)
 		denied(t, err, "the page's exchange of a capability addressed to the relay")
-
-		// A person whose role on the page holds nothing at either relay is
-		// admitted the same inert scope, and it is carried to neither.
-		inert, err := start(h.user, residuePage, "", ask)
-		carries(t, inert, err, "admitted on organization RBAC, whatever the role on the page")
-		for _, binding := range []string{"relay", "other"} {
-			_, err := exchange(residuePage, binding, inert)
-			denied(t, err, "the page's exchange through binding "+binding+" for a role that holds nothing there")
-		}
 	})
 
-	// A capability an agent acts on is minted on organization RBAC, the
-	// owner's and the agent's, and is no own session: no hold of the own
-	// session's applied to it, so the page's binding carried it to the
-	// sibling, and to either relay for a person whose role holds nothing
-	// there. A role-gated module's binding now carries a person's capability
-	// by the person's role on its installation, whoever acts.
-	t.Run("an agent acting for the person carries through the page's bindings what the person's role holds", func(t *testing.T) {
-		chained, err := start(h.admin, residuePage, agent, ask)
-		carries(t, chained, err, "minted on organization RBAC, the owner's and the agent's")
-		kid, err := child(mustStart(t, start, h.admin, residuePage, ask).GetToken(), residuePage, ask)
-		carries(t, kid, err, "a child of the person's own session, delegated to the agent")
-		for name, parent := range map[string]*gen.IssuedWorkContext{"a mint naming the agent": chained, "a child delegated to the agent": kid} {
-			_, err := exchange(residuePage, "other", parent)
-			denied(t, err, name+", through the binding to the sibling")
-			through, err := exchange(residuePage, "relay", parent)
-			carries(t, through, err, name+", through the binding to the relay the grant is addressed to")
-		}
-		for _, binding := range []string{"relay", "other"} {
-			inert, err := start(h.user, residuePage, agent, ask)
-			carries(t, inert, err, "minted on organization RBAC")
-			_, err = exchange(residuePage, binding, inert)
-			denied(t, err, "an agent acting for a person whose role holds nothing through binding "+binding)
-		}
-
-		// A child never widens its parent, and keeps its audience.
-		narrow, err := start(h.admin, residuePage, "", []*gen.WorkContextScope{{ResourceKind: residueTurn, Actions: []string{"read"}}})
-		require.NoError(t, err)
-		_, err = child(narrow.GetToken(), residuePage, ask)
-		require.Equal(t, codes.InvalidArgument, status.Code(err), "a child asking more than its parent carries: %v", err)
-
-		// PENDING THE SAME DECISION as the kind named outright, and pinned as
-		// it stands: a mint naming an agent is decided by organization RBAC
-		// alone at every audience, so it is admitted at each relay directly,
-		// modules that declare no roles and hold nothing for the person's own
-		// session. No binding and no role's grant is involved in it.
+	// A capability an agent acts on is the person's, and is held to the
+	// person's role exactly as their own session is: refused at a module that
+	// declares no roles, refused the callee's kind named outright, and issued
+	// at the page what the role holds of the page's own kinds. The callee's
+	// kind reaches an agent through the binding of the page, on a child of
+	// the session the person's role projected it onto, and reaches no sibling.
+	t.Run("an agent acting for the person holds what the person's role holds, and reaches a relay through the page's binding alone", func(t *testing.T) {
 		for _, audience := range []string{residueRelay, residueSibling} {
 			_, err := start(h.admin, audience, "", ask)
 			refusedAtNoRoles(t, err, audience)
-			direct, err := start(h.admin, audience, agent, ask)
-			carries(t, direct, err, "an agent's mint at "+audience+", on organization RBAC alone")
+			_, err = start(h.admin, audience, agent, ask)
+			refusedAtNoRoles(t, err, audience)
+			_, err = start(h.user, audience, agent, ask)
+			refusedAtNoRoles(t, err, audience)
 		}
+		for name, who := range map[string]context.Context{"the admin": h.admin, "the user": h.user} {
+			_, err := start(who, residuePage, agent, ask)
+			refusedOutright(t, err, "the callee's kind named outright on an agent's mint for "+name)
+		}
+
+		own, err := start(h.admin, residuePage, agent, residueNote(residuePage))
+		require.NoError(t, err, "the page's own kind, which the person's role holds, with the agent acting")
+		require.Equal(t, []string{residuePage + ".note"}, carriedKinds(t, own))
+		for _, binding := range []string{"relay", "other"} {
+			_, err := exchange(residuePage, binding, own)
+			require.Error(t, err, "the page's exchange through binding %s of a capability that carries nothing of the relays' kind", binding)
+		}
+
+		through, err := start(h.admin, residuePage, "", nil, "relay")
+		carries(t, through, err, "the person's own session, projected through the binding on their role")
+		kid, err := child(through.GetToken(), residuePage, ask)
+		carries(t, kid, err, "a child of it, delegated to the agent")
+		_, err = exchange(residuePage, "other", kid)
+		denied(t, err, "the agent's capability, through the binding to the sibling")
+		atRelay, err := exchange(residuePage, "relay", kid)
+		carries(t, atRelay, err, "the agent's capability, through the binding to the relay the grant is addressed to")
+
+		// A child never widens its parent, and keeps its audience.
+		_, err = child(mustStart(t, start, h.admin, residuePage, residueNote(residuePage)).GetToken(), residuePage, ask)
+		require.Equal(t, codes.InvalidArgument, status.Code(err), "a child asking more than its parent carries: %v", err)
 	})
 
 	// A capability minted on a role is refused once the role is revoked, as
@@ -238,7 +250,7 @@ func testAudienceGrantResidue(t *testing.T, h residueHarness) {
 	// the revocation moved nothing this host's verifier read, and a child was
 	// derived from a capability the revoked role had minted.
 	t.Run("a role revoked ends what was minted on it: no child, exchange or renewal", func(t *testing.T) {
-		const module = "conformance-residue-revoked"
+		const module = residueRevoked
 		own := wireScope(module+".note", "read")
 		h.deliver(conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{own}, page: h.page, installationRole: domain.NoInstallationRole,
 			roles:     map[string][]*authorityv1.WorkScopeV1{"admin": {own}, "user": {own}},
@@ -249,8 +261,8 @@ func testAudienceGrantResidue(t *testing.T, h residueHarness) {
 		carries(t, through, err, "projected through the binding on the role")
 		kid, err := child(through.GetToken(), module, ask)
 		carries(t, kid, err, "a child while the role is held")
-		chained, err := start(h.admin, module, agent, ask)
-		require.NoError(t, err)
+		chained, err := start(h.admin, module, agent, residueNote(module))
+		require.NoError(t, err, "an agent's mint on the role, of the page's own kind")
 
 		h.unseat(module, domain.AdminRole, h.adminID)
 		_, err = child(through.GetToken(), module, ask)
@@ -266,11 +278,16 @@ func testAudienceGrantResidue(t *testing.T, h residueHarness) {
 		}
 		_, err = start(h.admin, module, "", nil, "relay")
 		denied(t, err, "a projection once the role is revoked")
+		_, err = start(h.admin, module, agent, residueNote(module))
+		denied(t, err, "an agent's mint once the person's role is revoked")
+		require.Contains(t, status.Convert(err).Message(), "holds no role on "+module)
 
 		// Granted again, the role mints again; what was minted before stays ended.
 		h.seat(module, domain.AdminRole, h.adminID)
 		again, err := start(h.admin, module, "", nil, "relay")
 		carries(t, again, err, "a projection on the role granted again")
+		_, err = start(h.admin, module, agent, residueNote(module))
+		require.NoError(t, err, "an agent's mint on the role granted again")
 		_, err = child(through.GetToken(), module, ask)
 		stale(t, err, "a capability minted before the revocation stays ended")
 	})
@@ -279,7 +296,7 @@ func testAudienceGrantResidue(t *testing.T, h residueHarness) {
 	// module narrows the role: it held the kind wherever a binding carried it,
 	// and now holds it at one module. What was minted before is refused.
 	t.Run("a redelivery narrowing a literal grant to an addressed one ends what was minted before it", func(t *testing.T) {
-		const module = "conformance-residue-moving"
+		const module = residueMoving
 		own := wireScope(module+".note", "read")
 		moving := conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{own}, page: h.page, installationRole: domain.NoInstallationRole,
 			roles:    map[string][]*authorityv1.WorkScopeV1{"admin": {own, turn}, "user": {own}},
@@ -290,7 +307,7 @@ func testAudienceGrantResidue(t *testing.T, h residueHarness) {
 		carries(t, literal, err, "a literal grant is held wherever a binding carries it, the sibling included")
 		kid, err := child(literal.GetToken(), module, ask)
 		require.NoError(t, err)
-		chained, err := start(h.admin, module, agent, ask)
+		chained, err := start(h.admin, module, agent, residueNote(module))
 		require.NoError(t, err)
 
 		moving.generation = 2
@@ -317,13 +334,15 @@ func testAudienceGrantResidue(t *testing.T, h residueHarness) {
 
 	// The installation's agent. The core issues an installation acting for
 	// itself what its agent role holds at the audience (RoleScopesAt): an
-	// addressed grant at its callee, through the solution's binding. This
-	// host's own headless mint (StartInstallationTask) reads another record:
-	// an installation of this host's registry and the standing grant of an
-	// organisation role to its agent. An installation of a solution that
-	// declares roles is the core's record alone, so that mint issues nothing
-	// for it at any audience, and no solution role, addressed or not, is read
-	// by it anywhere.
+	// addressed grant at its callee, through the solution's binding. That is
+	// the path a solution's workload asks (the host Issue, as an
+	// installation). This host's own headless mint (StartInstallationTask) is
+	// the legacy one, behind the internal credential, and no workload of the
+	// composition calls it: it reads an installation of this host's registry
+	// and the standing grant of an organisation role to its agent. An
+	// installation of a solution that declares roles is the core's record
+	// alone, so that mint issues nothing for it at any audience, and no
+	// solution role, addressed or not, is read by it anywhere.
 	t.Run("the installation's agent holds an addressed grant at its callee, and only the core issues it", func(t *testing.T) {
 		const solution = "conformance-residue-solution"
 		own := wireScope(solution+".page", "read")
@@ -368,7 +387,8 @@ func testAudienceGrantResidue(t *testing.T, h residueHarness) {
 }
 
 // residueOperators assigns subjects the organisation role over the relays'
-// kind for the length of the calling case, creating it the first time.
+// kind and the residue pages' notes for the length of the calling case,
+// creating it the first time.
 func residueOperators(t *testing.T, h residueHarness, subjects ...string) {
 	t.Helper()
 	const name = "Residue turn operator"
@@ -382,8 +402,11 @@ func residueOperators(t *testing.T, h residueHarness, subjects ...string) {
 		}
 	}
 	if operator == "" {
-		created, err := permissions.CreateRole(h.admin, &gen.CreateRoleRequest{OrgId: fixtureOrganization, Name: name,
-			Permissions: []*gen.Permission{{Resource: residueTurn, Action: "run"}, {Resource: residueTurn, Action: "read"}}})
+		granted := []*gen.Permission{{Resource: residueTurn, Action: "run"}, {Resource: residueTurn, Action: "read"}}
+		for _, page := range []string{residuePage, residueRevoked, residueMoving} {
+			granted = append(granted, &gen.Permission{Resource: page + ".note", Action: "read"})
+		}
+		created, err := permissions.CreateRole(h.admin, &gen.CreateRoleRequest{OrgId: fixtureOrganization, Name: name, Permissions: granted})
 		require.NoError(t, err)
 		operator = created.GetRole().GetId()
 	}
@@ -443,11 +466,9 @@ func testReadBindingHeldToTheRole(t *testing.T, h residueHarness) {
 	residueOperators(t, h, h.adminID, h.userID)
 
 	contexts := gen.NewWorkContextServiceClient(h.conn)
-	outright := func(who context.Context) *gen.IssuedWorkContext {
-		issued, err := contexts.StartTask(who, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(), Audience: residuePage,
-			AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: residueTurn, Actions: []string{"read"}}}})
-		require.NoError(t, err, "inert at the page, bounded by organization RBAC")
-		return issued
+	start := func(who context.Context, scopes []*gen.WorkContextScope, bindings ...string) (*gen.IssuedWorkContext, error) {
+		return contexts.StartTask(who, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(), Audience: residuePage,
+			AuthorityScopes: scopes, OperationBindings: bindings})
 	}
 	denied := func(err error, why string) {
 		t.Helper()
@@ -455,16 +476,23 @@ func testReadBindingHeldToTheRole(t *testing.T, h residueHarness) {
 		require.Contains(t, status.Convert(err).Message(), "than a read binding carries there", why)
 	}
 
-	// The admin's role holds the relay's turn at the relay alone.
-	admin := outright(h.admin)
+	// The admin's role holds the relay's turn at the relay alone, and their
+	// capability carries it by the projection of the page's binding there.
+	admin, err := start(h.admin, nil, "relay")
+	require.NoError(t, err, "projected through the binding to the relay the grant is addressed to")
 	held, err := moduleReadExchange(t, h.credential, residuePage, "peek-relay", admin.GetToken())
 	require.NoError(t, err, "the read binding to the relay the role's grant is addressed to")
 	require.Equal(t, []string{residueTurn}, carriedKinds(t, held))
 	_, err = moduleReadExchange(t, h.credential, residuePage, "peek-other", admin.GetToken())
 	denied(err, "the read binding to the sibling")
 
-	// The user's role holds nothing at either, whatever organisation role names the kind.
-	user := outright(h.user)
+	// The user's role holds nothing at either, whatever organisation role
+	// names the kind: no capability of theirs carries it, and a read binding
+	// carries nothing of it for the one they do hold.
+	_, err = start(h.user, []*gen.WorkContextScope{{ResourceKind: residueTurn, Actions: []string{"read"}}})
+	refusedOutright(t, err, "the relays' kind named outright on a role that holds nothing there")
+	user, err := start(h.user, residueNote(residuePage))
+	require.NoError(t, err, "the page's own kind, which the user role holds")
 	for _, binding := range []string{"peek-relay", "peek-other"} {
 		_, err := moduleReadExchange(t, h.credential, residuePage, binding, user.GetToken())
 		denied(err, "read binding "+binding+" for a role that holds nothing there")

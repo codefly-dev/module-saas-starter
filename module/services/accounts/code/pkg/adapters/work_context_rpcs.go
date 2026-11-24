@@ -569,6 +569,7 @@ func (s *WorkContextAuthorityServer) StartTask(
 	authorityScopes := req.GetAuthorityScopes()
 	eligible := mintContentReads(req.GetAudience())
 	var standing []string
+	var projected []*basev0.WorkScopeV1
 	if service != nil && req.GetActorPrincipalId() == "" {
 		var release func()
 		var err error
@@ -584,7 +585,7 @@ func (s *WorkContextAuthorityServer) StartTask(
 			if err != nil {
 				return nil, err
 			}
-			authorityScopes = projection.scopes
+			authorityScopes, projected = projection.scopes, projection.projected
 			standing = append(standing, projection.identities...)
 			direct := eligible
 			eligible = func(kind string) bool { return direct(kind) || slices.Contains(projection.readKinds, kind) }
@@ -627,14 +628,14 @@ func (s *WorkContextAuthorityServer) StartTask(
 	if err != nil {
 		return nil, err
 	}
-	// A person's own session at a composed module is held to what the core
-	// would issue them there: nothing at a module that declares no roles, and
-	// at a role-gated one what their role on its installation holds. An
-	// organisation role reaches neither.
-	if req.GetActorPrincipalId() == "" {
-		if err := holdOwnSession(ctx, req.GetOrgId(), ownerID, req.GetAudience(), scopes); err != nil {
-			return nil, err
-		}
+	// A person's capability at a composed module is held to what the core
+	// would issue them there, whether they act or an agent acts for them
+	// (actor_principal_id): nothing at a module that declares no roles, and
+	// at a role-gated one what their role on its installation holds of the
+	// kinds it serves, with what a named binding projects. An organisation
+	// role reaches neither, and adds no kind of another module.
+	if err := holdMint(ctx, req.GetOrgId(), ownerID, req.GetAudience(), scopes, projected); err != nil {
+		return nil, err
 	}
 	taskID, err := s.taskBoundary(ctx, req.GetOrgId(), req.GetTaskId())
 	if err != nil {
@@ -1625,6 +1626,13 @@ func (s *WorkContextAuthorityServer) requireChildKeepsAudienceSeal(
 // Core never extends a capability's window, so a renewal is a re-mint from the
 // owner with every hop re-derived against live state (see remint), never a copy
 // of the parent with a later expiry.
+//
+// The caller is a member of the organization, as the procedure's declared
+// policy states (tenant ORG_MEMBER): the current actor is identified by the
+// session it signed in with. A registered agent principal is no member and
+// holds no session here, so it is refused at that door before the parent is
+// read, and a capability an agent acts on is not renewed through this
+// procedure: its owner mints another.
 func (s *WorkContextAuthorityServer) RenewWorkContext(
 	ctx context.Context,
 	req *gen.RenewWorkContextRequest,

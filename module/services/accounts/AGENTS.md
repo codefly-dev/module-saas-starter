@@ -609,10 +609,27 @@ holds a child of a service principal's capability as it is, and refuses a child
 of any other owner kind.
 
 The revision of that seal is the installation's own, moved on by the authority
-core's grant epoch for the person there (`WorkContextHeldInstallation`), as the
-core seals what it issues: a role granted or revoked on the installation, or on
-one whose bindings reach it, ends every capability this host minted the person
-at that audience before it, at its next use, exchange, child or renewal.
+core's grant epoch for the person there and by the core's owner-aware revision
+of the installed module (`WorkContextHeldInstallation`), as the core seals what
+it issues: a role granted or revoked on the installation, or on one whose
+bindings reach it, ends every capability this host minted the person at that
+audience before it, at its next use, exchange, child or renewal, and so does a
+delivery of the module that stops checking the owners its scopes select.
+
+A mint that names its scopes (`StartTask`) is held to the person's role on the
+audience's installation whoever acts, the person or an agent named as its actor
+(`holdMint`): an organisation role decides administration only. At a module
+that declares no roles it is refused by the core's name for it
+(`decide.NoRoles`), for an agent as for the person, and such a module is
+reached only through the binding of an installation whose role the person
+holds. At a role-gated module it carries the kinds that module serves, as the
+role holds them, and no kind of another module the caller names outright: that
+kind arrives only as the projection of a binding the mint names
+(`operation_bindings`, a person's own mint), held at the binding's target, and
+an agent comes to carry it as a child of that session (`StartChildSession`).
+`StartInstallationTask` is the legacy headless mint of this host's own
+installation records; a solution's workload asks the host `Issue` as its
+installation, which the core decides.
 
 What a role-gated module's binding carries for a person is decided by the
 person's role on the module's installation, as the core issues it over the

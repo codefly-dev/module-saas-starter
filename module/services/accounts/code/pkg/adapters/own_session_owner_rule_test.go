@@ -45,11 +45,14 @@ func testOwnSessionOwnerRule(t *testing.T, conn grpc.ClientConnInterface, admin 
 		return moduleExchange(t, credential, module, binding, parent)
 	}
 	// A parent at records, a module page the administrator holds the admin
-	// role on, carrying its own kind and kinds of other modules, which are
-	// inert at records.
-	parent, err := start("records", scope("example-entries", "read"), scope("example-records", "read"),
-		scope("modelservice.datasets", "read"), scope("modelservice.profiles", "read"))
+	// role on, carrying its own kind and, projected through its binding to
+	// the model, the model's profiles the admin role holds there. A kind of
+	// another module is carried no other way: named outright it is refused,
+	// whatever organisation role names it.
+	parent, err := contexts.StartTask(admin, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(), Audience: "records",
+		AuthorityScopes: []*gen.WorkContextScope{scope("example-entries", "read")}, OperationBindings: []string{"model"}})
 	require.NoError(t, err)
+	require.Equal(t, []string{"example-entries", "modelservice.profiles"}, carried(t, parent))
 
 	t.Run("StartTask", func(t *testing.T) {
 		_, err := start("documents", scope("example-records", "read"))
@@ -65,6 +68,19 @@ func testOwnSessionOwnerRule(t *testing.T, conn grpc.ClientConnInterface, admin 
 		require.Equal(t, []string{"modelservice.profiles"}, carried(t, shared))
 		_, err = start("model", scope("modelservice.profiles", "read"), scope("modelservice.datasets", "read"))
 		require.Equal(t, codes.PermissionDenied, status.Code(err), "the model's admin role names no dataset, whatever the organisation role does: %v", err)
+
+		// Another module's kind named outright at a module page: the core
+		// issues a person there the kinds the page serves and never signs a
+		// role's reach onto a capability addressed to the page, so it is
+		// refused as the core refuses it, beside the page's own kind and
+		// alone, though the admin role on records names the model's profiles
+		// and an organisation role names every kind asked.
+		for _, foreign := range []string{"modelservice.profiles", "modelservice.datasets", "example-records"} {
+			_, err = start("records", scope("example-entries", "read"), scope(foreign, "read"))
+			refusedOutright(t, err, foreign+" named outright at records, beside its own kind")
+			_, err = start("records", scope(foreign, "read"))
+			refusedOutright(t, err, foreign+" named outright at records")
+		}
 	})
 
 	t.Run("StartTask through an operation binding", func(t *testing.T) {
@@ -83,12 +99,7 @@ func testOwnSessionOwnerRule(t *testing.T, conn grpc.ClientConnInterface, admin 
 		_, err := root(parent.GetToken(), "documents")
 		refusedByRule(t, err, "documents")
 		_, err = root(parent.GetToken(), "model")
-		require.Equal(t, codes.PermissionDenied, status.Code(err), "the parent carries the model's datasets, which the admin role there does not hold: %v", err)
-
-		profiles, err := start("records", scope("modelservice.profiles", "read"))
-		require.NoError(t, err)
-		_, err = root(profiles.GetToken(), "model")
-		require.NoError(t, err, "what the role on the model's installation holds")
+		require.NoError(t, err, "the model's profiles, which the role on the model's installation holds")
 		_, err = root(parent.GetToken(), "org-directory")
 		require.NoError(t, err, "a module page the person holds a role on; the kinds it does not serve are inert there")
 	})
@@ -166,6 +177,14 @@ func carriedKinds(t *testing.T, issued *gen.IssuedWorkContext) []string {
 		kinds = append(kinds, sc.GetResourceKind())
 	}
 	return kinds
+}
+
+// refusedOutright: err is the core's refusal of a kind an audience does not
+// serve, asked of it for a person who holds a role there.
+func refusedOutright(t *testing.T, err error, why string) {
+	t.Helper()
+	require.Equal(t, codes.PermissionDenied, status.Code(err), "%s: %v", why, err)
+	require.Contains(t, status.Convert(err).Message(), "asked beyond what the owner holds", why)
 }
 
 // refusedAtNoRoles: err is the core's refusal of a person's own session at

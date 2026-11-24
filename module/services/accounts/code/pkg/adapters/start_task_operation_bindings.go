@@ -37,7 +37,11 @@ func requireOperationBindingMint(ctx context.Context, req *gen.StartTaskWorkCont
 }
 
 type operationBindingProjection struct {
-	scopes     []*gen.WorkContextScope
+	scopes []*gen.WorkContextScope
+	// projected is what the named bindings carry, each part held at its
+	// binding's target: the only kinds of another module a capability
+	// addressed to a role-gated audience carries (holdMint).
+	projected  []*basev0.WorkScopeV1
 	readKinds  []string
 	identities []string
 }
@@ -106,6 +110,7 @@ func (s *WorkContextAuthorityServer) withOperationBindingScopes(ctx context.Cont
 			}
 			for _, part := range kept {
 				held++
+				out.projected = append(out.projected, &basev0.WorkScopeV1{ResourceKind: part.GetResourceKind(), Actions: part.GetActions(), ResourceIds: part.GetResourceIds()})
 				if !slices.ContainsFunc(out.scopes, func(existing *gen.WorkContextScope) bool { return proto.Equal(existing, part) }) {
 					out.scopes = append(out.scopes, part)
 				}
