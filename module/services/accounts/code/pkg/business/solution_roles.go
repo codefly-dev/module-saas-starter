@@ -10,7 +10,6 @@ import (
 
 	coredecide "github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	coredelivered "github.com/codefly-dev/authority/libraries/authority-core/go/delivered"
-	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 
@@ -19,27 +18,22 @@ import (
 
 // A solution's roles decide what a person holds through it (the owner's rule:
 // access to a solution is its own role). The roles are the solution's own
-// declaration, signed and delivered with its manifest; a person holds one at
-// the organisation's installation of the solution: the admin role when they
-// own the installation, and the installation's standing role through
-// every team it is exposed to that they belong to. What they hold at the
-// solution's audience, and through its bindings, is those roles' grants,
-// bounded by what the solution may grant: its delivered scope ceilings on its
-// own kinds and its bindings' invoke and lookup scopes on the kinds it
-// consumes. Organisation roles do not enter it: they administer the
-// organisation. A module that declares a page may declare roles too, and then
-// everything here holds of it as of a solution.
+// declaration, signed and delivered with its manifest. What a person holds
+// through them, at the solution's audience and through its bindings, is the
+// authority core's to decide (a role's scopes at the audience it is addressed
+// to, decide.RoleScopesAt, within the reach the installation's consent
+// approved): nothing here computes it. This host reads the declaration for
+// the names of the roles alone, to say which roles a target offers.
+// Organisation roles do not enter it: they administer the organisation. A
+// module that declares a page may declare roles too, and then everything here
+// holds of it as of a solution.
 
-// SolutionAuthority is one delivered solution's role declaration.
+// SolutionAuthority is one delivered solution's role declaration: the roles
+// it declares, as the core composed them. It carries no grant a role holds
+// addressed to another module, and decides nothing.
 type SolutionAuthority struct {
 	Principal string
 	Roles     map[string][]*basev0.WorkScopeV1
-	// Kinds are the solution's own resource kinds; Ceilings the delivered
-	// ceiling on each, where one is declared.
-	Kinds    []string
-	Ceilings map[string][]string
-	// Consumed is what the solution's bindings may carry for a person.
-	Consumed []*basev0.WorkScopeV1
 }
 
 // DeliveredSolutionAuthority is principal's role declaration from its applied
@@ -87,38 +81,11 @@ func (s *Service) solutionAuthorityOf(doc *compositionv1.AuthorityManifestV1, ma
 		// roles and no page) decide nothing here either.
 		return nil
 	}
-	principal := manifest.Authority.Principal
-	out := &SolutionAuthority{Principal: principal, Roles: map[string][]*basev0.WorkScopeV1{}, Kinds: slices.Clone(manifest.Authority.ResourceKinds), Ceilings: map[string][]string{}}
+	out := &SolutionAuthority{Principal: manifest.Authority.Principal, Roles: map[string][]*basev0.WorkScopeV1{}}
 	for name, scopes := range composed.Roles {
 		out.Roles[name] = slices.Clone(scopes)
 	}
-	for _, ceiling := range doc.GetScopeCeilings() {
-		out.Ceilings[ceiling.GetResourceKind()] = append(out.Ceilings[ceiling.GetResourceKind()], ceiling.GetActions()...)
-	}
-	for _, binding := range s.ModulePrincipals()[ModulePrincipalID(principal)].OperationAudiences {
-		for _, scope := range append(slices.Clone(binding.InvokeScopes), binding.LookupScopes...) {
-			out.Consumed = append(out.Consumed, &basev0.WorkScopeV1{ResourceKind: scope.ResourceKind, Actions: slices.Clone(scope.Actions), ResourceIds: slices.Clone(scope.ResourceIDs)})
-		}
-	}
 	return out
-}
-
-// RoleActions is every action any of the solution's roles grants on kind; none
-// for a nil authority, which is no solution whose roles decide.
-func (a *SolutionAuthority) RoleActions(kind string) []string {
-	if a == nil {
-		return nil
-	}
-	var out []string
-	for _, grants := range a.Roles {
-		for _, grant := range grants {
-			if grant.GetResourceKind() == kind {
-				out = append(out, grant.GetActions()...)
-			}
-		}
-	}
-	slices.Sort(out)
-	return slices.Compact(out)
 }
 
 // RoleNames are the roles the solution declares, sorted.
@@ -129,62 +96,6 @@ func (a *SolutionAuthority) RoleNames() []string {
 	}
 	sort.Strings(names)
 	return names
-}
-
-// Grants is what role grants, bounded by what the solution may grant.
-func (a *SolutionAuthority) Grants(role string) []*basev0.WorkScopeV1 {
-	var out []*basev0.WorkScopeV1
-	for _, scope := range a.Roles[role] {
-		if !slices.Contains(a.Kinds, scope.GetResourceKind()) {
-			out = append(out, IntersectWorkScopes([]*basev0.WorkScopeV1{scope}, a.Consumed)...)
-			continue
-		}
-		ceiling, bounded := a.Ceilings[scope.GetResourceKind()]
-		if !bounded {
-			out = append(out, cloneWorkScope(scope))
-			continue
-		}
-		out = append(out, IntersectWorkScopes([]*basev0.WorkScopeV1{scope}, []*basev0.WorkScopeV1{{ResourceKind: scope.GetResourceKind(), Actions: ceiling}})...)
-	}
-	return out
-}
-
-// Own is scopes cut to the solution's own kinds: what is held at its audience.
-func (a *SolutionAuthority) Own(scopes []*basev0.WorkScopeV1) []*basev0.WorkScopeV1 {
-	var out []*basev0.WorkScopeV1
-	for _, scope := range scopes {
-		if slices.Contains(a.Kinds, scope.GetResourceKind()) {
-			out = append(out, cloneWorkScope(scope))
-		}
-	}
-	return out
-}
-
-// SolutionRoleHolders is who holds a role at one installation.
-type SolutionRoleHolders struct {
-	Owner string
-	// Role is the installation's standing role, held through Teams.
-	Role  string
-	Teams []string
-}
-
-// HeldBy is what person, a member of teams, holds through the solution's
-// roles at one installation.
-func (a *SolutionAuthority) HeldBy(person string, teams []string, at SolutionRoleHolders) []*basev0.WorkScopeV1 {
-	var held []*basev0.WorkScopeV1
-	// The owner holds the admin role (domain.AdminRole), when the solution
-	// declares it. Admin and user are the only role names: a delivery stored
-	// under any other name declares nothing its owner holds.
-	if _, declared := a.Roles[domain.AdminRole]; at.Owner == person && declared {
-		held = append(held, a.Grants(domain.AdminRole)...)
-	}
-	for _, team := range at.Teams {
-		if slices.Contains(teams, team) {
-			held = append(held, a.Grants(at.Role)...)
-			break
-		}
-	}
-	return held
 }
 
 // solutionRoleNamePrefix begins the name of a role this host derived, before
@@ -252,48 +163,4 @@ func (s *Service) solutionExposureRole(ctx context.Context, orgID, installationI
 	}
 	return "", "", NewStoreError(fmt.Errorf("%s declares its own roles (%s) and this installation's standing role %q is not one of them: the installation predates its solution's roles, so reinstall it through the review to give them",
 		target.RouteAlias, strings.Join(authority.RoleNames(), ", "), standing), ErrTypeValidation)
-}
-
-// IntersectWorkScopes is what both scope sets allow, kind by kind: the actions
-// in both and the resources in both, where naming none means any.
-func IntersectWorkScopes(a, b []*basev0.WorkScopeV1) []*basev0.WorkScopeV1 {
-	var out []*basev0.WorkScopeV1
-	for _, x := range a {
-		for _, y := range b {
-			if x.GetResourceKind() != y.GetResourceKind() {
-				continue
-			}
-			var actions []string
-			for _, action := range x.GetActions() {
-				if slices.Contains(y.GetActions(), action) && !slices.Contains(actions, action) {
-					actions = append(actions, action)
-				}
-			}
-			ids, ok := intersectIDs(x.GetResourceIds(), y.GetResourceIds())
-			if len(actions) > 0 && ok {
-				out = append(out, &basev0.WorkScopeV1{ResourceKind: x.GetResourceKind(), Actions: actions, ResourceIds: ids})
-			}
-		}
-	}
-	return out
-}
-
-func intersectIDs(a, b []string) ([]string, bool) {
-	switch {
-	case len(a) == 0:
-		return slices.Clone(b), true
-	case len(b) == 0:
-		return slices.Clone(a), true
-	}
-	var both []string
-	for _, id := range a {
-		if slices.Contains(b, id) {
-			both = append(both, id)
-		}
-	}
-	return both, len(both) > 0
-}
-
-func cloneWorkScope(scope *basev0.WorkScopeV1) *basev0.WorkScopeV1 {
-	return &basev0.WorkScopeV1{ResourceKind: scope.GetResourceKind(), Actions: slices.Clone(scope.GetActions()), ResourceIds: slices.Clone(scope.GetResourceIds())}
 }

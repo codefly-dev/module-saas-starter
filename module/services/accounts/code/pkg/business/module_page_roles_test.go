@@ -131,7 +131,6 @@ func TestAModulePageWithoutRolesIsReadWithTheStandardOnes(t *testing.T) {
 	authority := svc.solutionAuthorityOf(doc, manifest)
 	require.NotNil(t, authority)
 	require.Equal(t, []string{domain.AdminRole, domain.UserRole}, authority.RoleNames())
-	require.Equal(t, []string{"read"}, authority.RoleActions("example.note")[:1])
 	require.ElementsMatch(t, []string{"read", "write"}, actionsOf(authority.Roles[domain.UserRole], "example.note"))
 	require.ElementsMatch(t, []string{"read", "write"}, actionsOf(authority.Roles[domain.AdminRole], "example.note"))
 
