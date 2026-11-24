@@ -68,6 +68,12 @@ func documentOf(in *compositionv1.AuthorityManifestV1) *coredelivered.Document {
 	}
 	for _, r := range in.GetRoles() {
 		role := coredelivered.Role{Name: r.GetName(), Scopes: wireScopes(r.GetScopes()), InstallationOwned: wireScopes(r.GetInstallationOwnedScopes())}
+		for _, entry := range r.GetAudiences() {
+			if role.Audiences == nil {
+				role.Audiences = map[string]coredelivered.Scopes{}
+			}
+			role.Audiences[entry.GetAudience()] = append(role.Audiences[entry.GetAudience()], wireScopes(entry.GetScopes())...)
+		}
 		for _, through := range r.GetThrough() {
 			if role.Through == nil {
 				role.Through = map[string]coredelivered.Scopes{}

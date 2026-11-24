@@ -276,16 +276,17 @@ func memberRoles(membership string) []string {
 
 // moduleDocument is a module's declarations as stored.
 type moduleDocument struct {
-	ResourceKinds    []storedScope            `json:"resource_kinds,omitempty"`
-	Bindings         map[string]storedBinding `json:"bindings,omitempty"`
-	Roles            map[string][]storedScope `json:"roles,omitempty"`
-	OwnedRoles       map[string][]storedScope `json:"owned_roles,omitempty"`
-	OwnerAware       bool                     `json:"owner_aware,omitempty"`
-	Methods          map[string]storedMethod  `json:"methods,omitempty"`
-	HasRoles         bool                     `json:"has_roles,omitempty"`
-	HasMethods       bool                     `json:"has_methods,omitempty"`
-	InstallationRole string                   `json:"installation_role,omitempty"`
-	EdgeDependencies []domain.EdgeDependency  `json:"edge_dependencies,omitempty"`
+	ResourceKinds    []storedScope                       `json:"resource_kinds,omitempty"`
+	Bindings         map[string]storedBinding            `json:"bindings,omitempty"`
+	Roles            map[string][]storedScope            `json:"roles,omitempty"`
+	AudienceRoles    map[string]map[string][]storedScope `json:"audience_roles,omitempty"`
+	OwnedRoles       map[string][]storedScope            `json:"owned_roles,omitempty"`
+	OwnerAware       bool                                `json:"owner_aware,omitempty"`
+	Methods          map[string]storedMethod             `json:"methods,omitempty"`
+	HasRoles         bool                                `json:"has_roles,omitempty"`
+	HasMethods       bool                                `json:"has_methods,omitempty"`
+	InstallationRole string                              `json:"installation_role,omitempty"`
+	EdgeDependencies []domain.EdgeDependency             `json:"edge_dependencies,omitempty"`
 	// SharedKinds are the kinds the module declares unowned, issued
 	// unselected (domain.Module.SharedKinds).
 	SharedKinds []string `json:"shared_kinds,omitempty"`
@@ -341,19 +342,28 @@ func loadScopes(in []storedScope) []*basev0.WorkScopeV1 {
 	return out
 }
 
+// mapRoleScopes preserves both addressing keys across storage conversion.
+// Older documents omit the map entirely.
+func mapRoleScopes[A, B any](in map[string]map[string][]A, convert func([]A) []B) map[string]map[string][]B {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]map[string][]B, len(in))
+	for role, targets := range in {
+		out[role] = make(map[string][]B, len(targets))
+		for target, scopes := range targets {
+			out[role][target] = convert(scopes)
+		}
+	}
+	return out
+}
+
 func encodeModule(m domain.Module) ([]byte, error) {
 	doc := moduleDocument{ResourceKinds: storeScopes(m.ResourceKinds), OwnerAware: m.OwnerAware, HasRoles: m.Roles != nil, HasMethods: m.Methods != nil,
 		InstallationRole: m.InstallationRole, EdgeDependencies: m.EdgeDependencies, SharedKinds: m.SharedKinds,
 		SourceGovernance: storeScopes(m.SourceGovernance), Source: m.Source}
-	for role, bindings := range m.Through {
-		if doc.Through == nil {
-			doc.Through = map[string]map[string][]storedScope{}
-		}
-		doc.Through[role] = map[string][]storedScope{}
-		for id, scopes := range bindings {
-			doc.Through[role][id] = storeScopes(scopes)
-		}
-	}
+	doc.AudienceRoles = mapRoleScopes(m.AudienceRoles, storeScopes)
+	doc.Through = mapRoleScopes(m.Through, storeScopes)
 	if len(m.Bindings) > 0 {
 		doc.Bindings = map[string]storedBinding{}
 		for id, b := range m.Bindings {
@@ -389,15 +399,8 @@ func decodeModule(m *domain.Module, raw []byte) error {
 	m.ResourceKinds, m.OwnerAware = loadScopes(doc.ResourceKinds), doc.OwnerAware
 	m.InstallationRole, m.EdgeDependencies, m.SharedKinds = doc.InstallationRole, doc.EdgeDependencies, doc.SharedKinds
 	m.SourceGovernance, m.Source = loadScopes(doc.SourceGovernance), doc.Source
-	for role, bindings := range doc.Through {
-		if m.Through == nil {
-			m.Through = map[string]map[string][]*basev0.WorkScopeV1{}
-		}
-		m.Through[role] = map[string][]*basev0.WorkScopeV1{}
-		for id, scopes := range bindings {
-			m.Through[role][id] = loadScopes(scopes)
-		}
-	}
+	m.AudienceRoles = mapRoleScopes(doc.AudienceRoles, loadScopes)
+	m.Through = mapRoleScopes(doc.Through, loadScopes)
 	m.Bindings = map[string]domain.Binding{}
 	for id, b := range doc.Bindings {
 		m.Bindings[id] = domain.Binding{ID: id, Audience: b.Audience, InvokeScopes: loadScopes(b.Invoke), HeadlessScopes: loadScopes(b.Headless), LookupScopes: loadScopes(b.Lookup)}
