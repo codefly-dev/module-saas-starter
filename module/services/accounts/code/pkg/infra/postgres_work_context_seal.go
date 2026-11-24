@@ -28,19 +28,25 @@ func (s *PostgresStore) sealRead(ctx context.Context, read func(context.Context,
 // is sealed to installationID at: the installation's own revision, moved on by
 // every change the authority core records to the roles principalID holds on
 // it (its grant epoch there, which a grant or a revocation of a role on the
-// installation, or on one whose bindings reach it, advances). The core seals
-// what it issues a person the same way, so a capability this host minted
-// before a person's role was revoked is refused at its next use, renewal or
-// derivation as the core's own is, and not at its expiry. Both terms only
-// grow, so the sum moves exactly when either does.
+// installation, or on one whose bindings reach it, advances), and by the
+// installed module withdrawing owner checking (the core's owner-aware
+// revision of its audience, which a delivery that stops checking owners
+// advances). The core seals what it issues a person from the same three terms
+// (authority.sources.sealIn), so a capability this host minted before a
+// person's role was revoked, or while the module still checked the owners
+// its scopes select, is refused at its next use, renewal or derivation as the
+// core's own is, and not at its expiry. Every term only grows, so the sum
+// moves exactly when one does.
 func (s *PostgresStore) WorkContextHeldInstallation(
 	ctx context.Context, orgID, principalID, installationID string,
 ) (uint64, error) {
 	var revision int64
 	err := s.sealRead(ctx, func(ctx context.Context, q QueryExecutor) error {
-		return q.QueryRow(ctx, `
+		var module *string
+		if err := q.QueryRow(ctx, `
 			SELECT i.revision + COALESCE((SELECT e.epoch FROM public.authority_core_grant_epochs e
-			                               WHERE e.person_id = $2 AND e.installation_id = $3), 0)
+			                               WHERE e.person_id = $2 AND e.installation_id = $3), 0),
+			       i.registry_principal_id::text
 			  FROM public.installations i
 			 WHERE i.org_id = $1::uuid
 			   AND i.id::text = $3
@@ -53,7 +59,15 @@ func (s *PostgresStore) WorkContextHeldInstallation(
 			   AND i.status IN ('active', 'pending')
 			   AND `+standsInOrganization,
 			orgID, principalID, installationID,
-		).Scan(&revision)
+		).Scan(&revision, &module); err != nil {
+			return err
+		}
+		if module == nil {
+			return nil
+		}
+		aware, err := ownerAwareRevision(ctx, q, *module)
+		revision += aware
+		return err
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, business.ErrWorkContextSealUnheld
@@ -62,6 +76,36 @@ func (s *PostgresStore) WorkContextHeldInstallation(
 		return 0, fmt.Errorf("read held installation: %w", err)
 	}
 	return uint64(revision), nil
+}
+
+// ownerAwareRevision is the authority core's owner-aware revision of the
+// module an installation record names by its registry principal: zero until
+// that module, having checked owners, is delivered no longer checking them.
+// The core keys the revision by the module's audience and this host's record
+// names the module by the principal derived from its name
+// (business.ModulePrincipalID), so the few audiences that ever withdrew owner
+// checking are read and matched by that derivation.
+func ownerAwareRevision(ctx context.Context, q QueryExecutor, registryPrincipal string) (int64, error) {
+	rows, err := q.Query(ctx, `
+		SELECT m.name, a.revision
+		  FROM public.authority_core_owner_aware a
+		  JOIN public.authority_core_modules m ON m.principal = a.audience`)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	var aware int64
+	for rows.Next() {
+		var name string
+		var revision int64
+		if err := rows.Scan(&name, &revision); err != nil {
+			return 0, err
+		}
+		if business.ModulePrincipalID(name) == registryPrincipal {
+			aware = revision
+		}
+	}
+	return aware, rows.Err()
 }
 
 func (s *PostgresStore) WorkContextPrincipalEpoch(ctx context.Context, orgID, principalID string) (uint64, error) {
