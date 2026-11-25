@@ -521,6 +521,10 @@ func (r *ModulePrincipalReconciler) lastRevision() uint64 {
 // Re-verifying is what makes an unpinned key stop granting: its manifests stay
 // applied (a removal is a withdrawal generation, never a lost pin) but they
 // confer no authority.
+//
+// Every carrier is verified on every pass, and all of them are read from the
+// inbox in one transaction: a transaction per applied manifest made every
+// pass, and so every delivery, cost what the host already composes.
 func (r *ModulePrincipalReconciler) appliedManifestsVerified(
 	ctx context.Context, records []*SolutionHostBindingRecord,
 ) ([]*solutionhost.ModuleManifest, []error) {
@@ -528,18 +532,19 @@ func (r *ModulePrincipalReconciler) appliedManifestsVerified(
 	var (
 		manifests []*solutionhost.ModuleManifest
 		refusals  []error
+		asking    []*SolutionHostBindingRecord
 	)
+	refuse := func(record *SolutionHostBindingRecord, err error) {
+		refusals = append(refusals, fmt.Errorf("%w: binding %q generation %d grants nothing: %w",
+			ErrModulePrincipalOmitted, record.BindingID, record.Applied.Generation, err))
+	}
 	for _, record := range records {
 		if record.Applied == nil || record.Applied.Removed {
 			continue
 		}
-		refuse := func(err error) {
-			refusals = append(refusals, fmt.Errorf("%w: binding %q generation %d grants nothing: %w",
-				ErrModulePrincipalOmitted, record.BindingID, record.Applied.Generation, err))
-		}
 		manifest, err := record.AppliedManifest()
 		if err != nil {
-			refuse(err)
+			refuse(record, err)
 			continue
 		}
 		if manifest.Authority == nil {
@@ -547,35 +552,61 @@ func (r *ModulePrincipalReconciler) appliedManifestsVerified(
 			continue
 		}
 		if service.deliveryStore == nil {
-			refuse(errors.New("this host has no delivery inbox to re-verify the applied manifest against"))
+			refuse(record, errors.New("this host has no delivery inbox to re-verify the applied manifest against"))
 			continue
 		}
-		var stored *SolutionDeliveryRecord
-		if err := service.store.WithControlPlane(ctx, func(ctx context.Context) error {
-			var readErr error
-			stored, readErr = service.deliveryStore.ReadDeliveredDocument(ctx, record.BindingID, record.Applied.Generation)
-			return readErr
-		}); err != nil {
-			refuse(err)
+		asking = append(asking, record)
+	}
+	if len(asking) == 0 {
+		return manifests, refusals
+	}
+	stored := make([]*SolutionDeliveryRecord, len(asking))
+	// read reads the carriers of asking[from:to] in one transaction.
+	read := func(from, to int) error {
+		return service.store.WithControlPlane(ctx, func(ctx context.Context) error {
+			for i := from; i < to; i++ {
+				var err error
+				if stored[i], err = service.deliveryStore.ReadDeliveredDocument(ctx, asking[i].BindingID, asking[i].Applied.Generation); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
+	if err := read(0, len(asking)); err != nil {
+		// One read failed and took the transaction with it. Each carrier is
+		// then read on its own, so the one that does not read is the only
+		// one refused: a single unreadable row withholds its own binding's
+		// authority, never every module's.
+		for i, record := range asking {
+			stored[i] = nil
+			if err := read(i, i+1); err != nil {
+				refuse(record, err)
+				asking[i] = nil
+			}
+		}
+	}
+	for i, record := range asking {
+		if record == nil {
 			continue
 		}
-		if stored == nil {
-			refuse(errors.New("the inbox holds no carrier for the applied generation"))
+		if stored[i] == nil {
+			refuse(record, errors.New("the inbox holds no carrier for the applied generation"))
 			continue
 		}
-		delivered, err := solutionhost.VerifyDelivered(ctx, carrierOf(stored), r.reconciler.verifier)
+		delivered, err := solutionhost.VerifyDelivered(ctx, carrierOf(stored[i]), r.reconciler.verifier)
 		if err != nil {
-			refuse(err)
+			refuse(record, err)
 			continue
 		}
 		verified, err := delivered.Manifest()
 		if err != nil {
-			refuse(err)
+			refuse(record, err)
 			continue
 		}
 		digest, err := verified.Digest()
 		if err != nil || digest != record.Applied.Digest {
-			refuse(errors.New("the stored carrier is not the applied manifest"))
+			refuse(record, errors.New("the stored carrier is not the applied manifest"))
 			continue
 		}
 		// What grants is the manifest the signature covers, read from the

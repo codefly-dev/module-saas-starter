@@ -639,14 +639,22 @@ func (s *HostInstallationServer) List(ctx context.Context, req *installationv1.L
 	if err := requireOrgAdmin(ctx, caller.ID, req.GetOrganizationId()); err != nil {
 		return nil, err
 	}
-	all, err := core.Installations(ctx, caller, req.GetOrganizationId())
-	if err != nil {
-		return nil, coreStatus(err)
-	}
-	slices.SortFunc(all, func(a, b domain.Installation) int { return strings.Compare(a.ID, b.ID) })
 	out := &installationv1.ListResponse{}
-	for _, inst := range all {
-		out.Installations = append(out.Installations, installationToWire(core, ctx, inst))
+	// One question, one transaction (oneRead): the installations and what
+	// the core answers of each are read from one snapshot, never three
+	// transactions per installation.
+	if err := oneRead(ctx, func(ctx context.Context) error {
+		all, err := core.Installations(ctx, caller, req.GetOrganizationId())
+		if err != nil {
+			return err
+		}
+		slices.SortFunc(all, func(a, b domain.Installation) int { return strings.Compare(a.ID, b.ID) })
+		for _, inst := range all {
+			out.Installations = append(out.Installations, installationToWire(core, ctx, inst))
+		}
+		return nil
+	}); err != nil {
+		return nil, coreStatus(err)
 	}
 	return out, nil
 }
@@ -666,15 +674,21 @@ func (s *HostInstallationServer) ListHeld(ctx context.Context, req *installation
 	if err != nil {
 		return nil, err
 	}
-	held, err := core.HeldInstallations(ctx, caller, req.GetOrganizationId())
-	if err != nil {
-		return nil, coreStatus(err)
-	}
 	out := &installationv1.ListHeldResponse{}
-	for _, h := range held {
-		out.Installations = append(out.Installations, &installationv1.HeldInstallation{
-			Installation: installationToWire(core, ctx, h.Installation), Roles: h.Roles,
-		})
+	// One question, one transaction, as List reads it.
+	if err := oneRead(ctx, func(ctx context.Context) error {
+		held, err := core.HeldInstallations(ctx, caller, req.GetOrganizationId())
+		if err != nil {
+			return err
+		}
+		for _, h := range held {
+			out.Installations = append(out.Installations, &installationv1.HeldInstallation{
+				Installation: installationToWire(core, ctx, h.Installation), Roles: h.Roles,
+			})
+		}
+		return nil
+	}); err != nil {
+		return nil, coreStatus(err)
 	}
 	return out, nil
 }
@@ -686,20 +700,33 @@ func (s *HostInstallationServer) ListHeld(ctx context.Context, req *installation
 // past its approved generation, or what its roles reach in the composition
 // now widened past the approved reach. An installation whose approved
 // declaration the core refuses lists no role: the core refuses its holders.
+//
+// The three answers are one question, read from one transaction (oneRead): a
+// caller converting many installations opens it around them all (List), and
+// this one joins it.
 func installationToWire(core *authority.Service, ctx context.Context, i domain.Installation) *installationv1.Installation {
-	approved, err := core.ApprovedDeclaration(ctx, i)
-	if err != nil {
-		approved = domain.Module{}
+	var out *installationv1.Installation
+	convert := func(ctx context.Context) error {
+		approved, err := core.ApprovedDeclaration(ctx, i)
+		if err != nil {
+			approved = domain.Module{}
+		}
+		upgrade, err := core.UpgradeAvailable(ctx, i)
+		if err != nil {
+			upgrade = false
+		}
+		out = installationWire(i, approved, upgrade)
+		// What its declared reach the composition leaves unreached, as the core
+		// answers it (Service.Unreached): a readiness condition beside
+		// upgrade_available; a read it cannot make answers none.
+		out.Unreached, _ = core.Unreached(ctx, i)
+		return nil
 	}
-	upgrade, err := core.UpgradeAvailable(ctx, i)
-	if err != nil {
-		upgrade = false
+	if err := oneRead(ctx, convert); err != nil {
+		// No snapshot to read from (the store refused or lost it): each
+		// answer is read on its own, as it was before.
+		_ = convert(ctx)
 	}
-	out := installationWire(i, approved, upgrade)
-	// What its declared reach the composition leaves unreached, as the core
-	// answers it (Service.Unreached): a readiness condition beside
-	// upgrade_available; a read it cannot make answers none.
-	out.Unreached, _ = core.Unreached(ctx, i)
 	return out
 }
 

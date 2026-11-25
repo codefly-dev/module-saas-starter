@@ -40,14 +40,23 @@ func (s *Service) InstallTargetByName(ctx context.Context, actorID, orgID, targe
 // install of a module when byComposition (installByComposition): no actor,
 // recorded as the system's.
 func (s *Service) installTargetByName(ctx context.Context, actorID, orgID, target, role, ownerID string, approval *InstallationApproval, byComposition bool) (installation *gen.Installation, installed bool, err error) {
-	approval, err = approval.bindIntent(struct {
-		Actor, Org, Target, Role, Owner string
-		Approval                        *InstallationApproval
-	}{actorID, orgID, target, role, ownerID, approval})
+	available, err := s.availableTargetNamed(ctx, orgID, target)
 	if err != nil {
 		return nil, false, err
 	}
-	available, err := s.availableTargetNamed(ctx, orgID, target)
+	return s.installAvailableTarget(ctx, actorID, orgID, available, role, ownerID, approval, byComposition)
+}
+
+// installAvailableTarget is installTargetByName for a catalogue entry the
+// caller already read: available is org's entry as ListAvailableSolutions
+// answers it. Nothing is trusted from it that the install does not read again
+// under its own fence (prepareInstallation): a caller installing many targets
+// reads the catalogue once instead of once per target.
+func (s *Service) installAvailableTarget(ctx context.Context, actorID, orgID string, available *AvailableSolutionTarget, role, ownerID string, approval *InstallationApproval, byComposition bool) (installation *gen.Installation, installed bool, err error) {
+	approval, err = approval.bindIntent(struct {
+		Actor, Org, Target, Role, Owner string
+		Approval                        *InstallationApproval
+	}{actorID, orgID, available.RouteAlias, role, ownerID, approval})
 	if err != nil {
 		return nil, false, err
 	}

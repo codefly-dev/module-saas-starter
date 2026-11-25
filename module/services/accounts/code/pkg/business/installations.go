@@ -524,25 +524,53 @@ func (s *Service) ListAvailableSolutions(
 // composes it with: a module declaring roles is a module page, whose access
 // an administrator sets up (SetUpModulePage). A host without the core, or a
 // module it does not compose, names none.
+//
+// The composition is read once, in one transaction and one statement, however
+// many modules the listing names: a listing is read on every delivery pass for
+// every organization and again around every install, so a read per module made
+// each delivery cost the square of what the host composes.
 func (s *Service) modulePageRoles(ctx context.Context, available []*AvailableSolutionTarget) error {
-	core, err := s.AuthorityCore()
-	if err != nil {
+	if _, err := s.AuthorityCore(); err != nil {
 		return nil
+	}
+	if !slices.ContainsFunc(available, func(target *AvailableSolutionTarget) bool { return target.Kind == "module" }) {
+		return nil
+	}
+	composed, err := s.composedModules(ctx)
+	if err != nil {
+		return err
 	}
 	for _, target := range available {
 		if target.Kind != "module" {
 			continue
 		}
-		m, err := core.Composed(ctx, target.RouteAlias)
-		if code, ok := domain.CodeOf(err); ok && code == domain.NotFound {
-			continue
+		if m, ok := composed[target.RouteAlias]; ok {
+			target.Roles = slices.Sorted(maps.Keys(m.Roles))
 		}
-		if err != nil {
-			return err
-		}
-		target.Roles = slices.Sorted(maps.Keys(m.Roles))
 	}
 	return nil
+}
+
+// composedModules is every module the core composes, by name, as its delivery
+// declared it: Service.Composed for the whole composition, read in one
+// transaction. A host whose store keeps no core records composes none.
+func (s *Service) composedModules(ctx context.Context) (map[string]domain.Module, error) {
+	cores, ok := s.store.(AuthorityCoreStore)
+	if !ok {
+		return nil, nil
+	}
+	var modules []domain.Module
+	if err := cores.AuthorityCoreWithConsent(nil).Read(ctx, func(tx authority.Tx) (err error) {
+		modules, err = tx.Modules()
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	composed := make(map[string]domain.Module, len(modules))
+	for _, m := range modules {
+		composed[m.Name] = m
+	}
+	return composed, nil
 }
 
 // refuseModuleUninstall refuses a person's uninstall of a module's

@@ -72,12 +72,16 @@ type organizationOwner struct{ id, owner string }
 // installComposedModulesAt installs, by composition, every module org may
 // install and holds none of yet (installByComposition), and reports how many
 // it installed. The caller holds s.composing.
+//
+// What every install at org shares is read once for the organization, and only
+// when it has a module to install (compositionAt): a read per installed module
+// made a delivery to a host cost what it already composes.
 func (s *Service) installComposedModulesAt(ctx context.Context, org, owner string) (installed int, err error) {
-	core, err := s.AuthorityCore()
-	if err != nil {
+	if _, err := s.AuthorityCore(); err != nil {
 		return 0, nil
 	}
 	var failures []error
+	var at *compositionAt
 	for token := ""; ; {
 		available, next, err := s.ListAvailableSolutions(ctx, org, token, listInstallationsMaxPageSize)
 		if err != nil {
@@ -87,15 +91,16 @@ func (s *Service) installComposedModulesAt(ctx context.Context, org, owner strin
 			if target.Kind != "module" || target.Installed {
 				continue
 			}
-			m, err := core.Composed(ctx, target.RouteAlias)
-			if code, ok := domain.CodeOf(err); ok && code == domain.NotFound {
+			if at == nil {
+				if at, err = s.readCompositionAt(ctx, org); err != nil {
+					return installed, errors.Join(append(failures, fmt.Errorf("install the composed modules at %s: %w", org, err))...)
+				}
+			}
+			m, composed := at.composed[target.RouteAlias]
+			if !composed {
 				continue // Not composed yet: the pass that composes it installs it.
 			}
-			if err != nil {
-				failures = append(failures, fmt.Errorf("install %s at %s: %w", target.RouteAlias, org, err))
-				continue
-			}
-			if err := s.installByComposition(ctx, org, owner, target, m); err != nil {
+			if err := s.installByComposition(ctx, org, owner, target, m, at); err != nil {
 				failures = append(failures, fmt.Errorf("install %s at %s: %w", target.RouteAlias, org, err))
 				continue
 			}
@@ -108,6 +113,34 @@ func (s *Service) installComposedModulesAt(ctx context.Context, org, owner strin
 	return installed, errors.Join(failures...)
 }
 
+// compositionAt is what every composition install at one organization in one
+// pass reads the same: the composed modules by name, and the revision each
+// target's installation history stands at there. An install moves only its own
+// target's history, which the pass installs once, so neither goes stale within
+// the pass; whatever else moves them is caught by the install itself, which
+// reads the target and its declaration again under its fence and refuses an
+// approval made from a revision that has moved. The next pass then installs it.
+type compositionAt struct {
+	composed  map[string]domain.Module
+	revisions map[string]uint64
+	// owner is the owner of record, read at the first install (ownerOfRecord).
+	owner    string
+	ownerErr error
+	ownerSet bool
+}
+
+func (s *Service) readCompositionAt(ctx context.Context, org string) (*compositionAt, error) {
+	composed, err := s.composedModules(ctx)
+	if err != nil {
+		return nil, err
+	}
+	revisions, err := s.installationRevisions(ctx, org)
+	if err != nil {
+		return nil, err
+	}
+	return &compositionAt{composed: composed, revisions: revisions}, nil
+}
+
 // installByComposition installs module m at org as the host's composition
 // does, through the module install path, recorded as the system's ("by":
 // "composition"): no person approves it. It holds no standing authority (a
@@ -118,19 +151,18 @@ func (s *Service) installComposedModulesAt(ctx context.Context, org, owner strin
 // so. A declaration selecting anything else is one the module install path
 // refuses (modulePageHoldsNothing, undeclaredInstallationRole), so it is
 // reported, never installed.
-func (s *Service) installByComposition(ctx context.Context, org, owner string, target *AvailableSolutionTarget, m domain.Module) error {
+func (s *Service) installByComposition(ctx context.Context, org, owner string, target *AvailableSolutionTarget, m domain.Module, at *compositionAt) error {
 	if role := supportingInstallationRole(m); role != domain.NoInstallationRole {
 		return fmt.Errorf("its declaration selects the standing role %q, which a module never holds by composition: a module page declares installation_role none, and a module without a page declares no role", role)
 	}
-	ownerOfRecord, err := s.compositionOwnerOfRecord(ctx, org, owner)
-	if err != nil {
-		return err
+	if !at.ownerSet {
+		at.owner, at.ownerErr = s.compositionOwnerOfRecord(ctx, org, owner)
+		at.ownerSet = true
 	}
-	approval, err := s.freshApproval(ctx, org, target)
-	if err != nil {
-		return err
+	if at.ownerErr != nil {
+		return at.ownerErr
 	}
-	_, _, err = s.installTargetByName(ctx, "", org, target.RouteAlias, "", ownerOfRecord, approval, true)
+	_, _, err := s.installAvailableTarget(ctx, "", org, target, "", at.owner, freshApprovalAt(target, at.revisions), true)
 	return err
 }
 

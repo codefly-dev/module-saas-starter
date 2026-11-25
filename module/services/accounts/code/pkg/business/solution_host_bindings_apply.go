@@ -116,6 +116,43 @@ func (s *Service) recordSolutionHostBindingDesired(
 	})
 }
 
+// desiredStateStands reports that recordSolutionHostBindingDesired would leave
+// record as it reads now, so the pass need not take its row: the same document
+// from the same host is already what it desires, no admission refused it (a
+// refusal is a trail row every pass), and the pending reason the pass would
+// set is the one the row carries. What such a row then says of its desired
+// generation is when the host first saw it, not when it last looked.
+//
+// record is the pass's unlocked read. A row another replica changed since is
+// left as that replica wrote it, from an inbox at least as new; desired state
+// decides nothing, and the apply re-decides under the row lock.
+func desiredStateStands(
+	record *SolutionHostBindingRecord, document *solutionhost.ModuleManifest,
+	withheldReason, authorityReason string, settled bool,
+) bool {
+	if record == nil || record.Desired == nil || withheldReason != "" {
+		return false
+	}
+	if record.HostCoordinate != document.Host.Coordinate || record.Desired.Generation != document.Generation {
+		return false
+	}
+	digest, err := document.Digest()
+	if err != nil || record.Desired.Digest != digest {
+		return false
+	}
+	canonical, err := solutionhost.Marshal(document)
+	if err != nil || record.Desired.Document != string(canonical) {
+		return false
+	}
+	switch {
+	case authorityReason != "":
+		return record.PendingReason == authorityReason && record.PendingSince != nil
+	case settled:
+		return record.PendingReason == "" && record.PendingSince == nil
+	}
+	return true
+}
+
 // recordSolutionHostBindingRefusal records a reason against a binding without
 // touching desired or applied state. It is what an apply that failed, and a
 // document this host could not even parse, leave behind.

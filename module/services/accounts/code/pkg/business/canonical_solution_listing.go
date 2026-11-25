@@ -57,44 +57,51 @@ func (s *Service) upgradesAvailable(ctx context.Context, summaries []*gen.Instal
 	if len(pending) == 0 {
 		return nil
 	}
-	held := map[string]domain.Installation{}
-	var composition string
-	if err := cores.AuthorityCoreWithConsent(nil).Read(ctx, func(tx authority.Tx) error {
-		modules, err := tx.Modules()
-		if err != nil {
-			return err
-		}
-		composition = compositionStamp(modules)
-		for id := range pending {
-			inst, err := tx.Installation(id)
-			if errors.Is(err, domain.ErrNotFound) {
-				continue
-			}
+	// One question, one transaction (WithAuthoritySnapshot): the composition,
+	// each held installation and every answer the cache does not keep are
+	// read from one snapshot, never one transaction per installation. A
+	// delivery changes the composition, so the listing after it computes
+	// every installation's answer afresh.
+	return s.WithAuthoritySnapshot(ctx, func(ctx context.Context) error {
+		held := map[string]domain.Installation{}
+		var composition string
+		if err := cores.AuthorityCoreWithConsent(nil).Read(ctx, func(tx authority.Tx) error {
+			modules, err := tx.Modules()
 			if err != nil {
 				return err
 			}
-			held[id] = inst
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-	for id, i := range pending {
-		inst, ok := held[id]
-		if !ok {
-			continue
-		}
-		key := fmt.Sprintf("%s@%d@%d@%s", inst.ID, inst.Revision, inst.Consent.Generation, inst.Consent.ReachDigest)
-		if upgrade, ok := s.upgradeCache.get(composition, key); ok {
-			i.UpgradeAvailable = upgrade
-			continue
-		}
-		if i.UpgradeAvailable, err = core.UpgradeAvailable(ctx, inst); err != nil {
+			composition = compositionStamp(modules)
+			for id := range pending {
+				inst, err := tx.Installation(id)
+				if errors.Is(err, domain.ErrNotFound) {
+					continue
+				}
+				if err != nil {
+					return err
+				}
+				held[id] = inst
+			}
+			return nil
+		}); err != nil {
 			return err
 		}
-		s.upgradeCache.put(composition, key, i.UpgradeAvailable)
-	}
-	return nil
+		for id, i := range pending {
+			inst, ok := held[id]
+			if !ok {
+				continue
+			}
+			key := fmt.Sprintf("%s@%d@%d@%s", inst.ID, inst.Revision, inst.Consent.Generation, inst.Consent.ReachDigest)
+			if upgrade, ok := s.upgradeCache.get(composition, key); ok {
+				i.UpgradeAvailable = upgrade
+				continue
+			}
+			if i.UpgradeAvailable, err = core.UpgradeAvailable(ctx, inst); err != nil {
+				return err
+			}
+			s.upgradeCache.put(composition, key, i.UpgradeAvailable)
+		}
+		return nil
+	})
 }
 
 // compositionStamp names one composition: every composed module at its

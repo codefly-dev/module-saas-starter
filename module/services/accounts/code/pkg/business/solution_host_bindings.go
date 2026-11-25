@@ -372,9 +372,22 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 			withheldAuthority[binding] = reason
 		}
 	}
+	// Only a binding whose row would change is written: a host re-reads its
+	// whole inbox on every pass, and a transaction per delivered binding made
+	// every delivery cost what the host already composes.
+	recorded := make(map[string]*SolutionHostBindingRecord, len(records))
+	for _, record := range records {
+		recorded[record.BindingID] = record
+	}
 	var failures []error
 	for _, one := range verified {
 		document := one.Document
+		if desiredStateStands(
+			recorded[document.Binding], document, admission.Withheld[document.Binding],
+			withheldAuthority[document.Binding], settled[document.Binding],
+		) {
+			continue
+		}
 		if err := r.service.recordSolutionHostBindingDesired(
 			ctx, document, admission.Withheld[document.Binding], withheldAuthority[document.Binding],
 			settled[document.Binding], r.now(),

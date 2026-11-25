@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"testing"
 
@@ -19,6 +20,7 @@ import (
 	installationv1 "accounts/pkg/gen/host/installation/v1"
 	sessionv1 "accounts/pkg/gen/host/session/v1"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/infra"
 	"accounts/pkg/infra/storetx"
 )
 
@@ -232,6 +234,74 @@ func testModulesInstalledByComposition(t *testing.T, h reviewedClosureHarness) {
 			require.NoError(t, err)
 			require.Equal(t, gen.InstallationStatus_INSTALLATION_STATUS_REVOKED, read.GetStatus(), "the withdrawn module's installation at %s is revoked", org)
 		}
+	})
+
+	// What a delivery and a mint cost the store is counted in transactions,
+	// never in time: the same module delivered to a host composing more
+	// modules, in the same organizations, opens no more of them, and neither
+	// does the same mint. A read per composed module, a write per delivered
+	// binding or a verification read per applied manifest each made a
+	// delivery cost what the host already composes, and a composition of
+	// seventy modules took a delivery's deadline.
+	t.Run("a delivery and a mint open no more transactions on a host composing more modules", func(t *testing.T) {
+		counted := func(do func()) (opened int64, sites map[string]int64) {
+			t.Helper()
+			before, orgBefore := infra.ControlPlaneCounters(), infra.OrgTxCount()
+			do()
+			sites = map[string]int64{}
+			for site, n := range infra.ControlPlaneCounters() {
+				if d := n - before[site]; d != 0 {
+					sites[site] = d
+					opened += d
+				}
+			}
+			if d := infra.OrgTxCount() - orgBefore; d != 0 {
+				sites["organization transactions"] = d
+				opened += d
+			}
+			return opened, sites
+		}
+		deliver := func(module string) func() {
+			return func() {
+				deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{wireScope(module+".item", "read")}})
+			}
+		}
+		sess, err := sessionv1.NewSessionServiceClient(h.conn).SignIn(h.ctx, &sessionv1.SignInRequest{FixtureToken: "fixture-alex"})
+		require.NoError(t, err)
+		alex := metadata.AppendToOutgoingContext(h.ctx, "authorization", "Bearer "+sess.GetBearer())
+		// The mint is one the suite already makes: Alex's own session at the
+		// records module, which Alex administers.
+		const first = "conformance-cost-first"
+		mint := func() {
+			_, err := authorityv1.NewAuthorityServiceClient(h.conn).Issue(alex, &authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}},
+				Audience: "records", Scopes: []*authorityv1.WorkScopeV1{wireScope("example-entries", "read")}})
+			require.NoError(t, err)
+		}
+		grew := func(first, last map[string]int64) map[string]int64 {
+			out := map[string]int64{}
+			for site, n := range last {
+				if d := n - first[site]; d > 0 {
+					out[site] = d
+				}
+			}
+			return out
+		}
+
+		firstDelivery, firstDeliverySites := counted(deliver(first))
+		firstMint, firstMintSites := counted(mint)
+		const more = 12
+		for i := range more {
+			deliver(fmt.Sprintf("conformance-cost-filler-%d", i))()
+		}
+		lastDelivery, lastDeliverySites := counted(deliver("conformance-cost-last"))
+		lastMint, lastMintSites := counted(mint)
+		for _, org := range orgs {
+			require.NotNil(t, installed(org, first))
+			require.NotNil(t, installed(org, "conformance-cost-last"))
+		}
+		t.Logf("a delivery opened %d transactions and a mint %d; with %d more modules composed, %d and %d", firstDelivery, firstMint, more+1, lastDelivery, lastMint)
+		require.LessOrEqual(t, lastDelivery, firstDelivery, "a delivery with %d more modules composed opened more transactions, at: %v", more+1, grew(firstDeliverySites, lastDeliverySites))
+		require.LessOrEqual(t, lastMint, firstMint, "a mint with %d more modules composed opened more transactions, at: %v", more+1, grew(firstMintSites, lastMintSites))
 	})
 }
 

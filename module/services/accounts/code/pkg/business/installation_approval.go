@@ -103,19 +103,41 @@ func (s *Service) InstallFixtureTarget(ctx context.Context, actorID, orgID, targ
 // freshApproval is a fresh consent of available at org, at the revision its
 // installation history stands at (revoked history included).
 func (s *Service) freshApproval(ctx context.Context, orgID string, available *AvailableSolutionTarget) (*InstallationApproval, error) {
-	approval := &InstallationApproval{TargetID: available.TargetID, Generation: available.AppliedGeneration, OperationID: uuid.NewString()}
+	revisions, err := s.installationRevisions(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	return freshApprovalAt(available, revisions), nil
+}
+
+// freshApprovalAt is a fresh consent of available at the revision revisions
+// (installationRevisions) says its installation history stands at.
+func freshApprovalAt(available *AvailableSolutionTarget, revisions map[string]uint64) *InstallationApproval {
+	return &InstallationApproval{
+		TargetID: available.TargetID, Generation: available.AppliedGeneration,
+		ExpectedRevision: revisions[available.TargetID], OperationID: uuid.NewString(),
+	}
+}
+
+// installationRevisions is the revision the installation history of each
+// target stands at in org (revoked history included), by target id: every
+// target's, from one read of the organization's installations. A caller
+// installing many targets at one organization reads it once; an approval made
+// from a revision that has since moved is refused by the install, as a
+// person's stale approval is.
+func (s *Service) installationRevisions(ctx context.Context, orgID string) (map[string]uint64, error) {
+	revisions := map[string]uint64{}
 	for token := ""; ; {
 		rows, next, err := s.ListOrganizationInstallations(ctx, orgID, token, listInstallationsMaxPageSize)
 		if err != nil {
 			return nil, err
 		}
 		for _, row := range rows {
-			if i := row.Summary.GetInstallation(); i.GetTargetId() == available.TargetID {
-				approval.ExpectedRevision = max(approval.ExpectedRevision, i.GetRevision())
-			}
+			i := row.Summary.GetInstallation()
+			revisions[i.GetTargetId()] = max(revisions[i.GetTargetId()], i.GetRevision())
 		}
 		if next == "" {
-			return approval, nil
+			return revisions, nil
 		}
 		token = next
 	}
