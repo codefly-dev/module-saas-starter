@@ -238,6 +238,25 @@ func testAudienceGrantResidue(t *testing.T, h residueHarness) {
 		atRelay, err := exchange(residuePage, "relay", kid)
 		carries(t, atRelay, err, "the agent's capability, through the binding to the relay the grant is addressed to")
 
+		// The agent's capability is the person's on every path that re-issues
+		// it, not on StartTask alone: a root session opened from it, and the
+		// owner's own exchange of it, reach a relay no more than the person's
+		// own session does. Before, both asked only a parent nobody acted on,
+		// so the capability the page's binding had projected was re-issued at
+		// either relay, the sibling included, by naming it.
+		for _, audience := range []string{residueRelay, residueSibling} {
+			_, err := contexts.StartRootSession(h.admin, &gen.StartRootSessionWorkContextRequest{OrgId: fixtureOrganization,
+				ParentWorkContextToken: kid.GetToken(), SessionId: uuid.NewString(), Audience: audience})
+			refusedAtNoRoles(t, err, audience)
+			_, err = contexts.ExchangeAudience(h.admin, &gen.ExchangeWorkContextAudienceRequest{OrgId: fixtureOrganization,
+				ParentWorkContextToken: kid.GetToken(), Audience: audience, AttenuatedScopes: ask})
+			refusedAtNoRoles(t, err, audience)
+		}
+		// The binding stays the way there: the refusals above are the rule's,
+		// not a capability that stopped verifying.
+		again, err := exchange(residuePage, "relay", kid)
+		carries(t, again, err, "the agent's capability, through the binding, after the refusals")
+
 		// A child never widens its parent, and keeps its audience.
 		_, err = child(mustStart(t, start, h.admin, residuePage, residueNote(residuePage)).GetToken(), residuePage, ask)
 		require.Equal(t, codes.InvalidArgument, status.Code(err), "a child asking more than its parent carries: %v", err)

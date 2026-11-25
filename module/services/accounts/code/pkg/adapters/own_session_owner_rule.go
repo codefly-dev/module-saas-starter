@@ -200,12 +200,6 @@ func servesKind(m domain.Module, sc *basev0.WorkScopeV1) bool {
 	return slices.ContainsFunc(m.ResourceKinds, func(kind *basev0.WorkScopeV1) bool { return kind.GetResourceKind() == sc.GetResourceKind() })
 }
 
-// ownSession reports whether wc is a person's own session: owned by a person,
-// with no actor acting for them.
-func ownSession(wc *basev0.WorkContextV1) bool {
-	return wc.GetOwnerPrincipalKind() == business.PrincipalKindHuman && len(wc.GetActorChain()) == 0
-}
-
 // heldThrough is scopes, carried by a person's own session through a module
 // that declares no roles to audience: nothing at an audience that declares no
 // roles either, refused by the rule's name.
@@ -329,11 +323,14 @@ func coreRefused(err error) bool {
 }
 
 // holdOwnSessionExchange holds what a person's capability is re-issued with
-// at audience. The owner's own exchange (no module exercising a binding)
-// carries their own session there as their own session, refused by the
-// rule's name. A module that declares no roles exchanging a person's own
-// session through its binding carries nothing of the person's own to a
-// module that declares no roles either. A role-gated module exchanging a
+// at audience, whoever acts on it: the person, or an agent acting for them
+// (personsCapability). An agent's capability is the person's, so no path
+// below carries for an agent what it refuses the person. The owner's own
+// exchange (no module exercising a binding) carries what the capability holds
+// there as their own session would, refused by the rule's name. A module that
+// declares no roles exchanging a person's capability through its binding
+// carries nothing of the person's own to a module that declares no roles
+// either. A role-gated module exchanging a
 // person's capability through its binding carries what the core would issue
 // the person over it (heldThroughBinding; through a read binding,
 // heldThroughReadBinding): what their role on the module's installation holds
@@ -352,9 +349,6 @@ func holdOwnSessionExchange(ctx context.Context, parent *basev0.WorkContextV1, a
 		carried = effectiveScopes(parent)
 	}
 	if exercised == (moduleBindingSeal{}) {
-		if !ownSession(parent) {
-			return scopes, nil
-		}
 		return scopes, holdOwnSession(ctx, parent.GetTenantId(), parent.GetOwnerPrincipalId(), audience, carried)
 	}
 	m, composed, err := composedAudience(ctx, parent.GetAudience())
@@ -362,9 +356,6 @@ func holdOwnSessionExchange(ctx context.Context, parent *basev0.WorkContextV1, a
 		return scopes, err
 	}
 	if !decide.RoleGated(m) {
-		if !ownSession(parent) {
-			return scopes, nil
-		}
 		return heldThrough(ctx, audience, carried)
 	}
 	var held []*basev0.WorkScopeV1

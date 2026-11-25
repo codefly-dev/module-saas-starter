@@ -1374,9 +1374,11 @@ func (s *WorkContextAuthorityServer) StartRootSession(
 	if err := enforceActorAudience(ctx, actor, req.GetAudience()); err != nil {
 		return nil, err
 	}
-	// The owner's own session re-issued at a new audience is held to the
-	// core's rule for a person's own session there.
-	if ownSession(parent.Context()) {
+	// A person's capability re-issued at a new audience is held to the core's
+	// rule for a person's own session there, whether the person acts on the
+	// parent or an agent acts on it for them: an agent's root session reaches
+	// no module the person's own would not.
+	if personsCapability(parent.Context()) {
 		if err := holdOwnSession(ctx, req.GetOrgId(), ownerID, req.GetAudience(), parent.Context().GetAuthorityScopes()); err != nil {
 			return nil, err
 		}
