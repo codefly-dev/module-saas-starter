@@ -637,6 +637,14 @@ binding (`heldThroughBinding`), for the person's own session and for a
 capability an agent acts on alike; a read binding carries what the module's
 operation bindings to the same module do (`heldThroughReadBinding`).
 
+Re-issuing a capability is held the same way whoever acts on it
+(`personsCapability`: owned by a person, nobody but their agents acting): a
+root session opened from it (`StartRootSession`) and the owner's own exchange
+of it (`ExchangeAudience` with no module exercising a binding) reach an
+audience only as the person's own session would, so a capability an agent
+carries from a page's binding is not re-issued at the binding's target, or at
+its sibling, by naming it. No path keeps an exception for an agent.
+
 Several person-owned kinds are sealed elsewhere by design, each behind its own
 gate:
 
