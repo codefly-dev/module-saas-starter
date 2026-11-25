@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package codefly.base.v0;
+package codefly.base.v1;
 
-option go_package = "github.com/codefly-dev/core/generated/go/codefly/base/v0";
+option go_package = "github.com/codefly-dev/core/generated/go/codefly/base/v1";
 
 // Library represents internal shared code that can be used by services
 message Library {

@@ -14,7 +14,7 @@ import (
 	unsafe "unsafe"
 
 	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
-	_ "github.com/codefly-dev/core/generated/go/codefly/runnable/v0"
+	_ "github.com/codefly-dev/core/generated/go/codefly/runnable/v1"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -7690,7 +7690,7 @@ var File_saas_accounts_v1_datasource_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\n" +
-	"!saas/accounts/v1/datasource.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a!codefly/runnable/v0/options.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x17saas/jobs/v1/jobs.proto\x1a\x1csaas/policy/v1/options.proto\"\x83\x01\n" +
+	"!saas/accounts/v1/datasource.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a!codefly/runnable/v1/options.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x17saas/jobs/v1/jobs.proto\x1a\x1csaas/policy/v1/options.proto\"\x83\x01\n" +
 	"\x16GitHubDatasourceConfig\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x14\n" +
 	"\x05paths\x18\x02 \x03(\tR\x05paths\x12\x16\n" +
