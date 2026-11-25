@@ -21,6 +21,8 @@ import (
 )
 
 const (
+	artifactMetadataSchema = "codefly/module-artifact/v1"
+
 	ArchiveName    = "module.tar"
 	ChecksumName   = "module.tar.sha256"
 	MetadataName   = "artifact.json"
@@ -148,7 +150,7 @@ func Build(options BuildOptions) (ArtifactMetadata, error) {
 		return ArtifactMetadata{}, err
 	}
 	metadata := ArtifactMetadata{
-		Schema:  "codefly/module-artifact/v2",
+		Schema:  artifactMetadataSchema,
 		Package: PackageSubject{ID: manifest.ID, Version: manifest.Version},
 		Source:  Source{Repository: PackageRepository, Commit: commit},
 		Artifact: ArtifactFile{
@@ -291,7 +293,7 @@ func SignRelease(options SignOptions) (*corecomposition.Provenance, error) {
 		return nil, fmt.Errorf("decode artifact metadata: %w", err)
 	}
 	wantedDigest := fmt.Sprintf("sha256:%x", digest)
-	if metadata.Schema != "codefly/module-artifact/v2" ||
+	if metadata.Schema != artifactMetadataSchema ||
 		metadata.Package.ID != manifest.ID || metadata.Package.Version != manifest.Version ||
 		metadata.Source.Repository != repository || metadata.Source.Commit != options.Commit ||
 		metadata.Artifact.Name != ArchiveName || metadata.Artifact.MediaType != corecomposition.ArtifactMediaType ||

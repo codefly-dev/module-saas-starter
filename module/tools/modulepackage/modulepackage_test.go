@@ -93,6 +93,9 @@ func TestBuildProducesACoreCanonicalRootArchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if metadata.Schema != "codefly/module-artifact/v1" {
+		t.Fatalf("artifact metadata schema = %q, want v1", metadata.Schema)
+	}
 	archive, err := os.ReadFile(filepath.Join(releaseDir, ArchiveName))
 	if err != nil {
 		t.Fatal(err)
