@@ -427,13 +427,13 @@ func newPackageRepository(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(moduleRoot, "tools", "generator.go"), []byte("package main\n\nimport \"os\"\n\nfunc main() { _ = os.WriteFile(\"../generated.txt\", []byte(\"generated\\n\"), 0o644) }\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	manifest := `schema: codefly/module-package/v2
+	manifest := `schema: codefly/module-package/v1
 kind: module-package
 id: example/package
 version: 1.2.3
 minimum-codefly-version: ">=0.3.0 <1.0.0"
 artifact-roots: [artifact]
-contracts: {composition: ">=2.0.0 <3.0.0"}
+contracts: {composition: ">=1.0.0 <2.0.0"}
 generators:
   - name: generate
     working-directory: tools

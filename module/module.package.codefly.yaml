@@ -1,4 +1,4 @@
-schema: codefly/module-package/v2
+schema: codefly/module-package/v1
 kind: module-package
 id: codefly/saas-starter
 version: 0.2.0
@@ -68,7 +68,7 @@ fixtures:
         role: super_admin
         token: local-admin
 contracts:
-  composition: ">=2.0.0 <3.0.0"
+  composition: ">=1.0.0 <2.0.0"
   frontendPlugin: ">=1.0.0 <2.0.0"
   settings: ">=1.0.0 <2.0.0"
   permissions: ">=1.0.0 <2.0.0"
