@@ -9,7 +9,7 @@ require (
 	github.com/codefly-dev/authority/libraries/authority-core/go v0.1.2-0.20261125203304-953f93bcb574
 	github.com/codefly-dev/authority/libraries/hop/go v0.2.1-0.20261125203304-953f93bcb574
 	github.com/codefly-dev/authority/libraries/solutionhost/go v0.0.0-20261125203304-953f93bcb574
-	github.com/codefly-dev/core v0.19.38-0.20261125201822-50c2b2ab29a4
+	github.com/codefly-dev/core v0.19.38-0.20261125210606-ab7fbd5cd846
 	github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261125204932-469c87f74f0c
 	github.com/codefly-dev/sdk-go v0.4.5-0.20261125203301-8313d03a6f41
 	github.com/codefly-dev/sdk-go/workcontext v0.1.1-0.20261125203301-8313d03a6f41

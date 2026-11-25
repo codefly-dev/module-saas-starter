@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
@@ -63,7 +62,7 @@ func TestModuleWorkContextMintsAtTheGatewayBroker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ModuleWorkContext: %v", err)
 	}
-	if token.Encoded() == "" {
+	if token == "" {
 		t.Fatal("the broker answered an empty module Work Context")
 	}
 
@@ -95,8 +94,8 @@ func TestMintModuleOperationContextForAHeadlessBinding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MintModuleOperationContext(%s): %v", binding, err)
 	}
-	if op.Token.Encoded() == "" || op.BindingID != binding || op.Audience != "indexservice" || op.PrincipalID == "" || op.Tenant == "" {
-		t.Fatalf("unexpected operation context: %+v", op)
+	if op.Token == "" || op.BindingID != binding || op.Audience != "indexservice" || op.PrincipalID == "" || op.Tenant == "" {
+		t.Fatal("unexpected operation context metadata or empty token")
 	}
 	if !op.ExpiresAt.After(time.Now()) {
 		t.Fatalf("operation context already expired: %v", op.ExpiresAt)
@@ -118,8 +117,8 @@ func TestMintSourceOperationContextThroughAnActiveDelegation(t *testing.T) {
 	}
 	if minted.SourceID != source || minted.Tenant != h.Fixture.Tenant || minted.OwnerPrincipalID != h.Fixture.Owner ||
 		minted.Audience != h.Fixture.Modules["runtime"] || minted.BindingID != h.Fixture.Bindings["delegation"] ||
-		minted.DelegationID == "" || minted.Token.Encoded() == "" {
-		t.Fatalf("unexpected source operation context: %+v", minted)
+		minted.DelegationID == "" || minted.Token == "" {
+		t.Fatal("unexpected source operation context metadata or empty token")
 	}
 }
 
@@ -142,12 +141,12 @@ func TestMintSourceOperationContextRefusalsAreTyped(t *testing.T) {
 			if !errors.As(err, &broker) {
 				t.Fatalf("%v carries no broker answer", err)
 			}
-			wantStatus, wantReason := http.StatusForbidden, "DELEGATION_"+strings.ToUpper(name)
+			wantStatus, wantClass := http.StatusForbidden, moduleauthority.BrokerErrorRefused
 			if name == "missing" {
-				wantStatus = http.StatusPreconditionFailed
+				wantStatus, wantClass = http.StatusPreconditionFailed, moduleauthority.BrokerErrorOther
 			}
-			if broker.StatusCode != wantStatus || broker.Reason != wantReason {
-				t.Fatalf("broker answered %d %q, want %d %q", broker.StatusCode, broker.Reason, wantStatus, wantReason)
+			if broker.StatusCode != wantStatus || broker.Classification != wantClass {
+				t.Fatalf("broker answered %d (class %v), want %d (class %v)", broker.StatusCode, broker.Classification, wantStatus, wantClass)
 			}
 		})
 	}
@@ -169,7 +168,7 @@ func TestExchangeOperationOfADelegationBearingParent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExchangeOperation: %v", err)
 	}
-	if exchanged.Encoded() == "" || exchanged.Encoded() == parent.Token.Encoded() {
+	if exchanged == "" || exchanged == parent.Token {
 		t.Fatal("the exchange answered no new Work Context")
 	}
 

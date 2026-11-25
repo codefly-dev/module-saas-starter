@@ -4,7 +4,7 @@ go 1.27.4
 
 require (
 	github.com/codefly-dev/authority/libraries/solutionhost/go v0.0.0-20261125203304-953f93bcb574
-	github.com/codefly-dev/core v0.19.38-0.20261125201822-50c2b2ab29a4
+	github.com/codefly-dev/core v0.19.38-0.20261125210606-ab7fbd5cd846
 	github.com/stretchr/testify v1.12.1
 	oras.land/oras-go/v2 v2.6.2
 )

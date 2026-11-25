@@ -3,7 +3,7 @@ module github.com/codefly-dev/agents/modules/saas-starter
 go 1.27.4
 
 require (
-	github.com/codefly-dev/core v0.19.38-0.20261125201822-50c2b2ab29a4
+	github.com/codefly-dev/core v0.19.38-0.20261125210606-ab7fbd5cd846
 	gopkg.in/yaml.v3 v3.0.1
 )
 

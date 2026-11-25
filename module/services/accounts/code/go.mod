@@ -13,7 +13,7 @@ require (
 	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261125203304-953f93bcb574
 	github.com/codefly-dev/authority/libraries/solutionhost/go v0.0.0-20261125203304-953f93bcb574
 	github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc
-	github.com/codefly-dev/core v0.19.38-0.20261125201822-50c2b2ab29a4
+	github.com/codefly-dev/core v0.19.38-0.20261125210606-ab7fbd5cd846
 	github.com/codefly-dev/interface-cache/go/cache v0.4.2-0.20261110162340-1f824ec7cb21
 	github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261125204932-469c87f74f0c
 	github.com/codefly-dev/sdk-go v0.4.5-0.20261125203301-8313d03a6f41

@@ -4,7 +4,7 @@ go 1.27.4
 
 require (
 	github.com/Masterminds/semver/v3 v3.5.0
-	github.com/codefly-dev/core v0.19.38-0.20261125201822-50c2b2ab29a4
+	github.com/codefly-dev/core v0.19.38-0.20261125210606-ab7fbd5cd846
 	github.com/yoheimuta/go-protoparser/v4 v4.14.2
 	golang.org/x/mod v0.43.0
 	golang.org/x/tools v0.52.1-0.20261106145633-d407941a339a
