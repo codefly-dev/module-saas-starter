@@ -13,7 +13,7 @@ import (
 	hop "github.com/codefly-dev/authority/libraries/hop/go"
 	"github.com/codefly-dev/authority/libraries/hop/go/hoptest"
 	"github.com/codefly-dev/authority/libraries/hop/go/routing"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	core "github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 
@@ -96,7 +96,7 @@ func TestTheHopsOwnRefusalsAreRecordedAndTheAuthoritysAreNot(t *testing.T) {
 	// A Work Context addressed to a module this hop does not stand in front
 	// of: refused by the hop before the authority is asked, so what the
 	// Work Context says of itself is a claim.
-	elsewhere := accounts.signer.Issue(t, "records", &basev0.WorkScopeV1{ResourceKind: "records", Actions: []string{"read"}})
+	elsewhere := accounts.signer.Issue(t, "records", &basev1.WorkScopeV1{ResourceKind: "records", Actions: []string{"read"}})
 	require.NotEqual(t, http.StatusOK, call(elsewhere))
 	recorded = journal.all()
 	require.Len(t, recorded, 2)
@@ -111,7 +111,7 @@ func TestTheHopsOwnRefusalsAreRecordedAndTheAuthoritysAreNot(t *testing.T) {
 	// The authority's own refusal is passed on and not recorded here: the
 	// authority told its host.
 	accounts.refuse = true
-	admitted := accounts.signer.Issue(t, "documents", &basev0.WorkScopeV1{ResourceKind: "documents", Actions: []string{"read"}})
+	admitted := accounts.signer.Issue(t, "documents", &basev1.WorkScopeV1{ResourceKind: "documents", Actions: []string{"read"}})
 	require.Equal(t, http.StatusForbidden, call(admitted))
 	require.Len(t, journal.all(), 2, "the authority's refusal is not the hop's to record")
 	require.Zero(t, reached)

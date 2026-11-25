@@ -20,7 +20,7 @@ import (
 	hop "github.com/codefly-dev/authority/libraries/hop/go"
 	"github.com/codefly-dev/authority/libraries/hop/go/hoptest"
 	"github.com/codefly-dev/authority/libraries/hop/go/routing"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	core "github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -60,7 +60,7 @@ func (a *hostAuthority) Issue(_ context.Context, in *authorityv1.IssueRequest, _
 	if in.GetPerson() == nil {
 		return nil, status.Error(codes.InvalidArgument, "only a person is issued here")
 	}
-	token := a.signer.Issue(a.t, in.GetAudience(), &basev0.WorkScopeV1{ResourceKind: "documents", Actions: []string{"read"}})
+	token := a.signer.Issue(a.t, in.GetAudience(), &basev1.WorkScopeV1{ResourceKind: "documents", Actions: []string{"read"}})
 	decoded, err := core.Decode(token)
 	if err != nil {
 		return nil, err
@@ -244,7 +244,7 @@ func TestHopAnAdmissionCannotBeReplayedAtTheModule(t *testing.T) {
 // host never published, admit nothing.
 func TestHopACallNotThroughTheGatewayIsRefused(t *testing.T) {
 	_, accounts, module, moduleServer, _ := hopHarness(t)
-	token := accounts.signer.Issue(t, "documents", &basev0.WorkScopeV1{ResourceKind: "documents", Actions: []string{"read"}})
+	token := accounts.signer.Issue(t, "documents", &basev1.WorkScopeV1{ResourceKind: "documents", Actions: []string{"read"}})
 
 	call := func(md metadata.MD) (int, string) {
 		req, err := http.NewRequest(http.MethodPost, moduleServer.URL+listCollection, strings.NewReader(`{}`))
@@ -272,7 +272,7 @@ func TestHopACallNotThroughTheGatewayIsRefused(t *testing.T) {
 // a Work Context addressed to it, and the module admits it.
 func TestHopAWorkloadCallThroughTheHopFaceIsAdmitted(t *testing.T) {
 	gw, accounts, module, _, _ := hopHarness(t)
-	token := accounts.signer.Issue(t, "documents", &basev0.WorkScopeV1{ResourceKind: "documents", Actions: []string{"read"}})
+	token := accounts.signer.Issue(t, "documents", &basev1.WorkScopeV1{ResourceKind: "documents", Actions: []string{"read"}})
 	req := listCollectionRequest(listCollection)
 	req.Header.Set(hop.WorkContextKey, token)
 	w := httptest.NewRecorder()
@@ -332,7 +332,7 @@ func TestHopAGRPCCallOnTheHopEndpointIsAdmitted(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
-	token := accounts.signer.Issue(t, "records", &basev0.WorkScopeV1{ResourceKind: "records", Actions: []string{"read"}})
+	token := accounts.signer.Issue(t, "records", &basev1.WorkScopeV1{ResourceKind: "records", Actions: []string{"read"}})
 	out := new(wrapperspb.StringValue)
 	err = conn.Invoke(metadata.AppendToOutgoingContext(t.Context(), hop.WorkContextKey, token), procedure, &emptypb.Empty{}, out)
 	require.NoError(t, err)

@@ -8,7 +8,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/memstore"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -38,8 +38,8 @@ func TestAppliedPrincipalAddressesTheRealAuthority(t *testing.T) {
 	store.PutPerson(domain.Person{ID: "admin", Organization: "acme", Roles: []string{"admin"}})
 	svc, err := authority.New(store, authority.Config{Issuer: "https://authority.example.test", KeyID: "test", Signer: private, Keys: principalWitnessKeys{"test": public}, Replay: workcontext.NewMemoryReplayStore()})
 	require.NoError(t, err)
-	scopes := []*basev0.WorkScopeV1{{ResourceKind: "example.note", Actions: []string{"read"}}}
-	_, err = svc.ApplyModule(t.Context(), domain.Module{Name: route.Alias, Principal: route.Principal, Kind: domain.KindSolution, Generation: 1, OwnerAware: true, ResourceKinds: scopes, Roles: map[string][]*basev0.WorkScopeV1{domain.AdminRole: scopes, domain.UserRole: scopes}})
+	scopes := []*basev1.WorkScopeV1{{ResourceKind: "example.note", Actions: []string{"read"}}}
+	_, err = svc.ApplyModule(t.Context(), domain.Module{Name: route.Alias, Principal: route.Principal, Kind: domain.KindSolution, Generation: 1, OwnerAware: true, ResourceKinds: scopes, Roles: map[string][]*basev1.WorkScopeV1{domain.AdminRole: scopes, domain.UserRole: scopes}})
 	require.NoError(t, err)
 	person := authority.Person{ID: "admin", Organization: "acme", SessionID: "example-session"}
 	approval, err := svc.Review(t.Context(), person, "acme", route.Alias)

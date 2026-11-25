@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	carrier "github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
@@ -102,7 +102,7 @@ func mintCapability(t *testing.T, kid string, priv ed25519.PrivateKey, c edgeCap
 		OrganizationID:     c.Tenant,
 		TaskID:             "task-1",
 		Audience:           c.Audience,
-		AuthorityScopes:    []*basev0.WorkScopeV1{{ResourceKind: "audit", Actions: []string{"read"}}},
+		AuthorityScopes:    []*basev1.WorkScopeV1{{ResourceKind: "audit", Actions: []string{"read"}}},
 		InstallationID:     c.Installation,
 		SessionID:          c.Session,
 		TTL:                5 * time.Minute,
