@@ -92,7 +92,7 @@ an older Core drops any manifest carrying a field it does not know and reports
 SDK revision for tracing startup and shutdown. Before a host release, move to
 a tagged Core release that contains the qualified commit. Run qualification
 with `GOWORK=off` so a workspace cannot mask the pins.
-Accounts requires Go 1.27.4. All go-grpc services pin released agent 0.1.74,
+Accounts requires Go 1.27.4. All go-grpc services pin agent 0.1.75,
 whose builder uses Go 1.27.4 under `GOTOOLCHAIN=local`; CI uses the same patch.
 Go 1.27.0 is affected by [GO-2026-6613](https://pkg.go.dev/vuln/GO-2026-6613),
 and Go 1.27.2 by [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809).
@@ -101,25 +101,25 @@ image: move the owning agent and image contract together, regenerate the recipe,
 and check the built executable's toolchain evidence. Never lower the accounts
 minimum to accommodate an older builder.
 CLI v0.1.185 requires an explicit run-level test outcome from every service
-agent. The cache, store and vault manifests pin released Redis 0.0.100,
-Postgres 0.0.146 and Vault 0.0.44, which include their owners' outcome fixes.
+agent. The cache, store and vault manifests pin Redis 0.0.101,
+Postgres 0.0.152 and Vault 0.0.45, which include their owners' outcome fixes.
 Vault 0.0.44 also corrects its owner's runtime image digest; the agent resolves
 that image, so the module pins the released agent rather than restating the digest.
 An empty legacy response is not evidence that tests passed; do not bypass that
 check or disable the service's test phase to accept it.
 
-CI selects released Codefly CLI **v0.1.221** in
-`scripts/ci/install-codefly.sh` for every planner/executor job. Use that release
+CI selects Codefly CLI **0.1.261-dev.b7187e5f9244** in
+`scripts/ci/install-codefly.sh` for every planner/executor job. The service jobs provision the v1 agent
+revisions in `scripts/ci/agent-sources.tsv`. Use that CLI
 for local runtime qualification too: the accounts service declares Codefly's
 `egress` configuration producer, which older development binaries may not
 resolve, and auth-gateway declares `hop-routes`, which a release before 0.1.219
 withheld entirely from a composition naming no module behind the hop instead of
 delivering it empty. The CLI exports the host interfaces alongside the owned API
-in one Connect contract. Released Core v0.19.7 in the module agent and `module/tools` validates that
+in one Connect contract. The Core pin in the module agent and `module/tools` validates that
 multi-package format.
 
-Accounts and auth-gateway use released SDK v0.4.1; other services retain their
-own released pins.
+Accounts and auth-gateway declare their SDK revisions in their own Go modules.
 Their listeners resolve allocated
 endpoints through `ResolveNetworkInstance`, which selects the delivered or local
 endpoint from the runtime environment; the removed `WithDefaultNetwork` switch

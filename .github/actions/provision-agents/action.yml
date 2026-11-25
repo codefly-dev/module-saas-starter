@@ -1,0 +1,21 @@
+name: Provision v1 service agents
+description: Build service agents from the selected owner revisions and prepare the object-storage gateway.
+runs:
+  using: composite
+  steps:
+    - name: Select the native agent home
+      shell: bash
+      run: |
+        echo "CODEFLY_HOME=$RUNNER_TEMP/saas-codefly" >> "$GITHUB_ENV"
+        echo "CODEFLY_AGENT_SOURCE=local" >> "$GITHUB_ENV"
+    - name: Restore exact native agent builds
+      id: agents
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/saas-codefly/agents
+        key: saas-native-agents-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/ci/agent-sources.tsv', 'scripts/ci/install-codefly.sh', 'scripts/ci/provision-agents.sh', 'module/services/*/service.codefly.yaml') }}
+    - name: Build selected native agents and gateway
+      shell: bash
+      env:
+        AGENT_CACHE_HIT: ${{ steps.agents.outputs.cache-hit }}
+      run: bash scripts/ci/provision-agents.sh

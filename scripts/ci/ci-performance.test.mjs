@@ -65,7 +65,7 @@ test('the CLI installer retries resets, verifies downloads, and fails after exha
 // places, and it is what caught this branch moving the installer to 0.1.179
 // while this constant still said 0.1.171. Deriving it from the installer would
 // make the second assertion below tautological and lose that.
-const DEFAULT_CODEFLY_VERSION = '0.1.221';
+const DEFAULT_CODEFLY_VERSION = '0.1.261-dev.b7187e5f9244';
 const HISTORICAL_SOURCE_VERSION = 'source-5234ce248b092edf1138a16ec4140dfbc8745522';
 
 test('source qualification installs the exact owner commit and never falls back or releases it', () => {
@@ -84,6 +84,11 @@ test('source qualification installs the exact owner commit and never falls back 
     assert.ok(readFileSync(join(dir, 'go-args'), 'utf8').includes(`github.com/codefly-dev/cli/cmd/codefly@${HISTORICAL_SOURCE_VERSION.slice(7)}\n`));
     assert.equal(readFileSync(join(dir, 'go-env'), 'utf8'), `off\n${dir}/codefly-bin\n`);
     assert.equal(readFileSync(pathFile, 'utf8'), `${dir}/codefly-bin\n`);
+    const candidate = run({ CODEFLY_VERSION: DEFAULT_CODEFLY_VERSION });
+    assert.equal(candidate.status, 0, candidate.stderr);
+    const args = readFileSync(join(dir, 'go-args'), 'utf8');
+    assert.ok(args.includes('github.com/codefly-dev/cli/cmd/codefly@b7187e5f9244a7aead14f592d5fb54cddc02f92c'));
+    assert.ok(args.includes('cliupdate.version=' + DEFAULT_CODEFLY_VERSION));
     writeFileSync(pathFile, '');
     assert.notEqual(run({ TEST_GO_EXIT: '1' }).status, 0);
     assert.equal(readFileSync(pathFile, 'utf8'), '', 'failed source build installs no fallback');
@@ -347,31 +352,27 @@ test('a failing quality command still fails its matrix job', () => {
   }
 });
 
-// Every task binds the digest of the agent binary it executes, so a job that
-// runs one resolves each pinned agent before it can execute or reuse anything.
-// Cold, that is a GitHub release fetch per agent: 20 and 26 downloads costing
-// 70s and 89s across runs 35277937608 and 35255201609, up to 30s for a single
-// agent. The planner spawns none and stays uncached.
-test('every job that runs a service agent restores them from one keyed cache', () => {
-  const step = job => (job.steps ?? []).find(candidate => candidate.name === 'Cache resolved service agents');
-  const installs = Object.entries(workflow.jobs)
-    .filter(([, job]) => (job.steps ?? []).some(candidate => candidate.run === 'bash scripts/ci/install-codefly.sh'));
-  assert.deepEqual(installs.filter(([, job]) => step(job)).map(([name]) => name).sort(),
-    ['codefly-build', 'codefly-quality-phases', 'codefly-supply-chain', 'sdk-boundary']);
-
-  // The service manifests carry every agent pin, so a bump earns a new entry
-  // and the fallback then restores the agents the bump did not touch
-  // — the difference between one download and a full cold resolution. Both
-  // halves carry the runner's architecture: the cached path carries an agent's
-  // version but not its platform, so a fallback that crossed architectures
-  // would restore a binary the CLI finds, runs, and cannot execute.
-  const pins = "${{ hashFiles('module/services/*/service.codefly.yaml') }}";
-  const fallback = '${{ runner.os }}-${{ runner.arch }}-';
-  for (const [name, job] of installs.filter(([, candidate]) => step(candidate))) {
-    const cache = step(job);
-    assert.equal(cache.with.path, '~/.codefly/agents', name);
-    assert.equal(cache.with['restore-keys'].trim(), `codefly-agents-${fallback}`, name);
-    assert.equal(cache.with.key, `codefly-agents-${fallback}${pins}`, name);
+test('service jobs build the exact v1 agents and the planner stays independent', () => {
+  const jobs = Object.entries(workflow.jobs).filter(([, job]) =>
+    job.steps?.some(step => step.uses === './.github/actions/provision-agents'));
+  assert.deepEqual(jobs.map(([name]) => name).sort(), [
+    'codefly-build', 'codefly-quality-phases', 'codefly-supply-chain', 'host-interface-conformance', 'sdk-boundary',
+  ]);
+  const action = parseWorkflowYaml(readFileSync(join(root, '.github/actions/provision-agents/action.yml'), 'utf8'));
+  const cache = action.runs.steps.find(step => step.uses?.startsWith('actions/cache@'));
+  assert.ok(cache.with.key.includes('scripts/ci/agent-sources.tsv'));
+  assert.equal(cache.with['restore-keys'], undefined);
+  const pins = readFileSync(join(root, 'scripts/ci/agent-sources.tsv'), 'utf8').trim().split('\n').map(row => row.split('\t'));
+  assert.equal(pins[0][0], 'service-go');
+  for (const [name, version, revision] of pins) {
+    assert.match(revision, /^[a-f0-9]{40}$/, name);
+    assert.match(version, /^\d+\.\d+\.\d+$/, name);
+  }
+  const versions = new Map(pins.map(([repo, version]) => [repo.slice('service-'.length), version]));
+  const module = parseWorkflowYaml(readFileSync(join(root, 'module/module.codefly.yaml'), 'utf8'));
+  for (const { name: service } of module.services) {
+    const manifest = parseWorkflowYaml(readFileSync(join(root, 'module/services', service, 'service.codefly.yaml'), 'utf8'));
+    assert.equal(versions.get(manifest.agent.name), manifest.agent.version, service);
   }
 });
 

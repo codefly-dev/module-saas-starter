@@ -280,7 +280,7 @@ jobs:
         working-directory: module/services/accounts/code
         env:
           AUDIT_METRICS_REQUIRE_DB: "1"
-          AUDIT_METRICS_TEST_DSN: postgres://postgres:audit-test-only@127.0.0.1:${{ job.services.audit-postgres.ports[5432] }}/audit_metrics?sslmode=disable
+          AUDIT_METRICS_TEST_DSN: postgres://postgres:audit-test-only@127.0.0.1:${{ job.services.audit-postgres.ports['5432'] }}/audit_metrics?sslmode=disable
         run: go test -race ./pkg/infra/auditmetricstest
 
   release-contract:
@@ -408,6 +408,7 @@ jobs:
             module/tools/go.sum
       - name: Install Codefly
         run: bash scripts/ci/install-codefly.sh
+      - uses: ./.github/actions/provision-agents
       - name: Hold the declared interface versions to the pin, then run the shared suite at authority main against accounts
         run: bash scripts/ci/host-interface-conformance-main.sh
 
@@ -540,21 +541,9 @@ jobs:
         env:
           GOWORK: "off"
         run: go test -run TestMergedProtocolGeneratorsUseOneInvocation .
-      # A pinned agent resolves from this directory before the Nix flake, the
-      # OCI registry and the GitHub release, so a warm one ends the resolution
-      # before the network. The bindings file is the source of truth for every
-      # pin, and the cached path carries the agent's version, so an entry
-      # restored from an older key can only be missing an agent, never wrong
-      # about one — and a miss downloads it exactly as before.
-      - name: Cache resolved service agents
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.codefly/agents
-          key: codefly-agents-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('module/services/*/service.codefly.yaml') }}
-          restore-keys: |
-            codefly-agents-${{ runner.os }}-${{ runner.arch }}-
       - name: Install Codefly
         run: bash scripts/ci/install-codefly.sh
+      - uses: ./.github/actions/provision-agents
       - name: Check endpoint procedure inventories against their listener owners
         working-directory: module/services/accounts/code
         env:
@@ -867,15 +856,9 @@ jobs:
           key: npm-quality-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('module/services/*/code/package-lock.json') }}
           restore-keys: |
             npm-quality-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache resolved service agents
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.codefly/agents
-          key: codefly-agents-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('module/services/*/service.codefly.yaml') }}
-          restore-keys: |
-            codefly-agents-${{ runner.os }}-${{ runner.arch }}-
       - name: Install Codefly
         run: bash scripts/ci/install-codefly.sh
+      - uses: ./.github/actions/provision-agents
       - name: Download the replay plan
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -1088,15 +1071,9 @@ jobs:
             go.sum
             module/tools/go.sum
             module/services/*/code/go.sum
-      - name: Cache resolved service agents
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.codefly/agents
-          key: codefly-agents-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('module/services/*/service.codefly.yaml') }}
-          restore-keys: |
-            codefly-agents-${{ runner.os }}-${{ runner.arch }}-
       - name: Install Codefly
         run: bash scripts/ci/install-codefly.sh
+      - uses: ./.github/actions/provision-agents
       # Temporal's amd64 image expands beyond Core's managed 512 MiB Syft
       # scratch volume. A host binary lets Codefly use the runner's disk.
       - name: Install Syft
@@ -1175,15 +1152,9 @@ jobs:
         with:
           version: v0.33.0
           driver: docker
-      - name: Cache resolved service agents
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.codefly/agents
-          key: codefly-agents-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('module/services/*/service.codefly.yaml') }}
-          restore-keys: |
-            codefly-agents-${{ runner.os }}-${{ runner.arch }}-
       - name: Install Codefly
         run: bash scripts/ci/install-codefly.sh
+      - uses: ./.github/actions/provision-agents
       - name: Download the replay plan
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
