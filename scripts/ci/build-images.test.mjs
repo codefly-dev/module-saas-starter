@@ -177,7 +177,7 @@ test('evidence refuses missing coverage and excludes records from before this bu
     put('scripts/ci/build-images.json', '{}');
     put('.codefly/ci/build-history-before.json', '["builder/node/old"]');
     const manifest = recipes => put('module/services/example/build-recipes/1.0.0/recipe.codefly.json',
-      JSON.stringify({ schema: 'codefly.dev/build-recipe/v2', name: 'example', version: '1.0.0', recipes }));
+      JSON.stringify({ schema: 'codefly.dev/build-recipe/v1', name: 'example', version: '1.0.0', recipes }));
     manifest([{ dockerfile: 'Dockerfile', context: '.', image: 'example/app:0.0.0' }]);
     put('module/services/example/build-recipes/1.0.0/Dockerfile', `FROM ${image}\n`);
     put('docker', `#!/usr/bin/env node
@@ -194,8 +194,14 @@ else throw new Error('A stale record must never be inspected');
     put('scripts/ci/build-images.json', JSON.stringify({ example: { images: [image] } }));
     assert.match(evidence().stderr, /Expected one completed build/);
     const report = JSON.parse(readFileSync(join(dir, '.codefly/ci/build-images.json'), 'utf8'));
+    assert.equal(report.schemaVersion, 1);
     assert.equal(report.records.length, 1);
     assert.match(report.records[0].errors[0], /found 0/);
+    // The original v1 archive recorded only file digests.
+    manifest(undefined);
+    assert.match(evidence().stderr, /contains no build instructions/);
+    manifest([]);
+    assert.match(evidence().stderr, /contains no build instructions/);
     // A recipe that names no image leaves nothing to attribute a build record
     // to, so it must fail rather than silently verify against no evidence.
     manifest([{ dockerfile: 'Dockerfile', context: '.' }]);

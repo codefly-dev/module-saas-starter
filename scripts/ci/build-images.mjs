@@ -181,8 +181,11 @@ function evidence(inventory, services) {
     const directory = `module/services/${service.name}/build-recipes/${service.agent.version}`;
     try {
       const manifest = JSON.parse(read(`${directory}/recipe.codefly.json`));
-      if (manifest.schema !== 'codefly.dev/build-recipe/v2' || manifest.name !== service.agent.name || manifest.version !== service.agent.version) {
+      if (manifest.schema !== 'codefly.dev/build-recipe/v1' || manifest.name !== service.agent.name || manifest.version !== service.agent.version) {
         throw new Error('Build recipe metadata does not match the pinned agent');
+      }
+      if (!Array.isArray(manifest.recipes) || manifest.recipes.length === 0) {
+        throw new Error('Build recipe archive contains no build instructions');
       }
       const recipes = manifest.recipes.map(recipe => ({ ...recipe, content: read(`${directory}/${recipe.dockerfile}`) }));
       errors.push(...verifyRecipeProposals(service, proposals, recipes, path => git('show', `HEAD:${path}`)));
@@ -202,7 +205,7 @@ function evidence(inventory, services) {
       records.push({ service: service.name, agent: service.agent, errors: [error.message] });
     }
   }
-  writeFileSync(resolve(root, '.codefly/ci/build-images.json'), `${JSON.stringify({ schemaVersion: 3, records }, null, 2)}\n`);
+  writeFileSync(resolve(root, '.codefly/ci/build-images.json'), `${JSON.stringify({ schemaVersion: 1, records }, null, 2)}\n`);
   console.log(JSON.stringify(records, null, 2));
   return errors;
 }
