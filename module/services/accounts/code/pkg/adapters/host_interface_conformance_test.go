@@ -649,7 +649,8 @@ func runHostInterfaceFixture(t *testing.T) {
 		LegacyStore: "principal-legacy-store", LegacyStoreCredential: credential("principal-legacy-store"), LegacyKind: "principal.legacy",
 		Admin: "fixture-alex", UserHolder: "fixture-maya", Author: "fixture-remi", Member: "fixture-no-roles", AdminHolder: "fixture-principal-admin",
 		Team: teamNamed(t, ctx, svc, fixtureOrganization, "Principal team"), TeamMember: "fixture-principal-team-member", TeamLeaver: "fixture-principal-team-leaver",
-		EmptyTeam: teamNamed(t, ctx, svc, fixtureOrganization, "Principal empty team"),
+		EmptyTeam:  teamNamed(t, ctx, svc, fixtureOrganization, "Principal empty team"),
+		SecondTeam: teamNamed(t, ctx, svc, fixtureOrganization, "Principal second team"), TwoTeamMember: "fixture-principal-two-teams",
 		OrgLeaver: "fixture-principal-org-leaver", Administrator: "fixture-store-administrator", Reader: "fixture-store-reader", NoteReader: "fixture-principal-note-reader",
 		OtherAdmin: "fixture-zoe", OtherMember: "fixture-omar", OtherTeam: teamNamed(t, ctx, svc, globexOrganization, "Ops"),
 		Existing:  "store-x",
@@ -661,6 +662,11 @@ func runHostInterfaceFixture(t *testing.T) {
 		RemoveFromOrganization: func(ctx context.Context, person string) error {
 			removedFromOrganization[person] = true
 			return svc.RemoveOrgMember(ctx, conformanceAlex, &gen.RemoveOrgMemberRequest{OrgId: fixtureOrganization, UserId: person})
+		},
+		// Deleting a team is accounts' own production path too, as the same
+		// administrator.
+		DeleteTeam: func(ctx context.Context, team string) error {
+			return svc.DeleteTeam(ctx, conformanceAlex, &gen.DeleteTeamRequest{TeamId: team})
 		},
 		SignManifest:       func(doc []byte) ([]byte, error) { return solutionhost.SignEnvelope(doc, signer) },
 		SignAuthority:      func(doc []byte) ([]byte, error) { return delivery.Sign(doc, signer.KeyID(), signer.Sign) },

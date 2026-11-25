@@ -584,9 +584,21 @@ func (s *HostInstallationServer) GrantRole(ctx context.Context, req *installatio
 }
 
 // RevokeRole ends one grant; its subject's capabilities through the installation end with it.
+// RevokeRole ends one grant. It stays idempotent, and its answer says whether
+// a grant was actually removed (grant_removed), as the core reports it: a
+// revoke of a grant nobody holds succeeds and is no revocation.
 func (s *HostInstallationServer) RevokeRole(ctx context.Context, req *installationv1.RevokeRoleRequest) (*installationv1.Installation, error) {
-	return s.change(ctx, "revoke a role", (*authority.Service).RevokeRole, authority.RoleRequest{Organization: req.GetOrganizationId(),
+	removed := false
+	out, err := s.change(ctx, "revoke a role", func(core *authority.Service, ctx context.Context, caller authority.Person, r authority.RoleRequest) (inst domain.Installation, err error) {
+		inst, removed, err = core.RevokeRoleReporting(ctx, caller, r)
+		return inst, err
+	}, authority.RoleRequest{Organization: req.GetOrganizationId(),
 		InstallationID: req.GetInstallationId(), Role: req.GetRole(), PersonID: req.GetPersonId(), TeamID: req.GetTeamId()})
+	if err != nil {
+		return nil, err
+	}
+	out.GrantRemoved = removed
+	return out, nil
 }
 
 func (s *HostInstallationServer) change(ctx context.Context, what string, do func(*authority.Service, context.Context, authority.Person, authority.RoleRequest) (domain.Installation, error), r authority.RoleRequest) (*installationv1.Installation, error) {
@@ -664,7 +676,10 @@ func (s *HostInstallationServer) List(ctx context.Context, req *installationv1.L
 // them or to a team of theirs, with those roles. It is their own navigation,
 // so it names no other holder and refuses nobody who simply holds nothing:
 // the core decides, reading their teams from the store rather than from the
-// session, so leaving a team drops an entry at once.
+// session, so leaving a team drops an entry at once. Beside them it names the
+// organization's installations by composition of the modules that declare no
+// roles (composed), which a page consuming such a module through its binding
+// names the installation by; naming one grants nothing.
 func (s *HostInstallationServer) ListHeld(ctx context.Context, req *installationv1.ListHeldRequest) (*installationv1.ListHeldResponse, error) {
 	core, err := authorityCore()
 	if err != nil {
@@ -685,6 +700,17 @@ func (s *HostInstallationServer) ListHeld(ctx context.Context, req *installation
 			out.Installations = append(out.Installations, &installationv1.HeldInstallation{
 				Installation: installationToWire(core, ctx, h.Installation), Roles: h.Roles,
 			})
+		}
+		// The installations by composition of the modules that declare no
+		// roles, as the core lists them (ComposedInstallations): nobody holds
+		// a role on one, so each is named and nothing more, to any member.
+		composed, err := core.ComposedInstallations(ctx, caller, req.GetOrganizationId())
+		if err != nil {
+			return err
+		}
+		for _, c := range composed {
+			named := installationWire(c, domain.Module{}, false)
+			out.Composed = append(out.Composed, &installationv1.Installation{Id: named.GetId(), Target: named.GetTarget(), Namespace: named.GetNamespace()})
 		}
 		return nil
 	}); err != nil {

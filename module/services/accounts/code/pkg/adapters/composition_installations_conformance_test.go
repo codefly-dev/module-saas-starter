@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
@@ -47,6 +48,22 @@ func testModulesInstalledByComposition(t *testing.T, h reviewedClosureHarness) {
 			held, err := h.svc.ReadHostInstallation(h.ctx, org, inst.GetId())
 			require.NoError(t, err)
 			require.Empty(t, held.Role, "holding no standing authority")
+		}
+		// A member's navigation names it among the composed installations and
+		// never among the held ones: nobody holds a role on it.
+		sess, err := sessionv1.NewSessionServiceClient(h.conn).SignIn(h.ctx, &sessionv1.SignInRequest{FixtureToken: "fixture-alex"})
+		require.NoError(t, err)
+		alex := metadata.AppendToOutgoingContext(h.ctx, "authorization", "Bearer "+sess.GetBearer())
+		listed, err := installationv1.NewInstallationServiceClient(h.conn).ListHeld(alex, &installationv1.ListHeldRequest{OrganizationId: fixtureOrganization})
+		require.NoError(t, err)
+		want := installed(fixtureOrganization, module).GetId()
+		i := slices.IndexFunc(listed.GetComposed(), func(c *installationv1.Installation) bool { return c.GetTarget() == module })
+		require.GreaterOrEqual(t, i, 0, "%s is named among the composed installations: %v", module, listed.GetComposed())
+		require.Equal(t, want, listed.GetComposed()[i].GetId())
+		require.Empty(t, listed.GetComposed()[i].GetPrincipalId(), "a composed installation is named, and nothing more")
+		require.True(t, slices.IsSortedFunc(listed.GetComposed(), func(a, b *installationv1.Installation) int { return strings.Compare(a.GetId(), b.GetId()) }), "sorted by installation id")
+		for _, held := range listed.GetInstallations() {
+			require.NotEqual(t, module, held.GetInstallation().GetTarget(), "nobody holds a role on a module that declares none")
 		}
 	})
 

@@ -41,10 +41,11 @@ service InstallationService {
   // target declares (a solution's, or a module page's on its composition
   // installation): the access. Idempotent; it leaves existing capabilities
   // valid. An administrator of the installation's organization, or a holder
-  // of the installer role on that installation, grants.
+  // of the admin role on that installation, grants.
   rpc GrantRole(GrantRoleRequest) returns (Installation);
   // RevokeRole ends one grant; every capability its subject holds from it is
-  // refused at once. Idempotent; the same callers as GrantRole.
+  // refused at once. Idempotent; the same callers as GrantRole. The answer's
+  // grant_removed says whether a grant was actually removed.
   rpc RevokeRole(RevokeRoleRequest) returns (Installation);
   // ListRoleGrants answers who holds which role on the installation; the same
   // callers as GrantRole.
@@ -261,6 +262,11 @@ message Installation {
   // itself once a later delivery reaches it again. A host renders it as a
   // degraded condition naming each.
   repeated string unreached = 14;
+  // Set only in the answer to RevokeRole: whether the call removed a grant.
+  // RevokeRole stays idempotent, so revoking a grant nobody holds succeeds
+  // with this false; a caller that revokes on purpose reads it rather than
+  // taking the success for a revocation. False in every other answer.
+  bool grant_removed = 15;
 
   // Status is the installation's lifecycle.
   enum Status {
@@ -307,7 +313,7 @@ message ReviewedOffer {
   // What Install takes, with a fresh operation_id; read with the rest.
   ConsentApproval approval = 1;
   string target = 2;
-  // Each role the solution declares, the installer role included. Every role
+  // Each role the solution declares, the admin role included. Every role
   // scope is confined to this installation: to what it owns, or to the
   // resources attached to it.
   repeated OfferRole roles = 3;
@@ -443,6 +449,14 @@ message ListHeldRequest {
 message ListHeldResponse {
   // The installations.
   repeated HeldInstallation installations = 1;
+  // The organisation's active installations by composition of the modules that
+  // declare no roles, which a page that consumes such a module through its
+  // binding names the module's installation by. Nobody holds a role on them,
+  // so they are not "held" and are never merged into installations: a module
+  // that checks owners answers a person's own session nothing, and a page's
+  // call reaches it through the page's own binding (a role of the page's
+  // installation). Sorted by installation id.
+  repeated Installation composed = 2;
 }
 
 // HeldInstallation is one installation the person may use.

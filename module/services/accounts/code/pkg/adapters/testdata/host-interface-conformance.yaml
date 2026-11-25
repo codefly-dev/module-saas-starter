@@ -34,6 +34,9 @@ users:
   - {id: 00000000-0000-7000-8000-0000000000d5, email: team-leaver@acme.test, name: Tess Teamleaver, role: member, provider: email, provider_id: fixture-principal-team-leaver}
   - {id: 00000000-0000-7000-8000-0000000000d6, email: org-leaver@acme.test, name: Otto Orgleaver, role: member, provider: email, provider_id: fixture-principal-org-leaver}
   - {id: 00000000-0000-7000-8000-0000000000d7, email: note-reader@acme.test, name: Nina Notereader, role: member, provider: email, provider_id: fixture-principal-note-reader}
+  # A member of both principal teams, for the union of two teams' roles on
+  # one installation; the second team is the one the target deletes.
+  - {id: 00000000-0000-7000-8000-0000000000d8, email: two-teams@acme.test, name: Tara Twoteams, role: member, provider: email, provider_id: fixture-principal-two-teams}
   # The artifact target's two members: one holds the policy kind's activate and
   # run actions through a role (consent is the action, not an administrator
   # tier), the other holds run alone and may never approve.
@@ -64,6 +67,7 @@ organizations:
       - {email: team-leaver@acme.test, role: member}
       - {email: org-leaver@acme.test, role: member}
       - {email: note-reader@acme.test, role: member}
+      - {email: two-teams@acme.test, role: member}
       - {email: artifact-approver@acme.test, role: member}
       - {email: artifact-runner@acme.test, role: member}
   - id: 00000000-0000-7000-8000-0000000000c2
@@ -80,7 +84,10 @@ teams:
   - {name: Unexposed, org: Acme Corp, members: []}
   - {name: Ops, org: Globex, members: [zoe@globex.test, omar@globex.test]}
   # No installation is granted to it until the target grants one.
-  - {name: Principal team, org: Acme Corp, members: [team-member@acme.test, team-leaver@acme.test]}
+  - {name: Principal team, org: Acme Corp, members: [team-member@acme.test, team-leaver@acme.test, two-teams@acme.test]}
+  # Granted another role than the principal team on the same installation;
+  # the target deletes it last.
+  - {name: Principal second team, org: Acme Corp, members: [two-teams@acme.test]}
   # No member: a team created during installation, before anyone joins it,
   # is granted a role, listed and revoked.
   - {name: Principal empty team, org: Acme Corp, members: []}
