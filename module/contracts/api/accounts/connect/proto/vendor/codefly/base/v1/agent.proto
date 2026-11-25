@@ -1,5 +1,5 @@
 syntax = "proto3";
-package codefly.base.v0;
+package codefly.base.v1;
 
 import "buf/validate/validate.proto";
 

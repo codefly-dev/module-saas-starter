@@ -12,7 +12,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"connectrpc.com/connect"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -116,12 +116,12 @@ func TestDelegatedOperationExchangeUsesInstalledScopesAndIsolatesRevocation(t *t
 	parent, _ := mintTestCapability(t, workContextSingleton, testCapability{
 		Audience: "example", Tenant: readOrg, Owner: readOwner,
 		Task: "019f6bf7-1111-7111-8111-111111111111", Session: "019f6bf7-2222-7222-8222-222222222222",
-		Scopes: []*basev0.WorkScopeV1{
+		Scopes: []*basev1.WorkScopeV1{
 			{ResourceKind: "receipts", Actions: []string{"append", "read"}},
 			{ResourceKind: "results", Actions: []string{"read", "write"}, ResourceIds: []string{"result-1"}},
 		},
 	})
-	exchange := func(binding string, lookup bool) (*basev0.WorkContextV1, error) {
+	exchange := func(binding string, lookup bool) (*basev1.WorkContextV1, error) {
 		module := mintModuleIdentity(t, business.ModulePrincipalID("example"), readOrg)
 		req := connect.NewRequest(&gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: binding, ParentWorkContextToken: parent, Lookup: lookup})
 		req.Header().Set(workContextHeader, module)
@@ -243,7 +243,7 @@ func TestDelegatedReadExchangePreservesChainAndRechecksAuthority(t *testing.T) {
 	workContextSingleton.authority = authority
 	journal := &readExchangeJournal{}
 	workContextSingleton.journal = journal
-	scopes := []*basev0.WorkScopeV1{{ResourceKind: "results", Actions: []string{"read"}}}
+	scopes := []*basev1.WorkScopeV1{{ResourceKind: "results", Actions: []string{"read"}}}
 	actors := []delegationHop{agentHop("actor-1", "hop-1", scopes...), agentHop("actor-2", "hop-2", scopes...)}
 	token, _ := mintTestCapability(t, workContextSingleton, testCapability{Audience: "example", Tenant: readOrg, Owner: readOwner, Task: "task", Session: "session", Scopes: scopes, Actors: actors})
 	invoke := func() (*connect.Response[gen.IssuedWorkContext], error) {
@@ -307,7 +307,7 @@ func TestDelegatedReadExchangeModuleAndParentBinding(t *testing.T) {
 				kind = "results"
 			}
 			parent, _ := mintTestCapability(t, workContextSingleton, testCapability{Audience: tc.audience, Tenant: tc.tenant, Owner: tc.owner, Task: "task", Session: "session",
-				Scopes: []*basev0.WorkScopeV1{{ResourceKind: kind, Actions: []string{"read"}, ResourceIds: tc.ids}}})
+				Scopes: []*basev1.WorkScopeV1{{ResourceKind: kind, Actions: []string{"read"}, ResourceIds: tc.ids}}})
 			module := mintModuleIdentity(t, business.ModulePrincipalID(tc.module), tc.moduleTenant)
 			req := readExchangeRequest(t, parent)
 			req.Header().Set(workContextHeader, module)
@@ -329,7 +329,7 @@ func TestDelegatedReadExchangeKeepsTheParentsResourceIDs(t *testing.T) {
 	_, _, client, _ := sourceReadFixture(t)
 	installReadBinding()
 	parent, _ := mintTestCapability(t, workContextSingleton, testCapability{Audience: "example", Tenant: readOrg, Owner: readOwner, Task: "task", Session: "session",
-		Scopes: []*basev0.WorkScopeV1{{ResourceKind: "results", Actions: []string{"read"}, ResourceIds: []string{"one-result"}}}})
+		Scopes: []*basev1.WorkScopeV1{{ResourceKind: "results", Actions: []string{"read"}, ResourceIds: []string{"one-result"}}}})
 	out, err := client.ExchangeDelegatedReadAudience(context.Background(), readExchangeRequest(t, parent))
 	require.NoError(t, err)
 	child, err := workcontext.Decode(out.Msg.GetToken())
@@ -360,7 +360,7 @@ func TestDelegatedReadExchangeRechecksInstalledBinding(t *testing.T) {
 
 // grantsExplicitly reports whether claims' effective authority names resourceID
 // explicitly for action — a wildcard over the kind does not count.
-func grantsExplicitly(claims *basev0.WorkContextV1, resourceKind, action, resourceID string) bool {
+func grantsExplicitly(claims *basev1.WorkContextV1, resourceKind, action, resourceID string) bool {
 	effective := claims.GetAuthorityScopes()
 	if chain := claims.GetActorChain(); len(chain) > 0 {
 		effective = chain[len(chain)-1].GetGrantedScopes()

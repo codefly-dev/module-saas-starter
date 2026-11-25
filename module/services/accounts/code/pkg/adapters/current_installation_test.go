@@ -9,7 +9,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"connectrpc.com/connect"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -172,7 +172,7 @@ func TestCurrentInstallationDelegationCurrentChecks(t *testing.T) {
 	workContextSingleton.authority = authority
 	journal := &readExchangeJournal{}
 	workContextSingleton.journal = journal
-	scopes := []*basev0.WorkScopeV1{{ResourceKind: "definitions", Actions: []string{"read"}}}
+	scopes := []*basev1.WorkScopeV1{{ResourceKind: "definitions", Actions: []string{"read"}}}
 	actors := []delegationHop{agentHop("actor-1", "hop-1", scopes...)}
 	token, _ := mintTestCapability(t, workContextSingleton, testCapability{Audience: "example", Tenant: readOrg, Owner: readOwner, Task: "task", Session: "session", Scopes: scopes, Actors: actors})
 	invoke := func() error {

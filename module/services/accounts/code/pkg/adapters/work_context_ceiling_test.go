@@ -8,13 +8,13 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 
 	"accounts/pkg/business"
 )
 
-func scope(kind string, actions ...string) *basev0.WorkScopeV1 {
-	return &basev0.WorkScopeV1{ResourceKind: kind, Actions: actions}
+func scope(kind string, actions ...string) *basev1.WorkScopeV1 {
+	return &basev1.WorkScopeV1{ResourceKind: kind, Actions: actions}
 }
 
 // The ceiling is read through the host's CURRENT vocabulary (issue #952), so these
@@ -96,27 +96,27 @@ func TestEnforceActorCeiling(t *testing.T) {
 	t.Run("audience and scopes within ceiling", func(t *testing.T) {
 		withHostAudiences(t, "acme.test.one")
 		require.NoError(t, enforceActorCeiling(ctx, agent, live,
-			[]*basev0.WorkScopeV1{scope("repo", "read"), scope("issue", "write")}))
+			[]*basev1.WorkScopeV1{scope("repo", "read"), scope("issue", "write")}))
 	})
 	t.Run("scope outside ceiling is denied", func(t *testing.T) {
 		withHostAudiences(t, "acme.test.one")
 		err := enforceActorCeiling(ctx, agent, live,
-			[]*basev0.WorkScopeV1{scope("repo", "read"), scope("secret", "read")})
+			[]*basev1.WorkScopeV1{scope("repo", "read"), scope("secret", "read")})
 		require.Equal(t, codes.PermissionDenied, status.Code(err))
 	})
 	t.Run("audience outside ceiling is denied before scopes", func(t *testing.T) {
 		withHostAudiences(t, "acme.test.one", "acme.test.two")
-		err := enforceActorCeiling(ctx, agent, "solution:acme.test.two", []*basev0.WorkScopeV1{scope("repo", "read")})
+		err := enforceActorCeiling(ctx, agent, "solution:acme.test.two", []*basev1.WorkScopeV1{scope("repo", "read")})
 		require.Equal(t, codes.PermissionDenied, status.Code(err))
 	})
 	t.Run("empty scope ceiling admits any resource kind", func(t *testing.T) {
 		withHostAudiences(t, "acme.test.one")
 		open := &business.Principal{AllowedAudiences: []string{live}}
 		require.NoError(t, enforceActorCeiling(ctx, open, live,
-			[]*basev0.WorkScopeV1{scope("anything", "do")}))
+			[]*basev1.WorkScopeV1{scope("anything", "do")}))
 	})
 	t.Run("nil actor is unrestricted", func(t *testing.T) {
 		withHostAudiences(t, "acme.test.one")
-		require.NoError(t, enforceActorCeiling(ctx, nil, live, []*basev0.WorkScopeV1{scope("y", "z")}))
+		require.NoError(t, enforceActorCeiling(ctx, nil, live, []*basev1.WorkScopeV1{scope("y", "z")}))
 	})
 }

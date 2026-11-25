@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	storagev0 "github.com/codefly-dev/service-object-storage/gen/codefly/storage/v0"
+	storagev1 "github.com/codefly-dev/service-object-storage/gen/codefly/storage/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -20,22 +20,22 @@ import (
 // does: the released 0.0.18 knows no binding and no batched read, so it
 // reports neither; a release with #108's binding reports its batch size.
 type composedStorage struct {
-	storagev0.UnimplementedObjectStorageServer
+	storagev1.UnimplementedObjectStorageServer
 	binding bool
 }
 
-func (c composedStorage) Capabilities(context.Context, *storagev0.CapabilitiesRequest) (*storagev0.BackendCapabilities, error) {
+func (c composedStorage) Capabilities(context.Context, *storagev1.CapabilitiesRequest) (*storagev1.BackendCapabilities, error) {
 	if !c.binding {
-		return &storagev0.BackendCapabilities{Backend: "minio"}, nil
+		return &storagev1.BackendCapabilities{Backend: "minio"}, nil
 	}
-	return &storagev0.BackendCapabilities{Backend: "minio", MaxObjectBytes: 5 << 20, MaxListLimit: 1000, MaxGetManyItems: 1000}, nil
+	return &storagev1.BackendCapabilities{Backend: "minio", MaxObjectBytes: 5 << 20, MaxListLimit: 1000, MaxGetManyItems: 1000}, nil
 }
 
-func composedStorageClient(t *testing.T, binding bool) storagev0.ObjectStorageClient {
+func composedStorageClient(t *testing.T, binding bool) storagev1.ObjectStorageClient {
 	t.Helper()
 	lis := bufconn.Listen(1 << 20)
 	srv := grpc.NewServer()
-	storagev0.RegisterObjectStorageServer(srv, composedStorage{binding: binding})
+	storagev1.RegisterObjectStorageServer(srv, composedStorage{binding: binding})
 	go func() { _ = srv.Serve(lis) }()
 	t.Cleanup(srv.Stop)
 	cc, err := grpc.NewClient("passthrough:///composed",
@@ -45,7 +45,7 @@ func composedStorageClient(t *testing.T, binding bool) storagev0.ObjectStorageCl
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = cc.Close() })
-	return storagev0.NewObjectStorageClient(cc)
+	return storagev1.NewObjectStorageClient(cc)
 }
 
 // TestObjectStorageIsRefusedAtAdmissionWhenTheComposedServiceCannotServeIt is

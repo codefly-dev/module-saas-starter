@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	storagev0 "github.com/codefly-dev/service-object-storage/gen/codefly/storage/v0"
+	storagev1 "github.com/codefly-dev/service-object-storage/gen/codefly/storage/v1"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -24,15 +24,15 @@ import (
 // reaches it: it serves a binding and a batched read, and answers List however
 // the test scripts — including the way a regressed service would.
 type listingService struct {
-	storagev0.ObjectStorageClient
-	list func(*storagev0.ListRequest) (*storagev0.ListResult, error)
+	storagev1.ObjectStorageClient
+	list func(*storagev1.ListRequest) (*storagev1.ListResult, error)
 }
 
-func (listingService) Capabilities(context.Context, *storagev0.CapabilitiesRequest, ...grpc.CallOption) (*storagev0.BackendCapabilities, error) {
-	return &storagev0.BackendCapabilities{MaxObjectBytes: 5 << 20, MaxListLimit: 1000, MaxGetManyItems: 1000}, nil
+func (listingService) Capabilities(context.Context, *storagev1.CapabilitiesRequest, ...grpc.CallOption) (*storagev1.BackendCapabilities, error) {
+	return &storagev1.BackendCapabilities{MaxObjectBytes: 5 << 20, MaxListLimit: 1000, MaxGetManyItems: 1000}, nil
 }
 
-func (l listingService) List(_ context.Context, r *storagev0.ListRequest, _ ...grpc.CallOption) (*storagev0.ListResult, error) {
+func (l listingService) List(_ context.Context, r *storagev1.ListRequest, _ ...grpc.CallOption) (*storagev1.ListResult, error) {
 	return l.list(r)
 }
 
@@ -84,8 +84,8 @@ func TestUploadSyncNeverEmptiesASourceThatHasFiles(t *testing.T) {
 				t.Fatalf("the first sync's closing listing = %+v, want one file", listings)
 			}
 
-			if err := svc.SetObjectStorage(context.Background(), listingService{list: func(*storagev0.ListRequest) (*storagev0.ListResult, error) {
-				return &storagev0.ListResult{}, nil
+			if err := svc.SetObjectStorage(context.Background(), listingService{list: func(*storagev1.ListRequest) (*storagev1.ListResult, error) {
+				return &storagev1.ListResult{}, nil
 			}}); err != nil {
 				t.Fatal(err)
 			}
@@ -172,7 +172,7 @@ func TestUploadRefusalsGetTheJobPolicyTheirReasonNames(t *testing.T) {
 			producer := &recordingProducer{}
 			store := newDatasourceFakeStore()
 			svc, _ := newDatasourceService(store, producer, nil)
-			if err := svc.SetObjectStorage(context.Background(), listingService{list: func(*storagev0.ListRequest) (*storagev0.ListResult, error) { return nil, tc.err }}); err != nil {
+			if err := svc.SetObjectStorage(context.Background(), listingService{list: func(*storagev1.ListRequest) (*storagev1.ListResult, error) { return nil, tc.err }}); err != nil {
 				t.Fatal(err)
 			}
 			source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
@@ -226,7 +226,7 @@ func TestUploadRefusalWhoseParkFailsRetries(t *testing.T) {
 	producer := &recordingProducer{}
 	store := &degradeFailingStore{datasourceFakeStore: newDatasourceFakeStore(), broken: true}
 	svc, _ := newDatasourceService(store, producer, nil)
-	if err := svc.SetObjectStorage(context.Background(), listingService{list: func(*storagev0.ListRequest) (*storagev0.ListResult, error) { return nil, refused.Err() }}); err != nil {
+	if err := svc.SetObjectStorage(context.Background(), listingService{list: func(*storagev1.ListRequest) (*storagev1.ListResult, error) { return nil, refused.Err() }}); err != nil {
 		t.Fatal(err)
 	}
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{

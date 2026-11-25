@@ -6,7 +6,7 @@ import (
 	"slices"
 	"time"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -88,7 +88,7 @@ func (s *WorkContextAuthorityServer) AdmitWorkloadOperation(
 // the refusal otherwise, and an error only when a live read could not answer.
 func (s *WorkContextAuthorityServer) admitWorkloadOperation(
 	ctx context.Context, encoded, alias, targetID string,
-) (*basev0.WorkContextV1, gen.WorkloadOperationRefusal, error) {
+) (*basev1.WorkContextV1, gen.WorkloadOperationRefusal, error) {
 	// No operation context is minted for the capability surface, and an empty
 	// alias is not a route.
 	if requireMintableAudience(alias) != nil {
@@ -161,7 +161,7 @@ func readBackRefusal(err error) (gen.WorkloadOperationRefusal, bool) {
 // session of its own task, the binding's headless scopes, idempotent, and no
 // longer than the operation-context window. Anything a re-mint, a child or
 // another service mint would add is a difference, and a difference refuses.
-func isModuleOperationContextShape(claims *basev0.WorkContextV1) bool {
+func isModuleOperationContextShape(claims *basev1.WorkContextV1) bool {
 	window := time.Duration(claims.GetExpiresAtUnix()-claims.GetIssuedAtUnix()) * time.Second
 	return len(claims.GetActorChain()) == 0 &&
 		claims.GrantHop == nil &&

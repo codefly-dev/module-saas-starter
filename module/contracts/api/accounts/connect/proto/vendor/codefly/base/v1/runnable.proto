@@ -1,11 +1,11 @@
 syntax = "proto3";
-package codefly.base.v0;
+package codefly.base.v1;
 
 import "buf/validate/validate.proto";
-import "codefly/base/v0/agent.proto";
-import "codefly/base/v0/library.proto";
-import "codefly/base/v0/network.proto";
-import "codefly/base/v0/work_context.proto";
+import "codefly/base/v1/agent.proto";
+import "codefly/base/v1/library.proto";
+import "codefly/base/v1/network.proto";
+import "codefly/base/v1/work_context.proto";
 import "google/protobuf/duration.proto";
 
 /*
@@ -64,7 +64,9 @@ message RunnableField {
     UNKNOWN = 0;
     // STRING is a UTF-8 string.
     STRING = 1;
-    // INTEGER is a 64-bit signed integer.
+    // INTEGER is a 64-bit signed integer. A protobuf 64-bit integer is not
+    // one on the Connect wire: proto3 JSON writes it as a decimal string, so it
+    // projects as a STRING of format "int64" or "uint64".
     INTEGER = 2;
     // BOOLEAN is a boolean.
     BOOLEAN = 3;
@@ -72,6 +74,14 @@ message RunnableField {
     OBJECT = 4;
     // ARRAY is a homogeneous list described by items.
     ARRAY = 5;
+    // NUMBER is a floating-point number, as a protobuf float or double is
+    // carried in proto3 JSON: a JSON number, or one of the strings "NaN",
+    // "Infinity" and "-Infinity" proto3 JSON writes a non-finite value as.
+    NUMBER = 6;
+    // JSON is any JSON value: a google.protobuf.Struct, Value or ListValue,
+    // or a protobuf map, whose members the owner does not enumerate. format
+    // narrows it to "object" or "array" where the source says so.
+    JSON = 7;
   }
   // name is the field name; empty only for an array's items.
   string name = 1;
@@ -87,6 +97,15 @@ message RunnableField {
   repeated RunnableField fields = 6;
   // items describes an ARRAY field's elements.
   RunnableField items = 7;
+  // format refines the value's spelling the way proto3 JSON carries it:
+  // "date-time" (a Timestamp, RFC 3339), "protobuf-duration" (a Duration,
+  // "1.5s" — not JSON Schema's ISO 8601 duration), "protobuf-field-mask",
+  // "byte" (base64 bytes), "int64" and "uint64" (a 64-bit integer, carried as
+  // a decimal string), "object" or "array" on a JSON value. Empty is a plain
+  // value of its type.
+  string format = 8;
+  // values are the names a STRING may take: a protobuf enum, carried by name.
+  repeated string values = 9;
 }
 
 // RunnableSchema is the typed shape of one invocation payload; the payload is
@@ -211,7 +230,7 @@ message RunnableGeneratedTarget {
 
 // RunnableClusterTarget locates the namespace one KUBERNETES invocation Job is
 // created in. The field spelling follows the Kubernetes deployment inputs
-// (codefly.services.builder.v0.KubernetesDeployment), which this deliberately
+// (codefly.services.builder.v1.KubernetesDeployment), which this deliberately
 // does not import: that message carries manifest-generation inputs, not the
 // coordinates an adapter dispatches an invocation to.
 message RunnableClusterTarget {
@@ -323,7 +342,7 @@ message RunnableExecution {
     COMPLETION_CALL = 1;
     // COMPLETION_SUBMIT accepts the work and answers later — an acceptance
     // carrying a handle, heartbeats while it runs, and a terminal answer by
-    // callback or read back by the handle (codefly/runnable/v0/submit.proto).
+    // callback or read back by the handle (codefly/runnable/v1/submit.proto).
     //
     // It requires RECOVERY_RECEIPT. A submitted invocation's reply proves only
     // acceptance, so every terminal answer it could later give is one the

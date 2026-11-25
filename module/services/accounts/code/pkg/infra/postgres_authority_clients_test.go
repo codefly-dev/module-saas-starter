@@ -13,7 +13,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/scope"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/storetest"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
@@ -89,7 +89,7 @@ func TestAuthorityClientDelegationSurvivesSQLReadListAndRevoke(t *testing.T) {
 	d := domain.Delegation{
 		ID: uuid.NewString(), Organization: org, Grantor: person, Purpose: "Client access",
 		ClientID: "client:" + uuid.NewString(), Audience: "example-principal", Resource: "https://example.com/v1/resource/mcp?exact=1",
-		Scopes:    []*basev0.WorkScopeV1{{ResourceKind: "record", Actions: []string{"read"}, ResourceIds: []string{"one"}}},
+		Scopes:    []*basev1.WorkScopeV1{{ResourceKind: "record", Actions: []string{"read"}, ResourceIds: []string{"one"}}},
 		ExpiresAt: time.Now().UTC().Truncate(time.Microsecond).Add(time.Hour),
 	}
 	check := func(got domain.Delegation) {

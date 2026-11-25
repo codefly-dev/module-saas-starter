@@ -8,7 +8,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"connectrpc.com/connect"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -43,7 +43,7 @@ func TestDelegatedOperationRoundTripPreservesOnlyInstalledReadAuthority(t *testi
 	parent, _ := mintTestCapability(t, workContextSingleton, testCapability{
 		Audience: "example", Tenant: readOrg, Owner: readOwner,
 		Task: "019f6bf7-1111-7111-8111-111111111111", Session: "019f6bf7-2222-7222-8222-222222222222",
-		Scopes: []*basev0.WorkScopeV1{
+		Scopes: []*basev1.WorkScopeV1{
 			{ResourceKind: "jobs", Actions: []string{"execute", "read"}},
 			{ResourceKind: "records", Actions: []string{"read"}},
 		},

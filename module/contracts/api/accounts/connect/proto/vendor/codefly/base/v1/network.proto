@@ -1,8 +1,8 @@
 syntax = "proto3";
-package codefly.base.v0;
+package codefly.base.v1;
 
-import "codefly/base/v0/scope.proto";
-import "codefly/base/v0/endpoint.proto";
+import "codefly/base/v1/scope.proto";
+import "codefly/base/v1/endpoint.proto";
 
 /*
 An endpoint to be accessed needs Network Mapping.
@@ -50,7 +50,7 @@ message DNS {
 // context.
 message NetworkInstance {
   // access is the runtime context from which this address is valid.
-  base.v0.NetworkAccess access = 1;
+  base.v1.NetworkAccess access = 1;
   // host is the raw host or IP for the instance.
   string host = 3;
   // hostname is the DNS-safe hostname for the instance.

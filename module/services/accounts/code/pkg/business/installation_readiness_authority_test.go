@@ -8,7 +8,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/memstore"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 )
@@ -27,9 +27,9 @@ func TestReadinessSelfOperationsMatchOwnerConsent(t *testing.T) {
 		Keys: staticKeys{"test": public}, Replay: workcontext.NewMemoryReplayStore(), HostInstallsModules: true,
 	})
 	require.NoError(t, err)
-	read := []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"read"}}}
-	write := []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"write"}}}
-	readWrite := []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"read", "write"}}}
+	read := []*basev1.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"read"}}}
+	write := []*basev1.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"write"}}}
+	readWrite := []*basev1.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"read", "write"}}}
 	store.PutOrganization(domain.Organization{ID: "acme", Name: "Acme"})
 	store.PutPerson(domain.Person{ID: "jane", Organization: "acme", Roles: []string{"reader"}})
 	for _, name := range []string{readinessPrefix, "model"} {
@@ -37,7 +37,7 @@ func TestReadinessSelfOperationsMatchOwnerConsent(t *testing.T) {
 		// its user, and what she holds there is that role's.
 		_, err := owner.ApplyModule(ctx, domain.Module{Name: name, Principal: name, Kind: domain.KindModule, Generation: 1,
 			ResourceKinds: readWrite, Page: true, InstallationRole: domain.NoInstallationRole,
-			Roles: map[string][]*basev0.WorkScopeV1{domain.AdminRole: readWrite, domain.UserRole: read},
+			Roles: map[string][]*basev1.WorkScopeV1{domain.AdminRole: readWrite, domain.UserRole: read},
 			Bindings: map[string]domain.Binding{
 				"self":         {ID: "self", Audience: name, InvokeScopes: readWrite, LookupScopes: read, HeadlessScopes: read},
 				"lookup-write": {ID: "lookup-write", Audience: name, InvokeScopes: readWrite, LookupScopes: write},

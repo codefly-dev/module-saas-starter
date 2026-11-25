@@ -6,7 +6,7 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -120,7 +120,7 @@ func TestRecheckAdmitsEveryUnscopedRead(t *testing.T) {
 		{ResourceKind: "example.content", Action: "ingest"},
 		{ResourceKind: "example.undeclared", Action: "read", ContentRead: true},
 		{ResourceKind: "example.content", Action: "read", ResourceID: "node:one"},
-	}, permissionsFromCoreScopes([]*basev0.WorkScopeV1{
+	}, permissionsFromCoreScopes([]*basev1.WorkScopeV1{
 		{ResourceKind: "example.content", Actions: []string{"read", "ingest"}},
 		{ResourceKind: "example.undeclared", Actions: []string{"read"}},
 		{ResourceKind: "example.content", Actions: []string{"read"}, ResourceIds: []string{"node:one"}},
@@ -137,7 +137,7 @@ func TestRecheckIsIndependentOfTheDeclaration(t *testing.T) {
 
 	require.Equal(t, []business.WorkContextPermission{
 		{ResourceKind: "example.content", Action: "read", ContentRead: true},
-	}, permissionsFromCoreScopes([]*basev0.WorkScopeV1{
+	}, permissionsFromCoreScopes([]*basev1.WorkScopeV1{
 		{ResourceKind: "example.content", Actions: []string{"read"}},
 	}, recheckContentReads()),
 		"a host that declares nothing must still honour a capability another host minted")

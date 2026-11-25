@@ -10,7 +10,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"connectrpc.com/connect"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -122,7 +122,7 @@ func TestSourceOperationScopeRefusalAuditSurvivesCancellation(t *testing.T) {
 			service, orgMembershipCache = svc, nil
 			t.Cleanup(func() { service, orgMembershipCache = previous, cache })
 			ctx := stampVerifiedIdentity(t.Context(), actor, org, auth.Assurance{})
-			ctx = context.WithValue(ctx, sourceOperationContextKey{}, &basev0.WorkContextV1{TenantId: org, OwnerPrincipalId: actor, AuthorityScopes: []*basev0.WorkScopeV1{{ResourceKind: "datasource.sources", Actions: tc.actions, ResourceIds: tc.ids}}})
+			ctx = context.WithValue(ctx, sourceOperationContextKey{}, &basev1.WorkContextV1{TenantId: org, OwnerPrincipalId: actor, AuthorityScopes: []*basev1.WorkScopeV1{{ResourceKind: "datasource.sources", Actions: tc.actions, ResourceIds: tc.ids}}})
 			ctx, cancel := context.WithCancel(ctx)
 			cancel()
 			_, err = (&datasourceConnectHandler{svc: svc}).InvokeSourceOperation(ctx, connect.NewRequest(&gen.InvokeSourceOperationRequest{OrgId: org, SourceId: source, Operation: "read_item", InputJson: "{}", EffectId: "refused-effect"}))

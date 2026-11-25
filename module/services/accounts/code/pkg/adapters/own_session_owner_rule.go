@@ -11,7 +11,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	corescope "github.com/codefly-dev/authority/libraries/authority-core/go/scope"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -111,7 +111,7 @@ func ownSessionRule(m domain.Module) error {
 // serves: a scope of another module's kind is inert at this audience, and is
 // decided where a binding carries it. What the core signs to answer is
 // discarded: the capability handed out is the one this mint makes.
-func holdOwnSession(ctx context.Context, org, person, audience string, scopes []*basev0.WorkScopeV1) error {
+func holdOwnSession(ctx context.Context, org, person, audience string, scopes []*basev1.WorkScopeV1) error {
 	m, composed, err := composedAudience(ctx, audience)
 	if err != nil || !composed {
 		return err
@@ -120,7 +120,7 @@ func holdOwnSession(ctx context.Context, org, person, audience string, scopes []
 	if err != nil {
 		return coreStatus(err)
 	}
-	var served []*basev0.WorkScopeV1
+	var served []*basev1.WorkScopeV1
 	for _, sc := range scopes {
 		if servesKind(m, sc) {
 			served = append(served, sc)
@@ -165,15 +165,15 @@ func holdOwnSession(ctx context.Context, org, person, audience string, scopes []
 // names carry (withOperationBindingScopes), each part already held to the
 // role at its binding's target, and is the one way such a kind is carried.
 // The refusal is the core's own, asked the same question.
-func holdMint(ctx context.Context, org, person, audience string, scopes, projected []*basev0.WorkScopeV1) error {
+func holdMint(ctx context.Context, org, person, audience string, scopes, projected []*basev1.WorkScopeV1) error {
 	m, composed, err := composedAudience(ctx, audience)
 	if err != nil || !composed {
 		return err
 	}
 	if decide.RoleGated(m) {
-		var outright []*basev0.WorkScopeV1
+		var outright []*basev1.WorkScopeV1
 		for _, sc := range scopes {
-			if !servesKind(m, sc) && !corescope.Attenuates([]*basev0.WorkScopeV1{sc}, projected) {
+			if !servesKind(m, sc) && !corescope.Attenuates([]*basev1.WorkScopeV1{sc}, projected) {
 				outright = append(outright, sc)
 			}
 		}
@@ -196,14 +196,14 @@ func holdMint(ctx context.Context, org, person, audience string, scopes, project
 }
 
 // servesKind reports whether m serves the kind sc names.
-func servesKind(m domain.Module, sc *basev0.WorkScopeV1) bool {
-	return slices.ContainsFunc(m.ResourceKinds, func(kind *basev0.WorkScopeV1) bool { return kind.GetResourceKind() == sc.GetResourceKind() })
+func servesKind(m domain.Module, sc *basev1.WorkScopeV1) bool {
+	return slices.ContainsFunc(m.ResourceKinds, func(kind *basev1.WorkScopeV1) bool { return kind.GetResourceKind() == sc.GetResourceKind() })
 }
 
 // heldThrough is scopes, carried by a person's own session through a module
 // that declares no roles to audience: nothing at an audience that declares no
 // roles either, refused by the rule's name.
-func heldThrough(ctx context.Context, audience string, scopes []*basev0.WorkScopeV1) ([]*basev0.WorkScopeV1, error) {
+func heldThrough(ctx context.Context, audience string, scopes []*basev1.WorkScopeV1) ([]*basev1.WorkScopeV1, error) {
 	target, composed, err := composedAudience(ctx, audience)
 	if err != nil || !composed {
 		return scopes, err
@@ -224,7 +224,7 @@ func heldThrough(ctx context.Context, audience string, scopes []*basev0.WorkScop
 // in holdOwnSession. Both operations a person causes are asked, since these
 // mints carry a binding's invoke or its lookup scopes. What the core signs to
 // answer is discarded; its refusal is returned as the core names it.
-func heldThroughBinding(ctx context.Context, org, person string, m domain.Module, binding string) ([]*basev0.WorkScopeV1, error) {
+func heldThroughBinding(ctx context.Context, org, person string, m domain.Module, binding string) ([]*basev1.WorkScopeV1, error) {
 	core, err := service.AuthorityCore()
 	if err != nil {
 		return nil, coreStatus(err)
@@ -234,7 +234,7 @@ func heldThroughBinding(ctx context.Context, org, person string, m domain.Module
 	if err != nil {
 		return nil, coreStatus(err)
 	}
-	var held []*basev0.WorkScopeV1
+	var held []*basev1.WorkScopeV1
 	var refusal error
 	for _, operation := range []string{"invoke", "lookup"} {
 		child, err := core.IssueChild(ctx, root.Token, authority.Workload{Module: m.Name}, authority.IssueRequest{Binding: binding, Operation: operation})
@@ -268,7 +268,7 @@ func heldThroughBinding(ctx context.Context, org, person string, m domain.Module
 // composes nothing by audience (one of the host's own), where no rule of the
 // core's applies. A module declaring no operation binding to audience holds
 // nothing there for anybody.
-func heldThroughReadBinding(ctx context.Context, org, person string, m domain.Module, audience string) (held []*basev0.WorkScopeV1, composed bool, err error) {
+func heldThroughReadBinding(ctx context.Context, org, person string, m domain.Module, audience string) (held []*basev1.WorkScopeV1, composed bool, err error) {
 	target, composed, err := composedAudience(ctx, audience)
 	if err != nil || !composed {
 		return nil, composed, err
@@ -290,7 +290,7 @@ func heldThroughReadBinding(ctx context.Context, org, person string, m domain.Mo
 // but the person's agents acting on it: their own session, or one a registered
 // agent acts on for them (StartTask naming an actor, StartChildSession). A
 // module's hop, or a delegation's, is another unit of authority.
-func personsCapability(wc *basev0.WorkContextV1) bool {
+func personsCapability(wc *basev1.WorkContextV1) bool {
 	if wc.GetOwnerPrincipalKind() != business.PrincipalKindHuman {
 		return false
 	}
@@ -304,7 +304,7 @@ func personsCapability(wc *basev0.WorkContextV1) bool {
 
 // effectiveScopes is what wc carries in effect: its last hop's granted
 // scopes, or its owner's when the owner acts directly.
-func effectiveScopes(wc *basev0.WorkContextV1) []*basev0.WorkScopeV1 {
+func effectiveScopes(wc *basev1.WorkContextV1) []*basev1.WorkScopeV1 {
 	if chain := wc.GetActorChain(); len(chain) > 0 {
 		return chain[len(chain)-1].GetGrantedScopes()
 	}
@@ -340,7 +340,7 @@ func coreRefused(err error) bool {
 // whoever acts: a capability an agent acts on for the person carries through
 // a role-gated module's binding no more than the person's own session does.
 // Scopes empty re-issue the parent's.
-func holdOwnSessionExchange(ctx context.Context, parent *basev0.WorkContextV1, audience string, scopes []*basev0.WorkScopeV1, exercised moduleBindingSeal) ([]*basev0.WorkScopeV1, error) {
+func holdOwnSessionExchange(ctx context.Context, parent *basev1.WorkContextV1, audience string, scopes []*basev1.WorkScopeV1, exercised moduleBindingSeal) ([]*basev1.WorkScopeV1, error) {
 	if !personsCapability(parent) {
 		return scopes, nil
 	}
@@ -358,7 +358,7 @@ func holdOwnSessionExchange(ctx context.Context, parent *basev0.WorkContextV1, a
 	if !decide.RoleGated(m) {
 		return heldThrough(ctx, audience, carried)
 	}
-	var held []*basev0.WorkScopeV1
+	var held []*basev1.WorkScopeV1
 	through := "a read binding"
 	if exercised.BindingID == "" {
 		var targeted bool

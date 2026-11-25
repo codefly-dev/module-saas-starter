@@ -17,7 +17,7 @@ import (
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 )
@@ -46,17 +46,17 @@ func TestRedeliveryKeepsSolutionEntitled(t *testing.T) {
 	caller := authority.Person{ID: owner, Organization: org}
 
 	page, draft := alias+".page", alias+".draft"
-	read := func(kinds ...string) []*basev0.WorkScopeV1 {
-		var out []*basev0.WorkScopeV1
+	read := func(kinds ...string) []*basev1.WorkScopeV1 {
+		var out []*basev1.WorkScopeV1
 		for _, kind := range kinds {
-			out = append(out, &basev0.WorkScopeV1{ResourceKind: kind, Actions: []string{"read"}})
+			out = append(out, &basev1.WorkScopeV1{ResourceKind: kind, Actions: []string{"read"}})
 		}
 		return out
 	}
-	all := []*basev0.WorkScopeV1{{ResourceKind: page, Actions: []string{"read", "write"}}, {ResourceKind: draft, Actions: []string{"read", "write"}}}
+	all := []*basev1.WorkScopeV1{{ResourceKind: page, Actions: []string{"read", "write"}}, {ResourceKind: draft, Actions: []string{"read", "write"}}}
 	// deliver is the delivery of generation n, on both sides of the host: the
 	// core's declaration and the host's applied binding.
-	deliver := func(generation uint64, roles map[string][]*basev0.WorkScopeV1) {
+	deliver := func(generation uint64, roles map[string][]*basev1.WorkScopeV1) {
 		t.Helper()
 		roles[domain.AdminRole] = all
 		m := domain.Module{Name: alias, Principal: "solution:" + alias, Kind: domain.KindSolution, Generation: generation,
@@ -110,7 +110,7 @@ func TestRedeliveryKeepsSolutionEntitled(t *testing.T) {
 		}))
 	}
 
-	deliver(1, map[string][]*basev0.WorkScopeV1{domain.UserRole: read(page, draft)})
+	deliver(1, map[string][]*basev1.WorkScopeV1{domain.UserRole: read(page, draft)})
 	approval, err := core.Review(testCtx, caller, org, alias)
 	require.NoError(t, err)
 	approval.OperationID = business.NewIDString()
@@ -136,14 +136,14 @@ func TestRedeliveryKeepsSolutionEntitled(t *testing.T) {
 	approved(1)
 
 	t.Run("a redelivery asking nothing new re-converges the consent and keeps the grants", func(t *testing.T) {
-		deliver(2, map[string][]*basev0.WorkScopeV1{domain.UserRole: read(page)})
+		deliver(2, map[string][]*basev1.WorkScopeV1{domain.UserRole: read(page)})
 		current := stands(2, false)
 		require.Greater(t, current.Revision, installed.Revision, "the revision moves with the re-convergence")
 		require.Equal(t, 1, grants(inst.ID))
 		approved(2)
 	})
 	t.Run("a redelivery asking more leaves the installation healthy on its consent, offering an upgrade", func(t *testing.T) {
-		deliver(3, map[string][]*basev0.WorkScopeV1{domain.UserRole: read(page, draft)})
+		deliver(3, map[string][]*basev1.WorkScopeV1{domain.UserRole: read(page, draft)})
 		stands(2, true)
 		require.Equal(t, 1, grants(inst.ID))
 	})

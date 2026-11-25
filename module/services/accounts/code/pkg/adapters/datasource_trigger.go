@@ -9,7 +9,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"connectrpc.com/connect"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/sdk-go/receipts"
 	"github.com/codefly-dev/sdk-go/receipts/connecttransport"
 	"google.golang.org/protobuf/proto"
@@ -108,7 +108,7 @@ func (h *datasourceConnectHandler) ReconcileSource(
 		return nil, connect.NewError(connect.CodeUnavailable, errors.New("source receipts unavailable"))
 	}
 	check := func(ctx context.Context) error {
-		if _, present := ctx.Value(sourceOperationContextKey{}).(*basev0.WorkContextV1); present {
+		if _, present := ctx.Value(sourceOperationContextKey{}).(*basev1.WorkContextV1); present {
 			if _, err := authenticateSourceOperationContext(ctx, req.Header()); err != nil {
 				return err
 			}

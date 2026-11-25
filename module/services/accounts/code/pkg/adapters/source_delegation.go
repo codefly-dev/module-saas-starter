@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -148,7 +148,7 @@ func (h *moduleCapabilitiesConnectHandler) MintSourceOperationContext(ctx contex
 // record is the delegation's use event.
 func (s *WorkContextAuthorityServer) StartSourceOperationTask(
 	ctx context.Context, authority business.SourceOperationContextAuthority,
-) (string, *basev0.WorkContextV1, error) {
+) (string, *basev1.WorkContextV1, error) {
 	return s.startSourceOperation(ctx, authority, business.SourceOperationContextTTL)
 }
 
@@ -156,7 +156,7 @@ func (s *WorkContextAuthorityServer) StartSourceOperationTask(
 // ttl — an exchange of a delegated parent is held to what is left of it.
 func (s *WorkContextAuthorityServer) startSourceOperation(
 	ctx context.Context, authority business.SourceOperationContextAuthority, ttl time.Duration,
-) (string, *basev0.WorkContextV1, error) {
+) (string, *basev1.WorkContextV1, error) {
 	if !s.configured() {
 		return "", nil, ErrWorkContextAuthorityUnconfigured
 	}

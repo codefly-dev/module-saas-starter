@@ -14,7 +14,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	corework "github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -92,7 +92,7 @@ type moduleActorCase struct {
 	solutions    *solutionInstallations
 	parent       *gen.IssuedWorkContext
 	moduleToken  string
-	moduleClaims *basev0.WorkContextV1
+	moduleClaims *basev1.WorkContextV1
 }
 
 func moduleActorFixture(t *testing.T, scopes []*gen.WorkContextScope) moduleActorCase {
@@ -122,7 +122,7 @@ func (c moduleActorCase) exchange(binding, parent, credential string, lookup boo
 // revision asks the host whether a child still stands, as a callee does:
 // presenting its own module Work Context and naming the operation binding the
 // child seals.
-func (c moduleActorCase) revision(t *testing.T, child *basev0.WorkContextV1) error {
+func (c moduleActorCase) revision(t *testing.T, child *basev1.WorkContextV1) error {
 	t.Helper()
 	subjects := []*gen.WorkContextRevisionSubject{{PrincipalId: child.OwnerPrincipalId, Scopes: wireScopes(child.AuthorityScopes)}}
 	for _, hop := range child.ActorChain {
@@ -134,7 +134,7 @@ func (c moduleActorCase) revision(t *testing.T, child *basev0.WorkContextV1) err
 	return err
 }
 
-func wireScopes(scopes []*basev0.WorkScopeV1) []*gen.WorkContextScope {
+func wireScopes(scopes []*basev1.WorkScopeV1) []*gen.WorkContextScope {
 	out := make([]*gen.WorkContextScope, 0, len(scopes))
 	for _, scope := range scopes {
 		out = append(out, &gen.WorkContextScope{ResourceKind: scope.ResourceKind, Actions: scope.Actions, ResourceIds: scope.ResourceIds})
@@ -242,7 +242,7 @@ func TestModuleActorExchangeRefusals(t *testing.T) {
 	t.Run("a parent that already has a chain", func(t *testing.T) {
 		c := moduleActorFixture(t, moduleActorScopes)
 		c.server.authority = &readExchangeAuthority{facts: &business.WorkContextAuthorityFacts{OrganizationRevision: 7, PrincipalRevision: 3}}
-		scopes := []*basev0.WorkScopeV1{{ResourceKind: "profiles", Actions: []string{"invoke", "read"}}}
+		scopes := []*basev1.WorkScopeV1{{ResourceKind: "profiles", Actions: []string{"invoke", "read"}}}
 		token, _ := mintTestCapability(t, c.server, testCapability{Audience: "reader", Tenant: readOrg, Owner: readOwner, Scopes: scopes, Actors: []delegationHop{agentHop("actor-1", "hop-1", scopes...)}})
 		out, err := c.exchange("act", token, c.moduleToken, false)
 		require.Error(t, err)

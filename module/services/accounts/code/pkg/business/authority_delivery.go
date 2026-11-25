@@ -10,7 +10,7 @@ import (
 
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
 	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/wool"
 	"github.com/codefly-dev/core/workcontext"
 	"google.golang.org/protobuf/proto"
@@ -150,11 +150,11 @@ func (s *Service) verifyAuthorityDocument(signed *compositionv1.SignedManifestV1
 // validateAuthorityRoles keeps signed person roles within served authority and
 // explicit invoke/lookup bindings. Headless authority cannot become a role.
 func validateAuthorityRoles(manifest *solutionhost.ModuleManifest, doc *compositionv1.AuthorityManifestV1) error {
-	var allowed []*basev0.WorkScopeV1
+	var allowed []*basev1.WorkScopeV1
 	ceiled := map[string]bool{}
 	for _, scope := range doc.GetScopeCeilings() {
 		ceiled[scope.GetResourceKind()] = true
-		allowed = append(allowed, &basev0.WorkScopeV1{ResourceKind: scope.GetResourceKind(), Actions: scope.GetActions()})
+		allowed = append(allowed, &basev1.WorkScopeV1{ResourceKind: scope.GetResourceKind(), Actions: scope.GetActions()})
 	}
 	var served []string
 	if manifest.Authority != nil {
@@ -162,7 +162,7 @@ func validateAuthorityRoles(manifest *solutionhost.ModuleManifest, doc *composit
 		for _, binding := range manifest.Authority.Bindings {
 			for _, operation := range []string{"invoke", "lookup"} {
 				for _, scope := range scopesOf(binding.Operations[operation]) {
-					allowed = append(allowed, &basev0.WorkScopeV1{ResourceKind: scope.ResourceKind, Actions: scope.Actions})
+					allowed = append(allowed, &basev1.WorkScopeV1{ResourceKind: scope.ResourceKind, Actions: scope.Actions})
 				}
 			}
 		}
@@ -177,7 +177,7 @@ func validateAuthorityRoles(manifest *solutionhost.ModuleManifest, doc *composit
 			// A served kind with no signed action ceiling permits the role's
 			// actions; an explicit ceiling and all consumed kinds are bounded.
 			unbounded := slices.Contains(served, scope.GetResourceKind()) && !ceiled[scope.GetResourceKind()]
-			asked := &basev0.WorkScopeV1{ResourceKind: scope.GetResourceKind(), Actions: scope.GetActions(), ResourceIds: scope.GetResourceIds()}
+			asked := &basev1.WorkScopeV1{ResourceKind: scope.GetResourceKind(), Actions: scope.GetActions(), ResourceIds: scope.GetResourceIds()}
 			if len(asked.Actions) == 0 || (!unbounded && !workcontext.ScopeContained(asked, allowed)) {
 				return fmt.Errorf("%w: role %q of %s grants beyond its served or invoke/lookup authority", ErrSolutionDeliveryRefused, role.GetName(), manifest.Alias)
 			}
@@ -188,7 +188,7 @@ func validateAuthorityRoles(manifest *solutionhost.ModuleManifest, doc *composit
 
 // CheckDeliveredMethod reads the exact applied generation, re-verifying both
 // signatures with current pins. A pending generation cannot change live policy.
-func (s *Service) CheckDeliveredMethod(ctx context.Context, audience, method string, held []*basev0.WorkScopeV1) error {
+func (s *Service) CheckDeliveredMethod(ctx context.Context, audience, method string, held []*basev1.WorkScopeV1) error {
 	doc, _, err := s.appliedAuthorityDocument(ctx, audience)
 	if err != nil {
 		return err
@@ -313,7 +313,7 @@ func (s *Service) verifyDeliveredGeneration(ctx context.Context, audience, bindi
 	return record, core, doc, nil
 }
 
-func checkMethodPolicy(doc *compositionv1.AuthorityManifestV1, audience, method string, held []*basev0.WorkScopeV1) error {
+func checkMethodPolicy(doc *compositionv1.AuthorityManifestV1, audience, method string, held []*basev1.WorkScopeV1) error {
 	var selected *compositionv1.MethodPolicyV1
 	for _, policy := range doc.GetMethods() {
 		if policy.GetMethod() == method || strings.TrimPrefix(method, "POST ") == policy.GetMethod() {
@@ -344,12 +344,12 @@ func checkMethodPolicy(doc *compositionv1.AuthorityManifestV1, audience, method 
 	// Method admission checks kind and action eligibility. The module checks
 	// exact resources against the original scopes returned by Check; admitting
 	// the method must neither require nor grant whole-kind resource authority.
-	eligibility := make([]*basev0.WorkScopeV1, 0, len(held))
+	eligibility := make([]*basev1.WorkScopeV1, 0, len(held))
 	for _, scope := range held {
-		eligibility = append(eligibility, &basev0.WorkScopeV1{ResourceKind: scope.GetResourceKind(), Actions: scope.GetActions()})
+		eligibility = append(eligibility, &basev1.WorkScopeV1{ResourceKind: scope.GetResourceKind(), Actions: scope.GetActions()})
 	}
 	for _, scope := range selected.GetRequires() {
-		required := &basev0.WorkScopeV1{ResourceKind: scope.GetResourceKind(), Actions: scope.GetActions()}
+		required := &basev1.WorkScopeV1{ResourceKind: scope.GetResourceKind(), Actions: scope.GetActions()}
 		if !workcontext.ScopeContained(required, eligibility) {
 			return fmt.Errorf("%s requires %s:%s for %s, which the call does not hold", audience, scope.GetResourceKind(), strings.Join(scope.GetActions(), ","), method)
 		}

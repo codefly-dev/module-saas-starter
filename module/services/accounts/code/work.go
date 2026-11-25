@@ -46,7 +46,7 @@ import (
 	"github.com/codefly-dev/core/wool"
 	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 	codefly "github.com/codefly-dev/sdk-go"
-	storagev0 "github.com/codefly-dev/service-object-storage/gen/codefly/storage/v0"
+	storagev1 "github.com/codefly-dev/service-object-storage/gen/codefly/storage/v1"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	otelmetric "go.opentelemetry.io/otel/metric"
@@ -366,7 +366,7 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 		return nil, err
 	}
 	if objectStorage != nil {
-		if err := service.SetObjectStorage(ctx, storagev0.NewObjectStorageClient(objectStorage)); err != nil {
+		if err := service.SetObjectStorage(ctx, storagev1.NewObjectStorageClient(objectStorage)); err != nil {
 			// Not a start failure: the host runs, and object storage is refused
 			// by name in the catalog, at AddSource and at sync.
 			wool.Get(ctx).Warn("the composed object-storage service cannot read a tenant's bucket; object-storage datasources are unavailable", wool.ErrField(err))
@@ -397,7 +397,7 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 	default:
 		service.SetAuditArchive(business.AuditArchive{
 			Prefix: auditArchivePrefix,
-			Store:  objectstore.NewHostStore(storagev0.NewObjectStorageClient(objectStorage)),
+			Store:  objectstore.NewHostStore(storagev1.NewObjectStorageClient(objectStorage)),
 		})
 		w.Info("daily audit archive enabled", wool.Field("prefix", auditArchivePrefix))
 	}

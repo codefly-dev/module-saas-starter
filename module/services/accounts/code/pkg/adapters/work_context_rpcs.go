@@ -18,7 +18,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
 
@@ -569,7 +569,7 @@ func (s *WorkContextAuthorityServer) StartTask(
 	authorityScopes := req.GetAuthorityScopes()
 	eligible := mintContentReads(req.GetAudience())
 	var standing []string
-	var projected []*basev0.WorkScopeV1
+	var projected []*basev1.WorkScopeV1
 	if service != nil && req.GetActorPrincipalId() == "" {
 		var release func()
 		var err error
@@ -795,7 +795,7 @@ func (s *WorkContextAuthorityServer) holdConfinedMintToItsConsumer(
 	ctx context.Context,
 	req *gen.StartTaskWorkContextRequest,
 	permissions []business.WorkContextPermission,
-	scopes []*basev0.WorkScopeV1,
+	scopes []*basev1.WorkScopeV1,
 ) (*business.ConsumerCeiling, error) {
 	resource, confined := accountsauth.VerifiedResourceConfinement(ctx)
 	if !confined {
@@ -898,7 +898,7 @@ func (s *WorkContextAuthorityServer) holdConfinedMintToItsConsumer(
 // declared bindings are written in, for a containment check. Nothing is
 // normalized: a requested action or resource id the declaration does not name
 // verbatim is outside it.
-func moduleOperationScopes(scopes []*basev0.WorkScopeV1) []business.ModuleOperationScope {
+func moduleOperationScopes(scopes []*basev1.WorkScopeV1) []business.ModuleOperationScope {
 	out := make([]business.ModuleOperationScope, 0, len(scopes))
 	for _, scope := range scopes {
 		out = append(out, business.ModuleOperationScope{
@@ -984,7 +984,7 @@ func (s *WorkContextAuthorityServer) startInstallationTask(
 
 // Shared by the ordinary headless mint and the leased install step. Only the
 // latter resolves pending consent; neither path changes ordinary use admission.
-func (s *WorkContextAuthorityServer) signInstallationTask(ctx context.Context, req *gen.StartInstallationTaskRequest, facts *business.InstallationAuthorityFacts, scopes []*basev0.WorkScopeV1, owner installationOwnership) (*gen.IssuedWorkContext, error) {
+func (s *WorkContextAuthorityServer) signInstallationTask(ctx context.Context, req *gen.StartInstallationTaskRequest, facts *business.InstallationAuthorityFacts, scopes []*basev1.WorkScopeV1, owner installationOwnership) (*gen.IssuedWorkContext, error) {
 	// An installation context is always agent-actored; a nil actor means the store
 	// broke its contract (a healthy resolve always names the agent). Fail closed
 	// rather than mint an unattributed token.
@@ -1013,7 +1013,7 @@ const (
 
 // refuseInstallationStepKind refuses a caller-supplied scope that names the
 // install step's kind, however it is cased or padded.
-func refuseInstallationStepKind(scopes []*basev0.WorkScopeV1) error {
+func refuseInstallationStepKind(scopes []*basev1.WorkScopeV1) error {
 	for _, scope := range scopes {
 		if strings.EqualFold(strings.TrimSpace(scope.GetResourceKind()), InstallationStepResourceKind) {
 			return status.Errorf(codes.InvalidArgument, "an installation's scope may not name %q: the install step's own scope is the host's to add", InstallationStepResourceKind)
@@ -1035,7 +1035,7 @@ func refuseInstallationStepKind(scopes []*basev0.WorkScopeV1) error {
 // So the hop always grants the one thing the step is: this installation's
 // install. It is added after the ceiling, which governs the kinds an agent may
 // be delegated over a module's resources and has no say over the step itself.
-func (s *WorkContextAuthorityServer) signInstallationStep(ctx context.Context, req *gen.StartInstallationTaskRequest, facts *business.InstallationAuthorityFacts, scopes []*basev0.WorkScopeV1) (*gen.IssuedWorkContext, error) {
+func (s *WorkContextAuthorityServer) signInstallationStep(ctx context.Context, req *gen.StartInstallationTaskRequest, facts *business.InstallationAuthorityFacts, scopes []*basev1.WorkScopeV1) (*gen.IssuedWorkContext, error) {
 	if facts.Actor == nil {
 		return nil, status.Error(codes.Internal, "installation authority resolved without an agent actor")
 	}
@@ -1047,7 +1047,7 @@ func (s *WorkContextAuthorityServer) signInstallationStep(ctx context.Context, r
 	if err := enforceActorCeiling(ctx, facts.Actor, req.GetAudience(), scopes); err != nil {
 		return nil, err
 	}
-	step := append(cloneWorkScopes(scopes), &basev0.WorkScopeV1{
+	step := append(cloneWorkScopes(scopes), &basev1.WorkScopeV1{
 		ResourceKind: InstallationStepResourceKind,
 		Actions:      []string{InstallationStepAction},
 		ResourceIds:  []string{req.GetInstallationId()},
@@ -1057,7 +1057,7 @@ func (s *WorkContextAuthorityServer) signInstallationStep(ctx context.Context, r
 }
 
 // mintInstallationTask signs resolved, ceiling-checked installation authority.
-func (s *WorkContextAuthorityServer) mintInstallationTask(ctx context.Context, req *gen.StartInstallationTaskRequest, facts *business.InstallationAuthorityFacts, scopes []*basev0.WorkScopeV1, owner installationOwnership) (*gen.IssuedWorkContext, error) {
+func (s *WorkContextAuthorityServer) mintInstallationTask(ctx context.Context, req *gen.StartInstallationTaskRequest, facts *business.InstallationAuthorityFacts, scopes []*basev1.WorkScopeV1, owner installationOwnership) (*gen.IssuedWorkContext, error) {
 	// Sealed to the installation the authority is drawn from. The session is a
 	// fresh one: this caller holds a service credential, not a session, and a
 	// session id a caller names is never signed (see callerSession).
@@ -1209,7 +1209,7 @@ const moduleWorkContextTTL = 15 * time.Minute
 // execution binding, live consent, tenant validation and the issuance audit.
 func (s *WorkContextAuthorityServer) StartModuleTask(
 	ctx context.Context, authority business.ModuleWorkContextAuthority,
-) (string, *basev0.WorkContextV1, error) {
+) (string, *basev1.WorkContextV1, error) {
 	return s.mint(ctx, mintRequest{
 		Start: workcontext.StartInput{
 			TenantID:           authority.Tenant,
@@ -1247,7 +1247,7 @@ func askedTTL(asked, ceiling time.Duration) time.Duration {
 // issuance audit event.
 func (s *WorkContextAuthorityServer) StartModuleOperationTask(
 	ctx context.Context, authority business.ModuleOperationContextAuthority,
-) (string, *basev0.WorkContextV1, error) {
+) (string, *basev1.WorkContextV1, error) {
 	// The same rule every mint runs, stated once: an empty audience, and the
 	// capability surface's own, are both refused. The error KIND stays this
 	// path's own (core's ErrInvalid), because its callers map it.
@@ -1419,7 +1419,7 @@ func (s *WorkContextAuthorityServer) ExchangeAudience(
 // current-parent checks. session is the issuer-assigned session the exchanged
 // capability opens ("" for a fresh one).
 func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
-	ctx context.Context, parent *basev0.WorkContextV1, actor *business.Principal,
+	ctx context.Context, parent *basev1.WorkContextV1, actor *business.Principal,
 	req *gen.ExchangeWorkContextAudienceRequest, session string, exercised moduleBindingSeal,
 ) (*gen.IssuedWorkContext, error) {
 	if req.GetAudience() == parent.GetAudience() {
@@ -1466,7 +1466,7 @@ func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
 // every turn was refused "widens authority" before the first model call. Only
 // a kind, an action or an id the parent never
 // carried is a widening, and that stays refused by name.
-func attenuateEffective(parent *basev0.WorkContextV1, requested []*basev0.WorkScopeV1) ([]*basev0.WorkScopeV1, error) {
+func attenuateEffective(parent *basev1.WorkContextV1, requested []*basev1.WorkScopeV1) ([]*basev1.WorkScopeV1, error) {
 	if len(requested) == 0 {
 		return nil, nil
 	}
@@ -1474,7 +1474,7 @@ func attenuateEffective(parent *basev0.WorkContextV1, requested []*basev0.WorkSc
 	if chain := parent.GetActorChain(); len(chain) > 0 {
 		effective = chain[len(chain)-1].GetGrantedScopes()
 	}
-	attenuated := make([]*basev0.WorkScopeV1, 0, len(requested))
+	attenuated := make([]*basev1.WorkScopeV1, 0, len(requested))
 	for _, scope := range requested {
 		if workcontext.ScopeContained(scope, effective) {
 			attenuated = append(attenuated, scope)
@@ -1495,7 +1495,7 @@ func attenuateEffective(parent *basev0.WorkContextV1, requested []*basev0.WorkSc
 // kind — so what it returns is exactly what that check then verifies. nil when
 // the ceiling already names ids or the parent holds the kind unrestricted or
 // not at all.
-func narrowToParentIDs(scope *basev0.WorkScopeV1, effective []*basev0.WorkScopeV1) *basev0.WorkScopeV1 {
+func narrowToParentIDs(scope *basev1.WorkScopeV1, effective []*basev1.WorkScopeV1) *basev1.WorkScopeV1 {
 	if len(scope.GetResourceIds()) != 0 {
 		return nil
 	}
@@ -1506,7 +1506,7 @@ func narrowToParentIDs(scope *basev0.WorkScopeV1, effective []*basev0.WorkScopeV
 		if len(held.GetResourceIds()) == 0 {
 			return nil
 		}
-		narrowed := proto.Clone(scope).(*basev0.WorkScopeV1)
+		narrowed := proto.Clone(scope).(*basev1.WorkScopeV1)
 		narrowed.ResourceIds = slices.Clone(held.GetResourceIds())
 		return narrowed
 	}
@@ -1597,7 +1597,7 @@ func (s *WorkContextAuthorityServer) StartChildSession(
 // TestAPersonsCapabilityIsSealedToItsAudiencesInstallation pins the invariant
 // over every person mint.
 func (s *WorkContextAuthorityServer) requireChildKeepsAudienceSeal(
-	ctx context.Context, parent *basev0.WorkContextV1, audience string,
+	ctx context.Context, parent *basev1.WorkContextV1, audience string,
 ) error {
 	switch parent.GetOwnerPrincipalKind() {
 	case business.PrincipalKindHuman:
@@ -1657,7 +1657,7 @@ func (s *WorkContextAuthorityServer) RenewWorkContext(
 		return nil, err
 	}
 	parent := verified.Context()
-	var scopes []*basev0.WorkScopeV1
+	var scopes []*basev1.WorkScopeV1
 	if len(req.GetAttenuatedScopes()) > 0 {
 		// Only the validated wire scopes are wanted here: a renewal draws its
 		// authority from requireCurrentAuthority on the parent, not from a fresh
@@ -1716,7 +1716,7 @@ func (s *WorkContextAuthorityServer) RenewWorkContext(
 // a name the column cannot hold and would silently drop.
 func (s *WorkContextAuthorityServer) journalActorHop(
 	ctx context.Context,
-	signed *basev0.WorkContextV1,
+	signed *basev1.WorkContextV1,
 ) error {
 	return s.journalHopThrough(ctx, signed, business.ActorChainHopBinding{}, "")
 }
@@ -1742,7 +1742,7 @@ func delegatedHopRowID(delegationID, taskID string) string {
 // journalKeys is every row id a capability's hops may be recorded under: each
 // hop's own id, and the per-issue row a delegation's hop is recorded under. A
 // reader asks for both rather than deciding which hop acts under a delegation.
-func journalKeys(taskID string, chain []*basev0.WorkActorV1) []string {
+func journalKeys(taskID string, chain []*basev1.WorkActorV1) []string {
 	keys := make([]string, 0, 2*len(chain))
 	for _, hop := range chain {
 		if id := hop.GetDelegationId(); id != "" {
@@ -1758,7 +1758,7 @@ func journalKeys(taskID string, chain []*basev0.WorkActorV1) []string {
 // (business.ConfirmModuleChain).
 func (s *WorkContextAuthorityServer) journalHopThrough(
 	ctx context.Context,
-	signed *basev0.WorkContextV1,
+	signed *basev1.WorkContextV1,
 	through business.ActorChainHopBinding,
 	under string,
 ) error {
@@ -1814,7 +1814,7 @@ func (s *WorkContextAuthorityServer) journalHopThrough(
 func (s *WorkContextAuthorityServer) requireChainNotRevoked(
 	ctx context.Context,
 	orgID, taskID string,
-	actors []*basev0.WorkActorV1,
+	actors []*basev1.WorkActorV1,
 ) error {
 	if s.journal == nil {
 		return nil
@@ -1834,7 +1834,7 @@ func (s *WorkContextAuthorityServer) requireChainNotRevoked(
 	return nil
 }
 
-func actorChainScopes(scopes []*basev0.WorkScopeV1) []business.ActorChainScope {
+func actorChainScopes(scopes []*basev1.WorkScopeV1) []business.ActorChainScope {
 	out := make([]business.ActorChainScope, 0, len(scopes))
 	for _, scope := range scopes {
 		out = append(out, business.ActorChainScope{
@@ -1958,7 +1958,7 @@ func (s *WorkContextAuthorityServer) verifyActorParent(
 func (s *WorkContextAuthorityServer) requireCurrentAuthority(
 	ctx context.Context,
 	orgID string,
-	parent *basev0.WorkContextV1,
+	parent *basev1.WorkContextV1,
 ) (*business.Principal, error) {
 	if business.NamesInstalledBinding(parent.GetOperationBinding().GetBindingId()) {
 		return nil, s.requireInstalledBinding(ctx, parent)
@@ -2040,7 +2040,7 @@ func (s *WorkContextAuthorityServer) resolveAuthority(
 // that. allowed_scopes is the coarser, non-redundant "which resource kinds may
 // this agent ever touch via a Work Context" cap that RBAC does not express.
 func enforceActorCeiling(
-	ctx context.Context, actor *business.Principal, audience string, scopes []*basev0.WorkScopeV1,
+	ctx context.Context, actor *business.Principal, audience string, scopes []*basev1.WorkScopeV1,
 ) error {
 	if err := enforceActorAudience(ctx, actor, audience); err != nil {
 		return err
@@ -2104,9 +2104,9 @@ func enforceActorAudience(ctx context.Context, actor *business.Principal, audien
 func workContextScopes(
 	input []*gen.WorkContextScope,
 	eligible contentReadEligible,
-) ([]business.WorkContextPermission, []*basev0.WorkScopeV1, error) {
+) ([]business.WorkContextPermission, []*basev1.WorkScopeV1, error) {
 	permissions := make([]business.WorkContextPermission, 0)
-	scopes := make([]*basev0.WorkScopeV1, 0, len(input))
+	scopes := make([]*basev1.WorkScopeV1, 0, len(input))
 	seenScopes := make(map[string]struct{}, len(input))
 	for _, scope := range input {
 		if scope == nil {
@@ -2116,7 +2116,7 @@ func workContextScopes(
 		if resourceKind != scope.GetResourceKind() {
 			return nil, nil, errors.New("resource_kind must not have surrounding whitespace")
 		}
-		coreScope := &basev0.WorkScopeV1{
+		coreScope := &basev1.WorkScopeV1{
 			ResourceKind: resourceKind,
 			Actions:      append([]string(nil), scope.GetActions()...),
 			ResourceIds:  append([]string(nil), scope.GetResourceIds()...),
@@ -2225,7 +2225,7 @@ func markContentReads(
 }
 
 func permissionsFromCoreScopes(
-	scopes []*basev0.WorkScopeV1,
+	scopes []*basev1.WorkScopeV1,
 	eligible contentReadEligible,
 ) []business.WorkContextPermission {
 	permissions := make([]business.WorkContextPermission, 0)
@@ -2250,10 +2250,10 @@ func permissionsFromCoreScopes(
 	return markContentReads(permissions, eligible)
 }
 
-func cloneWorkScopes(scopes []*basev0.WorkScopeV1) []*basev0.WorkScopeV1 {
-	out := make([]*basev0.WorkScopeV1, 0, len(scopes))
+func cloneWorkScopes(scopes []*basev1.WorkScopeV1) []*basev1.WorkScopeV1 {
+	out := make([]*basev1.WorkScopeV1, 0, len(scopes))
 	for _, scope := range scopes {
-		out = append(out, &basev0.WorkScopeV1{
+		out = append(out, &basev1.WorkScopeV1{
 			ResourceKind: scope.GetResourceKind(),
 			Actions:      append([]string(nil), scope.GetActions()...),
 			ResourceIds:  append([]string(nil), scope.GetResourceIds()...),
@@ -2278,7 +2278,7 @@ func workContextTTL(seconds int32) time.Duration {
 
 func issuedWorkContext(
 	token string,
-	signed *basev0.WorkContextV1,
+	signed *basev1.WorkContextV1,
 ) *gen.IssuedWorkContext {
 	currentActor := signed.GetOwnerPrincipalId()
 	if actors := signed.GetActorChain(); len(actors) > 0 {

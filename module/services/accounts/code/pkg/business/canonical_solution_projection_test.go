@@ -5,7 +5,7 @@ import (
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 )
 
 func TestCanonicalSolutionEntitlementRequiresAcknowledgedHeldInstallation(t *testing.T) {
@@ -102,7 +102,7 @@ func canonicalProjectionFixture() (authority.HeldInstallation, domain.Module, Av
 		AgentRole: "machine", InstalledBy: "owner",
 	}, Roles: []string{"reader"}}, domain.Module{
 		Name: "example", Principal: "signed-principal", Kind: domain.KindSolution, Generation: 7,
-		Roles: map[string][]*basev0.WorkScopeV1{"reader": {{ResourceKind: "example.page", Actions: []string{"read"}}}},
+		Roles: map[string][]*basev1.WorkScopeV1{"reader": {{ResourceKind: "example.page", Actions: []string{"read"}}}},
 	}, AvailableSolutionTarget{
 		Kind: "solution", TargetID: "immutable-host-target", BindingID: "delivered-binding", RouteAlias: "example", AppliedGeneration: 7,
 	}, "signed-principal"

@@ -7,7 +7,7 @@ import (
 
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
 	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
@@ -74,7 +74,7 @@ func TestMethodPolicyAdmitsResourceLimitedAuthorityUnchanged(t *testing.T) {
 		{Method: "/example.Service/Read", Requires: []*authorityv1.WorkScopeV1{{ResourceKind: "example", Actions: []string{"read"}}}},
 		{Method: "GET /records/{id}", AnyCheckedCaller: true}, {Method: "/example.Service/Unmarked"},
 	}}
-	held := []*basev0.WorkScopeV1{{ResourceKind: "example", Actions: []string{"read"}}}
+	held := []*basev1.WorkScopeV1{{ResourceKind: "example", Actions: []string{"read"}}}
 	require.NoError(t, checkMethodPolicy(doc, "example", "/example.Service/Read", held))
 	require.NoError(t, checkMethodPolicy(doc, "example", "POST /example.Service/Read", held))
 	require.NoError(t, checkMethodPolicy(doc, "example", "GET /records/one", held))
@@ -85,15 +85,15 @@ func TestMethodPolicyAdmitsResourceLimitedAuthorityUnchanged(t *testing.T) {
 	require.NoError(t, checkMethodPolicy(doc, "example", "/example.Service/Read", held))
 	require.True(t, proto.Equal(before, held[0]), "method admission must preserve resource limits")
 	require.ErrorContains(t, checkMethodPolicy(doc, "example", "/example.Service/Read", nil), "does not hold")
-	for _, scope := range []*basev0.WorkScopeV1{
+	for _, scope := range []*basev1.WorkScopeV1{
 		{ResourceKind: "other", Actions: []string{"read"}, ResourceIds: []string{"one"}},
 		{ResourceKind: "example", Actions: []string{"write"}, ResourceIds: []string{"one"}},
 	} {
-		require.ErrorContains(t, checkMethodPolicy(doc, "example", "/example.Service/Read", []*basev0.WorkScopeV1{scope}), "does not hold")
+		require.ErrorContains(t, checkMethodPolicy(doc, "example", "/example.Service/Read", []*basev1.WorkScopeV1{scope}), "does not hold")
 	}
 	doc.Methods[0].Requires[0].Actions = []string{"read", "write"}
 	require.ErrorContains(t, checkMethodPolicy(doc, "example", "/example.Service/Read", held), "does not hold")
-	held = append(held, &basev0.WorkScopeV1{ResourceKind: "example", Actions: []string{"write"}, ResourceIds: []string{"two"}})
+	held = append(held, &basev1.WorkScopeV1{ResourceKind: "example", Actions: []string{"write"}, ResourceIds: []string{"two"}})
 	require.NoError(t, checkMethodPolicy(doc, "example", "/example.Service/Read", held))
 	require.True(t, proto.Equal(before, held[0]))
 	require.Equal(t, []string{"two"}, held[1].ResourceIds)

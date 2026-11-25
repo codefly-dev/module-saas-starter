@@ -12,7 +12,7 @@ import (
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -88,7 +88,7 @@ func TestModuleDeclaredNonePersistsConsentWithoutStandingGrant(t *testing.T) {
 	// choice it never makes: the store refuses the marker.
 	params.RoleID = ""
 	m.InstallationRole = ""
-	m.Roles = map[string][]*basev0.WorkScopeV1{domain.AdminRole: {{ResourceKind: "records", Actions: []string{"read"}}}}
+	m.Roles = map[string][]*basev1.WorkScopeV1{domain.AdminRole: {{ResourceKind: "records", Actions: []string{"read"}}}}
 	require.NoError(t, testStore.AuthorityCore().Write(testCtx, func(tx authority.Tx) error { return tx.PutModule(m) }))
 	err = testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error { _, err := testStore.InstallSolution(ctx, params); return err })
 	require.ErrorContains(t, err, "does not select no standing authority")

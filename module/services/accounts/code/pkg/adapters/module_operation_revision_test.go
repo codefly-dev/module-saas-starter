@@ -11,7 +11,7 @@ import (
 	"accounts/pkg/business/moduleregistrytest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -25,7 +25,7 @@ func revisionTestContext(t *testing.T, prefix, tenant string) context.Context {
 	return callingModuleContext(t, WorkContextSingleton(), business.ModulePrincipalID(prefix), tenant)
 }
 
-func revisionScopes(scopes []*basev0.WorkScopeV1) []*gen.WorkContextScope {
+func revisionScopes(scopes []*basev1.WorkScopeV1) []*gen.WorkContextScope {
 	out := make([]*gen.WorkContextScope, 0, len(scopes))
 	for _, scope := range scopes {
 		out = append(out, &gen.WorkContextScope{
@@ -40,7 +40,7 @@ func revisionScopes(scopes []*basev0.WorkScopeV1) []*gen.WorkContextScope {
 // revisionRequestFromClaims builds the request exactly as a consumer's SDK does:
 // the owner with the authority scopes, then every actor with its granted
 // scopes, the revision the token carries, and the operation binding it sealed.
-func revisionRequestFromClaims(signed *basev0.WorkContextV1) *gen.CheckAuthorizationRevisionRequest {
+func revisionRequestFromClaims(signed *basev1.WorkContextV1) *gen.CheckAuthorizationRevisionRequest {
 	subjects := []*gen.WorkContextRevisionSubject{{
 		PrincipalId: signed.GetOwnerPrincipalId(),
 		Scopes:      revisionScopes(signed.GetAuthorityScopes()),
@@ -68,7 +68,7 @@ func revisionRequestFromClaims(signed *basev0.WorkContextV1) *gen.CheckAuthoriza
 	return request
 }
 
-func mintedOperationContextClaims(t *testing.T) *basev0.WorkContextV1 {
+func mintedOperationContextClaims(t *testing.T) *basev1.WorkContextV1 {
 	t.Helper()
 	resp, err := mintModuleOperationContext("documents", moduleToken(t, "documents"), "model")
 	require.NoError(t, err)

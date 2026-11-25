@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/resources"
 	"gopkg.in/yaml.v3"
 )
@@ -63,7 +63,7 @@ func TestVaultEndpointIsPrivateAndResolvesOnlyWithinItsModule(t *testing.T) {
 		Module: "saas-starter", Name: "vault",
 		Endpoints: []*resources.EndpointReference{{Name: "http"}},
 	}}
-	mappings := []*basev0.NetworkMapping{{Endpoint: declaration}}
+	mappings := []*basev1.NetworkMapping{{Endpoint: declaration}}
 	composition := &resources.Workspace{Name: "example-workspace", Modules: []*resources.ModuleReference{{Name: "saas-starter"}, {Name: "example"}}}
 	resolved, err := resources.ResolveDependencyNetworkMappings(composition, "saas-starter", dependencies, mappings)
 	if err != nil || len(resolved) != 1 {

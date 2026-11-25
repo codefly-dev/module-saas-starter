@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -159,7 +159,7 @@ func operationShape(change func(*mintRequest)) admissionMint {
 				TenantID: authority.Tenant, OwnerPrincipalID: authority.PrincipalID,
 				OwnerPrincipalKind: business.PrincipalKindService, OrganizationID: authority.Tenant,
 				TaskID: uuid.NewString(), Audience: "modelservice", InstallationID: installation,
-				AuthorityScopes: []*basev0.WorkScopeV1{{ResourceKind: "modelservice.profiles", Actions: []string{"read"}}},
+				AuthorityScopes: []*basev1.WorkScopeV1{{ResourceKind: "modelservice.profiles", Actions: []string{"read"}}},
 			},
 			Replay: workcontext.ReplayIdempotent,
 			TTL:    business.ModuleOperationContextTTL,
@@ -368,7 +368,7 @@ func workloadOperationRows() []admissionRow {
 				server := newCoreTestServer(t, &workContextAuthorityFake{facts: &business.WorkContextAuthorityFacts{OrganizationRevision: 12}}, seals)
 				token, _ := mintTestCapability(t, server, testCapability{
 					Audience: "documents", Tenant: renewOrgID, Owner: renewActorID,
-					Scopes: []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"read"}}},
+					Scopes: []*basev1.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"read"}}},
 				})
 				seals.revision = 13
 				return server, "documents", token
@@ -385,7 +385,7 @@ func workloadOperationRows() []admissionRow {
 			operationShape(func(r *mintRequest) {
 				r.Hops = []delegationHop{{
 					PrincipalID: r.Start.OwnerPrincipalID, PrincipalKind: business.PrincipalKindService, DelegationID: uuid.NewString(),
-					GrantedScopes: []*basev0.WorkScopeV1{{ResourceKind: "modelservice.profiles", Actions: []string{"read"}}},
+					GrantedScopes: []*basev1.WorkScopeV1{{ResourceKind: "modelservice.profiles", Actions: []string{"read"}}},
 				}}
 			})},
 		{"agent owner", "", business.PrincipalKindAgent, person,
@@ -579,10 +579,10 @@ type serviceParentRow struct {
 
 // serviceParent is a service principal's capability for audience, sealed to
 // installation: the module operation context's shape, owned by module.
-func serviceParent(t *testing.T, server *WorkContextAuthorityServer, tenant, module, audience, installation string, scopes ...*basev0.WorkScopeV1) string {
+func serviceParent(t *testing.T, server *WorkContextAuthorityServer, tenant, module, audience, installation string, scopes ...*basev1.WorkScopeV1) string {
 	t.Helper()
 	if len(scopes) == 0 {
-		scopes = []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"read"}}}
+		scopes = []*basev1.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"read"}}}
 	}
 	token, _ := mintTestCapability(t, server, testCapability{
 		Audience: audience, Tenant: tenant, Owner: business.ModulePrincipalID(module), OwnerKind: business.PrincipalKindService,
@@ -637,7 +637,7 @@ func serviceParentRows() []serviceParentRow {
 			service.SetModuleCapabilities(nil, nil, installedOperationRegistry(true))
 			// A declared module's own capability, addressed to the exchanging one.
 			parent := serviceParent(t, workContextSingleton, readOrg, "example", "example", "installation-example",
-				&basev0.WorkScopeV1{ResourceKind: "results", Actions: []string{"read", "write"}})
+				&basev1.WorkScopeV1{ResourceKind: "results", Actions: []string{"read", "write"}})
 			req := connect.NewRequest(&gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: "generate", ParentWorkContextToken: parent})
 			req.Header().Set(workContextHeader, mintModuleIdentity(t, business.ModulePrincipalID("example"), readOrg))
 			req.Header().Set("x-codefly-internal-token", "source-read-test-perimeter")
@@ -652,7 +652,7 @@ func serviceParentRows() []serviceParentRow {
 			installReadBinding()
 			// A declared module's own capability, addressed to the exchanging one.
 			parent := serviceParent(t, workContextSingleton, readOrg, "example", "example", "installation-example",
-				&basev0.WorkScopeV1{ResourceKind: "results", Actions: []string{"read", "write"}})
+				&basev1.WorkScopeV1{ResourceKind: "results", Actions: []string{"read", "write"}})
 			out, err := client.ExchangeDelegatedReadAudience(context.Background(), readExchangeRequest(t, parent))
 			if err != nil {
 				return workContextSingleton, "", err
@@ -888,7 +888,7 @@ func TestAdmitWorkloadOperationConsumesNothing(t *testing.T) {
 		server := newCoreTestServer(t, &workContextAuthorityFake{facts: &business.WorkContextAuthorityFacts{OrganizationRevision: 12}}, newSealAnswersFake(12))
 		token, _ := mintTestCapability(t, server, testCapability{
 			Audience: "documents", Tenant: renewOrgID, Owner: renewActorID, Replay: workcontext.ReplaySingleUse,
-			Scopes: []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"read"}}},
+			Scopes: []*basev1.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"read"}}},
 		})
 		for range 3 {
 			answer := admitWorkload(t, server, token, "documents")
@@ -1000,7 +1000,7 @@ func TestOperationContextShapeAdmitsOnlyTheOwnersOwnBinding(t *testing.T) {
 	require.NoError(t, err)
 	decoded, err := workcontext.Decode(resp.GetToken())
 	require.NoError(t, err)
-	claims := proto.Clone(decoded.Context()).(*basev0.WorkContextV1)
+	claims := proto.Clone(decoded.Context()).(*basev1.WorkContextV1)
 	owner := claims.GetOwnerPrincipalId()
 	require.Equal(t, moduleWorkContextTenant+"/documents/model", claims.GetOperationBinding().GetBindingId())
 	require.True(t, isModuleOperationContextShape(claims))

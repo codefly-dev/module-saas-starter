@@ -21,7 +21,7 @@ import (
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
@@ -55,7 +55,7 @@ func TestCanonicalSolutionActivationFencesAcknowledgedPrerequisites(t *testing.T
 			}))
 			m := domain.Module{Name: alias, Principal: "solution:" + alias, Kind: domain.KindSolution, Generation: 1,
 				EdgeDependencies: []domain.EdgeDependency{{Module: dependencyName, Presence: "required"}},
-				InstallationRole: "none", Roles: map[string][]*basev0.WorkScopeV1{domain.AdminRole: {{ResourceKind: "roles", Actions: []string{"write"}}}}}
+				InstallationRole: "none", Roles: map[string][]*basev1.WorkScopeV1{domain.AdminRole: {{ResourceKind: "roles", Actions: []string{"write"}}}}}
 			require.NoError(t, store.Write(testCtx, func(tx authority.Tx) error {
 				if err := tx.PutModule(domain.Module{Name: dependencyName, Principal: dependencyName, Kind: domain.KindModule, Generation: 1}); err != nil {
 					return err

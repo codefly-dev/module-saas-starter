@@ -15,7 +15,7 @@ import (
 	"accounts/pkg/business/moduleregistrytest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	carrier "github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
@@ -63,7 +63,7 @@ func installDelegationAuthority(t *testing.T, w *delegationWorld) delegationSign
 
 // verify reads a capability the host issued: its signature under the test key,
 // then its claims.
-func (d delegationSigning) verify(t *testing.T, token string) *basev0.WorkContextV1 {
+func (d delegationSigning) verify(t *testing.T, token string) *basev1.WorkContextV1 {
 	t.Helper()
 	decoded, err := workcontext.Decode(token)
 	require.NoError(t, err)
@@ -75,9 +75,9 @@ func (d delegationSigning) verify(t *testing.T, token string) *basev0.WorkContex
 // forge signs claims with the host's key exactly as core encodes them, so a
 // test can present a parent the minting API would refuse to produce and see
 // the HOST refuse it.
-func (d delegationSigning) forge(t *testing.T, claims *basev0.WorkContextV1) string {
+func (d delegationSigning) forge(t *testing.T, claims *basev1.WorkContextV1) string {
 	t.Helper()
-	claims = proto.Clone(claims).(*basev0.WorkContextV1)
+	claims = proto.Clone(claims).(*basev1.WorkContextV1)
 	claims.KeyId, claims.Issuer = d.keyID, "accounts.test"
 	claims.Nonce = business.NewIDString()
 	for _, hop := range claims.ActorChain {
@@ -122,8 +122,8 @@ func exchangeAsRuntime(t *testing.T, runtimeTenant, parent string) (*gen.IssuedW
 		&gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: "ingest", ParentWorkContextToken: parent})
 }
 
-func revisionRequest(signed *basev0.WorkContextV1) *gen.CheckAuthorizationRevisionRequest {
-	scopes := func(in []*basev0.WorkScopeV1) []*gen.WorkContextScope {
+func revisionRequest(signed *basev1.WorkContextV1) *gen.CheckAuthorizationRevisionRequest {
+	scopes := func(in []*basev1.WorkScopeV1) []*gen.WorkContextScope {
 		out := make([]*gen.WorkContextScope, 0, len(in))
 		for _, scope := range in {
 			out = append(out, &gen.WorkContextScope{ResourceKind: scope.GetResourceKind(), Actions: scope.GetActions(), ResourceIds: scope.GetResourceIds()})
@@ -144,7 +144,7 @@ func revisionRequest(signed *basev0.WorkContextV1) *gen.CheckAuthorizationRevisi
 // checkRevision asks the revision oracle as the runtime module, the consumer
 // holding these capabilities, does: with its own module identity, minted from
 // its pod's projected token for the organization of the work it is checking.
-func checkRevision(t *testing.T, signed *basev0.WorkContextV1) error {
+func checkRevision(t *testing.T, signed *basev1.WorkContextV1) error {
 	t.Helper()
 	asker := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
 		carrier.HeaderName, moduleIdentity(t, runtimeModule, runtimeModuleToken, signed.GetTenantId()),
@@ -232,9 +232,9 @@ func TestSourceDelegation_ExchangeRefusesParentsTheDelegationDoesNotAuthorize(t 
 	// seal, execution and binding are all genuine — and is refused by the host's
 	// own re-check, which reads the delegation the binding points at
 	// (PermissionDenied).
-	scopes := []*basev0.WorkScopeV1{{ResourceKind: "collections", Actions: []string{"read", "write"}}}
+	scopes := []*basev1.WorkScopeV1{{ResourceKind: "collections", Actions: []string{"read", "write"}}}
 	forge := func(owner, delegationID string, revision uint64, actors bool) string {
-		claims := proto.Clone(genuine).(*basev0.WorkContextV1)
+		claims := proto.Clone(genuine).(*basev1.WorkContextV1)
 		claims.OwnerPrincipalId, claims.AuthorizationRevision = owner, revision
 		claims.Audience, claims.AuthorityScopes = runtimeModule, scopes
 		if actors {
@@ -311,7 +311,7 @@ func exchangeByReference(t *testing.T, runtimeTenant, delegationID, binding stri
 		})
 }
 
-func scopeActions(scopes []*basev0.WorkScopeV1) map[string][]string {
+func scopeActions(scopes []*basev1.WorkScopeV1) map[string][]string {
 	out := make(map[string][]string, len(scopes))
 	for _, scope := range scopes {
 		out[scope.GetResourceKind()] = scope.GetActions()
@@ -548,15 +548,15 @@ func TestSourceDelegation_MultiHopActorChainIsRefusedUnderADelegation(t *testing
 	// sealed, and the extra hop is a real, attested module at its live epoch with
 	// docstore still last, exercising its own binding — so core admits the chain
 	// and the refusal is the host's one-actor rule.
-	scopes := []*basev0.WorkScopeV1{{ResourceKind: "collections", Actions: []string{"read", "write"}}}
+	scopes := []*basev1.WorkScopeV1{{ResourceKind: "collections", Actions: []string{"read", "write"}}}
 	reports := business.ModulePrincipalID(otherModule)
 	epoch, err := w.svc.WorkContextPrincipalEpoch(testCtx, w.org, reports)
 	require.NoError(t, err)
-	extra := proto.Clone(genuine.GetActorChain()[0]).(*basev0.WorkActorV1)
+	extra := proto.Clone(genuine.GetActorChain()[0]).(*basev1.WorkActorV1)
 	extra.PrincipalId, extra.PrincipalEpoch, extra.GrantedScopes = reports, epoch, scopes
-	deeperContext := proto.Clone(genuine).(*basev0.WorkContextV1)
+	deeperContext := proto.Clone(genuine).(*basev1.WorkContextV1)
 	deeperContext.Audience, deeperContext.AuthorityScopes = runtimeModule, scopes
-	deeperContext.ActorChain = []*basev0.WorkActorV1{extra, deeperContext.ActorChain[0]}
+	deeperContext.ActorChain = []*basev1.WorkActorV1{extra, deeperContext.ActorChain[0]}
 	deeperContext.ActorChain[1].GrantedScopes = scopes
 	deeper := signing.forge(t, deeperContext)
 

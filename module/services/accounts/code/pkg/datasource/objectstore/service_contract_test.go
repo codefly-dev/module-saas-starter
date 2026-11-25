@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	storagev0 "github.com/codefly-dev/service-object-storage/gen/codefly/storage/v0"
+	storagev1 "github.com/codefly-dev/service-object-storage/gen/codefly/storage/v1"
 
 	"accounts/pkg/datasource/connector"
 )
@@ -138,7 +138,7 @@ func freePort(t *testing.T) int {
 // startGateway runs the pinned gateway on its own in-memory bucket, admitting
 // store — and nothing else non-public — as a composed dependency, and returns a
 // client presenting its token.
-func startGateway(t *testing.T, store *httptest.Server) storagev0.ObjectStorageClient {
+func startGateway(t *testing.T, store *httptest.Server) storagev1.ObjectStorageClient {
 	t.Helper()
 	bin := pinnedGateway(t)
 	_, storePort, _ := net.SplitHostPort(strings.TrimPrefix(store.URL, "http://"))
@@ -177,10 +177,10 @@ func startGateway(t *testing.T, store *httptest.Server) storagev0.ObjectStorageC
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = cc.Close() })
-	return storagev0.NewObjectStorageClient(cc)
+	return storagev1.NewObjectStorageClient(cc)
 }
 
-func contractBucket(client storagev0.ObjectStorageClient, store *httptest.Server, prefix string) *ServiceBucket {
+func contractBucket(client storagev1.ObjectStorageClient, store *httptest.Server, prefix string) *ServiceBucket {
 	_, port, _ := net.SplitHostPort(strings.TrimPrefix(store.URL, "http://"))
 	cfg := SourceConfig{Endpoint: "http://localhost:" + port, Region: "us-east-1", Bucket: "contract", Prefix: prefix}
 	return NewServiceBucket(client, cfg, "contract-key", "contract-secret")

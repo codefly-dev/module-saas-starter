@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -43,7 +43,7 @@ func personCapability(t *testing.T, server *WorkContextAuthorityServer, audience
 	t.Helper()
 	token, _ := mintTestCapability(t, server, testCapability{
 		Audience: audience, Tenant: renewOrgID, Owner: renewActorID, Task: renewTaskID, Session: renewSession,
-		Scopes:       []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"read"}}},
+		Scopes:       []*basev1.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"read"}}},
 		Installation: installation,
 	})
 	return token
@@ -102,9 +102,9 @@ func mintDelegatedContextSealedTo(t *testing.T, server *WorkContextAuthorityServ
 	t.Helper()
 	token, _ := mintTestCapability(t, server, testCapability{
 		Audience: "tool.test", Tenant: renewOrgID, Owner: renewOwnerID, Task: renewTaskID, Session: renewSession,
-		Scopes: []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"append", "read"}}},
+		Scopes: []*basev1.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"append", "read"}}},
 		Actors: []delegationHop{agentHop(renewActorID, "019f6bf7-3333-7333-8333-333333333371",
-			&basev0.WorkScopeV1{ResourceKind: "evidence", Actions: []string{"append", "read"}})},
+			&basev1.WorkScopeV1{ResourceKind: "evidence", Actions: []string{"append", "read"}})},
 		Installation: installation,
 	})
 	return token
@@ -120,7 +120,7 @@ func TestR1093_AModuleExchangeIsSealedToTheBindingAudiencesInstallation(t *testi
 	parent, parentClaims := mintTestCapability(t, workContextSingleton, testCapability{
 		Audience: "example", Tenant: readOrg, Owner: readOwner,
 		Task: "019f6bf7-1111-7111-8111-111111111111", Session: "019f6bf7-2222-7222-8222-222222222222",
-		Scopes: []*basev0.WorkScopeV1{{ResourceKind: "results", Actions: []string{"read", "write"}, ResourceIds: []string{"result-1"}}},
+		Scopes: []*basev1.WorkScopeV1{{ResourceKind: "results", Actions: []string{"read", "write"}, ResourceIds: []string{"result-1"}}},
 	})
 	require.Equal(t, testInstallation("example"), parentClaims.GetSeal().GetInstallationId())
 

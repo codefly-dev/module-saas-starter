@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/network"
 	"github.com/codefly-dev/core/resources"
 	"gopkg.in/yaml.v3"
@@ -164,13 +164,13 @@ func loadServiceTopology(moduleName string, service serviceDefinition) (topology
 	// vault, the Next.js server) declares it under spec.deployment.endpoint-ports,
 	// and an endpoint that binds its allocated port (a go-grpc named endpoint)
 	// declares none and takes the Service port.
-	coreEndpoints := make([]*basev0.Endpoint, 0, len(manifest.Endpoints))
+	coreEndpoints := make([]*basev1.Endpoint, 0, len(manifest.Endpoints))
 	for _, endpoint := range manifest.Endpoints {
 		visibility, err := endpointVisibility(endpoint.Visibility, endpoint.Location, false)
 		if err != nil {
 			return topologyService{}, fmt.Errorf("service %q endpoint %q: %w", service.name, endpoint.Name, err)
 		}
-		coreEndpoints = append(coreEndpoints, &basev0.Endpoint{
+		coreEndpoints = append(coreEndpoints, &basev1.Endpoint{
 			Name: endpoint.Name, Api: endpointAPI(endpoint.Name, endpoint.API), Visibility: visibility,
 		})
 	}

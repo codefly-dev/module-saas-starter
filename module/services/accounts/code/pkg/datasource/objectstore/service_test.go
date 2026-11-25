@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	storagev0 "github.com/codefly-dev/service-object-storage/gen/codefly/storage/v0"
+	storagev1 "github.com/codefly-dev/service-object-storage/gen/codefly/storage/v1"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -32,7 +32,7 @@ import (
 // item and the bytes of each one found at it. It checks the bound credential,
 // can be throttled, counts every call, and records every binding it was handed.
 type fakeService struct {
-	storagev0.UnimplementedObjectStorageServer
+	storagev1.UnimplementedObjectStorageServer
 	mu            sync.Mutex
 	objects       map[string]string // full key -> content
 	pageSize      int
@@ -49,14 +49,14 @@ type fakeService struct {
 	throttled     atomic.Bool
 	authenticated atomic.Bool
 	calls         atomic.Int64
-	bindings      []*storagev0.Binding
-	listReqs      []*storagev0.ListRequest
-	getManys      []*storagev0.GetManyRequest
+	bindings      []*storagev1.Binding
+	listReqs      []*storagev1.ListRequest
+	getManys      []*storagev1.GetManyRequest
 }
 
 // call is what every RPC does first: count, record, then refuse as the
 // service would — its own error, a refused credential, a throttle.
-func (f *fakeService) call(b *storagev0.Binding) error {
+func (f *fakeService) call(b *storagev1.Binding) error {
 	f.calls.Add(1)
 	f.mu.Lock()
 	f.bindings = append(f.bindings, b)
@@ -74,12 +74,12 @@ func (f *fakeService) call(b *storagev0.Binding) error {
 	return nil
 }
 
-func (f *fakeService) Capabilities(_ context.Context, req *storagev0.CapabilitiesRequest) (*storagev0.BackendCapabilities, error) {
+func (f *fakeService) Capabilities(_ context.Context, req *storagev1.CapabilitiesRequest) (*storagev1.BackendCapabilities, error) {
 	if err := f.call(req.GetBinding()); err != nil {
 		return nil, err
 	}
 	if f.unbound {
-		return &storagev0.BackendCapabilities{Backend: "minio"}, nil
+		return &storagev1.BackendCapabilities{Backend: "minio"}, nil
 	}
 	batch := f.maxBatch
 	switch {
@@ -88,10 +88,10 @@ func (f *fakeService) Capabilities(_ context.Context, req *storagev0.Capabilitie
 	case batch == 0:
 		batch = 1000
 	}
-	return &storagev0.BackendCapabilities{Backend: "s3", MaxObjectBytes: MaxObjectBytes, MaxListLimit: int32(f.pageSize), MaxGetManyItems: int32(batch)}, nil
+	return &storagev1.BackendCapabilities{Backend: "s3", MaxObjectBytes: MaxObjectBytes, MaxListLimit: int32(f.pageSize), MaxGetManyItems: int32(batch)}, nil
 }
 
-func (f *fakeService) List(_ context.Context, req *storagev0.ListRequest) (*storagev0.ListResult, error) {
+func (f *fakeService) List(_ context.Context, req *storagev1.ListRequest) (*storagev1.ListResult, error) {
 	if err := f.call(req.GetBinding()); err != nil {
 		return nil, err
 	}
@@ -118,12 +118,12 @@ func (f *fakeService) List(_ context.Context, req *storagev0.ListRequest) (*stor
 		size++
 	}
 	end := min(start+size, len(rel))
-	res := &storagev0.ListResult{}
+	res := &storagev1.ListResult{}
 	if f.stray != "" && start == 0 {
-		res.Objects = append(res.Objects, &storagev0.ObjectInfo{Key: f.stray, Etag: etagOf("stray"), Size: 5})
+		res.Objects = append(res.Objects, &storagev1.ObjectInfo{Key: f.stray, Etag: etagOf("stray"), Size: 5})
 	}
 	for _, r := range rel[start:end] {
-		res.Objects = append(res.Objects, &storagev0.ObjectInfo{Key: r, Etag: etagOf(f.objects[folder+r]), Size: int64(len(f.objects[folder+r]))})
+		res.Objects = append(res.Objects, &storagev1.ObjectInfo{Key: r, Etag: etagOf(f.objects[folder+r]), Size: int64(len(f.objects[folder+r]))})
 	}
 	if end < len(rel) {
 		res.NextPageToken = fmt.Sprint(end)
@@ -131,7 +131,7 @@ func (f *fakeService) List(_ context.Context, req *storagev0.ListRequest) (*stor
 	return res, nil
 }
 
-func (f *fakeService) GetMany(req *storagev0.GetManyRequest, stream grpc.ServerStreamingServer[storagev0.GetManyResponse]) error {
+func (f *fakeService) GetMany(req *storagev1.GetManyRequest, stream grpc.ServerStreamingServer[storagev1.GetManyResponse]) error {
 	if err := f.call(req.GetBinding()); err != nil {
 		return err
 	}
@@ -145,25 +145,25 @@ func (f *fakeService) GetMany(req *storagev0.GetManyRequest, stream grpc.ServerS
 	}
 	f.mu.Unlock()
 	for i, item := range req.GetItems() {
-		header := &storagev0.GetManyHeader{Index: int32(i)}
+		header := &storagev1.GetManyHeader{Index: int32(i)}
 		if f.misorder && i == 0 {
 			header.Index = 1
 		}
 		switch content := contents[i]; {
 		case content == nil:
-			header.Outcome = storagev0.GetManyOutcome_GET_MANY_OUTCOME_NOT_FOUND
+			header.Outcome = storagev1.GetManyOutcome_GET_MANY_OUTCOME_NOT_FOUND
 		case item.GetIfMatch() != "" && item.GetIfMatch() != etagOf(*content):
-			header.Outcome = storagev0.GetManyOutcome_GET_MANY_OUTCOME_CHANGED
+			header.Outcome = storagev1.GetManyOutcome_GET_MANY_OUTCOME_CHANGED
 		case len(*content) > MaxObjectBytes:
-			header.Outcome = storagev0.GetManyOutcome_GET_MANY_OUTCOME_TOO_LARGE
+			header.Outcome = storagev1.GetManyOutcome_GET_MANY_OUTCOME_TOO_LARGE
 		default:
-			header.Outcome = storagev0.GetManyOutcome_GET_MANY_OUTCOME_OK
-			header.Info = &storagev0.ObjectInfo{Key: item.GetKey(), Etag: etagOf(*content), Size: int64(len(*content)), ContentType: "text/markdown"}
+			header.Outcome = storagev1.GetManyOutcome_GET_MANY_OUTCOME_OK
+			header.Info = &storagev1.ObjectInfo{Key: item.GetKey(), Etag: etagOf(*content), Size: int64(len(*content)), ContentType: "text/markdown"}
 		}
-		if err := stream.Send(&storagev0.GetManyResponse{Kind: &storagev0.GetManyResponse_Header{Header: header}}); err != nil {
+		if err := stream.Send(&storagev1.GetManyResponse{Kind: &storagev1.GetManyResponse_Header{Header: header}}); err != nil {
 			return err
 		}
-		if header.Outcome != storagev0.GetManyOutcome_GET_MANY_OUTCOME_OK {
+		if header.Outcome != storagev1.GetManyOutcome_GET_MANY_OUTCOME_OK {
 			continue
 		}
 		body := []byte(*contents[i])
@@ -171,7 +171,7 @@ func (f *fakeService) GetMany(req *storagev0.GetManyRequest, stream grpc.ServerS
 			body = body[:len(body)-1]
 		}
 		for chunk := range slicesChunk(body, 3) {
-			if err := stream.Send(&storagev0.GetManyResponse{Kind: &storagev0.GetManyResponse_Data{Data: chunk}}); err != nil {
+			if err := stream.Send(&storagev1.GetManyResponse{Kind: &storagev1.GetManyResponse_Data{Data: chunk}}); err != nil {
 				return err
 			}
 		}
@@ -191,11 +191,11 @@ func slicesChunk(b []byte, n int) func(func([]byte) bool) {
 	}
 }
 
-func serve(t *testing.T, f *fakeService) storagev0.ObjectStorageClient {
+func serve(t *testing.T, f *fakeService) storagev1.ObjectStorageClient {
 	t.Helper()
 	lis := bufconn.Listen(1 << 20)
 	srv := grpc.NewServer()
-	storagev0.RegisterObjectStorageServer(srv, f)
+	storagev1.RegisterObjectStorageServer(srv, f)
 	go func() { _ = srv.Serve(lis) }()
 	t.Cleanup(srv.Stop)
 	cc, err := grpc.NewClient("passthrough:///bufnet",
@@ -205,7 +205,7 @@ func serve(t *testing.T, f *fakeService) storagev0.ObjectStorageClient {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = cc.Close() })
-	return storagev0.NewObjectStorageClient(cc)
+	return storagev1.NewObjectStorageClient(cc)
 }
 
 var serviceConfig = SourceConfig{Endpoint: "https://store.example.com", Region: "eu-west-1", Bucket: "acme-docs", Prefix: "kb/2026-"}

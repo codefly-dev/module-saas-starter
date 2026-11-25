@@ -13,7 +13,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -143,7 +143,7 @@ func TestInstallationStepRefusesAScopeNamingTheStepItself(t *testing.T) {
 	s := newInstallationMintServer(t, healthyInstallationFacts(), nil)
 	req := installTaskRequest()
 	req.TaskId = installID
-	_, err := s.signInstallationStep(context.Background(), req, healthyInstallationFacts(), []*basev0.WorkScopeV1{{
+	_, err := s.signInstallationStep(context.Background(), req, healthyInstallationFacts(), []*basev1.WorkScopeV1{{
 		ResourceKind: InstallationStepResourceKind, Actions: []string{InstallationStepAction}, ResourceIds: []string{"another-installation"},
 	}})
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
@@ -169,7 +169,7 @@ func TestNoInstallationMintAcceptsAScopeNamingTheInstallStep(t *testing.T) {
 
 				step := installTaskRequest()
 				step.TaskId = installID
-				_, err = server.signInstallationStep(context.Background(), step, facts, []*basev0.WorkScopeV1{{
+				_, err = server.signInstallationStep(context.Background(), step, facts, []*basev1.WorkScopeV1{{
 					ResourceKind: kind, Actions: []string{InstallationStepAction}, ResourceIds: []string{"another-installation"},
 				}})
 				require.Equal(t, codes.InvalidArgument, status.Code(err))

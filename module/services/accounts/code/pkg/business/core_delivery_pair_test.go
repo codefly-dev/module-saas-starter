@@ -14,7 +14,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/memstore"
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
 	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -80,7 +80,7 @@ func pairCore(t *testing.T) *authority.Service {
 		Keys: staticKeys{"key": public}, Replay: workcontext.NewMemoryReplayStore(), HostInstallsModules: true})
 	require.NoError(t, err)
 	_, err = core.ApplyModule(context.Background(), domain.Module{Name: "legacy-store", Principal: "legacy-store", Kind: domain.KindModule, Generation: 1,
-		ResourceKinds: []*basev0.WorkScopeV1{{ResourceKind: "legacy", Actions: []string{"read"}}}})
+		ResourceKinds: []*basev1.WorkScopeV1{{ResourceKind: "legacy", Actions: []string{"read"}}}})
 	require.NoError(t, err)
 	return core
 }

@@ -12,7 +12,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
 	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 )
@@ -92,7 +92,7 @@ func TestAModuleWithoutAPageDeclaresNoRoles(t *testing.T) {
 // solution's does; one naming a role the module does not declare is refused
 // with the core's reason.
 func TestAModuleInstallationRoleNamesADeclaredRole(t *testing.T) {
-	page := domain.Module{Name: "example", Kind: domain.KindModule, InstallationRole: domain.UserRole, Roles: map[string][]*basev0.WorkScopeV1{domain.UserRole: nil}}
+	page := domain.Module{Name: "example", Kind: domain.KindModule, InstallationRole: domain.UserRole, Roles: map[string][]*basev1.WorkScopeV1{domain.UserRole: nil}}
 	require.NoError(t, undeclaredInstallationRole(page))
 	require.NoError(t, undeclaredInstallationRole(domain.Module{Name: "example", Kind: domain.KindModule, InstallationRole: domain.NoInstallationRole}))
 	require.NoError(t, undeclaredInstallationRole(domain.Module{Name: "example", Kind: domain.KindModule}))
@@ -141,7 +141,7 @@ func TestAModulePageWithoutRolesIsReadWithTheStandardOnes(t *testing.T) {
 	require.Nil(t, svc.solutionAuthorityOf(doc, manifest), "a module without a page derives no roles")
 }
 
-func actionsOf(scopes []*basev0.WorkScopeV1, kind string) []string {
+func actionsOf(scopes []*basev1.WorkScopeV1, kind string) []string {
 	var out []string
 	for _, sc := range scopes {
 		if sc.GetResourceKind() == kind {

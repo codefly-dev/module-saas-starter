@@ -8,7 +8,7 @@ import (
 	"accounts/pkg/business"
 	"accounts/pkg/business/moduleregistrytest"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -61,7 +61,7 @@ func TestTriggerOccurrenceMintsFromTheReferenceAndIsRefusedAfterRevocation(t *te
 	require.Equal(t, business.ModulePrincipalID("docstore"), actor.GetPrincipalId())
 	require.Equal(t, business.PrincipalKindService, actor.GetPrincipalKind())
 	require.Equal(t, delegationID, actor.GetDelegationId(), "the hop carries the delegation the occurrence resolved, which is what a consumer reads as a reference")
-	requireScopes(t, []*basev0.WorkScopeV1{{ResourceKind: "collections", Actions: []string{"write"}}}, signed.GetAuthorityScopes())
+	requireScopes(t, []*basev1.WorkScopeV1{{ResourceKind: "collections", Actions: []string{"write"}}}, signed.GetAuthorityScopes())
 
 	// Occurrence two: the same reference, a second mint. Nothing is cached, so
 	// this must be a fresh capability rather than the first one again.
@@ -114,7 +114,7 @@ func TestTriggerOccurrenceMintsFromTheInstallationBinding(t *testing.T) {
 	require.Empty(t, signed.GetActorChain(), "the module acts as the owner it is, with no hop delegating to itself")
 	// Exactly the headless grant, never the invoke scopes the same binding
 	// carries for work a person asked for.
-	want := []*basev0.WorkScopeV1{{ResourceKind: "collections", Actions: []string{"read"}}}
+	want := []*basev1.WorkScopeV1{{ResourceKind: "collections", Actions: []string{"read"}}}
 	requireScopes(t, want, signed.GetAuthorityScopes())
 	require.Len(t, audit.of(business.EventModuleOperationContextMint), 1)
 
@@ -151,7 +151,7 @@ func TestTriggerIdentityWithoutADeclarationRefusesBothArms(t *testing.T) {
 // composition declares its executing module under. It is the issuer and
 // audience check a consumer runs, not a decode: a token this host could not
 // verify is not one an occurrence may be admitted with.
-func verifyExecutionContext(t *testing.T, token string) *basev0.WorkContextV1 {
+func verifyExecutionContext(t *testing.T, token string) *basev1.WorkContextV1 {
 	t.Helper()
 	verified, err := WorkContextSingleton().verifyFor(context.Background(), token, "runtime")
 	require.NoError(t, err)

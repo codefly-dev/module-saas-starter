@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/resources"
 	codefly "github.com/codefly-dev/sdk-go"
 	"gopkg.in/yaml.v3"
@@ -234,7 +234,7 @@ func TestSeedRejectsDuplicateGrantIdentitiesBeforeStoreAccess(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err := codefly.InjectConfigurations(&basev0.Configuration{Origin: resources.ConfigurationWorkspace, Infos: []*basev0.ConfigurationInformation{{Name: WorkspaceGrantsDocument, Data: &basev0.ConfigurationData{Kind: "yaml", Content: content}}}}); err != nil {
+				if err := codefly.InjectConfigurations(&basev1.Configuration{Origin: resources.ConfigurationWorkspace, Infos: []*basev1.ConfigurationInformation{{Name: WorkspaceGrantsDocument, Data: &basev1.ConfigurationData{Kind: "yaml", Content: content}}}}); err != nil {
 					t.Fatal(err)
 				}
 				t.Cleanup(func() {
@@ -325,7 +325,7 @@ func TestARowMayStandForEveryTarget(t *testing.T) {
 		orgID:    "org", ownerID: "remi",
 		memberIDs: map[string][]string{"user": {"omar"}, "admin": {"remi"}},
 	}
-	row := everyRow(template, domain.Module{Name: "notes", Kind: domain.KindSolution, Roles: map[string][]*basev0.WorkScopeV1{"admin": nil}})
+	row := everyRow(template, domain.Module{Name: "notes", Kind: domain.KindSolution, Roles: map[string][]*basev1.WorkScopeV1{"admin": nil}})
 	if row.declared.Target != "notes" || row.declared.Org != "Acme Corp" || row.ownerID != "remi" {
 		t.Fatalf("the row is not the template's for the target: %+v", row)
 	}

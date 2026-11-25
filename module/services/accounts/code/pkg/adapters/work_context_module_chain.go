@@ -8,7 +8,7 @@ import (
 	"context"
 	"errors"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/wool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -36,7 +36,7 @@ func storedPrincipal(principal string) string {
 // Each hop is held to the exact scope set it was issued under (invoke, lookup
 // or headless), and the original granted kinds recorded beside its binding.
 // Missing journal provenance refuses the chain.
-func (s *WorkContextAuthorityServer) requireModuleChainStands(ctx context.Context, wc *basev0.WorkContextV1) error {
+func (s *WorkContextAuthorityServer) requireModuleChainStands(ctx context.Context, wc *basev1.WorkContextV1) error {
 	chain := wc.GetActorChain()
 	// A chain of hops through bindings seals its last hop's module binding; a
 	// context sealed to a source delegation or an installed read is confirmed

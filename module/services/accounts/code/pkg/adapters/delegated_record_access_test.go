@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 )
@@ -78,7 +78,7 @@ func TestExactRecordOracleRequiresSignedCurrentAttenuatedAuthority(t *testing.T)
 		require.Len(t, store.subjects, before)
 	}
 	narrow, _ := mintTestCapability(t, workContextSingleton, testCapability{Audience: "rows", Tenant: readOrg, Owner: readOwner, Task: "task-narrow", Session: "session-narrow",
-		Scopes: []*basev0.WorkScopeV1{{ResourceKind: "rows", Actions: []string{"read"}, ResourceIds: []string{"record-b"}}}})
+		Scopes: []*basev1.WorkScopeV1{{ResourceKind: "rows", Actions: []string{"read"}, ResourceIds: []string{"record-b"}}}})
 	out, err = client.CheckWorkContextRecordAccess(context.Background(), exactRequest(narrow, "record-a"))
 	require.Error(t, err)
 	require.Nil(t, out)
@@ -216,7 +216,7 @@ func TestExactRecordOracleIntersectsExchangedReadAudienceCapability(t *testing.T
 	journal := &exactChainJournal{}
 	workContextSingleton.authority = exactChainAuthority{facts: facts.facts}
 	workContextSingleton.journal = journal
-	scopes := []*basev0.WorkScopeV1{{ResourceKind: "rows", Actions: []string{"read"}}}
+	scopes := []*basev1.WorkScopeV1{{ResourceKind: "rows", Actions: []string{"read"}}}
 	parent, _ := mintTestCapability(t, workContextSingleton, testCapability{Audience: "example", Tenant: readOrg, Owner: readOwner,
 		Task: "exchange-task", Session: "exchange-session", Scopes: scopes,
 		Actors: []delegationHop{agentHop("actor-1", "hop-1", scopes...), agentHop("actor-2", "hop-2", scopes...)}})
@@ -300,7 +300,7 @@ func TestExactRecordOracleChecksSignedActorChainRevocation(t *testing.T) {
 	workContextSingleton.authority = exactChainAuthority{facts: facts.facts}
 	journal := &exactChainJournal{}
 	workContextSingleton.journal = journal
-	scopes := []*basev0.WorkScopeV1{{ResourceKind: "rows", Actions: []string{"read"}, ResourceIds: []string{"record-a"}}}
+	scopes := []*basev1.WorkScopeV1{{ResourceKind: "rows", Actions: []string{"read"}, ResourceIds: []string{"record-a"}}}
 	token, _ := mintTestCapability(t, workContextSingleton, testCapability{Audience: "rows", Tenant: readOrg, Owner: readOwner, Task: "chain-task", Session: "chain-session", Scopes: scopes,
 		Actors: []delegationHop{agentHop("actor-1", "hop-1", scopes...), agentHop("actor-2", "hop-2", scopes...)}})
 	out, err := client.CheckWorkContextRecordAccess(context.Background(), exactRequest(token, "record-a"))

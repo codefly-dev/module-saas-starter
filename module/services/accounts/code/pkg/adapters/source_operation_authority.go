@@ -12,7 +12,7 @@ import (
 	"accounts/pkg/datasource/operations"
 
 	"connectrpc.com/connect"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 )
 
@@ -135,7 +135,7 @@ func requireDelegatedSourceMatch(ctx context.Context, source string) error {
 }
 
 func requireSourceOperationScope(ctx context.Context, org, source, action string) error {
-	claims, ok := ctx.Value(sourceOperationContextKey{}).(*basev0.WorkContextV1)
+	claims, ok := ctx.Value(sourceOperationContextKey{}).(*basev1.WorkContextV1)
 	if !ok {
 		return nil
 	} // Interactive identity still passes the host RBAC gate.
@@ -173,7 +173,7 @@ func (h *datasourceConnectHandler) requireAuditedSourceOperationScope(ctx contex
 		return nil
 	}
 	tenant, _, verified := auth.VerifiedDatabaseIdentity(ctx)
-	claims, _ := ctx.Value(sourceOperationContextKey{}).(*basev0.WorkContextV1)
+	claims, _ := ctx.Value(sourceOperationContextKey{}).(*basev1.WorkContextV1)
 	if verified && tenant == org && claims.GetTenantId() == org {
 		auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()

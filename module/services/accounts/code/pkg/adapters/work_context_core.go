@@ -8,7 +8,7 @@ import (
 	"slices"
 	"time"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/wool"
 	"github.com/codefly-dev/core/workcontext"
 	carrier "github.com/codefly-dev/sdk-go/workcontext"
@@ -326,7 +326,7 @@ type delegationHop struct {
 	PrincipalKind string
 	AgentID       string
 	DelegationID  string
-	GrantedScopes []*basev0.WorkScopeV1
+	GrantedScopes []*basev1.WorkScopeV1
 	// OperationBindingID is the unit of authority this hop exercises, when it
 	// exercises one; its revision and incarnation are read live by core.
 	OperationBindingID string
@@ -361,7 +361,7 @@ type mintRequest struct {
 // (core derives only from a Verified parent). The intermediate capabilities are
 // idempotent and never leave this function; the one returned carries the
 // requested session, replay policy and window.
-func (s *WorkContextAuthorityServer) mint(ctx context.Context, request mintRequest) (string, *basev0.WorkContextV1, error) {
+func (s *WorkContextAuthorityServer) mint(ctx context.Context, request mintRequest) (string, *basev1.WorkContextV1, error) {
 	if !s.configured() {
 		return "", nil, ErrWorkContextAuthorityUnconfigured
 	}
@@ -387,7 +387,7 @@ func (s *WorkContextAuthorityServer) mint(ctx context.Context, request mintReque
 	if err != nil {
 		return "", nil, err
 	}
-	var signed *basev0.WorkContextV1
+	var signed *basev1.WorkContextV1
 	for i, hop := range request.Hops {
 		parent, err := s.coreVerifier(start.TenantID, start.OwnerPrincipalID, start.Audience).Verify(ctx, token)
 		if err != nil {
@@ -441,9 +441,9 @@ type moduleBindingSeal struct {
 }
 
 func (s *WorkContextAuthorityServer) remint(
-	ctx context.Context, parent *basev0.WorkContextV1, audience, replay string, ttl time.Duration,
-	attenuated []*basev0.WorkScopeV1, session string, exercised moduleBindingSeal,
-) (string, *basev0.WorkContextV1, error) {
+	ctx context.Context, parent *basev1.WorkContextV1, audience, replay string, ttl time.Duration,
+	attenuated []*basev1.WorkScopeV1, session string, exercised moduleBindingSeal,
+) (string, *basev1.WorkContextV1, error) {
 	if business.NamesInstalledBinding(parent.GetOperationBinding().GetBindingId()) {
 		return "", nil, status.Error(codes.PermissionDenied, "installed binding child cannot be reminted")
 	}
@@ -525,7 +525,7 @@ const workContextHeader = carrier.HeaderName
 //
 // This is a host authorization question asked of claims core has already
 // verified; it decodes and checks nothing about the capability itself.
-func workContextGrants(claims *basev0.WorkContextV1, resourceKind, action, resourceID string) bool {
+func workContextGrants(claims *basev1.WorkContextV1, resourceKind, action, resourceID string) bool {
 	effective := claims.GetAuthorityScopes()
 	if chain := claims.GetActorChain(); len(chain) > 0 {
 		effective = chain[len(chain)-1].GetGrantedScopes()

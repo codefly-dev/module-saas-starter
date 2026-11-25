@@ -12,7 +12,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/storetest"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -154,15 +154,15 @@ func TestAnApprovedReachReadsBackAsTheCoresEncoderWroteIt(t *testing.T) {
 		Organizations: []domain.Organization{{ID: org, Name: "Reach " + org[:8]}},
 		Members:       []storetest.Member{{Organization: org, Person: admin, Administrator: true}},
 	})
-	item := func(actions ...string) []*basev0.WorkScopeV1 {
-		return []*basev0.WorkScopeV1{{ResourceKind: "reach-store.item", Actions: actions}}
+	item := func(actions ...string) []*basev1.WorkScopeV1 {
+		return []*basev1.WorkScopeV1{{ResourceKind: "reach-store.item", Actions: actions}}
 	}
-	page := []*basev0.WorkScopeV1{{ResourceKind: "reach-solution.page", Actions: []string{"read"}}}
+	page := []*basev1.WorkScopeV1{{ResourceKind: "reach-solution.page", Actions: []string{"read"}}}
 	store := domain.Module{Name: "reach-store", Principal: "reach-store", Kind: domain.KindModule, ResourceKinds: item("admin", "read", "write"),
 		Methods: map[string]domain.MethodPolicy{"/reach.Store/Get": {Requires: item("read")}, "POST /reach.Store/Get": {Requires: item("read")},
 			"/reach.Store/Purge": {Requires: item("admin")}}}
 	solution := domain.Module{Name: "reach-solution", Principal: "reach-solution", Kind: domain.KindSolution, ResourceKinds: page,
-		Roles:    map[string][]*basev0.WorkScopeV1{domain.AdminRole: append(slices.Clone(page), item("read", "write")...)},
+		Roles:    map[string][]*basev1.WorkScopeV1{domain.AdminRole: append(slices.Clone(page), item("read", "write")...)},
 		Bindings: map[string]domain.Binding{"store": {ID: "store", Audience: "reach-store", InvokeScopes: item("read", "write")}}}
 	reach, err := decide.ReachOf(solution, []domain.Module{solution, store})
 	require.NoError(t, err)
@@ -201,7 +201,7 @@ func TestAConsentReRecordedWithoutAPlanMovesOnlyWhatTheCoreMoves(t *testing.T) {
 		Organizations: []domain.Organization{{ID: org, Name: "Rerecord " + org[:8]}},
 		Members:       []storetest.Member{{Organization: org, Person: admin, Administrator: true}},
 	})
-	item := []*basev0.WorkScopeV1{{ResourceKind: "rerecord.item", Actions: []string{"read"}}}
+	item := []*basev1.WorkScopeV1{{ResourceKind: "rerecord.item", Actions: []string{"read"}}}
 	reach := func(operations ...string) string {
 		text, _, err := decide.EncodeReach(map[string][]domain.ReachRow{domain.UserRole: {{Path: []string{"rerecord", "store"}, Module: "store", Via: "binding", Scopes: item, Operations: operations}}})
 		require.NoError(t, err)

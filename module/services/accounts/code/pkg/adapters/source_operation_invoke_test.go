@@ -20,8 +20,8 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"connectrpc.com/connect"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	runnablev0 "github.com/codefly-dev/core/generated/go/codefly/runnable/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
+	runnablev1 "github.com/codefly-dev/core/generated/go/codefly/runnable/v1"
 	"github.com/codefly-dev/core/resources"
 	"github.com/codefly-dev/core/runnable"
 	"github.com/codefly-dev/sdk-go/receipts"
@@ -373,7 +373,7 @@ func TestSourceOperationJSONEnvelopeBoundAndScope(t *testing.T) {
 	require.False(t, sourceWireFits(request, sourceInputEnvelopeBytes))
 	server := newCoreTestServer(t, &workContextAuthorityFake{}, newSealAnswersFake(1))
 	_, claims := mintTestCapability(t, server, testCapability{Audience: business.SourceOperationAudience, Tenant: "org", Owner: "owner", Task: "task",
-		Scopes: []*basev0.WorkScopeV1{{ResourceKind: "datasource.sources", Actions: []string{"invoke", "read"}, ResourceIds: []string{"source"}}}})
+		Scopes: []*basev1.WorkScopeV1{{ResourceKind: "datasource.sources", Actions: []string{"invoke", "read"}, ResourceIds: []string{"source"}}}})
 	ctx := context.WithValue(t.Context(), sourceOperationContextKey{}, claims)
 	require.NoError(t, requireSourceOperationScope(ctx, "org", "source", "invoke"))
 	require.Error(t, requireSourceOperationScope(ctx, "org", "other", "invoke"))
@@ -393,7 +393,7 @@ func TestSourceOperationForeignTenantNeverAudits(t *testing.T) {
 			svc.SetAuditEmitter(audit)
 			ctx := stampVerifiedIdentity(t.Context(), actor, org, auth.Assurance{})
 			if workContext {
-				ctx = context.WithValue(ctx, sourceOperationContextKey{}, &basev0.WorkContextV1{TenantId: org, OwnerPrincipalId: actor})
+				ctx = context.WithValue(ctx, sourceOperationContextKey{}, &basev1.WorkContextV1{TenantId: org, OwnerPrincipalId: actor})
 			}
 			_, err = (&datasourceConnectHandler{svc: svc}).InvokeSourceOperation(ctx, connect.NewRequest(&gen.InvokeSourceOperationRequest{OrgId: foreign, SourceId: source, Operation: "read_item", InputJson: "{}", EffectId: "chosen audit text"}))
 			require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
@@ -417,17 +417,17 @@ func TestSourceEffectIDEquivalentCarriers(t *testing.T) {
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 }
 
-func sourcePreparedBinding(t *testing.T, method, address, source string) *runnablev0.PreparedBinding {
+func sourcePreparedBinding(t *testing.T, method, address, source string) *runnablev1.PreparedBinding {
 	t.Helper()
-	pkg, spec, err := runnable.PackageFromMethod(protoregistry.GlobalFiles, &resources.RunnableLocation{Identity: &resources.RunnableIdentity{Name: "invoke-source", Module: "saas-starter", Workspace: "example", Version: "0.1.0"}, WorkspacePath: t.TempDir(), RelativeToWorkspace: "modules/saas-starter"}, runnable.ServiceOwner{Module: "saas-starter", Service: "accounts", Endpoint: "connect", Agent: &basev0.Agent{Kind: basev0.Agent_SERVICE, Name: "go-grpc", Publisher: "codefly.dev", Version: "0.1.53"}}, method)
+	pkg, spec, err := runnable.PackageFromMethod(protoregistry.GlobalFiles, &resources.RunnableLocation{Identity: &resources.RunnableIdentity{Name: "invoke-source", Module: "saas-starter", Workspace: "example", Version: "0.1.0"}, WorkspacePath: t.TempDir(), RelativeToWorkspace: "modules/saas-starter"}, runnable.ServiceOwner{Module: "saas-starter", Service: "accounts", Endpoint: "connect", Agent: &basev1.Agent{Kind: basev1.Agent_SERVICE, Name: "go-grpc", Publisher: "codefly.dev", Version: "0.1.53"}}, method)
 	require.NoError(t, err)
 	// Core derives the operation's tool exposure from the method itself (core
 	// b23dc135, which the authority core requires): the tool calls exactly it.
 	require.NotNil(t, spec.Tool)
 	require.Equal(t, method[strings.LastIndex(method, "/")+1:], spec.Tool.GetName())
-	scoped, err := spec.ResolveScopeSlots([]*runnablev0.ScopeSelection{{Slot: "source", Invoke: []*basev0.WorkScopeV1{{ResourceKind: "datasource.sources", Actions: []string{"invoke", "read"}, ResourceIds: []string{source}}}, Lookup: []*basev0.WorkScopeV1{{ResourceKind: "datasource.sources", Actions: []string{"read"}, ResourceIds: []string{source}}}}})
+	scoped, err := spec.ResolveScopeSlots([]*runnablev1.ScopeSelection{{Slot: "source", Invoke: []*basev1.WorkScopeV1{{ResourceKind: "datasource.sources", Actions: []string{"invoke", "read"}, ResourceIds: []string{source}}}, Lookup: []*basev1.WorkScopeV1{{ResourceKind: "datasource.sources", Actions: []string{"read"}, ResourceIds: []string{source}}}}})
 	require.NoError(t, err)
-	encoded, err := runnable.EncodePrepared(&runnablev0.PreparedBinding{Operation: &runnablev0.PreparedOperation{Module: "saas-starter", Service: "accounts", Endpoint: "connect", Spelling: method}, Call: &runnablev0.PreparedCall{Address: address, Route: &runnablev0.PreparedCall_Connect{Connect: &runnablev0.ConnectProcedure{Procedure: method}}}, Contract: pkg.Contract, Policy: scoped.Policy()})
+	encoded, err := runnable.EncodePrepared(&runnablev1.PreparedBinding{Operation: &runnablev1.PreparedOperation{Module: "saas-starter", Service: "accounts", Endpoint: "connect", Spelling: method}, Call: &runnablev1.PreparedCall{Address: address, Route: &runnablev1.PreparedCall_Connect{Connect: &runnablev1.ConnectProcedure{Procedure: method}}}, Contract: pkg.Contract, Policy: scoped.Policy()})
 	require.NoError(t, err)
 	prepared, err := runnable.DecodePrepared(encoded)
 	require.NoError(t, err)

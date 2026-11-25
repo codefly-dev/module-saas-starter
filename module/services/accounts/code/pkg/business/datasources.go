@@ -23,7 +23,7 @@ import (
 	"accounts/pkg/jobs"
 
 	"github.com/codefly-dev/core/wool"
-	storagev0 "github.com/codefly-dev/service-object-storage/gen/codefly/storage/v0"
+	storagev1 "github.com/codefly-dev/service-object-storage/gen/codefly/storage/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -654,7 +654,7 @@ func (s *Service) SetDatasourceCrawlerClientFactory(factory func(cfg CrawlerData
 // from before the binding, such as 0.0.18 — is refused and left unwired, so
 // object storage is unavailable: the catalog does not offer it, AddSource
 // refuses it, and nothing is admitted that every sync would then fail on.
-func (s *Service) SetObjectStorage(ctx context.Context, client storagev0.ObjectStorageClient) error {
+func (s *Service) SetObjectStorage(ctx context.Context, client storagev1.ObjectStorageClient) error {
 	if err := objectstore.CheckService(ctx, client); err != nil {
 		return err
 	}

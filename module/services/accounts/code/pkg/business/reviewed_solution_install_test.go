@@ -15,7 +15,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/memstore"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -210,7 +210,7 @@ func TestAReachedModulePageIsInstalledWithTheClosure(t *testing.T) {
 					return err
 				}
 				m.InstallationRole = selector
-				m.Roles = map[string][]*basev0.WorkScopeV1{"user": {{ResourceKind: "records", Actions: []string{"read"}}}}
+				m.Roles = map[string][]*basev1.WorkScopeV1{"user": {{ResourceKind: "records", Actions: []string{"read"}}}}
 				return tx.PutModule(m)
 			}))
 			review, err := s.ReviewSolutionInstall(ctx, caller, caller.Organization, target)
@@ -367,7 +367,7 @@ func TestSingleTargetAdapterRetainsExplicitLegacyConsent(t *testing.T) {
 			return err
 		}
 		m.InstallationRole = ""
-		m.Roles = map[string][]*basev0.WorkScopeV1{"reader": {{ResourceKind: "records", Actions: []string{"read"}}}}
+		m.Roles = map[string][]*basev1.WorkScopeV1{"reader": {{ResourceKind: "records", Actions: []string{"read"}}}}
 		return tx.PutModule(m)
 	}))
 	core, err := s.AuthorityCore()

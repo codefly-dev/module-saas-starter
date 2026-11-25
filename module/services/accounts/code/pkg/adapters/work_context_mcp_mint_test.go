@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
@@ -72,7 +72,7 @@ func TestStartTaskMintsWhatACoreVerifierReadsForAModule(t *testing.T) {
 	require.Equal(t, confinedSession, claims.GetSessionId(), "the session the credential authenticated, which the gateway pairs on")
 	require.Equal(t, testInstallation("documents"), claims.GetSeal().GetInstallationId())
 	require.Empty(t, claims.GetActorChain())
-	require.Equal(t, []*basev0.WorkScopeV1{{ResourceKind: "documents", Actions: []string{"read"}}}, claims.GetAuthorityScopes())
+	require.Equal(t, []*basev1.WorkScopeV1{{ResourceKind: "documents", Actions: []string{"read"}}}, claims.GetAuthorityScopes())
 
 	// A module this organization never installed has nothing to seal the
 	// capability to, and is minted nothing.

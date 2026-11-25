@@ -10,7 +10,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/memstore"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 )
@@ -40,7 +40,7 @@ func TestModuleNoStandingSelectionRequiresCurrentPairedDeclaration(t *testing.T)
 				m.Generation = 1
 			}
 			if tc.roles {
-				m.Roles = map[string][]*basev0.WorkScopeV1{"reader": {{ResourceKind: "records", Actions: []string{"read"}}}}
+				m.Roles = map[string][]*basev1.WorkScopeV1{"reader": {{ResourceKind: "records", Actions: []string{"read"}}}}
 			}
 			require.NoError(t, store.Write(ctx, func(tx authority.Tx) error { return tx.PutModule(m) }))
 			public, private, err := ed25519.GenerateKey(nil)

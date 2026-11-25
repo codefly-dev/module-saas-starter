@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -213,21 +213,21 @@ type testCapability struct {
 	Session string
 	// Replay defaults to idempotent.
 	Replay string
-	Scopes []*basev0.WorkScopeV1
+	Scopes []*basev1.WorkScopeV1
 	Actors []delegationHop
 	TTL    time.Duration
 	// Installation defaults to the fake's answer for the audience.
 	Installation string
 }
 
-func mintTestCapability(t *testing.T, server *WorkContextAuthorityServer, c testCapability) (string, *basev0.WorkContextV1) {
+func mintTestCapability(t *testing.T, server *WorkContextAuthorityServer, c testCapability) (string, *basev1.WorkContextV1) {
 	t.Helper()
 	token, signed, err := tryMintTestCapability(server, c)
 	require.NoError(t, err)
 	return token, signed
 }
 
-func tryMintTestCapability(server *WorkContextAuthorityServer, c testCapability) (string, *basev0.WorkContextV1, error) {
+func tryMintTestCapability(server *WorkContextAuthorityServer, c testCapability) (string, *basev1.WorkContextV1, error) {
 	if c.OwnerKind == "" {
 		c.OwnerKind = business.PrincipalKindHuman
 	}
@@ -260,7 +260,7 @@ func tryMintTestCapability(server *WorkContextAuthorityServer, c testCapability)
 }
 
 // agentHop is the registered-agent actor hop the tests delegate to.
-func agentHop(principalID, delegationID string, scopes ...*basev0.WorkScopeV1) delegationHop {
+func agentHop(principalID, delegationID string, scopes ...*basev1.WorkScopeV1) delegationHop {
 	return delegationHop{
 		PrincipalID:   principalID,
 		PrincipalKind: business.PrincipalKindAgent,

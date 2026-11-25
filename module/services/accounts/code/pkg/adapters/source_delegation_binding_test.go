@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -117,7 +117,7 @@ func TestTheReferenceArmMintsWithTheUsingModulesHopAndTheDelegationsBinding(t *t
 	require.Equal(t, business.SourceDelegationBindingID(delegationID, "ingestservice"), claims.GetOperationBinding().GetBindingId())
 	require.Equal(t, "installation-current", claims.GetSeal().GetInstallationId(), "sealed to the using module's installation")
 	require.Equal(t, uint64(42), claims.GetAuthorizationRevision(), "the person's ordinary revision")
-	require.Equal(t, []*basev0.WorkScopeV1{{ResourceKind: "collections", Actions: []string{"write"}}}, hop.GetGrantedScopes())
+	require.Equal(t, []*basev1.WorkScopeV1{{ResourceKind: "collections", Actions: []string{"write"}}}, hop.GetGrantedScopes())
 }
 
 // The binding is read live on every verification: revoking the delegation

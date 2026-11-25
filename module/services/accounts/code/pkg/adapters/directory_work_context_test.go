@@ -15,7 +15,7 @@ import (
 
 	"connectrpc.com/connect"
 	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -245,7 +245,7 @@ func TestDirectoryDelegatedWorkContextRevocation(t *testing.T) {
 	facts.facts.Actor = &business.Principal{ID: actor}
 	journal := &readExchangeJournal{}
 	workContextSingleton.journal = journal
-	scopes := []*basev0.WorkScopeV1{{ResourceKind: "documents", Actions: []string{"read"}}}
+	scopes := []*basev1.WorkScopeV1{{ResourceKind: "documents", Actions: []string{"read"}}}
 	token, _ := mintTestCapability(t, workContextSingleton, testCapability{
 		Audience: business.DirectoryAudience, Tenant: readOrg, Owner: readOwner,
 		Scopes: scopes, Actors: []delegationHop{agentHop(actor, uuid.NewString(), scopes...)},

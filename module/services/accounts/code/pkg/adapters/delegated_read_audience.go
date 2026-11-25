@@ -13,7 +13,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"connectrpc.com/connect"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -91,7 +91,7 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 		return err
 	}
 	presented, err := authority.verifyIssued(ctx, encodedParent)
-	var verified *basev0.WorkContextV1
+	var verified *basev1.WorkContextV1
 	switch {
 	case err == nil:
 		verified = presented.Context()
@@ -374,7 +374,7 @@ func delegationReferenceError(err error) error {
 	}
 }
 
-func delegatedAudienceActorID(parent *basev0.WorkContextV1) string {
+func delegatedAudienceActorID(parent *basev1.WorkContextV1) string {
 	actors := parent.GetActorChain()
 	if len(actors) == 0 {
 		return parent.GetOwnerPrincipalId()
@@ -494,7 +494,7 @@ func sourceDelegationParentError(err error) error {
 	return status.Error(codes.Unavailable, "source delegation authority is unavailable")
 }
 
-func operationScopesFromCore(scopes []*basev0.WorkScopeV1) []business.ModuleOperationScope {
+func operationScopesFromCore(scopes []*basev1.WorkScopeV1) []business.ModuleOperationScope {
 	out := make([]business.ModuleOperationScope, 0, len(scopes))
 	for _, scope := range scopes {
 		out = append(out, business.ModuleOperationScope{
@@ -506,7 +506,7 @@ func operationScopesFromCore(scopes []*basev0.WorkScopeV1) []business.ModuleOper
 	return out
 }
 
-func sourceDelegationHops(actors []*basev0.WorkActorV1) []business.SourceDelegationHop {
+func sourceDelegationHops(actors []*basev1.WorkActorV1) []business.SourceDelegationHop {
 	out := make([]business.SourceDelegationHop, 0, len(actors))
 	for _, actor := range actors {
 		out = append(out, business.SourceDelegationHop{
@@ -525,7 +525,7 @@ func sourceDelegationHops(actors []*basev0.WorkActorV1) []business.SourceDelegat
 // exercising the delegation as its operation binding. Core resolves that binding live and refuses
 // it for any module the delegation does not entitle.
 func (s *WorkContextAuthorityServer) exchangeDelegatedParent(
-	ctx context.Context, caller business.ModuleCaller, parent *basev0.WorkContextV1,
+	ctx context.Context, caller business.ModuleCaller, parent *basev1.WorkContextV1,
 	delegation *business.SourceDelegation, binding delegatedAudienceBinding, ttl time.Duration,
 ) (*gen.IssuedWorkContext, error) {
 	grant, declared := service.ModulePrincipals()[caller.PrincipalID]

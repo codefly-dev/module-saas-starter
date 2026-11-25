@@ -7,7 +7,7 @@ import (
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -56,8 +56,8 @@ const legacyModuleDocument = `{"resource_kinds":[{"kind":"acme.note","actions":[
 // audience: a store that dropped it would hold every approved role to its
 // literal scopes, and one that moved it would grant it at another module.
 func TestCanonicalDeclarationStorageKeepsAudienceRoles(t *testing.T) {
-	m := domain.Module{Name: "acme.solution", Roles: map[string][]*basev0.WorkScopeV1{"admin": {{ResourceKind: "acme.note", Actions: []string{"read"}}}, "user": nil},
-		AudienceRoles: map[string]map[string][]*basev0.WorkScopeV1{
+	m := domain.Module{Name: "acme.solution", Roles: map[string][]*basev1.WorkScopeV1{"admin": {{ResourceKind: "acme.note", Actions: []string{"read"}}}, "user": nil},
+		AudienceRoles: map[string]map[string][]*basev1.WorkScopeV1{
 			"admin": {"acme.records": {{ResourceKind: "acme.records.item", Actions: []string{"read", "write"}}}, "acme.annotations": {{ResourceKind: "acme.annotation", Actions: []string{"read"}}}},
 			"user":  {"acme.records": {{ResourceKind: "acme.records.item", Actions: []string{"read"}}}},
 		}}

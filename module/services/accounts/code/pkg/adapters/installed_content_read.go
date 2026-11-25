@@ -8,7 +8,7 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -66,7 +66,7 @@ func (s *WorkContextAuthorityServer) exchangeInstalledBinding(ctx context.Contex
 
 // The installed module is authenticated by Core and the exact current binding;
 // only the person supplies visibility. This branch accepts no other chain.
-func (s *WorkContextAuthorityServer) requireInstalledBinding(ctx context.Context, claims *basev0.WorkContextV1) error {
+func (s *WorkContextAuthorityServer) requireInstalledBinding(ctx context.Context, claims *basev1.WorkContextV1) error {
 	if claims.GetOwnerPrincipalKind() != business.PrincipalKindHuman || len(claims.ActorChain) != 1 {
 		return status.Error(codes.PermissionDenied, "installed binding child shape refused")
 	}

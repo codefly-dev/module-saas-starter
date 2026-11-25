@@ -10,7 +10,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/authority/libraries/solutionhost/go"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
@@ -705,7 +705,7 @@ func testModulePageRoleReachesThroughItsBinding(t *testing.T, h reviewedClosureH
 	require.NoError(t, err)
 
 	maya := authority.Person{ID: conformanceMaya, Organization: fixtureOrganization}
-	through := func(who authority.Person, scopes ...*basev0.WorkScopeV1) (authority.Issued, error) {
+	through := func(who authority.Person, scopes ...*basev1.WorkScopeV1) (authority.Issued, error) {
 		t.Helper()
 		parent, err := h.core.IssueForPerson(h.ctx, who, authority.IssueRequest{Audience: page})
 		if err != nil {
@@ -732,14 +732,14 @@ func testModulePageRoleReachesThroughItsBinding(t *testing.T, h reviewedClosureH
 	})
 
 	t.Run("and never another installation's data (RBAC-1)", func(t *testing.T) {
-		_, err := through(maya, &basev0.WorkScopeV1{ResourceKind: row, Actions: []string{"read"}, ResourceOwnerId: authority.StablePrincipalID(globexOrganization, page)})
+		_, err := through(maya, &basev1.WorkScopeV1{ResourceKind: row, Actions: []string{"read"}, ResourceOwnerId: authority.StablePrincipalID(globexOrganization, page)})
 		require.ErrorContains(t, err, `widens what its owner holds through binding "rows"`)
-		_, err = through(maya, &basev0.WorkScopeV1{ResourceKind: row, Actions: []string{"read"}})
+		_, err = through(maya, &basev1.WorkScopeV1{ResourceKind: row, Actions: []string{"read"}})
 		require.ErrorContains(t, err, `widens what its owner holds through binding "rows"`, "the whole kind, every owner's, is refused")
 	})
 
 	t.Run("and nothing beyond it", func(t *testing.T) {
-		_, err := through(maya, &basev0.WorkScopeV1{ResourceKind: row, Actions: []string{"write"}})
+		_, err := through(maya, &basev1.WorkScopeV1{ResourceKind: row, Actions: []string{"write"}})
 		require.ErrorContains(t, err, `widens what its owner holds through binding "rows"`, "the binding carries write; the user role does not")
 		_, err = through(authority.Person{ID: conformanceAlice, Organization: fixtureOrganization})
 		require.ErrorContains(t, err, "holds no role on "+page, "an administrator holding no role is refused like any member")
@@ -954,7 +954,7 @@ func testPagesReachThroughTheAgent(t *testing.T, h reviewedClosureHarness) {
 	onward := func(parent authority.Issued, binding string) (authority.Issued, error) {
 		return h.core.IssueChild(h.ctx, parent.Token, authority.Workload{Module: agent}, authority.IssueRequest{Binding: binding})
 	}
-	granted := func(t *testing.T, i authority.Issued) []*basev0.WorkScopeV1 {
+	granted := func(t *testing.T, i authority.Issued) []*basev1.WorkScopeV1 {
 		chain := i.Context.GetActorChain()
 		require.NotEmpty(t, chain)
 		return chain[len(chain)-1].GetGrantedScopes()
@@ -1095,11 +1095,11 @@ func testAnAdminSavesAndIsOfferedTheRunnablesTheirRoleAllows(t *testing.T, h rev
 		require.NoError(t, err)
 		return out
 	}
-	onward := func(parent authority.Issued, binding string, asked ...*basev0.WorkScopeV1) (authority.Issued, error) {
+	onward := func(parent authority.Issued, binding string, asked ...*basev1.WorkScopeV1) (authority.Issued, error) {
 		return h.core.IssueChild(h.ctx, parent.Token, authority.Workload{Module: agent}, authority.IssueRequest{Binding: binding, Scopes: asked})
 	}
-	owned := func(kind string, actions ...string) *basev0.WorkScopeV1 {
-		return &basev0.WorkScopeV1{ResourceKind: kind, Actions: actions, ResourceOwnerId: owner}
+	owned := func(kind string, actions ...string) *basev1.WorkScopeV1 {
+		return &basev1.WorkScopeV1{ResourceKind: kind, Actions: actions, ResourceOwnerId: owner}
 	}
 
 	t.Run("an admin's first save, administering no organization, creates the installation's collection", func(t *testing.T) {
@@ -1113,7 +1113,7 @@ func testAnAdminSavesAndIsOfferedTheRunnablesTheirRoleAllows(t *testing.T, h rev
 	})
 	t.Run("an admin is offered the document, record and agent tools their role names", func(t *testing.T) {
 		at := atAgent(conformanceIvy)
-		for binding, asked := range map[string][]*basev0.WorkScopeV1{
+		for binding, asked := range map[string][]*basev1.WorkScopeV1{
 			"DOCS__SEARCH":       {owned(doc, "read"), owned(collection, "read")},
 			"RECORDS__LIST":      {owned(row, "read")},
 			"AGENT__READ_INTENT": {owned(intents, "read")},
@@ -1133,6 +1133,6 @@ func testAnAdminSavesAndIsOfferedTheRunnablesTheirRoleAllows(t *testing.T, h rev
 	})
 }
 
-func wireCore(kind string, actions ...string) *basev0.WorkScopeV1 {
-	return &basev0.WorkScopeV1{ResourceKind: kind, Actions: actions}
+func wireCore(kind string, actions ...string) *basev1.WorkScopeV1 {
+	return &basev1.WorkScopeV1{ResourceKind: kind, Actions: actions}
 }

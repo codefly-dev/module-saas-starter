@@ -17,7 +17,7 @@ import (
 	"accounts/pkg/gen/saas/accounts/v1/accountsv1connect"
 
 	"connectrpc.com/connect"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -100,7 +100,7 @@ func sourceDiscoveryFixture(t *testing.T) (*sourceDiscoveryStore, *sealAnswersFa
 			c.Owner = discoveryOwner
 		}
 		if c.Scopes == nil {
-			c.Scopes = []*basev0.WorkScopeV1{{ResourceKind: "datasource.sources", Actions: []string{"read"}, ResourceIds: []string{discoverySource}}}
+			c.Scopes = []*basev1.WorkScopeV1{{ResourceKind: "datasource.sources", Actions: []string{"read"}, ResourceIds: []string{discoverySource}}}
 		}
 		token, _ := mintTestCapability(t, workContextSingleton, c)
 		return token
@@ -130,12 +130,12 @@ func TestSourceOperationDiscoveryConnectAuthority(t *testing.T) {
 		{name: "another tenant", change: func(_ *sourceDiscoveryStore, r *connect.Request[gen.ListSourceOperationsRequest]) {
 			r.Msg.OrgId = discoveryOther
 		}, code: connect.CodePermissionDenied},
-		{name: "invoke is not read", capability: testCapability{Scopes: []*basev0.WorkScopeV1{{ResourceKind: "datasource.sources", Actions: []string{"invoke"}, ResourceIds: []string{discoverySource}}}}, code: connect.CodePermissionDenied},
-		{name: "empty scopes", capability: testCapability{Scopes: []*basev0.WorkScopeV1{}}, code: connect.CodePermissionDenied},
-		{name: "unrelated scopes", capability: testCapability{Scopes: []*basev0.WorkScopeV1{{ResourceKind: "example.items", Actions: []string{"read"}, ResourceIds: []string{discoverySource}}}}, code: connect.CodePermissionDenied},
-		{name: "unconstrained source", capability: testCapability{Scopes: []*basev0.WorkScopeV1{{ResourceKind: "datasource.sources", Actions: []string{"read"}}}}, code: connect.CodePermissionDenied},
+		{name: "invoke is not read", capability: testCapability{Scopes: []*basev1.WorkScopeV1{{ResourceKind: "datasource.sources", Actions: []string{"invoke"}, ResourceIds: []string{discoverySource}}}}, code: connect.CodePermissionDenied},
+		{name: "empty scopes", capability: testCapability{Scopes: []*basev1.WorkScopeV1{}}, code: connect.CodePermissionDenied},
+		{name: "unrelated scopes", capability: testCapability{Scopes: []*basev1.WorkScopeV1{{ResourceKind: "example.items", Actions: []string{"read"}, ResourceIds: []string{discoverySource}}}}, code: connect.CodePermissionDenied},
+		{name: "unconstrained source", capability: testCapability{Scopes: []*basev1.WorkScopeV1{{ResourceKind: "datasource.sources", Actions: []string{"read"}}}}, code: connect.CodePermissionDenied},
 		{name: "wrong audience", capability: testCapability{Audience: "example"}, code: connect.CodeUnauthenticated},
-		{name: "module identity is not source authority", capability: testCapability{Audience: ModuleWorkContextAudience, Owner: "module:example", OwnerKind: business.PrincipalKindService, Scopes: []*basev0.WorkScopeV1{}}, code: connect.CodeUnauthenticated},
+		{name: "module identity is not source authority", capability: testCapability{Audience: ModuleWorkContextAudience, Owner: "module:example", OwnerKind: business.PrincipalKindService, Scopes: []*basev1.WorkScopeV1{}}, code: connect.CodeUnauthenticated},
 		{name: "expired credential", change: func(_ *sourceDiscoveryStore, _ *connect.Request[gen.ListSourceOperationsRequest]) {
 			workContextSingleton.now = func() time.Time { return time.Now().Add(time.Hour) }
 		}, code: connect.CodeUnauthenticated},
@@ -208,10 +208,10 @@ func TestSourceOperationDiscoveryRechecksAfterSuccessfulRead(t *testing.T) {
 
 func TestSourceOperationDiscoveryHandlerUsesFinalActorScope(t *testing.T) {
 	store, _, _, _ := sourceDiscoveryFixture(t)
-	ownerScope := &basev0.WorkScopeV1{ResourceKind: "datasource.sources", Actions: []string{"read"}, ResourceIds: []string{discoverySource, discoveryOther}}
-	actorScope := &basev0.WorkScopeV1{ResourceKind: "datasource.sources", Actions: []string{"read"}, ResourceIds: []string{discoverySource}}
+	ownerScope := &basev1.WorkScopeV1{ResourceKind: "datasource.sources", Actions: []string{"read"}, ResourceIds: []string{discoverySource, discoveryOther}}
+	actorScope := &basev1.WorkScopeV1{ResourceKind: "datasource.sources", Actions: []string{"read"}, ResourceIds: []string{discoverySource}}
 	_, claims := mintTestCapability(t, workContextSingleton, testCapability{Audience: business.SourceOperationAudience, Tenant: discoveryOrg, Owner: discoveryOwner,
-		Scopes: []*basev0.WorkScopeV1{ownerScope}, Actors: []delegationHop{agentHop("example-agent", "example-delegation", actorScope)}})
+		Scopes: []*basev1.WorkScopeV1{ownerScope}, Actors: []delegationHop{agentHop("example-agent", "example-delegation", actorScope)}})
 	// The handler receives verified identity/claims at its trust seam. Actor
 	// admission is outside this test; it must still honor the final attenuation.
 	ctx := stampVerifiedIdentity(t.Context(), discoveryOwner, discoveryOrg, auth.Assurance{})

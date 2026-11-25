@@ -5,7 +5,7 @@ import (
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,9 +17,9 @@ func TestAnUpdateReviewCarriesTheApprovedReachOfEachRole(t *testing.T) {
 	approved := map[string][]domain.ReachRow{
 		"user": {
 			{Path: []string{"example"}, Module: "example", Via: decide.ReachRole, Confinement: decide.ConfinedToInstallation,
-				Scopes: []*basev0.WorkScopeV1{{ResourceKind: "example.page", Actions: []string{"read"}}}, Operations: []string{"/example.v1.Pages/Get"}},
+				Scopes: []*basev1.WorkScopeV1{{ResourceKind: "example.page", Actions: []string{"read"}}}, Operations: []string{"/example.v1.Pages/Get"}},
 			{Path: []string{"example", "assistant", "documents"}, Module: "documents", Via: decide.ReachBinding,
-				Scopes: []*basev0.WorkScopeV1{{ResourceKind: "documents.document", Actions: []string{"read"}}}},
+				Scopes: []*basev1.WorkScopeV1{{ResourceKind: "documents.document", Actions: []string{"read"}}}},
 		},
 		decide.JointRoles: {{Path: []string{"example"}, Module: "example", Via: decide.ReachRole}},
 	}

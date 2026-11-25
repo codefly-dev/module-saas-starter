@@ -15,7 +15,7 @@ import (
 	coredelivered "github.com/codefly-dev/authority/libraries/authority-core/go/delivered"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 )
@@ -85,10 +85,10 @@ func TestABootReadsAHeldGenerationDeclaringOldRolesAgain(t *testing.T) {
 			return err
 		}
 		original = m
-		doc := func(actions ...string) []*basev0.WorkScopeV1 {
-			return []*basev0.WorkScopeV1{{ResourceKind: "doc", Actions: actions}}
+		doc := func(actions ...string) []*basev1.WorkScopeV1 {
+			return []*basev1.WorkScopeV1{{ResourceKind: "doc", Actions: actions}}
 		}
-		m.Roles = map[string][]*basev0.WorkScopeV1{legacyInstallerRole: doc("read", "write"), "editor": doc("read", "write"), "viewer": doc("read")}
+		m.Roles = map[string][]*basev1.WorkScopeV1{legacyInstallerRole: doc("read", "write"), "editor": doc("read", "write"), "viewer": doc("read")}
 		m.Source = coredelivered.Source(record.Payload, document)
 		return tx.PutModule(m)
 	}))

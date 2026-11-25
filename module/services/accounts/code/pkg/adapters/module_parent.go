@@ -5,7 +5,7 @@ import (
 	"accounts/pkg/business"
 	"context"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -14,7 +14,7 @@ import (
 type moduleParentAuthentication struct {
 	ctx    context.Context
 	caller business.ModuleCaller
-	parent *basev0.WorkContextV1
+	parent *basev1.WorkContextV1
 	actor  *business.Principal
 }
 

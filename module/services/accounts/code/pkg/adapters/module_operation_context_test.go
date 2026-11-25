@@ -11,7 +11,7 @@ import (
 	"accounts/pkg/business/executiontest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -78,7 +78,7 @@ func mintModuleOperationContext(prefix, token, binding string) (*gen.ModuleMintO
 		&gen.ModuleMintOperationContextRequest{Prefix: prefix, ServiceAccountToken: token, Binding: binding})
 }
 
-func verifyOperationContext(t *testing.T, token string) *basev0.WorkContextV1 {
+func verifyOperationContext(t *testing.T, token string) *basev1.WorkContextV1 {
 	t.Helper()
 	verified, err := WorkContextSingleton().verifyFor(context.Background(), token, "modelservice")
 	require.NoError(t, err)
@@ -108,7 +108,7 @@ func TestMintModuleOperationContextSealsExactlyTheHeadlessScopes(t *testing.T) {
 	require.Equal(t, principalID, signed.GetOwnerPrincipalId())
 	require.Equal(t, workcontext.ReplayIdempotent, signed.GetReplayPolicy())
 	require.LessOrEqual(t, signed.GetExpiresAtUnix()-signed.GetIssuedAtUnix(), int64(business.ModuleOperationContextTTL/time.Second))
-	want := []*basev0.WorkScopeV1{{ResourceKind: "modelservice.profiles", Actions: []string{"invoke", "read"}, ResourceIds: []string{"profile-digest"}}}
+	want := []*basev1.WorkScopeV1{{ResourceKind: "modelservice.profiles", Actions: []string{"invoke", "read"}, ResourceIds: []string{"profile-digest"}}}
 	requireScopes(t, want, signed.GetAuthorityScopes())
 	// The module acts as itself: owned by its service principal, no actor hop.
 	require.Empty(t, signed.GetActorChain())
@@ -139,7 +139,7 @@ func TestMintModuleOperationContextSealsExactlyTheHeadlessScopes(t *testing.T) {
 	require.Equal(t, moduleWorkContextTenant, store.tenantCheckedID)
 }
 
-func requireScopes(t *testing.T, want, got []*basev0.WorkScopeV1) {
+func requireScopes(t *testing.T, want, got []*basev1.WorkScopeV1) {
 	t.Helper()
 	require.Len(t, got, len(want))
 	for i := range want {

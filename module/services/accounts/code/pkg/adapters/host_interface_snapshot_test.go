@@ -10,7 +10,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/memstore"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -133,13 +133,13 @@ func TestEveryHostAuthorityQuestionIsOneSnapshot(t *testing.T) {
 	setup, err := authority.New(probe.core, authority.Config{Issuer: "https://probe.test", KeyID: "k1", Signer: private,
 		Keys: probeKeys{public}, Replay: probe.replay, HostInstallsModules: true})
 	require.NoError(t, err)
-	items := []*basev0.WorkScopeV1{{ResourceKind: kind, Actions: []string{"read"}}}
-	held := []*basev0.WorkScopeV1{{ResourceKind: solution + ".note", Actions: []string{"read"}}, items[0]}
+	items := []*basev1.WorkScopeV1{{ResourceKind: kind, Actions: []string{"read"}}}
+	held := []*basev1.WorkScopeV1{{ResourceKind: solution + ".note", Actions: []string{"read"}}, items[0]}
 	for _, m := range []domain.Module{
 		{Name: records, Principal: records, Kind: domain.KindModule, Generation: 1, OwnerAware: true, ResourceKinds: items},
 		{Name: solution, Principal: solution, Kind: domain.KindSolution, Generation: 1, OwnerAware: true, ResourceKinds: held[:1],
 			Bindings: map[string]domain.Binding{"records": {ID: "records", Audience: records, InvokeScopes: items}},
-			Roles:    map[string][]*basev0.WorkScopeV1{domain.AdminRole: held, domain.UserRole: held}},
+			Roles:    map[string][]*basev1.WorkScopeV1{domain.AdminRole: held, domain.UserRole: held}},
 	} {
 		_, err := setup.ApplyModule(ctx, m)
 		require.NoError(t, err)

@@ -13,7 +13,7 @@ import (
 	"accounts/pkg/business/moduleregistrytest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -168,7 +168,7 @@ func mintSourceContext(prefix, token string, ref business.SourceDelegationRef) (
 	return ModuleCapabilitiesSingleton().MintSourceOperationContext(context.Background(), req)
 }
 
-func verifySourceContext(t *testing.T, token string) *basev0.WorkContextV1 {
+func verifySourceContext(t *testing.T, token string) *basev1.WorkContextV1 {
 	t.Helper()
 	verified, err := WorkContextSingleton().verifyFor(context.Background(), token, "ingestservice")
 	require.NoError(t, err)
@@ -216,7 +216,7 @@ func TestMintSourceOperationContextSealsTheDelegation(t *testing.T) {
 			require.Equal(t, delegationPerson, signed.GetOwnerPrincipalId())
 			require.LessOrEqual(t, signed.GetExpiresAtUnix()-signed.GetIssuedAtUnix(), int64(business.SourceOperationContextTTL/time.Second))
 			require.NotZero(t, signed.GetAuthorizationRevision())
-			want := []*basev0.WorkScopeV1{{ResourceKind: "collections", Actions: []string{"write"}}}
+			want := []*basev1.WorkScopeV1{{ResourceKind: "collections", Actions: []string{"write"}}}
 			requireScopes(t, want, signed.GetAuthorityScopes())
 			require.Len(t, signed.GetActorChain(), 1)
 			actor := signed.GetActorChain()[0]
@@ -425,7 +425,7 @@ func TestDelegatedOperationExchangeWithoutADelegationHopKeepsTheTenantCheck(t *t
 	parentToken, _ := mintTestCapability(t, workContextSingleton, testCapability{
 		Audience: "example", Tenant: readOrg, Owner: readOwner,
 		Task: "019f6bf7-1111-7111-8111-111111111111", Session: "019f6bf7-2222-7222-8222-222222222222",
-		Scopes: []*basev0.WorkScopeV1{{ResourceKind: "results", Actions: []string{"read", "write"}, ResourceIds: []string{"result-1"}}},
+		Scopes: []*basev1.WorkScopeV1{{ResourceKind: "results", Actions: []string{"read", "write"}, ResourceIds: []string{"result-1"}}},
 	})
 	exchange := func(crossTenant bool) error {
 		registry := installedOperationRegistry(true)

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	cliv0 "github.com/codefly-dev/core/generated/go/codefly/cli/v0"
+	cliv1 "github.com/codefly-dev/core/generated/go/codefly/cli/v1"
 	"github.com/codefly-dev/core/sdk"
 	"github.com/stretchr/testify/require"
 )
@@ -39,9 +39,9 @@ func TestTimingSeparatesSetupFailureFromExecution(t *testing.T) {
 // reaches the harness wrapped.
 func TestSetupTimeoutNamesTheServicesStillStarting(t *testing.T) {
 	var out bytes.Buffer
-	timeout := &sdk.ReadinessTimeout{Timeout: time.Minute, Services: []*cliv0.ServiceReadiness{
-		{Service: "saas-starter/store", Lifecycle: cliv0.ServiceLifecycle_SERVICE_LIFECYCLE_READY},
-		{Service: "saas-starter/vault", Lifecycle: cliv0.ServiceLifecycle_SERVICE_LIFECYCLE_STARTING},
+	timeout := &sdk.ReadinessTimeout{Timeout: time.Minute, Services: []*cliv1.ServiceReadiness{
+		{Service: "saas-starter/store", Lifecycle: cliv1.ServiceLifecycle_SERVICE_LIFECYCLE_READY},
+		{Service: "saas-starter/vault", Lifecycle: cliv1.ServiceLifecycle_SERVICE_LIFECYCLE_STARTING},
 	}}
 	measureSetup(&out, "business-db", []string{"store", "vault"}, time.Minute)(fmt.Errorf("start: %w", timeout))
 	var record timingRecord
@@ -53,8 +53,8 @@ func TestSetupTimeoutNamesTheServicesStillStarting(t *testing.T) {
 
 func TestSetupFailureNamesTheServicesThatCannotStart(t *testing.T) {
 	var out bytes.Buffer
-	failure := &sdk.ReadinessFailure{Services: []*cliv0.ServiceReadiness{
-		{Service: "saas-starter/store", Lifecycle: cliv0.ServiceLifecycle_SERVICE_LIFECYCLE_FAILED},
+	failure := &sdk.ReadinessFailure{Services: []*cliv1.ServiceReadiness{
+		{Service: "saas-starter/store", Lifecycle: cliv1.ServiceLifecycle_SERVICE_LIFECYCLE_FAILED},
 	}}
 	measureSetup(&out, "infra-db", []string{"store"}, time.Minute)(failure)
 	var record timingRecord

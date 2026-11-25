@@ -33,7 +33,7 @@ import (
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -323,7 +323,7 @@ type storedMethod struct {
 	AnyCheckedCaller bool          `json:"any_checked_caller,omitempty"`
 }
 
-func storeScopes(in []*basev0.WorkScopeV1) []storedScope {
+func storeScopes(in []*basev1.WorkScopeV1) []storedScope {
 	out := make([]storedScope, 0, len(in))
 	for _, sc := range in {
 		out = append(out, storedScope{Kind: sc.GetResourceKind(), Actions: slices.Clone(sc.GetActions()), IDs: slices.Clone(sc.GetResourceIds()), Owner: sc.GetResourceOwnerId()})
@@ -331,13 +331,13 @@ func storeScopes(in []*basev0.WorkScopeV1) []storedScope {
 	return out
 }
 
-func loadScopes(in []storedScope) []*basev0.WorkScopeV1 {
+func loadScopes(in []storedScope) []*basev1.WorkScopeV1 {
 	if in == nil {
 		return nil
 	}
-	out := make([]*basev0.WorkScopeV1, 0, len(in))
+	out := make([]*basev1.WorkScopeV1, 0, len(in))
 	for _, sc := range in {
-		out = append(out, &basev0.WorkScopeV1{ResourceKind: sc.Kind, Actions: slices.Clone(sc.Actions), ResourceIds: slices.Clone(sc.IDs), ResourceOwnerId: sc.Owner})
+		out = append(out, &basev1.WorkScopeV1{ResourceKind: sc.Kind, Actions: slices.Clone(sc.Actions), ResourceIds: slices.Clone(sc.IDs), ResourceOwnerId: sc.Owner})
 	}
 	return out
 }
@@ -406,12 +406,12 @@ func decodeModule(m *domain.Module, raw []byte) error {
 		m.Bindings[id] = domain.Binding{ID: id, Audience: b.Audience, InvokeScopes: loadScopes(b.Invoke), HeadlessScopes: loadScopes(b.Headless), LookupScopes: loadScopes(b.Lookup)}
 	}
 	if doc.HasRoles || len(doc.Roles) > 0 {
-		m.Roles = map[string][]*basev0.WorkScopeV1{}
+		m.Roles = map[string][]*basev1.WorkScopeV1{}
 		for name, scopes := range doc.Roles {
 			m.Roles[name] = loadScopes(scopes)
 		}
 	}
-	m.OwnedRoles = map[string][]*basev0.WorkScopeV1{}
+	m.OwnedRoles = map[string][]*basev1.WorkScopeV1{}
 	for name, scopes := range doc.OwnedRoles {
 		m.OwnedRoles[name] = loadScopes(scopes)
 	}

@@ -11,7 +11,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"connectrpc.com/connect"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -35,7 +35,7 @@ func TestMintModuleOperationContextSealsAHeadlessOnlyBinding(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "modelservice", resp.GetAudience())
 	signed := verifyOperationContext(t, resp.GetToken())
-	requireScopes(t, []*basev0.WorkScopeV1{{ResourceKind: "modelservice.profiles", Actions: []string{"invoke"}, ResourceIds: []string{"profile-digest"}}},
+	requireScopes(t, []*basev1.WorkScopeV1{{ResourceKind: "modelservice.profiles", Actions: []string{"invoke"}, ResourceIds: []string{"profile-digest"}}},
 		signed.GetAuthorityScopes())
 	require.Equal(t, business.ModulePrincipalID("documents"), signed.GetOwnerPrincipalId(), "owned by the module itself, never a person")
 	require.Empty(t, signed.GetActorChain())
@@ -67,7 +67,7 @@ func TestAPersonsParentCannotRedeemAHeadlessOnlyBinding(t *testing.T) {
 	parent, _ := mintTestCapability(t, workContextSingleton, testCapability{
 		Audience: "example", Tenant: readOrg, Owner: readOwner,
 		Task: "019f6bf7-1111-7111-8111-111111111111", Session: "019f6bf7-2222-7222-8222-222222222222",
-		Scopes: []*basev0.WorkScopeV1{{ResourceKind: "results", Actions: []string{"read", "write"}, ResourceIds: []string{"result-1"}}},
+		Scopes: []*basev1.WorkScopeV1{{ResourceKind: "results", Actions: []string{"read", "write"}, ResourceIds: []string{"result-1"}}},
 	})
 	exchange := func(binding string, lookup bool) error {
 		req := connect.NewRequest(&gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: binding, ParentWorkContextToken: parent, Lookup: lookup})

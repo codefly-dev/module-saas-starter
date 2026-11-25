@@ -7,7 +7,7 @@ import (
 	"slices"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 )
 
 // moduleConsent is what one module installation's consent allows the
@@ -69,10 +69,10 @@ func (s *Service) moduleConsent(prefix string, raw []byte, committedEnvelope uin
 	return bindings, true, nil
 }
 
-func workScopes(in []ModuleOperationScope) []*basev0.WorkScopeV1 {
-	out := make([]*basev0.WorkScopeV1, 0, len(in))
+func workScopes(in []ModuleOperationScope) []*basev1.WorkScopeV1 {
+	out := make([]*basev1.WorkScopeV1, 0, len(in))
 	for _, sc := range in {
-		out = append(out, &basev0.WorkScopeV1{ResourceKind: sc.ResourceKind, Actions: slices.Clone(sc.Actions), ResourceIds: slices.Clone(sc.ResourceIDs)})
+		out = append(out, &basev1.WorkScopeV1{ResourceKind: sc.ResourceKind, Actions: slices.Clone(sc.Actions), ResourceIds: slices.Clone(sc.ResourceIDs)})
 	}
 	return out
 }

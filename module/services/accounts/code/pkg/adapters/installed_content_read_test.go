@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	corework "github.com/codefly-dev/core/workcontext"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -332,7 +332,7 @@ func TestInstalledContentReadRefusesExistingActors(t *testing.T) {
 	f, server := installedReadFixture(t)
 	server.authority = &readExchangeAuthority{facts: &business.WorkContextAuthorityFacts{OrganizationRevision: 7, PrincipalRevision: 3}}
 	server.journal = &readExchangeJournal{}
-	scopes := []*basev0.WorkScopeV1{{ResourceKind: "documents", Actions: []string{"read"}}}
+	scopes := []*basev1.WorkScopeV1{{ResourceKind: "documents", Actions: []string{"read"}}}
 	token, _ := mintTestCapability(t, server, testCapability{Audience: "reader", Tenant: readOrg, Owner: readOwner, Scopes: scopes, Actors: []delegationHop{agentHop("actor-1", "hop-1", scopes...)}})
 	moduleToken, _, err := server.StartModuleTask(context.Background(), business.ModuleWorkContextAuthority{PrincipalID: business.ModulePrincipalID("reader"), Tenant: readOrg, InstallationID: f.live[business.ModulePrincipalID("reader")].InstallationID})
 	require.NoError(t, err)
@@ -405,7 +405,7 @@ func TestInstalledContentReadLifetimeUsesBothOwnerFacts(t *testing.T) {
 func TestInstalledContentReadRefusesNonhumanRoot(t *testing.T) {
 	f, server := installedReadFixture(t)
 	server.authority = &readExchangeAuthority{facts: &business.WorkContextAuthorityFacts{OrganizationRevision: 7, PrincipalRevision: 3}}
-	scopes := []*basev0.WorkScopeV1{{ResourceKind: "documents", Actions: []string{"read"}}}
+	scopes := []*basev1.WorkScopeV1{{ResourceKind: "documents", Actions: []string{"read"}}}
 	token, _ := mintTestCapability(t, server, testCapability{Audience: "reader", Tenant: readOrg, Owner: readOwner, OwnerKind: business.PrincipalKindService, Scopes: scopes})
 	moduleToken, _, err := server.StartModuleTask(context.Background(), business.ModuleWorkContextAuthority{PrincipalID: business.ModulePrincipalID("reader"), Tenant: readOrg, InstallationID: f.live[business.ModulePrincipalID("reader")].InstallationID})
 	require.NoError(t, err)

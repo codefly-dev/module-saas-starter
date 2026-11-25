@@ -12,7 +12,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/memstore"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 )
@@ -40,7 +40,7 @@ func TestCanonicalRetryReauthorizesOriginalConsentBeforeReplaying(t *testing.T) 
 			}
 			store.PutPerson(domain.Person{ID: "member", Organization: "org"})
 			module := domain.Module{Name: "example", Principal: "example-principal", Kind: domain.KindSolution, Generation: 1,
-				Roles: map[string][]*basev0.WorkScopeV1{"machine": {{ResourceKind: "records", Actions: []string{"read"}}}}}
+				Roles: map[string][]*basev1.WorkScopeV1{"machine": {{ResourceKind: "records", Actions: []string{"read"}}}}}
 			require.NoError(t, store.Write(ctx, func(tx authority.Tx) error { return tx.PutModule(module) }))
 			public, private, err := ed25519.GenerateKey(rand.Reader)
 			require.NoError(t, err)

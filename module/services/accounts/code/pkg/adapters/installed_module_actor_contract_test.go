@@ -8,7 +8,7 @@ import (
 
 	"accounts/pkg/business"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	corework "github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 )
@@ -19,16 +19,16 @@ import (
 // (resource ids included), the sealed binding id names that module and that
 // binding, and it never outlives the parent or a minute.
 func TestModuleActorChildPayloadContract(t *testing.T) {
-	source := []*basev0.WorkScopeV1{{ResourceKind: business.SourceOperationResourceKind, Actions: []string{"invoke", "read"}, ResourceIds: []string{actorSource}}}
-	sourceLookup := []*basev0.WorkScopeV1{{ResourceKind: business.SourceOperationResourceKind, Actions: []string{"read"}, ResourceIds: []string{actorSource}}}
+	source := []*basev1.WorkScopeV1{{ResourceKind: business.SourceOperationResourceKind, Actions: []string{"invoke", "read"}, ResourceIds: []string{actorSource}}}
+	sourceLookup := []*basev1.WorkScopeV1{{ResourceKind: business.SourceOperationResourceKind, Actions: []string{"read"}, ResourceIds: []string{actorSource}}}
 	for _, arm := range []struct {
 		name, binding, audience string
 		lookup                  bool
-		scopes                  []*basev0.WorkScopeV1
+		scopes                  []*basev1.WorkScopeV1
 	}{
-		{"module", "act", "compute", false, []*basev0.WorkScopeV1{{ResourceKind: "profiles", Actions: []string{"invoke", "read"}}}},
-		{"module lookup", "act", "compute", true, []*basev0.WorkScopeV1{{ResourceKind: "profiles", Actions: []string{"read"}}}},
-		{"solution", "act-solution", actorSolutionAudience, false, []*basev0.WorkScopeV1{{ResourceKind: "tickets", Actions: []string{"read"}}}},
+		{"module", "act", "compute", false, []*basev1.WorkScopeV1{{ResourceKind: "profiles", Actions: []string{"invoke", "read"}}}},
+		{"module lookup", "act", "compute", true, []*basev1.WorkScopeV1{{ResourceKind: "profiles", Actions: []string{"read"}}}},
+		{"solution", "act-solution", actorSolutionAudience, false, []*basev1.WorkScopeV1{{ResourceKind: "tickets", Actions: []string{"read"}}}},
 		{"source", "act-source", business.SourceOperationAudience, false, source},
 		{"source lookup", "act-source", business.SourceOperationAudience, true, sourceLookup},
 	} {

@@ -12,7 +12,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"connectrpc.com/connect"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -57,7 +57,7 @@ func TestReconcileSourceRefusesACapabilityScopedToAnotherSource(t *testing.T) {
 	server := newCoreTestServer(t, &workContextAuthorityFake{}, newSealAnswersFake(1))
 	_, claims := mintTestCapability(t, server, testCapability{
 		Audience: business.SourceOperationAudience, Tenant: org, Owner: actor, Task: "occurrence",
-		Scopes: []*basev0.WorkScopeV1{{
+		Scopes: []*basev1.WorkScopeV1{{
 			ResourceKind: "datasource.sources",
 			Actions:      []string{"invoke", "read"},
 			ResourceIds:  []string{scoped},
@@ -120,7 +120,7 @@ func TestLookupReconcileSourceTakesTheSameScopeGate(t *testing.T) {
 	server := newCoreTestServer(t, &workContextAuthorityFake{}, newSealAnswersFake(1))
 	_, claims := mintTestCapability(t, server, testCapability{
 		Audience: business.SourceOperationAudience, Tenant: org, Owner: actor, Task: "occurrence",
-		Scopes: []*basev0.WorkScopeV1{{
+		Scopes: []*basev1.WorkScopeV1{{
 			ResourceKind: "datasource.sources",
 			Actions:      []string{"invoke", "read"},
 			ResourceIds:  []string{scoped},
@@ -247,7 +247,7 @@ func (s *sourceDelegationMemoryStore) activeOn(sourceID string) *business.Source
 
 // verifySourceContext2 verifies a capability for the SOURCE OPERATION audience,
 // which is the audience the source surface presents one to.
-func verifySourceContext2(t *testing.T, token string) *basev0.WorkContextV1 {
+func verifySourceContext2(t *testing.T, token string) *basev1.WorkContextV1 {
 	t.Helper()
 	verified, err := WorkContextSingleton().verifyFor(t.Context(), token, business.SourceOperationAudience)
 	require.NoError(t, err)

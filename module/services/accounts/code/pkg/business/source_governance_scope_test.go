@@ -4,22 +4,22 @@ import (
 	"testing"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/stretchr/testify/require"
 )
 
-func governingScope(kind string, actions ...string) *basev0.WorkScopeV1 {
-	return &basev0.WorkScopeV1{ResourceKind: kind, Actions: actions}
+func governingScope(kind string, actions ...string) *basev1.WorkScopeV1 {
+	return &basev1.WorkScopeV1{ResourceKind: kind, Actions: actions}
 }
 
 // The request never picks the governing scope: the host admits only one the
 // target's approved declaration names. A user naming the read every user
 // holds, or an admin naming a scope the author did not declare, is refused.
 func TestAGoverningScopeIsOneTheApprovedDeclarationNames(t *testing.T) {
-	target := domain.Module{Name: "example-solution", Kind: domain.KindSolution, Roles: map[string][]*basev0.WorkScopeV1{
+	target := domain.Module{Name: "example-solution", Kind: domain.KindSolution, Roles: map[string][]*basev1.WorkScopeV1{
 		domain.AdminRole: {governingScope("example.page", "read", "write", "publish")},
 		domain.UserRole:  {governingScope("example.page", "read")},
-	}, SourceGovernance: []*basev0.WorkScopeV1{governingScope("example.page", "write")}}
+	}, SourceGovernance: []*basev1.WorkScopeV1{governingScope("example.page", "write")}}
 	asked := func(kind, action, binding string) SourceGovernance {
 		return SourceGovernance{InstallationID: "inst-1", Kind: kind, Action: action, Binding: binding}
 	}
@@ -40,11 +40,11 @@ func TestAGoverningScopeIsOneTheApprovedDeclarationNames(t *testing.T) {
 // roles look like: its sources stay the organization administrators'.
 func TestATargetDeclaringNoGoverningScopeGovernsNoSource(t *testing.T) {
 	for name, target := range map[string]domain.Module{
-		"a solution with a fuller admin": {Name: "example-undeclared", Kind: domain.KindSolution, Roles: map[string][]*basev0.WorkScopeV1{
+		"a solution with a fuller admin": {Name: "example-undeclared", Kind: domain.KindSolution, Roles: map[string][]*basev1.WorkScopeV1{
 			domain.AdminRole: {governingScope("example.page", "read", "write")},
 			domain.UserRole:  {governingScope("example.page", "read")},
 		}},
-		"a single role": {Name: "example-single", Kind: domain.KindSolution, Roles: map[string][]*basev0.WorkScopeV1{
+		"a single role": {Name: "example-single", Kind: domain.KindSolution, Roles: map[string][]*basev1.WorkScopeV1{
 			domain.AdminRole: {governingScope("example.page", "read", "write")},
 		}},
 	} {

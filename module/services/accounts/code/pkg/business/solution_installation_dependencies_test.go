@@ -11,19 +11,19 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 )
 
 func TestSolutionDependencyReviewUsesSignedIdentitiesAndPreservesOperations(t *testing.T) {
-	invoke := []*basev0.WorkScopeV1{{ResourceKind: "records", Actions: []string{"read"}}}
-	lookup := []*basev0.WorkScopeV1{{ResourceKind: "records", Actions: []string{"find"}}}
-	headless := []*basev0.WorkScopeV1{{ResourceKind: "records", Actions: []string{"refresh"}}}
+	invoke := []*basev1.WorkScopeV1{{ResourceKind: "records", Actions: []string{"read"}}}
+	lookup := []*basev1.WorkScopeV1{{ResourceKind: "records", Actions: []string{"find"}}}
+	headless := []*basev1.WorkScopeV1{{ResourceKind: "records", Actions: []string{"refresh"}}}
 	binding := domain.Binding{ID: "local-binding-key", Audience: "module:records", InvokeScopes: invoke, LookupScopes: lookup, HeadlessScopes: headless}
 	edges := []domain.EdgeDependency{{Module: "module:annotations", Presence: "optional"}, {Module: "module:records", Presence: "required"}}
 	offer := authority.ReviewedOffer{Module: domain.Module{Principal: "solution:example", Bindings: map[string]domain.Binding{
 		binding.ID: binding, "self": {ID: "self", Audience: "solution:example"},
 	}, EdgeDependencies: edges}, Modules: []domain.Module{
-		{Name: "records-route", Principal: "module:records", Kind: domain.KindModule, Generation: 3, ResourceKinds: []*basev0.WorkScopeV1{{ResourceKind: "records", Actions: []string{"read", "find", "refresh"}}}},
+		{Name: "records-route", Principal: "module:records", Kind: domain.KindModule, Generation: 3, ResourceKinds: []*basev1.WorkScopeV1{{ResourceKind: "records", Actions: []string{"read", "find", "refresh"}}}},
 	}}
 	deps, err := business.SolutionInstallationDependencies(offer)
 	if err != nil {
@@ -64,7 +64,7 @@ func TestPresenceOnlyDependencyCreatesNoBindingOrScope(t *testing.T) {
 func TestSolutionDependencyIncomingAccessUsesSharedOperationDecisions(t *testing.T) {
 	for _, operation := range []string{"invoke", "lookup", "headless"} {
 		t.Run(operation, func(t *testing.T) {
-			required := []*basev0.WorkScopeV1{{ResourceKind: "records", Actions: []string{"read"}, ResourceIds: []string{"reviewed"}}}
+			required := []*basev1.WorkScopeV1{{ResourceKind: "records", Actions: []string{"read"}, ResourceIds: []string{"reviewed"}}}
 			binding := domain.Binding{ID: "read", Audience: "module:records"}
 			switch operation {
 			case "invoke":
@@ -79,7 +79,7 @@ func TestSolutionDependencyIncomingAccessUsesSharedOperationDecisions(t *testing
 			if _, err := business.SolutionInstallationDependencies(offer); err != nil {
 				t.Fatal(err)
 			}
-			offer.Modules[0].ResourceKinds = []*basev0.WorkScopeV1{{ResourceKind: "records", Actions: []string{"read"}, ResourceIds: []string{"another"}}}
+			offer.Modules[0].ResourceKinds = []*basev1.WorkScopeV1{{ResourceKind: "records", Actions: []string{"read"}, ResourceIds: []string{"another"}}}
 			if _, err := business.SolutionInstallationDependencies(offer); err == nil {
 				t.Fatal("incompatible incoming resource scope accepted")
 			}
@@ -135,9 +135,9 @@ func TestFinalDependencyFenceRejectsOmittedOrUnrelatedWitness(t *testing.T) {
 // solution binds documents, documents embeds through model, so model is a
 // required dependency of the pages installation although pages never names it.
 func TestSolutionDependenciesCloseOverWhatSupportingModulesReach(t *testing.T) {
-	read := []*basev0.WorkScopeV1{{ResourceKind: "documents", Actions: []string{"read"}}}
-	embed := []*basev0.WorkScopeV1{{ResourceKind: "modelservice.profiles", Actions: []string{"invoke"}}}
-	rows := []*basev0.WorkScopeV1{{ResourceKind: "records.records", Actions: []string{"read"}}}
+	read := []*basev1.WorkScopeV1{{ResourceKind: "documents", Actions: []string{"read"}}}
+	embed := []*basev1.WorkScopeV1{{ResourceKind: "modelservice.profiles", Actions: []string{"invoke"}}}
+	rows := []*basev1.WorkScopeV1{{ResourceKind: "records.records", Actions: []string{"read"}}}
 	documents := domain.Module{Name: "documents", Principal: "module:documents", Kind: domain.KindModule, Generation: 5,
 		ResourceKinds: read, Bindings: map[string]domain.Binding{
 			"model": {ID: "model", Audience: "module:model", InvokeScopes: embed},
@@ -248,10 +248,10 @@ func TestSolutionDependenciesCloseOverWhatSupportingModulesReach(t *testing.T) {
 // supporting module's, is listed and walked through like any module; only a
 // solution reached is chosen by its own review and left out.
 func TestTheWalkersClosureIsTheCoresClosure(t *testing.T) {
-	read := []*basev0.WorkScopeV1{{ResourceKind: "support", Actions: []string{"read"}}}
-	entries := []*basev0.WorkScopeV1{{ResourceKind: "directory.entry", Actions: []string{"read"}}}
+	read := []*basev1.WorkScopeV1{{ResourceKind: "support", Actions: []string{"read"}}}
+	entries := []*basev1.WorkScopeV1{{ResourceKind: "directory.entry", Actions: []string{"read"}}}
 	page := domain.Module{Name: "directory", Principal: "module:directory", Kind: domain.KindModule, Generation: 2, ResourceKinds: entries,
-		InstallationRole: domain.NoInstallationRole, Roles: map[string][]*basev0.WorkScopeV1{"user": entries},
+		InstallationRole: domain.NoInstallationRole, Roles: map[string][]*basev1.WorkScopeV1{"user": entries},
 		Bindings: map[string]domain.Binding{"behind": {ID: "behind", Audience: "module:behind-page"}}}
 	behindPage := domain.Module{Name: "behind-page", Principal: "module:behind-page", Kind: domain.KindModule, Generation: 1}
 	model := domain.Module{Name: "model", Principal: "module:model", Kind: domain.KindModule, Generation: 4}
@@ -279,7 +279,7 @@ func TestTheWalkersClosureIsTheCoresClosure(t *testing.T) {
 		"a solution reaching it only through a supporting module's edge": {Name: "through-edge", Principal: "solution:through-edge", Kind: domain.KindSolution, Generation: 1,
 			EdgeDependencies: []domain.EdgeDependency{{Module: "module:edged", Presence: "required"}}},
 		"a module page reaching another module page": {Name: "other-page", Principal: "module:other-page", Kind: domain.KindModule, Generation: 1,
-			InstallationRole: domain.NoInstallationRole, Roles: map[string][]*basev0.WorkScopeV1{"user": read},
+			InstallationRole: domain.NoInstallationRole, Roles: map[string][]*basev1.WorkScopeV1{"user": read},
 			Bindings: map[string]domain.Binding{"support": {ID: "support", Audience: "module:support", InvokeScopes: read}, "directory": {ID: "directory", Audience: "module:directory", InvokeScopes: entries}}},
 	} {
 		t.Run(name, func(t *testing.T) {

@@ -19,7 +19,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/offers"
-	runnablev0 "github.com/codefly-dev/core/generated/go/codefly/runnable/v0"
+	runnablev1 "github.com/codefly-dev/core/generated/go/codefly/runnable/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -28,7 +28,7 @@ import (
 
 // RunnableReader reads the prepared Runnable bindings (keyed MODULE__OPERATION)
 // a tool caller of this host runs, so a review can name each operation's tools.
-type RunnableReader func(context.Context) (map[string]*runnablev0.PreparedBinding, error)
+type RunnableReader func(context.Context) (map[string]*runnablev1.PreparedBinding, error)
 
 // HostOfferServer serves OfferService.
 type HostOfferServer struct {
@@ -83,7 +83,7 @@ func (s *HostOfferServer) ReviewOffer(ctx context.Context, req *installationv1.R
 	if err != nil {
 		return nil, coreStatus(err)
 	}
-	var bindings map[string]*runnablev0.PreparedBinding
+	var bindings map[string]*runnablev1.PreparedBinding
 	if s.runnables != nil {
 		if bindings, err = s.runnables(ctx); err != nil {
 			return nil, status.Errorf(codes.Unavailable, "the composed tool bindings cannot be read: %v", err)
@@ -125,7 +125,7 @@ func offerCaller(ctx context.Context, what, org string) (*authority.Service, aut
 // Each role's capabilities are the core's join of the role against every
 // delivered module's method policies: a role with none covers no delivered
 // operation, which is an answer, not a missing read.
-func reviewedOffer(offer authority.ReviewedOffer, bindings map[string]*runnablev0.PreparedBinding) (*installationv1.ReviewedOffer, error) {
+func reviewedOffer(offer authority.ReviewedOffer, bindings map[string]*runnablev1.PreparedBinding) (*installationv1.ReviewedOffer, error) {
 	projected, err := offers.Project(offer, bindings)
 	if err != nil {
 		return nil, coreStatus(err)

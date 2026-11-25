@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	storagev0 "github.com/codefly-dev/service-object-storage/gen/codefly/storage/v0"
+	storagev1 "github.com/codefly-dev/service-object-storage/gen/codefly/storage/v1"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -55,8 +55,8 @@ var errOutsideScope = errors.New("objectstore: the object-storage service listed
 
 // ServiceBucket is one source's bucket as the object-storage service serves it.
 type ServiceBucket struct {
-	client   storagev0.ObjectStorageClient
-	binding  *storagev0.Binding
+	client   storagev1.ObjectStorageClient
+	binding  *storagev1.Binding
 	prefix   string // the source's literal key prefix
 	maxBatch int    // objects per GetMany, once Capabilities under the binding answered
 	maxList  int    // objects per List page, likewise
@@ -71,10 +71,10 @@ type ServiceBucket struct {
 // binding's prefix (v0.0.19 keeps one literal; earlier releases normalized it
 // as a folder), and the contract tests hold the pinned service to the request
 // prefix being used as written.
-func NewServiceBucket(client storagev0.ObjectStorageClient, cfg SourceConfig, accessKeyID, secretAccessKey string) *ServiceBucket {
+func NewServiceBucket(client storagev1.ObjectStorageClient, cfg SourceConfig, accessKeyID, secretAccessKey string) *ServiceBucket {
 	return &ServiceBucket{
 		client: client,
-		binding: &storagev0.Binding{
+		binding: &storagev1.Binding{
 			// "s3" with an explicit endpoint is any S3-style store, addressed
 			// path-style; the source's endpoint is required, so this never
 			// silently means AWS.
@@ -82,8 +82,8 @@ func NewServiceBucket(client storagev0.ObjectStorageClient, cfg SourceConfig, ac
 			Endpoint: cfg.Endpoint,
 			Region:   cfg.Region,
 			Bucket:   cfg.Bucket,
-			Credential: &storagev0.Credential{Kind: &storagev0.Credential_AccessKey{
-				AccessKey: &storagev0.AccessKey{Id: accessKeyID, Secret: secretAccessKey},
+			Credential: &storagev1.Credential{Kind: &storagev1.Credential_AccessKey{
+				AccessKey: &storagev1.AccessKey{Id: accessKeyID, Secret: secretAccessKey},
 			}},
 		},
 		prefix: cfg.Prefix,
@@ -120,10 +120,10 @@ func (b *ServiceBucket) List(ctx context.Context) ([]Item, error) {
 	return nil, fmt.Errorf("%w: more than %d pages", ErrListingIncomplete, maxListPages)
 }
 
-func (b *ServiceBucket) listPage(ctx context.Context, token string) (*storagev0.ListResult, error) {
+func (b *ServiceBucket) listPage(ctx context.Context, token string) (*storagev1.ListResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
-	return b.client.List(ctx, &storagev0.ListRequest{Prefix: b.prefix, PageToken: token, Binding: b.binding})
+	return b.client.List(ctx, &storagev1.ListRequest{Prefix: b.prefix, PageToken: token, Binding: b.binding})
 }
 
 // Read gets the batch at its listed ETags in one GetMany call per
@@ -160,9 +160,9 @@ func (e *TooLargeError) Error() string {
 func (e *TooLargeError) Unwrap() error { return connector.ErrItemTooLarge }
 
 func (b *ServiceBucket) readBatch(ctx context.Context, items []Item, visit func(Item, string, io.Reader) error, skipped *TooLargeError) error {
-	req := &storagev0.GetManyRequest{Binding: b.binding, Items: make([]*storagev0.GetManyItem, len(items))}
+	req := &storagev1.GetManyRequest{Binding: b.binding, Items: make([]*storagev1.GetManyItem, len(items))}
 	for i, it := range items {
-		req.Items[i] = &storagev0.GetManyItem{Key: it.Key, IfMatch: it.ETag}
+		req.Items[i] = &storagev1.GetManyItem{Key: it.Key, IfMatch: it.ETag}
 	}
 	ctx, cancel := context.WithTimeout(ctx, readTimeout)
 	defer cancel()
@@ -195,7 +195,7 @@ func (b *ServiceBucket) readBatch(ctx context.Context, items []Item, visit func(
 		if err != nil {
 			return storeError(err)
 		}
-		if data, ok := msg.GetKind().(*storagev0.GetManyResponse_Data); ok {
+		if data, ok := msg.GetKind().(*storagev1.GetManyResponse_Data); ok {
 			if current == nil || int64(content.Len()+len(data.Data)) > current.Size {
 				return fmt.Errorf("%w: the service sent bytes no listed object has", ErrObjectChanged)
 			}
@@ -212,12 +212,12 @@ func (b *ServiceBucket) readBatch(ctx context.Context, items []Item, visit func(
 		it := items[answered]
 		answered++
 		switch header.GetOutcome() {
-		case storagev0.GetManyOutcome_GET_MANY_OUTCOME_OK:
+		case storagev1.GetManyOutcome_GET_MANY_OUTCOME_OK:
 			current, contentType = &it, header.GetInfo().GetContentType()
 			content.Reset()
-		case storagev0.GetManyOutcome_GET_MANY_OUTCOME_CHANGED, storagev0.GetManyOutcome_GET_MANY_OUTCOME_NOT_FOUND:
+		case storagev1.GetManyOutcome_GET_MANY_OUTCOME_CHANGED, storagev1.GetManyOutcome_GET_MANY_OUTCOME_NOT_FOUND:
 			return fmt.Errorf("%w: %s", ErrObjectChanged, it.Key)
-		case storagev0.GetManyOutcome_GET_MANY_OUTCOME_TOO_LARGE:
+		case storagev1.GetManyOutcome_GET_MANY_OUTCOME_TOO_LARGE:
 			skipped.Keys = append(skipped.Keys, it.Key)
 		default:
 			return fmt.Errorf("objectstore: the service answered object %s with outcome %v", it.Key, header.GetOutcome())
@@ -244,7 +244,7 @@ func (b *ServiceBucket) checkBinding(ctx context.Context) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
-	caps, err := b.client.Capabilities(ctx, &storagev0.CapabilitiesRequest{Binding: b.binding})
+	caps, err := b.client.Capabilities(ctx, &storagev1.CapabilitiesRequest{Binding: b.binding})
 	if err != nil {
 		return storeError(err)
 	}
@@ -316,10 +316,10 @@ func storeError(err error) error {
 // reads a batch: a release that does is the one that also takes a per-call
 // binding. One that does not — the composed agent predates it — is
 // ErrBindingNotHonoured, and the host admits no object-storage source.
-func CheckService(ctx context.Context, client storagev0.ObjectStorageClient) error {
+func CheckService(ctx context.Context, client storagev1.ObjectStorageClient) error {
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
-	caps, err := client.Capabilities(ctx, &storagev0.CapabilitiesRequest{})
+	caps, err := client.Capabilities(ctx, &storagev1.CapabilitiesRequest{})
 	if err != nil {
 		return storeError(err)
 	}

@@ -26,7 +26,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"connectrpc.com/connect"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -211,10 +211,10 @@ func sourceReadFixture(t *testing.T) (*readProjectionStore, *workContextAuthorit
 	t.Cleanup(server.Close)
 	client := accountsv1connect.NewModuleCapabilitiesServiceClient(server.Client(), server.URL, connect.WithGRPC())
 	mint := func(audience, kind, action string, extra ...string) string {
-		scopes := []*basev0.WorkScopeV1{{ResourceKind: kind, Actions: []string{action}}}
+		scopes := []*basev1.WorkScopeV1{{ResourceKind: kind, Actions: []string{action}}}
 		for _, permission := range extra {
 			resource, verb, _ := strings.Cut(permission, ":")
-			scopes = append(scopes, &basev0.WorkScopeV1{ResourceKind: resource, Actions: []string{verb}})
+			scopes = append(scopes, &basev1.WorkScopeV1{ResourceKind: resource, Actions: []string{verb}})
 		}
 		token, _ := mintTestCapability(t, workContextSingleton, testCapability{Audience: audience, Tenant: readOrg, Owner: readOwner,
 			Task: "019f6bf7-1111-7111-8111-111111111111", Session: "019f6bf7-2222-7222-8222-222222222222", Scopes: scopes})

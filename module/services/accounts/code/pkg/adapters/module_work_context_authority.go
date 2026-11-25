@@ -6,7 +6,7 @@ import (
 	"errors"
 	"slices"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/wool"
 	"github.com/codefly-dev/core/workcontext"
 	"google.golang.org/grpc/codes"
@@ -174,7 +174,7 @@ func (s *WorkContextAuthorityServer) resolveWorkContextAuthority(
 // chain and the binding are what a question has to be held against.
 func (s *WorkContextAuthorityServer) addressedToCaller(
 	ctx context.Context, encoded string, audiences []string,
-) (*basev0.WorkContextV1, error) {
+) (*basev1.WorkContextV1, error) {
 	inspector := &workcontext.Inspector{
 		Issuer: s.issuer,
 		Keys:   map[string]ed25519.PublicKey{s.keyID: s.publicKey},
@@ -213,7 +213,7 @@ func (s *WorkContextAuthorityServer) addressedToCaller(
 // chainPrincipals is every principal a verifier holds an epoch and an execution
 // against: the task owner, and each actor hop. Core asks about exactly these and
 // no others (checkActorEpochsAgainst, checkExecutionsAgainst).
-func chainPrincipals(claims *basev0.WorkContextV1) []string {
+func chainPrincipals(claims *basev1.WorkContextV1) []string {
 	principals := []string{claims.GetOwnerPrincipalId()}
 	for _, hop := range claims.GetActorChain() {
 		principals = append(principals, hop.GetPrincipalId())
@@ -222,7 +222,7 @@ func chainPrincipals(claims *basev0.WorkContextV1) []string {
 }
 
 func (s *WorkContextAuthorityServer) answerSeal(
-	ctx context.Context, tenant string, claims *basev0.WorkContextV1, question *gen.WorkContextSealQuestion,
+	ctx context.Context, tenant string, claims *basev1.WorkContextV1, question *gen.WorkContextSealQuestion,
 ) (*gen.ModuleResolveWorkContextAuthorityResponse, error) {
 	// The seal is held for the task's OWNER, through the installation the
 	// capability names: core asks about that pair and no other.
@@ -249,7 +249,7 @@ func (s *WorkContextAuthorityServer) answerSeal(
 }
 
 func (s *WorkContextAuthorityServer) answerPrincipalEpoch(
-	ctx context.Context, tenant string, claims *basev0.WorkContextV1, question *gen.WorkContextPrincipalEpochQuestion,
+	ctx context.Context, tenant string, claims *basev1.WorkContextV1, question *gen.WorkContextPrincipalEpochQuestion,
 ) (*gen.ModuleResolveWorkContextAuthorityResponse, error) {
 	if !slices.Contains(chainPrincipals(claims), question.GetPrincipalId()) {
 		return nil, status.Error(codes.InvalidArgument, errUnaddressedWorkContextAuthority)
@@ -278,7 +278,7 @@ func (s *WorkContextAuthorityServer) answerPrincipalEpoch(
 }
 
 func (s *WorkContextAuthorityServer) answerOperationBinding(
-	ctx context.Context, tenant string, claims *basev0.WorkContextV1, question *gen.WorkContextOperationBindingQuestion,
+	ctx context.Context, tenant string, claims *basev1.WorkContextV1, question *gen.WorkContextOperationBindingQuestion,
 ) (*gen.ModuleResolveWorkContextAuthorityResponse, error) {
 	// The binding the capability is SEALED to, exactly. A capability carrying
 	// none has no binding to ask about, and a binding some other capability
@@ -321,7 +321,7 @@ func (s *WorkContextAuthorityServer) answerOperationBinding(
 }
 
 func (s *WorkContextAuthorityServer) answerAuthorizationRevision(
-	ctx context.Context, tenant string, claims *basev0.WorkContextV1,
+	ctx context.Context, tenant string, claims *basev1.WorkContextV1,
 	question *gen.WorkContextAuthorizationRevisionQuestion,
 ) (*gen.ModuleResolveWorkContextAuthorityResponse, error) {
 	if question.GetOwnerPrincipalId() != claims.GetOwnerPrincipalId() {
@@ -347,7 +347,7 @@ func (s *WorkContextAuthorityServer) answerAuthorizationRevision(
 }
 
 func (s *WorkContextAuthorityServer) answerApprovalGrant(
-	ctx context.Context, tenant string, claims *basev0.WorkContextV1,
+	ctx context.Context, tenant string, claims *basev1.WorkContextV1,
 	question *gen.WorkContextApprovalGrantQuestion,
 ) (*gen.ModuleResolveWorkContextAuthorityResponse, error) {
 	claimed := claims.GetGrantHop().GetGrantId()

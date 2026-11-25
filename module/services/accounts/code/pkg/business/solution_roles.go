@@ -11,7 +11,7 @@ import (
 	coredecide "github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	coredelivered "github.com/codefly-dev/authority/libraries/authority-core/go/delivered"
 	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 
 	compositionv1 "accounts/pkg/gen/host/composition/v1"
 )
@@ -33,7 +33,7 @@ import (
 // addressed to another module, and decides nothing.
 type SolutionAuthority struct {
 	Principal string
-	Roles     map[string][]*basev0.WorkScopeV1
+	Roles     map[string][]*basev1.WorkScopeV1
 }
 
 // DeliveredSolutionAuthority is principal's role declaration from its applied
@@ -81,7 +81,7 @@ func (s *Service) solutionAuthorityOf(doc *compositionv1.AuthorityManifestV1, ma
 		// roles and no page) decide nothing here either.
 		return nil
 	}
-	out := &SolutionAuthority{Principal: manifest.Authority.Principal, Roles: map[string][]*basev0.WorkScopeV1{}}
+	out := &SolutionAuthority{Principal: manifest.Authority.Principal, Roles: map[string][]*basev1.WorkScopeV1{}}
 	for name, scopes := range composed.Roles {
 		out.Roles[name] = slices.Clone(scopes)
 	}

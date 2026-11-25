@@ -12,7 +12,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -103,7 +103,7 @@ func (s *Service) issuedGovernance(ctx context.Context, who authority.Person, in
 	if err := governingScopeDeclared(target, g); err != nil {
 		return err
 	}
-	asked := &basev0.WorkScopeV1{ResourceKind: g.Kind, Actions: []string{g.Action}}
+	asked := &basev1.WorkScopeV1{ResourceKind: g.Kind, Actions: []string{g.Action}}
 	if target.Kind == domain.KindSolution {
 		// A solution's roles grant only on the data its installation owns.
 		asked.ResourceOwnerId = inst.PrincipalID

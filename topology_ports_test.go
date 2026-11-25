@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/network"
 )
 
@@ -71,7 +71,7 @@ func TestTopologyPortsComeFromCodeflyAllocation(t *testing.T) {
 		}
 		endpoints := endpointsByName(t, topology)
 
-		want, err := network.DeployedEndpointPorts(context.Background(), composed, "accounts", []*basev0.Endpoint{
+		want, err := network.DeployedEndpointPorts(context.Background(), composed, "accounts", []*basev1.Endpoint{
 			{Name: "authority", Api: "grpc"}, {Name: "connect", Api: "connect"}, {Name: "grpc", Api: "grpc"}, {Name: "rest", Api: "rest"},
 		})
 		if err != nil {

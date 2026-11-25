@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -27,19 +27,19 @@ import (
 
 // singleUseViewer is a single-use capability readOwner holds for audience,
 // reading kind — limited to ids when any are named.
-func singleUseViewer(t *testing.T, audience, kind string, ids ...string) (string, *basev0.WorkContextV1) {
+func singleUseViewer(t *testing.T, audience, kind string, ids ...string) (string, *basev1.WorkContextV1) {
 	t.Helper()
 	return mintTestCapability(t, workContextSingleton, testCapability{
 		Audience: audience, Tenant: readOrg, Owner: readOwner,
 		Task: "019f6bf7-1111-7111-8111-111111111111", Session: "019f6bf7-2222-7222-8222-222222222222",
 		Replay: workcontext.ReplaySingleUse,
-		Scopes: []*basev0.WorkScopeV1{{ResourceKind: kind, Actions: []string{"read"}, ResourceIds: ids}},
+		Scopes: []*basev1.WorkScopeV1{{ResourceKind: kind, Actions: []string{"read"}, ResourceIds: ids}},
 	})
 }
 
 // consumeAsTheConsumer is ConsumeSingleUse as a consumer calls it after
 // verifying: the token's own nonce, its tenant and expiry.
-func consumeAsTheConsumer(t *testing.T, signed *basev0.WorkContextV1) error {
+func consumeAsTheConsumer(t *testing.T, signed *basev1.WorkContextV1) error {
 	t.Helper()
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-codefly-internal-token", "source-read-test-perimeter"))
 	_, err := workContextSingleton.ConsumeSingleUse(ctx, &gen.ConsumeSingleUseWorkContextRequest{

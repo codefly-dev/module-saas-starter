@@ -14,7 +14,7 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -288,7 +288,7 @@ func TestWorkContextScopesMapExactPermissionChecks(t *testing.T) {
 		ResourceIds:  []string{"repo:one", "repo:two"},
 	}}, noContentReads)
 	require.NoError(t, err)
-	require.Equal(t, []*basev0.WorkScopeV1{{
+	require.Equal(t, []*basev1.WorkScopeV1{{
 		ResourceKind: "repository",
 		Actions:      []string{"read", "write"},
 		ResourceIds:  []string{"repo:one", "repo:two"},
@@ -323,7 +323,7 @@ func TestWorkContextParentVerificationRejectsStaleAuthorization(t *testing.T) {
 		Tenant:   "019f6bf7-5b4b-74e5-8c17-092259bb1661",
 		Owner:    "019f6bf7-5b1c-730d-9687-fe6d4aff31ed",
 		Task:     "019f6bf7-1111-7111-8111-111111111111",
-		Scopes:   []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"append"}}},
+		Scopes:   []*basev1.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"append"}}},
 	})
 
 	// Core verifies the capability against the revision it was minted at (12);
@@ -532,9 +532,9 @@ func mintDelegatedContext(t *testing.T, server *WorkContextAuthorityServer) stri
 		Owner:    renewOwnerID,
 		Task:     renewTaskID,
 		Session:  renewSession,
-		Scopes:   []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"append", "read"}}},
+		Scopes:   []*basev1.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"append", "read"}}},
 		Actors: []delegationHop{agentHop(renewActorID, "019f6bf7-3333-7333-8333-333333333371",
-			&basev0.WorkScopeV1{ResourceKind: "evidence", Actions: []string{"append", "read"}})},
+			&basev1.WorkScopeV1{ResourceKind: "evidence", Actions: []string{"append", "read"}})},
 	})
 	return token
 }
@@ -729,9 +729,9 @@ func TestRenewWorkContextPreservesSingleUseReplayPolicy(t *testing.T) {
 		Owner:    renewOwnerID,
 		Task:     renewTaskID,
 		Replay:   workcontext.ReplaySingleUse,
-		Scopes:   []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"append"}}},
+		Scopes:   []*basev1.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"append"}}},
 		Actors: []delegationHop{agentHop(renewActorID, "019f6bf7-3333-7333-8333-333333333372",
-			&basev0.WorkScopeV1{ResourceKind: "evidence", Actions: []string{"append"}})},
+			&basev1.WorkScopeV1{ResourceKind: "evidence", Actions: []string{"append"}})},
 	})
 
 	previous := service
@@ -780,7 +780,7 @@ func TestVerifyActorParentRejectsOwnerOnlyContext(t *testing.T) {
 		Tenant:   renewOrgID,
 		Owner:    renewOwnerID,
 		Task:     renewTaskID,
-		Scopes:   []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"append"}}},
+		Scopes:   []*basev1.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"append"}}},
 	})
 
 	_, _, err := server.verifyActorParent(
@@ -866,7 +866,7 @@ func mintOwnedContext(
 		Owner:    renewActorID,
 		Task:     renewTaskID,
 		Session:  sessionID,
-		Scopes:   []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"append", "read"}}},
+		Scopes:   []*basev1.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"append", "read"}}},
 	})
 	return token
 }

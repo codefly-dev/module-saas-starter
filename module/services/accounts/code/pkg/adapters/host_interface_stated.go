@@ -7,7 +7,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	corescope "github.com/codefly-dev/authority/libraries/authority-core/go/scope"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -151,8 +151,8 @@ func issueForStatedCredential(ctx context.Context, core *authority.Service, req 
 // key is held to its scopes (scopeMatches), keeps that action of that kind,
 // on the owner and the resources the holding selects. A key scope naming what
 // is not held adds nothing.
-func scopesAKeyCarries(held []*basev0.WorkScopeV1, keyScopes []string) []*basev0.WorkScopeV1 {
-	var out []*basev0.WorkScopeV1
+func scopesAKeyCarries(held []*basev1.WorkScopeV1, keyScopes []string) []*basev1.WorkScopeV1 {
+	var out []*basev1.WorkScopeV1
 	for _, sc := range held {
 		actions := slices.DeleteFunc(slices.Clone(sc.GetActions()), func(action string) bool {
 			return !grantsScope(keyScopes, sc.GetResourceKind()+":"+action)
@@ -160,7 +160,7 @@ func scopesAKeyCarries(held []*basev0.WorkScopeV1, keyScopes []string) []*basev0
 		if len(actions) == 0 {
 			continue
 		}
-		kept, _ := proto.Clone(sc).(*basev0.WorkScopeV1)
+		kept, _ := proto.Clone(sc).(*basev1.WorkScopeV1)
 		kept.Actions = actions
 		out = append(out, kept)
 	}

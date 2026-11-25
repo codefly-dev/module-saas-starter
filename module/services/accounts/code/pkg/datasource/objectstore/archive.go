@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	storagev0 "github.com/codefly-dev/service-object-storage/gen/codefly/storage/v0"
+	storagev1 "github.com/codefly-dev/service-object-storage/gen/codefly/storage/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -43,11 +43,11 @@ const writeTimeout = 2 * time.Minute
 
 // HostStore writes objects to the object-storage service's own bucket.
 type HostStore struct {
-	client storagev0.ObjectStorageClient
+	client storagev1.ObjectStorageClient
 }
 
 // NewHostStore binds the host's writes to client.
-func NewHostStore(client storagev0.ObjectStorageClient) *HostStore {
+func NewHostStore(client storagev1.ObjectStorageClient) *HostStore {
 	return &HostStore{client: client}
 }
 
@@ -73,7 +73,7 @@ func (s *HostStore) PutIfAbsent(ctx context.Context, key, contentType string, bo
 	if err != nil {
 		return "", putError(err)
 	}
-	header := &storagev0.PutRequest{Kind: &storagev0.PutRequest_Header{Header: &storagev0.PutHeader{
+	header := &storagev1.PutRequest{Kind: &storagev1.PutRequest_Header{Header: &storagev1.PutHeader{
 		Key:          key,
 		ContentType:  contentType,
 		IfNoneMatch:  "*",
@@ -89,8 +89,8 @@ func (s *HostStore) PutIfAbsent(ctx context.Context, key, contentType string, bo
 	sent := stream.Send(header) == nil
 	for offset := 0; sent && offset < len(body); offset += putChunk {
 		end := min(offset+putChunk, len(body))
-		sent = stream.Send(&storagev0.PutRequest{
-			Kind: &storagev0.PutRequest_Data{Data: body[offset:end]},
+		sent = stream.Send(&storagev1.PutRequest{
+			Kind: &storagev1.PutRequest_Data{Data: body[offset:end]},
 		}) == nil
 	}
 	result, err := stream.CloseAndRecv()

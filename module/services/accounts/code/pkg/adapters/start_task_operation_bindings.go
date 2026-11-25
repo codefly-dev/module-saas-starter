@@ -10,7 +10,7 @@ import (
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	corescope "github.com/codefly-dev/authority/libraries/authority-core/go/scope"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -41,7 +41,7 @@ type operationBindingProjection struct {
 	// projected is what the named bindings carry, each part held at its
 	// binding's target: the only kinds of another module a capability
 	// addressed to a role-gated audience carries (holdMint).
-	projected  []*basev0.WorkScopeV1
+	projected  []*basev1.WorkScopeV1
 	readKinds  []string
 	identities []string
 }
@@ -86,7 +86,7 @@ func (s *WorkContextAuthorityServer) withOperationBindingScopes(ctx context.Cont
 		// What the person's role on a role-gated module's installation holds
 		// at the binding's target; the core's refusal is that it holds
 		// nothing there.
-		var byRole []*basev0.WorkScopeV1
+		var byRole []*basev1.WorkScopeV1
 		if gated {
 			if byRole, err = heldThroughBinding(ctx, orgID, ownerID, composed, name); err != nil && !coreRefused(err) {
 				return nil, err
@@ -105,12 +105,12 @@ func (s *WorkContextAuthorityServer) withOperationBindingScopes(ctx context.Cont
 			}
 			if gated {
 				kept = slices.DeleteFunc(kept, func(part *gen.WorkContextScope) bool {
-					return !corescope.Attenuates([]*basev0.WorkScopeV1{{ResourceKind: part.GetResourceKind(), Actions: part.GetActions()}}, byRole)
+					return !corescope.Attenuates([]*basev1.WorkScopeV1{{ResourceKind: part.GetResourceKind(), Actions: part.GetActions()}}, byRole)
 				})
 			}
 			for _, part := range kept {
 				held++
-				out.projected = append(out.projected, &basev0.WorkScopeV1{ResourceKind: part.GetResourceKind(), Actions: part.GetActions(), ResourceIds: part.GetResourceIds()})
+				out.projected = append(out.projected, &basev1.WorkScopeV1{ResourceKind: part.GetResourceKind(), Actions: part.GetActions(), ResourceIds: part.GetResourceIds()})
 				if !slices.ContainsFunc(out.scopes, func(existing *gen.WorkContextScope) bool { return proto.Equal(existing, part) }) {
 					out.scopes = append(out.scopes, part)
 				}

@@ -32,7 +32,7 @@ import (
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
 	solutionhost "github.com/codefly-dev/authority/libraries/solutionhost/go"
 	modulecontract "github.com/codefly-dev/core/contracts/module"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/sdk"
 	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/google/uuid"
@@ -2031,7 +2031,7 @@ func strandWithoutThrough(ctx context.Context, store *infra.PostgresStore, modul
 					reached[sc.GetResourceKind()] = true
 				}
 			}
-			m.Roles[role] = slices.DeleteFunc(m.Roles[role], func(sc *basev0.WorkScopeV1) bool { return reached[sc.GetResourceKind()] })
+			m.Roles[role] = slices.DeleteFunc(m.Roles[role], func(sc *basev1.WorkScopeV1) bool { return reached[sc.GetResourceKind()] })
 		}
 		m.Through, m.Source = nil, ""
 		return tx.PutModule(m)

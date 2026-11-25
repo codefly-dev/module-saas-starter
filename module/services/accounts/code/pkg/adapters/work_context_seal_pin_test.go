@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -129,7 +129,7 @@ func sealPinCases() []sealPinCase {
 			parent, _ := mintTestCapability(t, workContextSingleton, testCapability{
 				Audience: "example", Tenant: readOrg, Owner: readOwner,
 				Task: "019f6bf7-1111-7111-8111-111111111111", Session: "019f6bf7-2222-7222-8222-222222222222",
-				Scopes:       []*basev0.WorkScopeV1{{ResourceKind: "results", Actions: []string{"read", "write"}, ResourceIds: []string{"result-1"}}},
+				Scopes:       []*basev1.WorkScopeV1{{ResourceKind: "results", Actions: []string{"read", "write"}, ResourceIds: []string{"result-1"}}},
 				Installation: "installation-retired",
 			})
 			module := mintModuleIdentity(t, business.ModulePrincipalID("example"), readOrg)
@@ -148,7 +148,7 @@ func sealPinCases() []sealPinCase {
 			parent, _ := mintTestCapability(t, workContextSingleton, testCapability{
 				Audience: "example", Tenant: readOrg, Owner: readOwner,
 				Task: "019f6bf7-1111-7111-8111-111111111111", Session: "019f6bf7-2222-7222-8222-222222222222",
-				Scopes:       []*basev0.WorkScopeV1{{ResourceKind: "results", Actions: []string{"read"}}},
+				Scopes:       []*basev1.WorkScopeV1{{ResourceKind: "results", Actions: []string{"read"}}},
 				Installation: "installation-retired",
 			})
 			out, err := client.ExchangeDelegatedReadAudience(context.Background(), readExchangeRequest(t, parent))
@@ -292,7 +292,7 @@ func TestStartChildSessionGuardAllowsOnlyKnownOwnerKinds(t *testing.T) {
 	} {
 		kind := name
 		err := server.requireChildKeepsAudienceSeal(context.Background(),
-			&basev0.WorkContextV1{OwnerPrincipalKind: &kind, TenantId: renewOrgID}, "documents")
+			&basev1.WorkContextV1{OwnerPrincipalKind: &kind, TenantId: renewOrgID}, "documents")
 		if allowed {
 			require.NoError(t, err, "kind %q", kind)
 			continue

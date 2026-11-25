@@ -25,7 +25,7 @@ import (
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/wool"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
@@ -783,11 +783,11 @@ func delegationToWire(d domain.Delegation, now time.Time) *authorityv1.Delegatio
 }
 
 // scopesFromWire converts interface scopes to core's, byte for byte.
-func scopesFromWire(in []*authorityv1.WorkScopeV1) []*basev0.WorkScopeV1 {
-	out := make([]*basev0.WorkScopeV1, 0, len(in))
+func scopesFromWire(in []*authorityv1.WorkScopeV1) []*basev1.WorkScopeV1 {
+	out := make([]*basev1.WorkScopeV1, 0, len(in))
 	for _, sc := range in {
 		raw, _ := proto.Marshal(sc)
-		c := &basev0.WorkScopeV1{}
+		c := &basev1.WorkScopeV1{}
 		_ = proto.Unmarshal(raw, c)
 		out = append(out, c)
 	}
@@ -795,7 +795,7 @@ func scopesFromWire(in []*authorityv1.WorkScopeV1) []*basev0.WorkScopeV1 {
 }
 
 // scopesToWire converts core's scopes to the interface's, byte for byte.
-func scopesToWire(in []*basev0.WorkScopeV1) []*authorityv1.WorkScopeV1 {
+func scopesToWire(in []*basev1.WorkScopeV1) []*authorityv1.WorkScopeV1 {
 	out := make([]*authorityv1.WorkScopeV1, 0, len(in))
 	for _, sc := range in {
 		raw, _ := proto.Marshal(sc)

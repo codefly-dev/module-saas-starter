@@ -13,7 +13,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/storetest"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -67,17 +67,17 @@ func newSnapshotScenario(t *testing.T) *snapshotScenario {
 		Keys: snapshotKeys{public}, Replay: testStore.AuthorityCoreReplay(), HostInstallsModules: true})
 	require.NoError(t, err)
 
-	items := func(actions ...string) []*basev0.WorkScopeV1 {
-		return []*basev0.WorkScopeV1{{ResourceKind: sc.kind, Actions: actions}}
+	items := func(actions ...string) []*basev1.WorkScopeV1 {
+		return []*basev1.WorkScopeV1{{ResourceKind: sc.kind, Actions: actions}}
 	}
-	note := []*basev0.WorkScopeV1{{ResourceKind: sc.solution + ".note", Actions: []string{"read", "write"}}}
+	note := []*basev1.WorkScopeV1{{ResourceKind: sc.solution + ".note", Actions: []string{"read", "write"}}}
 	for _, m := range []domain.Module{
 		{Name: sc.store, Principal: sc.store, Kind: domain.KindModule, Generation: 1, OwnerAware: true, ResourceKinds: items("read", "write")},
 		{Name: sc.solution, Principal: sc.solution, Kind: domain.KindSolution, Generation: 1, OwnerAware: true, ResourceKinds: note,
 			Bindings: map[string]domain.Binding{"store": {ID: "store", Audience: sc.store, InvokeScopes: items("read", "write")}},
-			Roles: map[string][]*basev0.WorkScopeV1{
-				domain.AdminRole: append(append([]*basev0.WorkScopeV1{}, note...), items("read", "write")...),
-				domain.UserRole:  append(append([]*basev0.WorkScopeV1{}, note[0]), items("read")...),
+			Roles: map[string][]*basev1.WorkScopeV1{
+				domain.AdminRole: append(append([]*basev1.WorkScopeV1{}, note...), items("read", "write")...),
+				domain.UserRole:  append(append([]*basev1.WorkScopeV1{}, note[0]), items("read")...),
 			}},
 	} {
 		_, err := sc.core.ApplyModule(testCtx, m)

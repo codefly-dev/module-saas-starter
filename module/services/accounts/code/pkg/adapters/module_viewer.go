@@ -3,7 +3,7 @@ package adapters
 import (
 	"context"
 
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -22,7 +22,7 @@ const errViewerNotAddressedToCaller = "the viewer Work Context is not addressed 
 // Unauthenticated when the module or the viewer does not verify, or the host
 // does not admit the module's context; PermissionDenied when the viewer is
 // another module's.
-func authenticateModuleViewer(ctx context.Context, encodedViewer string) (*basev0.WorkContextV1, error) {
+func authenticateModuleViewer(ctx context.Context, encodedViewer string) (*basev1.WorkContextV1, error) {
 	authority := WorkContextSingleton()
 	if service == nil || !authority.configured() {
 		return nil, status.Error(codes.Unavailable, "Work Context authority is not configured")

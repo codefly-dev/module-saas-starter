@@ -13,7 +13,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/memstore"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	basev1 "github.com/codefly-dev/core/generated/go/codefly/base/v1"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -32,7 +32,7 @@ type statedCredentialFixture struct {
 	audit, other, records             string
 	auditInstallation, otherInstalled string
 	publicOrigin                      string
-	read, write                       *basev0.WorkScopeV1
+	read, write                       *basev1.WorkScopeV1
 }
 
 func newStatedCredentialFixture(t *testing.T) statedCredentialFixture {
@@ -63,18 +63,18 @@ func newStatedCredentialFixture(t *testing.T) statedCredentialFixture {
 	setup, err := authority.New(probe.core, authority.Config{Issuer: "https://stated.test", KeyID: "k1", Signer: private,
 		Keys: probeKeys{public}, Replay: probe.replay, HostInstallsModules: true})
 	require.NoError(t, err)
-	log := func(solution string, actions ...string) *basev0.WorkScopeV1 {
-		return &basev0.WorkScopeV1{ResourceKind: solution + ".log", Actions: actions}
+	log := func(solution string, actions ...string) *basev1.WorkScopeV1 {
+		return &basev1.WorkScopeV1{ResourceKind: solution + ".log", Actions: actions}
 	}
-	entries := []*basev0.WorkScopeV1{{ResourceKind: "stated.entry", Actions: []string{"read"}}}
+	entries := []*basev1.WorkScopeV1{{ResourceKind: "stated.entry", Actions: []string{"read"}}}
 	_, err = setup.ApplyModule(ctx, domain.Module{Name: f.records, Principal: f.records, Kind: domain.KindModule, Generation: 1, OwnerAware: true, ResourceKinds: entries})
 	require.NoError(t, err)
 	installer := authority.Person{ID: admin, Organization: f.org, SessionID: "session-admin"}
 	installed := map[string]string{}
 	for _, solution := range []string{f.audit, f.other} {
-		kinds := []*basev0.WorkScopeV1{log(solution, "read", "write")}
+		kinds := []*basev1.WorkScopeV1{log(solution, "read", "write")}
 		_, err := setup.ApplyModule(ctx, domain.Module{Name: solution, Principal: solution + "-principal", Kind: domain.KindSolution, Generation: 1, OwnerAware: true,
-			ResourceKinds: kinds, Roles: map[string][]*basev0.WorkScopeV1{domain.AdminRole: kinds, domain.UserRole: kinds}})
+			ResourceKinds: kinds, Roles: map[string][]*basev1.WorkScopeV1{domain.AdminRole: kinds, domain.UserRole: kinds}})
 		require.NoError(t, err)
 		approval, err := setup.Review(ctx, installer, f.org, solution)
 		require.NoError(t, err)

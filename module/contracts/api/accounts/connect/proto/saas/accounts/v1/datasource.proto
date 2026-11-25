@@ -3,7 +3,7 @@ syntax = "proto3";
 package saas.accounts.v1;
 
 import "buf/validate/validate.proto";
-import "codefly/runnable/v0/options.proto";
+import "codefly/runnable/v1/options.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/struct.proto";
@@ -1605,7 +1605,7 @@ service DatasourceService {
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
-    option (codefly.runnable.v0.operation) = {
+    option (codefly.runnable.v1.operation) = {
       attempt_timeout: {seconds: 60}
       total_timeout: {seconds: 600}
       max_attempts: 5
@@ -1686,7 +1686,7 @@ service DatasourceService {
       response_sensitivity: SENSITIVITY_SECRET
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
-    option (codefly.runnable.v0.operation) = {
+    option (codefly.runnable.v1.operation) = {
       attempt_timeout: {seconds: 60}
       total_timeout: {seconds: 600}
       max_attempts: 5
@@ -2473,7 +2473,7 @@ service DatasourceService {
       response_sensitivity: SENSITIVITY_INTERNAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
-    option (codefly.runnable.v0.operation) = {
+    option (codefly.runnable.v1.operation) = {
       attempt_timeout: {seconds: 60}
       total_timeout: {seconds: 600}
       max_attempts: 5
