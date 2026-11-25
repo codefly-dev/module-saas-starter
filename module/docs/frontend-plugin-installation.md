@@ -13,10 +13,10 @@ disposable projection.
 ## Contribution document
 
 The frontend document is strictly decoded against
-`contracts/frontend/v2/frontend-contribution.schema.json`:
+`contracts/frontend/v1/frontend-contribution.schema.json`:
 
 ```yaml
-schema: codefly/saas/frontend-contribution/v2
+schema: codefly/saas/frontend-contribution/v1
 package: "@example/console-frontend"
 version: 1.4.0
 export: consoleFrontendPlugin

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	updatev0 "github.com/codefly-dev/core/generated/go/codefly/update/v0"
+	updatev1 "github.com/codefly-dev/core/generated/go/codefly/update/v1"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -18,7 +18,7 @@ const (
 	hostRuntime    = "services/frontend/code/src/solutions/host-runtime.ts"
 )
 
-func contractByID(t *testing.T, contracts *updatev0.BehavioralContracts, id string) *structpb.Struct {
+func contractByID(t *testing.T, contracts *updatev1.BehavioralContracts, id string) *structpb.Struct {
 	t.Helper()
 	for _, contract := range contracts.Contracts {
 		if contract.Id == id {

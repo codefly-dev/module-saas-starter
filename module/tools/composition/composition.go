@@ -274,7 +274,7 @@ func generateCoreComposition(options Options) error {
 	if err := requireJSONEOF(decoder); err != nil {
 		return fmt.Errorf("decode Core composition input: %w", err)
 	}
-	if input.Schema != "codefly/composition-input/v2" || input.Descriptor == nil || input.ConsumerRoot == "" || input.Projection == "" {
+	if input.Schema != "codefly/composition-input/v1" || input.Descriptor == nil || input.ConsumerRoot == "" || input.Projection == "" {
 		return fmt.Errorf("core composition input is incomplete")
 	}
 	moduleRoot := options.ModuleRoot
@@ -328,7 +328,7 @@ func generateCoreComposition(options Options) error {
 		return err
 	}
 	catalog := corecomposition.Catalog{
-		Schema:       "codefly/composition-catalog/v2",
+		Schema:       "codefly/composition-catalog/v1",
 		Inputs:       catalogInputs,
 		Claims:       contributionClaims(frontends, settings, permissions, fixtures),
 		Dependencies: frontendDependencies(frontends),
@@ -436,7 +436,7 @@ func coreFrontendContributions(root string, descriptors []corecomposition.Fronte
 			return nil, fmt.Errorf("decode frontend contribution %q package.json: %w", descriptor.Path, err)
 		}
 		contributions = append(contributions, FrontendContribution{
-			Schema:  "codefly/saas/frontend-contribution/v2",
+			Schema:  "codefly/saas/frontend-contribution/v1",
 			Package: document.Name,
 			Version: document.Version,
 			Export:  descriptor.Export,
@@ -883,8 +883,8 @@ func validate(frontends []FrontendContribution, settings []SettingsContribution,
 		}
 	}
 	for _, contribution := range frontends {
-		if contribution.Schema != "codefly/saas/frontend-contribution/v2" {
-			return fmt.Errorf("frontend contribution schema must be codefly/saas/frontend-contribution/v2")
+		if contribution.Schema != "codefly/saas/frontend-contribution/v1" {
+			return fmt.Errorf("frontend contribution schema must be codefly/saas/frontend-contribution/v1")
 		}
 		if !packagePattern.MatchString(contribution.Package) || isReserved(manifest.ReservedNamespaces, contribution.Package) {
 			return fmt.Errorf("frontend package %q is invalid or reserved", contribution.Package)

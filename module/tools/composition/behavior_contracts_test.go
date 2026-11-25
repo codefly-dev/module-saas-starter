@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	corecomposition "github.com/codefly-dev/core/composition"
-	updatev0 "github.com/codefly-dev/core/generated/go/codefly/update/v0"
+	updatev1 "github.com/codefly-dev/core/generated/go/codefly/update/v1"
 	"github.com/codefly-dev/core/runnable"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -16,13 +16,13 @@ import (
 // composition.BuildPackageContractSnapshot does — same message, same strict
 // unmarshal — so a field this repository spells differently from the proto
 // fails here rather than at publication.
-func loadBehavioralContracts(t *testing.T, moduleRoot string) *updatev0.BehavioralContracts {
+func loadBehavioralContracts(t *testing.T, moduleRoot string) *updatev1.BehavioralContracts {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(moduleRoot, corecomposition.BehavioralContractsFileName))
 	if err != nil {
 		t.Fatalf("read behavioral contracts: %v", err)
 	}
-	contracts := new(updatev0.BehavioralContracts)
+	contracts := new(updatev1.BehavioralContracts)
 	if err := protojson.Unmarshal(data, contracts); err != nil {
 		t.Fatalf("decode behavioral contracts: %v", err)
 	}

@@ -337,7 +337,7 @@ func writeCoreInput(t *testing.T, fixture *coreCompositionFixture) {
 		t.Fatalf("load package manifest: %v", err)
 	}
 	input := corecomposition.CompositionInput{
-		Schema:       "codefly/composition-input/v2",
+		Schema:       "codefly/composition-input/v1",
 		Module:       fixture.descriptor.Name,
 		Package:      "codefly/saas-starter",
 		Version:      manifest.Version,
