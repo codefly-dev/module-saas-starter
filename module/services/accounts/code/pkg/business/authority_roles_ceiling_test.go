@@ -49,7 +49,7 @@ func TestDeliveredRoleAddressedToBindingAudience(t *testing.T) {
 	manifest := &solutionhost.ModuleManifest{
 		Alias: "builder", Kind: solutionhost.KindSolution, Generation: 1,
 		Authority: &solutionhost.Authority{Principal: "builder", ResourceKinds: []string{"pages"}, Bindings: []solutionhost.AuthorityBinding{
-			{ID: "tools", Audience: "robin", Operations: map[string][]string{"invoke": {"tools:read"}}},
+			{ID: "tools", Audience: "catalog", Operations: map[string][]string{"invoke": {"tools:read"}}},
 			{ID: "other", Audience: "other", Operations: map[string][]string{"invoke": {"tools:write"}}},
 		}},
 	}
@@ -57,12 +57,12 @@ func TestDeliveredRoleAddressedToBindingAudience(t *testing.T) {
 		name, audience, action string
 		accepted               bool
 	}{
-		{"addressed only", "robin", "read", true},
-		{"another audience's action", "robin", "write", false},
+		{"addressed only", "catalog", "read", true},
+		{"another audience's action", "catalog", "write", false},
 		{"undeclared audience", "missing", "read", false},
 		{"binding id is not its audience", "tools", "read", false},
 		{"empty audience", "", "read", false},
-		{"wildcard action", "robin", "*", false},
+		{"wildcard action", "catalog", "*", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			entry := &compositionv1.RoleAudienceV1{Audience: tc.audience, Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "tools", Actions: []string{tc.action}}}}
