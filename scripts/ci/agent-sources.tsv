@@ -1,7 +1,7 @@
-service-go	0.0.76	7f46986eced5c48672aec565ea920c9f218df34e
-service-go-grpc	0.1.75	13dd2b7865e50dedf9373dd03f3481e904ba0d12
-service-nextjs	0.0.171	d67d8051bf67e6c8eedae7569186e54c596aff78
-service-postgres	0.0.152	7654e6e5f9b2dc8f323fabb2118323c99446d79b
-service-redis	0.0.101	ddca5e8bb84d94b9bd44843398e0ced614bf9c39
-service-vault	0.0.45	40ac162894e67523465391ca5d74cea4fd53c05e
-service-object-storage	0.0.21	2aabb4c7438e426ba79c471c4c494494d6c5f50a
+codefly-dev/service-go	0.0.76	7f46986eced5c48672aec565ea920c9f218df34e
+codefly-dev/service-go-grpc	0.1.75	13dd2b7865e50dedf9373dd03f3481e904ba0d12
+codefly-dev/service-nextjs	0.0.171	d67d8051bf67e6c8eedae7569186e54c596aff78
+codefly-dev/service-postgres	0.0.152	7654e6e5f9b2dc8f323fabb2118323c99446d79b
+codefly-dev/service-redis	0.0.101	01683ef16180dbe2555c49f1af90eedece157973
+codefly-dev/service-vault	0.0.45	40ac162894e67523465391ca5d74cea4fd53c05e
+codefly-dev/service-object-storage	0.0.21	2aabb4c7438e426ba79c471c4c494494d6c5f50a

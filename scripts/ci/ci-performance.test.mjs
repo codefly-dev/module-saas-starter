@@ -363,12 +363,12 @@ test('service jobs build the exact v1 agents and the planner stays independent',
   assert.ok(cache.with.key.includes('scripts/ci/agent-sources.tsv'));
   assert.equal(cache.with['restore-keys'], undefined);
   const pins = readFileSync(join(root, 'scripts/ci/agent-sources.tsv'), 'utf8').trim().split('\n').map(row => row.split('\t'));
-  assert.equal(pins[0][0], 'service-go');
+  assert.equal(pins[0][0], 'codefly-dev/service-go');
   for (const [name, version, revision] of pins) {
     assert.match(revision, /^[a-f0-9]{40}$/, name);
     assert.match(version, /^\d+\.\d+\.\d+$/, name);
   }
-  const versions = new Map(pins.map(([repo, version]) => [repo.slice('service-'.length), version]));
+  const versions = new Map(pins.map(([repo, version]) => [repo.split('/service-')[1], version]));
   const module = parseWorkflowYaml(readFileSync(join(root, 'module/module.codefly.yaml'), 'utf8'));
   for (const { name: service } of module.services) {
     const manifest = parseWorkflowYaml(readFileSync(join(root, 'module/services', service, 'service.codefly.yaml'), 'utf8'));
