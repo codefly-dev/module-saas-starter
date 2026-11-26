@@ -192,7 +192,7 @@ Skills in `.claude/skills/`, loaded when the task calls for them:
 
 ## Building, testing, and CI
 
-- CI and local runtime qualification use CLI **0.1.261-dev.b7187e5f9244**, pinned to its exact source revision in `scripts/ci/install-codefly.sh`. The service jobs build native v1 agents from the owner commits in `scripts/ci/agent-sources.tsv`. A release tag requires a qualified released CLI.
+- CI and local runtime qualification use CLI **0.1.261-dev.b330293df977**, pinned to its exact source revision in `scripts/ci/install-codefly.sh`. The service jobs build native v1 agents from the owner commits in `scripts/ci/agent-sources.tsv`. A release tag requires a qualified released CLI.
 - On this machine first: `make verify` (the [Makefile](./Makefile)) runs what
   needs no host — the Go and frontend unit suites, the tree gates, the role
   plan (`make role-plan`: every accounts procedure against an administrator, a

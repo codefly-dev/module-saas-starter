@@ -65,7 +65,7 @@ test('the CLI installer retries resets, verifies downloads, and fails after exha
 // places, and it is what caught this branch moving the installer to 0.1.179
 // while this constant still said 0.1.171. Deriving it from the installer would
 // make the second assertion below tautological and lose that.
-const DEFAULT_CODEFLY_VERSION = '0.1.261-dev.b7187e5f9244';
+const DEFAULT_CODEFLY_VERSION = '0.1.261-dev.b330293df977';
 const HISTORICAL_SOURCE_VERSION = 'source-5234ce248b092edf1138a16ec4140dfbc8745522';
 
 test('source qualification installs the exact owner commit and never falls back or releases it', () => {
@@ -87,8 +87,10 @@ test('source qualification installs the exact owner commit and never falls back 
     const candidate = run({ CODEFLY_VERSION: DEFAULT_CODEFLY_VERSION });
     assert.equal(candidate.status, 0, candidate.stderr);
     const args = readFileSync(join(dir, 'go-args'), 'utf8');
-    assert.ok(args.includes('github.com/codefly-dev/cli/cmd/codefly@b7187e5f9244a7aead14f592d5fb54cddc02f92c'));
+    assert.ok(args.includes('github.com/codefly-dev/cli/cmd/codefly@b330293df97740841039522805a4a91e1ee3094c'));
     assert.ok(args.includes('cliupdate.version=' + DEFAULT_CODEFLY_VERSION));
+    assert.ok(args.includes('cliupdate.commit=b330293df97740841039522805a4a91e1ee3094c'));
+    assert.match(args, /cliupdate\.buildDate=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/);
     writeFileSync(pathFile, '');
     assert.notEqual(run({ TEST_GO_EXIT: '1' }).status, 0);
     assert.equal(readFileSync(pathFile, 'utf8'), '', 'failed source build installs no fallback');

@@ -108,7 +108,7 @@ that image, so the module pins the released agent rather than restating the dige
 An empty legacy response is not evidence that tests passed; do not bypass that
 check or disable the service's test phase to accept it.
 
-CI selects Codefly CLI **0.1.261-dev.b7187e5f9244** in
+CI selects Codefly CLI **0.1.261-dev.b330293df977** in
 `scripts/ci/install-codefly.sh` for every planner/executor job. The service jobs provision the v1 agent
 revisions in `scripts/ci/agent-sources.tsv`. Use that CLI
 for local runtime qualification too: the accounts service declares Codefly's

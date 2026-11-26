@@ -2,11 +2,11 @@
 # The hosted CI runner is Linux x64. Keep the release and archive digest paired.
 set -euo pipefail
 
-version="${CODEFLY_VERSION:-0.1.261-dev.b7187e5f9244}"
+version="${CODEFLY_VERSION:-0.1.261-dev.b330293df977}"
 source_revision=""
 case "${version}" in
-  0.1.261-dev.b7187e5f9244)
-    source_revision=b7187e5f9244a7aead14f592d5fb54cddc02f92c
+  0.1.261-dev.b330293df977)
+    source_revision=b330293df97740841039522805a4a91e1ee3094c
     ;;
   source-8de0f6674550fb040f03bc6cb2530116878c8c6b)
     # Host-interface candidate: exports every explicitly served proto package.
@@ -132,8 +132,10 @@ if [[ -n "${source_revision}" ]]; then
     exit 1
   fi
   install -d "${RUNNER_TEMP}/codefly-bin"
+  release_package=github.com/codefly-dev/cli/pkg/cliupdate
+  build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   GOWORK=off GOBIN="${RUNNER_TEMP}/codefly-bin" go install \
-    -ldflags "-X github.com/codefly-dev/cli/pkg/cliupdate.version=${version}" \
+    -ldflags "-X ${release_package}.version=${version} -X ${release_package}.commit=${source_revision} -X ${release_package}.buildDate=${build_date}" \
     "github.com/codefly-dev/cli/cmd/codefly@${source_revision}"
   echo "${RUNNER_TEMP}/codefly-bin" >> "${GITHUB_PATH}"
   exit 0
