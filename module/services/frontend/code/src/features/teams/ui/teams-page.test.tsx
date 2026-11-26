@@ -106,8 +106,10 @@ describe("viewing as a team from the list", () => {
 			</HostCasting>,
 		);
 		expect(await screen.findByText("records · user")).toBeTruthy();
-		expect(screen.getByText("Holds nothing installed")).toBeTruthy();
-		// A team granted nothing has nothing to view as.
+		expect(screen.getByRole("columnheader", { name: "Access you can preview" })).toBeTruthy();
+		expect(screen.getByText("No preview available")).toBeTruthy();
+		expect(screen.queryByText("Holds nothing installed")).toBeNull();
+		// The host omitted Finance from the teams this viewer can preview.
 		expect(
 			screen.queryByRole("button", { name: "View as Finance" }),
 		).toBeNull();

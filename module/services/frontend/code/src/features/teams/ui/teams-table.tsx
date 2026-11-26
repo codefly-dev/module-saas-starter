@@ -71,10 +71,15 @@ export function TeamsTable({
 				? [
 						col.display({
 							id: "holds",
-							header: "Holds",
-							cell: ({ row }) => (
-								<HoldingBadges holds={holdings.get(row.original.id) ?? []} />
-							),
+							header: "Access you can preview",
+							cell: ({ row }) => {
+								const roles = holdings.get(row.original.id);
+								return roles?.length ? (
+									<HoldingBadges holds={roles} />
+								) : (
+									<span className="text-muted-foreground">No preview available</span>
+								);
+							},
 						}),
 					]
 				: []),
