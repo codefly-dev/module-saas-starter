@@ -4,6 +4,10 @@
 # credentials in Git.
 -include local.mk
 export CODEFLY
+# SDK-backed tests start their own CLI process. Use the same executable
+# selected for the Make targets, including by a machine-local override.
+CODEFLY_BINARY ?= $(CODEFLY)
+export CODEFLY_BINARY
 
 # Every Go module here is independent and built with no workspace
 # (module/AGENTS.md, "Go suites"). GO may name a wrapper, GOTESTFLAGS passes
