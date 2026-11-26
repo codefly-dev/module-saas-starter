@@ -105,6 +105,9 @@ describe("LoginPage", () => {
 		try {
 			render(<LoginPage identity={{}} />);
 			await screen.findByText("Dana Lee");
+			expect(screen.getByRole("button", { name: /Dana Lee.*Page role: admin/ })).toBeTruthy();
+			expect(screen.getByRole("button", { name: /Carol Davis.*Page role: user/ })).toBeTruthy();
+			expect(screen.getByRole("button", { name: /Bob Williams.*No page role/ })).toBeTruthy();
 			const people = fixture.users.filter((person) => screen.queryByText(person.email));
 			expect(people.map((person) => person.name).sort()).toEqual(["Bob Williams", "Carol Davis", "Dana Lee"]);
 		} finally {

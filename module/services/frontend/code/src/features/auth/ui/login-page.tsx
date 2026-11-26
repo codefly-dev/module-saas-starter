@@ -18,7 +18,7 @@ import {
 	useAuth,
 } from "@/lib/auth";
 import { AuthError } from "@/lib/auth-errors";
-import type { FixtureUser } from "@/lib/fixtures/types";
+import type { FixtureFile, FixtureUser } from "@/lib/fixtures/types";
 import { publicHandoffDestination } from "@/lib/public-handoff";
 import {
 	Avatar,
@@ -38,10 +38,18 @@ import {
 const SIGN_IN_FAILED =
 	"Couldn't sign you in. Try again; if it keeps failing, tell your administrator.";
 
-interface FixtureResponse {
-	name: string;
-	users: FixtureUser[];
-	sign_in_choices?: string[];
+function fixtureRoleLabel(user: FixtureUser, installations: FixtureFile["installations"]) {
+	if (!installations?.length) {
+		return `Platform role: ${user.role.replaceAll("_", " ")}`;
+	}
+	const roles = installations.flatMap(({ org, target, members }) =>
+		Object.entries(members ?? {})
+			.filter(([, emails]) => emails.includes(user.email))
+			.map(([role]) => target === "*" && installations.length === 1
+				? `Page role: ${role}`
+				: `${org} · ${target === "*" ? "Pages" : target}: ${role}`),
+	);
+	return roles.length ? roles.join(" · ") : "No page role";
 }
 
 /** Authentication responses can carry server diagnostics; use the action's safe copy. */
@@ -72,7 +80,7 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 		[identity],
 	);
 	const [error, setError] = useState<string | null>(null);
-	const [fixtureUsers, setFixtureUsers] = useState<FixtureUser[]>([]);
+	const [fixtureUsers, setFixtureUsers] = useState<(FixtureUser & { roleLabel: string })[]>([]);
 	const [loading, setLoading] = useState<string | null>(null);
 	const pending = useRef(false);
 	const [fixtureState, setFixtureState] = useState<
@@ -136,15 +144,16 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 		fetch("/api/fixtures", { signal: controller.signal })
 			.then(async (res) => {
 				if (!res.ok) throw new Error("Fixture list unavailable");
-				return res.json() as Promise<FixtureResponse>;
+				return res.json() as Promise<FixtureFile>;
 			})
 			.then((data) => {
 				if (controller.signal.aborted) return;
 				if (!Array.isArray(data.users)) throw new Error("Fixture list unavailable");
 				const choices = data.sign_in_choices;
-				setFixtureUsers(choices
+				const offered = choices
 					? choices.flatMap((id) => data.users.filter((u) => u.provider_id === id))
-					: data.users.length <= 3 ? data.users : []);
+					: data.users.length <= 3 ? data.users : [];
+				setFixtureUsers(offered.map((user) => ({ ...user, roleLabel: fixtureRoleLabel(user, data.installations) })));
 				setFixtureState("ready");
 			})
 			.catch(() => {
@@ -349,6 +358,9 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 												<span className="min-w-0 flex-1">
 													<span className="block truncate text-sm font-medium">
 														{u.name}
+													</span>
+													<span className="block truncate text-xs font-normal text-muted-foreground">
+														{u.roleLabel}
 													</span>
 													<span className="block truncate text-xs font-normal text-muted-foreground">
 														{u.email}
