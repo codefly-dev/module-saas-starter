@@ -39,6 +39,7 @@ const SIGN_IN_FAILED =
 	"Couldn't sign you in. Try again; if it keeps failing, tell your administrator.";
 
 function fixtureRoleLabel(user: FixtureUser, installations: FixtureFile["installations"]) {
+	if (user.role === "super_admin") return "Platform administrator";
 	if (!installations?.length) {
 		return `Platform role: ${user.role.replaceAll("_", " ")}`;
 	}

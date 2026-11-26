@@ -27,8 +27,7 @@ func TestTheFixtureSeedsEveryPersonTheJourneysSignInAs(t *testing.T) {
 	}
 }
 
-// The three people the sign-in page offers are the platform's cast, and every
-// one of them is in the journeys.
+// The picker offers the three page-role cases and the platform administrator.
 func TestTheJourneysSignInAsTheSignInPagesPeople(t *testing.T) {
 	fixture, err := Load(FixturePath)
 	if err != nil {
@@ -38,7 +37,7 @@ func TestTheJourneysSignInAsTheSignInPagesPeople(t *testing.T) {
 	for _, id := range fixture.SignInChoices {
 		offered[id] = true
 	}
-	if len(offered) != len(SignIn) {
+	if !offered[Supporting.Owner] || len(offered) != len(SignIn)+1 {
 		t.Fatalf("the sign-in page offers %v, the journeys sign in as %v", fixture.SignInChoices, SignIn)
 	}
 	for _, id := range SignIn {

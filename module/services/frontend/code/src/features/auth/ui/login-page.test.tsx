@@ -98,7 +98,7 @@ afterEach(() => {
 });
 
 describe("LoginPage", () => {
-	it("offers only the three page-role cases from the full dev-admin fixture", async () => {
+	it("offers the platform administrator and three page-role cases from the full dev-admin fixture", async () => {
 		h.providers = [];
 		const fixture = FixtureFileSchema.parse(yaml.load(readFileSync(resolve(process.cwd(), "../../../fixtures/dev-admin.yaml"), "utf8")));
 		const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(fixture));
@@ -108,8 +108,9 @@ describe("LoginPage", () => {
 			expect(screen.getByRole("button", { name: /Dana Lee.*Page role: admin/ })).toBeTruthy();
 			expect(screen.getByRole("button", { name: /Carol Davis.*Page role: user/ })).toBeTruthy();
 			expect(screen.getByRole("button", { name: /Bob Williams.*No page role/ })).toBeTruthy();
+			expect(screen.getByRole("button", { name: /Sarah Chen.*Platform administrator/ })).toBeTruthy();
 			const people = fixture.users.filter((person) => screen.queryByText(person.email));
-			expect(people.map((person) => person.name).sort()).toEqual(["Bob Williams", "Carol Davis", "Dana Lee"]);
+			expect(people.map((person) => person.name).sort()).toEqual(["Bob Williams", "Carol Davis", "Dana Lee", "Sarah Chen"]);
 		} finally {
 			fetch.mockRestore();
 		}

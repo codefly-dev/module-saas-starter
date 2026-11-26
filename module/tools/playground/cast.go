@@ -11,7 +11,7 @@ const (
 	Elsewhere = "Globex"
 )
 
-// SignIn is the three people the sign-in page offers, by the id it offers
+// SignIn is the three page-role cases, by the id it offers
 // them under: Dana, Carol and Bob. In this fixture each is a member of Home
 // holding no grant on the example collection, so each reads nothing of it.
 var SignIn = []string{"dev-dana", "dev-carol", "dev-bob"}
@@ -27,9 +27,7 @@ var SignIn = []string{"dev-dana", "dev-carol", "dev-bob"}
 //     holdings the fixture fixes;
 //   - Administrators administer Home and hold no grant.
 //
-// Whether the fixture keeps these people is its owner's decision. When it is
-// reduced to the three, this is the one declaration to change: the journeys
-// below it name roles, not people.
+// The sign-in picker also offers the owner for platform administration.
 var Supporting = supporting{
 	Owner:          "dev-admin",
 	Reader:         "fixture-maya",

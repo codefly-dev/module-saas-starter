@@ -234,7 +234,7 @@ func (p *playground) grantOn(t *testing.T, providerID string) map[string]string 
 func TestAPersonReadsTheCollectionOnlyByAnExplicitGrant(t *testing.T) {
 	p := start(t)
 	p.readsByGrant(t, Supporting.Reader)
-	// The three people the sign-in page offers hold no grant: none reads.
+	// The three page-role cases hold no grant: none reads.
 	for _, person := range SignIn {
 		p.readsNothing(t, person)
 	}

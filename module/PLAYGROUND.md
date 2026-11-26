@@ -65,7 +65,7 @@ expands to nothing and the casting walk needs a composed target (below).
 |---|---|---|
 | Create an organization | manual: sign in as Sarah Chen, Platform → Organizations → Create | the new organization lists with its owner; the workspace slug follows the name (Dana Lee is a member of Acme Corp now, so the onboarding wizard of a person with no organization has no fixture person) |
 | Create a team | manual: Admin, Teams, as Sarah Chen | the team lists |
-| Grant a person a role explicitly, access follows | checked: `playground-check.sh` | Maya Rossi reads the example collection by her grant and the three people the sign-in page offers (Dana, Carol and Bob), who hold none, read nothing; Remi Laurent reads it after the grant and not after it is revoked |
+| Grant a person a role explicitly, access follows | checked: `playground-check.sh` | Maya Rossi reads the example collection by her grant and the three page-role cases (Dana, Carol and Bob), who hold none, read nothing; Remi Laurent reads it after the grant and not after it is revoked |
 | Refusal names its reason | manual: Bob Williams opens Admin | "You don't have access to Admin", with his role and who can change it |
 | An administrator gets nothing for free | checked: `playground-check.sh` | organization admins (Alice, Alex) and a platform `super_admin` with her own grant removed read nothing; a platform role reads no other organization's audit trail |
 

@@ -70,7 +70,7 @@ export const FixtureFileSchema = z.object({
 		target: z.string(),
 		members: z.record(z.string(), z.array(z.string())).optional(),
 	})).optional(),
-	sign_in_choices: z.array(z.string().min(1)).max(3).optional(),
+	sign_in_choices: z.array(z.string().min(1)).max(4).optional(),
 	organizations: z.array(FixtureOrgSchema).optional(),
 	teams: z.array(FixtureTeamSchema).optional(),
 	agents: z.array(FixtureAgentSchema).optional(),

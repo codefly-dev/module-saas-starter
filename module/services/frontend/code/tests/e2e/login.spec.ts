@@ -18,11 +18,11 @@ test.describe("Login flow", () => {
 		await page.goto("/auth/login");
 
 		const choices = page.getByRole("group", { name: "Development sign-in — choose a person" });
-		await expect(choices.getByRole("button")).toHaveCount(3);
+		await expect(choices.getByRole("button")).toHaveCount(4);
 		for (const name of ["Dana Lee", "Carol Davis", "Bob Williams"]) {
 			await expect(choices.getByRole("button", { name: new RegExp(name) })).toBeVisible();
 		}
-		await expect(page.getByText("Sarah Chen")).toHaveCount(0);
+		await expect(choices.getByRole("button", { name: /Sarah Chen.*Platform administrator/ })).toBeVisible();
 		await expect(page.getByText("Alice Johnson")).toHaveCount(0);
 	});
 

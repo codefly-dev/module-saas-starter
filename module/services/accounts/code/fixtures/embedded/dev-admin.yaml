@@ -1,12 +1,12 @@
 # dev-admin fixture — seeds a complete dev environment
 # Used with: codefly run service --fixture dev-admin
-# The sign-in page offers Dana (page admin), Carol (page user), and Bob
-# (no page role). Other seeded identities support host and integration tests.
+# The sign-in page offers Dana (page admin), Carol (page user), Bob (no page role),
+# and Sarah (platform administrator). Other seeded identities support host and integration tests.
 
 # User ids are pinned so a reseed keeps the same principal uuid: committed
 # configuration (grants, e2e specs, runbooks) can quote a fixture principal
 # without re-deriving it after every fresh seed.
-sign_in_choices: [dev-dana, dev-carol, dev-bob]
+sign_in_choices: [dev-dana, dev-carol, dev-bob, dev-admin]
 users:
   - id: 00000000-0000-7000-8000-0000000000a1
     email: admin@acme.com
