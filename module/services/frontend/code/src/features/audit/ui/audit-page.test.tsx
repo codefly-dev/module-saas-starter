@@ -61,19 +61,22 @@ describe("AuditPage admin container", () => {
 	it("renders the audit events the service returns", async () => {
 		server.use(
 			http.post(rpc("AuditService", "ListAuditEventTypes"), () =>
-				HttpResponse.json({ types: [] }),
+				HttpResponse.json({ types: [{ name: "saas.auth.login", description: "A person signed in." }] }),
 			),
 			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
 				HttpResponse.json({ buckets: [] }),
 			),
 			http.post(rpc("AuditService", "QueryAuditLog"), () =>
-				HttpResponse.json({ events: [auditEvent()], totalCount: 1 }),
+				HttpResponse.json({ events: [auditEvent({payload: undefined})], totalCount: 1 }),
 			),
 		);
 		renderInApp(<AuditPage />);
 		expect(await screen.findByText("203.0.113.7")).toBeTruthy();
 		// The table humanizes the event type without its namespace segment.
 		expect(screen.getByText("Auth Login")).toBeTruthy();
+		fireEvent.click(screen.getByText("Technical details"));
+		expect(await screen.findByText("A person signed in.")).toBeTruthy();
+		expect(screen.getByText("No additional event data was recorded.")).toBeTruthy();
 		expect(screen.queryByText("Saas Auth Login")).toBeNull();
 	});
 

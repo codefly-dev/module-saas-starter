@@ -614,6 +614,7 @@ export function AuditPage() {
 								events={events}
 								isLoading={isLoading}
 								actorNames={actorNames}
+								registeredTypes={registeredTypes}
 							/>
 						)}
 						{exportMutation.isError && (

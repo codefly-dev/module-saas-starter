@@ -18,7 +18,7 @@ import {
 	formatAuditAction,
 	resolveActor,
 } from "../model/transforms";
-import type { AuditEvent, PrincipalDirectory } from "../model/types";
+import type { AuditEvent, AuditEventTypeInfo, PrincipalDirectory } from "../model/types";
 
 const col = createColumnHelper<AuditEvent>();
 
@@ -26,11 +26,14 @@ export function AuditTable({
 	events,
 	isLoading,
 	actorNames,
+	registeredTypes,
 }: {
 	events: AuditEvent[];
 	isLoading: boolean;
 	actorNames: PrincipalDirectory;
+	registeredTypes?: AuditEventTypeInfo[];
 }) {
+	const descriptions = useMemo(() => new Map(registeredTypes?.map(t => [t.name, t.description])), [registeredTypes]);
 	const columns = useMemo(
 		() => [
 			col.accessor("createdAt", {
@@ -125,14 +128,16 @@ export function AuditTable({
 				id: "payload",
 				header: "Details",
 				cell: (info) => {
-					const { payload, id, actorId, resourceId } = info.row.original;
+					const { payload, id, actorId, resourceId, eventType } = info.row.original;
 					return (
 						<details>
 							<summary className="cursor-pointer text-sm">
 								Technical details
 							</summary>
+							{descriptions.get(eventType) && <p className="mt-2 max-w-sm text-sm">{descriptions.get(eventType)}</p>}
+							{payload == null && <p className="text-sm text-muted-foreground">No additional event data was recorded.</p>}
 							<JsonView
-								value={{ eventId: id, actorId, resourceId, payload }}
+								value={{ eventId: id, ...(actorId && { actorId }), ...(resourceId && { resourceId }), ...(payload != null && { payload }) }}
 								label="Technical details"
 								className="mt-1 max-h-80 max-w-sm overflow-auto"
 							/>
@@ -141,7 +146,7 @@ export function AuditTable({
 				},
 			}),
 		],
-		[actorNames],
+		[actorNames, descriptions],
 	);
 
 	const table = useReactTable({
