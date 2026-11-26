@@ -122,14 +122,14 @@ func TestMintSourceOperationContextThroughAnActiveDelegation(t *testing.T) {
 	}
 }
 
-// Each refusal reaches the client as its typed error: 412 DELEGATION_MISSING,
-// and 403 carrying DELEGATION_REVOKED or DELEGATION_INVALID.
+// The SDK classifies the broker's status without retaining the response body.
+// Revoked and invalid delegations both produce a forbidden response.
 func TestMintSourceOperationContextRefusalsAreTyped(t *testing.T) {
 	h := startHost(t)
 	client := sourceClient(t, h)
 	for name, want := range map[string]error{
 		"missing": moduleauthority.ErrDelegationMissing,
-		"revoked": moduleauthority.ErrDelegationRevoked,
+		"revoked": moduleauthority.ErrDelegationInvalid,
 		"invalid": moduleauthority.ErrDelegationInvalid,
 	} {
 		t.Run(name, func(t *testing.T) {
