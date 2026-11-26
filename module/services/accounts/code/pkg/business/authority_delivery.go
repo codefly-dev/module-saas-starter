@@ -165,7 +165,7 @@ func validateAuthorityRoles(manifest *solutionhost.ModuleManifest, doc *composit
 	}
 	module, err := coredelivered.Module(manifest, documentOf(doc))
 	if err == nil {
-		err = coredecide.ValidateModule(module)
+		err = coredecide.ValidateRoleGrants(module)
 	}
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrSolutionDeliveryRefused, err)

@@ -92,8 +92,8 @@ github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 h1:aBangftG7EVZoUb69Os
 github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2/go.mod h1:qwXFYgsP6T7XnJtbKlf1HP8AjxZZyzxMmc+Lq5GjlU4=
 github.com/codefly-dev/authority/libraries/authority-client/go v0.2.1-0.20261125203304-953f93bcb574 h1:SyORYxzaaAV7FgQcOLf10oNfdINAz4psg+eA2GCv+Kg=
 github.com/codefly-dev/authority/libraries/authority-client/go v0.2.1-0.20261125203304-953f93bcb574/go.mod h1:Snn/BLnTZ7fQw7VFPfCYSbiOvQsxONa3aA6bzFPrzyI=
-github.com/codefly-dev/authority/libraries/authority-core/go v0.1.2-0.20261125203304-953f93bcb574 h1:63ZbgmYDNHkfzdlElRSxZ6cdCAdnkJjFRF7zR2FFtb0=
-github.com/codefly-dev/authority/libraries/authority-core/go v0.1.2-0.20261125203304-953f93bcb574/go.mod h1:Z0frWjF4ZgGgSxNvrR1mqi5p0n2Orr+7iKm0VlhQaMw=
+github.com/codefly-dev/authority/libraries/authority-core/go v0.1.2-0.20261126210708-4135e4254c09 h1:l7asOydKeScw1xqkRBSjNopmfgCd/TUCVcxuP6cON08=
+github.com/codefly-dev/authority/libraries/authority-core/go v0.1.2-0.20261126210708-4135e4254c09/go.mod h1:Z0frWjF4ZgGgSxNvrR1mqi5p0n2Orr+7iKm0VlhQaMw=
 github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261125203304-953f93bcb574 h1:2z0DfvDx9Sw9Ah++0YqrtcLalUOdenJpuldC+d+WwxE=
 github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261125203304-953f93bcb574/go.mod h1:SusMaZ8STslRPo4Qh9agz9UyjYQ9eXz6CB19WqOD2uE=
 github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261125203304-953f93bcb574 h1:1jjcM1DkO231nESnZ40g53jhz6ambn2jU1TbBp3mZYI=
