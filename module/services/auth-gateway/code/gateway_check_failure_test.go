@@ -97,7 +97,7 @@ func TestHopBrowserCallADeniedCheckStaysADenial(t *testing.T) {
 		request := connect.NewRequest(&emptypb.Empty{})
 		request.Header().Set("Authorization", "Bearer "+bearer)
 		_, err := client.CallUnary(context.Background(), request)
-		require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+		require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 		require.ErrorContains(t, err, "token revoked")
 		require.Zero(t, face.calls)
 	})

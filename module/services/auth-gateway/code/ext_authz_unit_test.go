@@ -6,6 +6,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
@@ -337,6 +339,16 @@ func TestUnit_ExpiredJWT_Denied(t *testing.T) {
 	}))
 	require.NoError(t, err)
 	require.NotNil(t, resp.GetDeniedResponse())
+	// The browser's refresh handler retries an expired bearer on HTTP 401.
+	refusal, admitted := refusalOf(ctx, resp, nil)
+	require.False(t, admitted)
+	request := httptest.NewRequest(http.MethodPost, "/example.Service/Read", nil)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Connect-Protocol-Version", "1")
+	response := httptest.NewRecorder()
+	hopBrowserError(response, request, refusal.httpStatus, refusal.code, refusal.reason)
+	require.Equal(t, http.StatusUnauthorized, response.Code)
+	require.JSONEq(t, `{"code":"unauthenticated","message":"invalid or expired token"}`, response.Body.String())
 }
 
 func TestUnit_WrongIssuer_Denied(t *testing.T) {

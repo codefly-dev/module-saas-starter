@@ -120,7 +120,9 @@ instance reloads; the owner's prepublication overlap requirement still applies.
   `Check`), never this gateway's. Browser authentication and Issue refusals use
   Connect's error writer
   for protocol callers, preserving the authority's code and reason; ordinary
-  HTTP callers keep the HTTP error response.
+  HTTP callers keep the HTTP error response. An expired bearer returns
+  Connect `Unauthenticated` (HTTP 401), allowing the host to refresh the
+  session and retry once. An authenticated permission denial returns 403.
 
 The frontend's separate module binding reaches `/_browser/<Connect procedure>`.
 This dispatch is terminal: POST with a canonical package/service/method path only,

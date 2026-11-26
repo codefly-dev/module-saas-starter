@@ -201,7 +201,7 @@ func (s *ExtAuthz) Check(ctx context.Context, req *authv3.CheckRequest) (*authv3
 				// rather than reading "forbidden" and stopping.
 				if isSolutionToolRequestPath(httpReq.GetPath()) {
 					recordJWTRejection(ctx, jwtRejectionGenericAudience)
-					return deny(401, "this endpoint requires a token issued for its own "+
+					return unauthenticated("this endpoint requires a token issued for its own "+
 						"resource; an API key names no resource. Authorize for this "+
 						"resource and retry"), nil
 				}
@@ -221,10 +221,10 @@ func (s *ExtAuthz) Check(ctx context.Context, req *authv3.CheckRequest) (*authv3
 	// Stated only when a cookie was actually sent, so the ordinary
 	// no-credential answer is unchanged for every caller that sent nothing.
 	if headers["cookie"] != "" {
-		return deny(401, "a session cookie is not a credential at this surface; "+
+		return unauthenticated("a session cookie is not a credential at this surface; "+
 			"present an access token as `Authorization: Bearer`"), nil
 	}
-	return deny(401, "authentication required"), nil
+	return unauthenticated("authentication required"), nil
 }
 
 // logoutPaths are the gateway routes that trigger accounts-side token
@@ -292,17 +292,17 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		return unavailable(ctx, keyErr, "JWT validation not configured"), nil
 	case errors.Is(keyErr, errUnknownKeyID):
 		recordJWTRejection(ctx, jwtRejectionUnknownKeyID)
-		return deny(401, "invalid or expired token"), nil
+		return unauthenticated("invalid or expired token"), nil
 	case errors.Is(keyErr, errAmbiguousKeyID):
 		recordJWTRejection(ctx, jwtRejectionAmbiguousKeyID)
-		return deny(401, "invalid or expired token"), nil
+		return unauthenticated("invalid or expired token"), nil
 	case err != nil || !token.Valid:
 		recordJWTRejection(ctx, jwtRejectionInvalidToken)
-		return deny(401, "invalid or expired token"), nil
+		return unauthenticated("invalid or expired token"), nil
 	}
 	if !s.acceptsIssuer(claims.Issuer) {
 		recordJWTRejection(ctx, jwtRejectionInvalidToken)
-		return deny(401, "invalid or expired token"), nil
+		return unauthenticated("invalid or expired token"), nil
 	}
 
 	// Revocation is checked AFTER signature/claim validation so a forged or
@@ -324,7 +324,7 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 			log.Printf("revocation check failed, admitting (fail-open): %v", err)
 		case revoked:
 			recordJWTRejection(ctx, jwtRejectionRevoked)
-			return deny(401, "token revoked"), nil
+			return unauthenticated("token revoked"), nil
 		}
 		// Forget AFTER the check: the check above may have (re)cached
 		// "not revoked" for this jti, and on a logout route that entry
@@ -358,7 +358,7 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 			log.Printf("session revocation check failed, admitting (fail-open): %v", err)
 		case revoked:
 			recordJWTRejection(ctx, jwtRejectionSessionRevoked)
-			return deny(401, "session revoked"), nil
+			return unauthenticated("session revoked"), nil
 		}
 	}
 
@@ -381,7 +381,7 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		// widely. No issuance path produces this; a token carrying it did not
 		// come from this host's authorization endpoint.
 		recordJWTRejection(ctx, jwtRejectionInvalidAudience)
-		return deny(401, "the token's audience does not name a single valid resource"), nil
+		return unauthenticated("the token's audience does not name a single valid resource"), nil
 	}
 	// CONFINEMENT, decided on every path and not only a solution's.
 	//
@@ -411,7 +411,7 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		// path's own arm below words this for the endpoint that publishes
 		// metadata; this is the same refusal for every other path.
 		recordJWTRejection(ctx, jwtRejectionWrongResource)
-		return deny(401, "this host has no configured public address, so it cannot "+
+		return unauthenticated("this host has no configured public address, so it cannot "+
 			"state the resource a token must name"), nil
 	}
 	resourceConfined := ""
@@ -438,7 +438,7 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 			resourceConfined = resource
 		default:
 			recordJWTRejection(ctx, jwtRejectionWrongResource)
-			return deny(401, "the token presented was issued for a different "+
+			return unauthenticated("the token presented was issued for a different "+
 				"resource than this endpoint"), nil
 		}
 	}
@@ -464,12 +464,12 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 				// judge a token against it — and the challenge it would emit
 				// would carry no absolute URL for a client to follow.
 				recordJWTRejection(ctx, jwtRejectionWrongResource)
-				return deny(401, "this host has no configured public address, "+
+				return unauthenticated("this host has no configured public address, "+
 					"so it cannot state the resource this endpoint requires"), nil
 			}
 			if binding == resourceUnbound {
 				recordJWTRejection(ctx, jwtRejectionGenericAudience)
-				return deny(401, "this endpoint requires a token issued for its own "+
+				return unauthenticated("this endpoint requires a token issued for its own "+
 					"resource; the token presented names only the host. Authorize for "+
 					"this resource and retry"), nil
 			}
@@ -661,7 +661,7 @@ func (s *ExtAuthz) checkAPIKey(ctx context.Context, key string) (*authv3.CheckRe
 		return unavailable(ctx, err, "api key validation failed"), nil
 	}
 	if !resp.Valid {
-		return deny(401, "invalid api key"), nil
+		return unauthenticated("invalid api key"), nil
 	}
 	// This hop joins the key's scopes into one header and every service splits
 	// it on the same comma, so a scope holding one would reach them as scopes
@@ -671,7 +671,7 @@ func (s *ExtAuthz) checkAPIKey(ctx context.Context, key string) (*authv3.CheckRe
 	for _, scope := range resp.Scopes {
 		if strings.Contains(scope, ",") {
 			log.Printf("api key refused: accounts returned a scope holding the x-scopes separator")
-			return deny(401, "invalid api key"), nil
+			return unauthenticated("invalid api key"), nil
 		}
 	}
 	return s.allow([]*corev3.HeaderValueOption{
@@ -767,12 +767,12 @@ const (
 	credentialKindAPIKey  = "api_key"
 )
 
-func deny(httpCode int, body string) *authv3.CheckResponse {
+func unauthenticated(body string) *authv3.CheckResponse {
 	return &authv3.CheckResponse{
-		Status: &status.Status{Code: int32(codes.PermissionDenied)},
+		Status: &status.Status{Code: int32(codes.Unauthenticated)},
 		HttpResponse: &authv3.CheckResponse_DeniedResponse{
 			DeniedResponse: &authv3.DeniedHttpResponse{
-				Status: &typev3.HttpStatus{Code: typev3.StatusCode(httpCode)},
+				Status: &typev3.HttpStatus{Code: typev3.StatusCode_Unauthorized},
 				Body:   body,
 			},
 		},

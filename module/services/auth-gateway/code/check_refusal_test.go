@@ -30,7 +30,7 @@ func TestRefusalOfTellsADenialFromAFailure(t *testing.T) {
 		httpStatus int
 	}{
 		"allow":                        {checked: &authv3.CheckResponse{Status: &rpcstatus.Status{}}, admitted: true},
-		"denied":                       {checked: deny(401, "token revoked"), denied: true, code: codes.PermissionDenied, httpStatus: http.StatusUnauthorized},
+		"denied":                       {checked: unauthenticated("token revoked"), denied: true, code: codes.Unauthenticated, httpStatus: http.StatusUnauthorized},
 		"denied without a status":      {checked: &authv3.CheckResponse{Status: &rpcstatus.Status{Code: int32(codes.PermissionDenied)}}, denied: true, code: codes.PermissionDenied, httpStatus: http.StatusForbidden},
 		"unavailable":                  {checked: unavailable(context.Background(), errors.New("store down"), "revocation check unavailable"), code: codes.Unavailable, httpStatus: http.StatusServiceUnavailable},
 		"canceled":                     {checked: unavailable(cancelled, errors.New("store down"), "revocation check unavailable"), code: codes.Canceled, httpStatus: 499},
