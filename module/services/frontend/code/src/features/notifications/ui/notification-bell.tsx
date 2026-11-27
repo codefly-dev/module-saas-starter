@@ -117,7 +117,7 @@ export function NotificationBell() {
 					<Button
 						variant="ghost"
 						size="sm"
-						className="relative h-8 w-8 p-0"
+						className="h-8 min-w-8 px-1"
 						aria-label={
 							unreadCount > 0
 								? `Notifications, ${unreadCount} unread`
@@ -127,7 +127,7 @@ export function NotificationBell() {
 					>
 						<Bell className="h-4 w-4" />
 						{unreadCount > 0 && (
-							<span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-medium text-destructive-foreground">
+							<span className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-medium text-destructive-foreground">
 								{unreadCount > 99 ? "99+" : unreadCount}
 							</span>
 						)}
