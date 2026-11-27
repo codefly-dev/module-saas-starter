@@ -200,6 +200,50 @@ func TestAnAdmittedIssueIsRecordedOrNotHandedOut(t *testing.T) {
 	require.Len(t, journal.entries, 3)
 }
 
+func TestAdmittedIssueRecordsOnlyTheDecisionPrincipalAndAudience(t *testing.T) {
+	const workloadID = "00000000-0000-7000-8000-0000000000f3"
+	for _, tc := range []struct {
+		kind   authority.DecisionKind
+		actor  string
+		person bool
+		event  EventType
+	}{
+		{authority.DecisionIssuePerson, decisionPerson, true, EventWorkContextTaskStarted},
+		{authority.DecisionIssuePage, decisionPerson, true, EventWorkContextTaskStarted},
+		{authority.DecisionIssuePage, "directory", false, EventWorkContextChildSession},
+		{authority.DecisionIssueWorkload, "documents", false, EventWorkContextTaskStarted},
+		{authority.DecisionIssueInstallation, workloadID, false, EventWorkContextTaskStarted},
+		{authority.DecisionIssueChild, "directory", false, EventWorkContextChildSession},
+		{authority.DecisionIssueDelegation, "documents", false, EventWorkContextTaskStarted},
+		{authority.DecisionIssueClientDelegation, workloadID, false, EventWorkContextTaskStarted},
+	} {
+		t.Run(string(tc.kind)+"/"+tc.actor, func(t *testing.T) {
+			s, journal := decisionService(t)
+			d := authority.Decision{Kind: tc.kind, Outcome: authority.Admitted,
+				Organization: decisionOrg, Owner: decisionPerson, Actor: tc.actor, Task: "task-1", Audience: "records",
+				Binding: "private binding", Operation: "private operation", Method: "private method", Delegation: "private delegation"}
+			require.NoError(t, s.recordAuthorityDecision(t.Context(), d))
+			require.Len(t, journal.entries, 1)
+			entry := journal.entries[0]
+			require.Equal(t, []string{decisionOrg}, journal.filedIn)
+			require.Equal(t, decisionOrg, entry.OrgID)
+			require.Equal(t, tc.event, entry.EventType)
+			want := map[string]any{"decision": string(tc.kind), "audience": "records"}
+			if tc.person {
+				require.Equal(t, ActorTypeUser, entry.ActorType)
+				require.Equal(t, decisionPerson, entry.ActorID)
+			} else {
+				require.Equal(t, ActorTypeSystem, entry.ActorType)
+				require.Empty(t, entry.ActorID)
+				want["actor"] = tc.actor
+			}
+			require.Equal(t, want, entry.Payload)
+			require.NoError(t, ValidatePayload(entry.EventType, entry.Payload))
+			require.NoError(t, ValidatePayload(entry.EventType, nil), "legacy RPCs share these event types")
+		})
+	}
+}
+
 // What a probe is answered is discarded by the operation that asked (a mint
 // held to what the core would issue, a source's governing scope): it is no
 // issue and no refusal of its own, and is not recorded as one.

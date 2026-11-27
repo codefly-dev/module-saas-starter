@@ -217,7 +217,10 @@ makes it a row of the journal the host already keeps:
 - **An admitted issue** is the record it always was: `saas.work_context.task_started`,
   or `saas.work_context.child_session_started` for one more hop on a presented
   capability and for a page's call through its target's binding, written in the
-  organization it was issued in. It is written before the capability is handed
+  organization it was issued in. The row names the decision kind and target
+  audience. A person is recorded as the acting user. A workload is recorded as
+  the system with its principal in the payload, including when that principal
+  is a UUID. It is written before the capability is handed
   out: an issue the journal does not take answers `Unavailable` and hands out
   nothing. The adapter no longer records it a second time.
 - **A refusal** (of an issue, a check or a resource listing) is

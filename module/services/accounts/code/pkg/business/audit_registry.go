@@ -745,9 +745,9 @@ var auditEventCatalog = []AuditEventDefinition{
 		append([]PayloadField{{Name: "decision", Kind: FieldString, Required: true}, {Name: "code", Kind: FieldString, Required: true}, {Name: "reason", Kind: FieldString, Required: true}},
 			optionalFields([]PayloadField{str("organization"), str("owner"), str("actor"), str("audience"), str("binding"), str("operation"), str("method"),
 				str("installation"), str("task"), str("delegation"), boolean("advisory"), boolean("claimed")})...)...),
-	mutation(EventWorkContextTaskStarted, CategoryAccess, "A signed Work Context was issued for a new agent task and root session."),
+	revised(mutation(EventWorkContextTaskStarted, CategoryAccess, "The authority issued a Work Context for a person or workload to access a service.", str("decision"), str("actor"), str("audience")), 2),
 	mutation(EventWorkContextRootSession, CategoryAccess, "A new root agent session was started under an existing task."),
-	mutation(EventWorkContextChildSession, CategoryAccess, "An attenuated child agent session was started."),
+	revised(mutation(EventWorkContextChildSession, CategoryAccess, "The authority issued a Work Context to continue existing work through another service.", str("decision"), str("actor"), str("audience")), 2),
 	mutation(EventWorkContextAudienceExch, CategoryAccess, "A Work Context task and session lineage was reissued for another audience."),
 	mutation(EventWorkContextRenewed, CategoryAccess, "A delegated actor renewed its Work Context past the signing TTL cap."),
 

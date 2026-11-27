@@ -41,7 +41,7 @@ var auditActorTypeIndirectSites = map[string]string{
 	"delegated_audience_audit.go:ObserveDelegatedAudienceExchange": "delegatedAudienceActorType returns only registered constants; TestDelegatedAudienceActorTypeSpeaksTheRegisteredVocabulary pins every branch.",
 	"webhooks.go:CreateSubscription":                               "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",
 	"authority_core_audit.go:journalAuthority":                     "authorityActor returns ActorTypeUser or ActorTypeSystem on every branch; TestAuthorityChangesAreRecordedAsRegisteredMutations pins it.",
-	"authority_core_audit.go:RecordAuthorityIssue":                 "authorityActor returns ActorTypeUser or ActorTypeSystem on every branch; TestAuthorityChangesAreRecordedAsRegisteredMutations pins it.",
+	"authority_core_audit.go:recordAuthorityIssue":                 "Workload issuances use ActorTypeSystem and a person is classified by authorityActor. TestAdmittedIssueRecordsOnlyTheDecisionPrincipalAndAudience covers every issue kind.",
 	"authority_core_audit.go:recordAuthorityDecision":              "authorityActor returns ActorTypeUser or ActorTypeSystem on every branch, and the row filed under no tenant is ActorTypeSystem; TestARefusedDecisionIsARowOfItsOrganizationsJournal pins both.",
 	"webhooks.go:DeleteSubscription":                               "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",
 	"webhooks.go:ReplayWebhookDelivery":                            "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",

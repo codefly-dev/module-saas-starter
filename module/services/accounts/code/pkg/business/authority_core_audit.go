@@ -115,21 +115,27 @@ func authorityActor(actor string) (id, actorType string) {
 	return "", ActorTypeSystem
 }
 
-// RecordAuthorityIssue records a capability the core issued, in a transaction
-// of the organization it was issued in, before it is handed out: a child hop
-// is a child session, every other shape a task started. An issue whose record
-// cannot be written is refused.
-func (s *Service) RecordAuthorityIssue(ctx context.Context, organization, actor string, child bool, task string) error {
+// recordAuthorityIssue stores only the verified decision kind, principal and
+// audience before the authority hands out the capability.
+func (s *Service) recordAuthorityIssue(ctx context.Context, d authority.Decision) error {
 	event := EventWorkContextTaskStarted
-	if child {
+	pageHop := d.Kind == authority.DecisionIssuePage && d.Actor != d.Owner
+	if d.Kind == authority.DecisionIssueChild || pageHop {
 		event = EventWorkContextChildSession
 	}
-	actorID, actorType := authorityActor(actor)
-	if _, err := uuid.Parse(organization); err != nil {
-		return fmt.Errorf("record %s: organization %q is not one of this host's", event, organization)
+	if _, err := uuid.Parse(d.Organization); err != nil {
+		return fmt.Errorf("record %s: organization %q is not one of this host's", event, d.Organization)
 	}
-	return s.store.WithOrgTx(ctx, organization, func(ctx context.Context) error {
-		return s.emitTx(ctx, actorID, actorType, event, "work_context", task, organization)
+	payload := map[string]any{"decision": string(d.Kind), "audience": d.Audience}
+	actorID, actorType := "", ActorTypeSystem
+	if d.Kind == authority.DecisionIssuePerson || (d.Kind == authority.DecisionIssuePage && !pageHop) {
+		actorID, actorType = authorityActor(d.Actor)
+	} else if d.Actor != "" {
+		// Installation and client principals may themselves be UUIDs.
+		payload["actor"] = d.Actor
+	}
+	return s.store.WithOrgTx(ctx, d.Organization, func(ctx context.Context) error {
+		return s.emitTx(ctx, actorID, actorType, event, "work_context", d.Task, d.Organization, payload)
 	})
 }
 
@@ -156,7 +162,7 @@ func AuthorityProbe(ctx context.Context) context.Context {
 //
 //   - An admitted check or resource listing is not recorded: every served
 //     call makes one.
-//   - An admitted issue is the record it always was (RecordAuthorityIssue: a
+//   - An admitted issue is the record it always was (recordAuthorityIssue: a
 //     task started, a child session for one more hop), written in the
 //     organization it was issued in before the capability is handed out. One
 //     that cannot be written answers ErrAuthorityDecisionUnrecorded, and the
@@ -178,10 +184,7 @@ func (s *Service) recordAuthorityDecision(ctx context.Context, d authority.Decis
 		return nil
 	}
 	if d.Outcome == authority.Admitted {
-		// One more hop on a presented capability, or a page's call through
-		// its target's binding: the actor is no longer the owner.
-		child := d.Kind == authority.DecisionIssueChild || (d.Kind == authority.DecisionIssuePage && d.Actor != d.Owner)
-		if err := s.RecordAuthorityIssue(ctx, d.Organization, d.Actor, child, d.Task); err != nil {
+		if err := s.recordAuthorityIssue(ctx, d); err != nil {
 			wool.Get(ctx).In("recordAuthorityDecision").Warn("an admitted issue could not be recorded, so it is withheld",
 				wool.Field("decision", string(d.Kind)), wool.Field("org", d.Organization), wool.Field("audience", d.Audience), wool.ErrField(err))
 			return ErrAuthorityDecisionUnrecorded
