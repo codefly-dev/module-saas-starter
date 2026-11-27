@@ -16,7 +16,7 @@ for (const width of [400, 1280]) {
 		await signInForScenario(page, "Carol Davis");
 		for (const count of [1, 9, 10, 99, 100, 0]) {
 			unreadCount = count;
-			await page.goto("/");
+			if (count !== 1) await page.reload();
 			const name = count ? `Notifications, ${count} unread` : "Notifications";
 			const button = page.getByRole("button", { name, exact: true });
 			await expect(button).toBeVisible();
