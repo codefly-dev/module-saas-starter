@@ -68,8 +68,8 @@ docs-sync ────────────┤
 host-interface-conformance ┤
 kit-version ──────────┤
 marketing ────────────┤                     ┌─▶ publish-module-package  (module-package/v*)
-sdk-boundary ─────────┼─▶ release-gates ────┼─▶ publish-frontend-kit    (v*)
-module-package ───────┤   (!cancelled() +   └─▶ handbook-surface-bump   (v*)
+sdk-boundary ─────────┼─▶ release-gates ────└─▶ publish-frontend-kit ─▶ handbook-surface-bump (v*)
+module-package ───────┤   (!cancelled() +
 codefly-plan ─────────┤     decide)
 codefly-quality ──────┤
 codefly-supply-chain ─┤
@@ -688,7 +688,11 @@ consumers. GitHub Packages omits optional-peer metadata, so the pre-release
 consumer proof resolves the packed graph through a registry fixture without
 that metadata. The release job repeats the clean consumer proof against the
 real registry after publication, checking declarations, rendering, styles and
-plugin-context identity. Publication alone does not establish consumption.
+plugin-context identity. The check includes the compiled playground frame and dark theme.
+The release summary records the tag, source commit, installed UI version and npm integrity
+digest so a deployment owner can compare its lockfile with the verified package. The
+handbook announcement waits for successful publication and consumer verification.
+Publication alone does not establish consumption.
 
 A registry version is immutable, so the frontend kit's version has to move
 whenever its content does. `publish-frontend-kit.mjs` enforces that at the

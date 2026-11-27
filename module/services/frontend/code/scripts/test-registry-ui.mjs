@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { appendFile, mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -259,7 +259,7 @@ console.log("Registry declarations, public exports, SSR and shared plugin contex
 		`
 import { readFileSync } from "node:fs";
 const css = readFileSync(new URL(import.meta.resolve("@codefly-dev/ui/preview.css")), "utf8");
-for (const marker of [".type-chip", "color-mix(in oklab,var(--destructive) 70%,var(--foreground))"]) {
+for (const marker of [".pg-workspace", ".dark .pg-workspace", ".pg-panel-head", ".type-chip", "color-mix(in oklab,var(--destructive) 70%,var(--foreground))"]) {
  if (!css.includes(marker)) throw new Error("Missing compiled style: " + marker);
 }
 if (css.includes("@tailwind") || css.includes("@utility ")) throw new Error("Uncompiled stylesheet");
@@ -268,6 +268,19 @@ console.log("Registry stylesheet exports and compiled contrast rule passed");
 `,
 	);
 	process.stdout.write(await run(process.execPath, ["styles.mjs"]));
+	if (registryMode && process.env.GITHUB_STEP_SUMMARY) {
+		const ui = lock.packages["node_modules/@codefly-dev/ui"];
+		assert.ok(ui.integrity, "Published UI must have a locked integrity digest");
+		await appendFile(process.env.GITHUB_STEP_SUMMARY, [
+			"### Verified frontend release",
+			"",
+			"Deploy counter: " + process.env.GITHUB_REF_NAME,
+			"Source commit: " + process.env.GITHUB_SHA,
+			"Installed package: `@codefly-dev/ui@" + ui.version + "`",
+			"Registry integrity: `" + ui.integrity + "`",
+			"",
+		].join("\n\n"));
+	}
 	console.log(
 		registryMode
 			? "Configured registry consumer passed"
