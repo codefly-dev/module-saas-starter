@@ -3,10 +3,12 @@ package adapters
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"testing"
 
+	"accounts/fixtures"
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -18,9 +20,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"gopkg.in/yaml.v3"
 )
 
-// The role plan: every procedure this service declares, against the five
+// The role plan: every procedure this service declares, against the fixture
 // people who can call it, with no host running.
 //
 // What each person may do is read off the procedure's DECLARED policy and
@@ -39,9 +42,7 @@ import (
 // then proved with real outcomes on the real store, in
 // pkg/business/access_matrix_test.go.
 
-// rolePlanPerson is one caller of the plan. Dana, Carol and Bob are the
-// sign-in people of the platform's local cast: an administrator, a user, and
-// a signed-in person holding no role here.
+// rolePlanPerson supplies the session identity read by tenant admission.
 type rolePlanPerson struct {
 	name         string
 	signedIn     bool
@@ -51,14 +52,50 @@ type rolePlanPerson struct {
 
 var rolePlanOrgID = uuid.MustParse("019f6bf7-5b4b-74e5-8c17-092259bb1661")
 
-func rolePlanPeople() []rolePlanPerson {
-	return []rolePlanPerson{
-		{name: "the platform administrator", signedIn: true, platformRole: "super_admin"},
-		{name: "Dana, an administrator of the organization", signedIn: true, orgRole: gen.OrgRole_ORG_ROLE_ADMIN},
-		{name: "Carol, a member of the organization", signedIn: true, orgRole: gen.OrgRole_ORG_ROLE_MEMBER},
-		{name: "Bob, who holds no role in the organization", signedIn: true},
-		{name: "a signed-out visitor"},
+func rolePlanPeople(t *testing.T) []rolePlanPerson {
+	t.Helper()
+	path, err := fixtures.FixturePath("dev-admin")
+	require.NoError(t, err)
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var fixture struct {
+		Users []struct {
+			Name, Email, Role string
+			Token             string `yaml:"provider_id"`
+		}
+		Organizations []struct {
+			Owner   string
+			Members []struct{ Email, Role string }
+		}
 	}
+	require.NoError(t, yaml.Unmarshal(data, &fixture))
+	var people []rolePlanPerson
+	for _, user := range fixture.Users {
+		if !strings.HasPrefix(user.Token, "dev-") {
+			continue
+		}
+		person := rolePlanPerson{name: user.Name, signedIn: true}
+		if user.Role == "super_admin" {
+			person.platformRole = user.Role
+		}
+		for _, org := range fixture.Organizations {
+			if org.Owner == user.Email {
+				person.orgRole = gen.OrgRole_ORG_ROLE_OWNER
+			}
+			for _, member := range org.Members {
+				if member.Email == user.Email {
+					person.orgRole = gen.OrgRole(gen.OrgRole_value["ORG_ROLE_"+strings.ToUpper(member.Role)])
+				}
+			}
+		}
+		if user.Token == "dev-dana" {
+			require.Empty(t, person.platformRole)
+			require.Equal(t, gen.OrgRole_ORG_ROLE_MEMBER, person.orgRole)
+		}
+		people = append(people, person)
+	}
+	require.Len(t, people, 5)
+	return append(people, rolePlanPerson{name: "a signed-in nonmember", signedIn: true}, rolePlanPerson{name: "a signed-out visitor"})
 }
 
 // rolePlanRefusal is why the declared policy refuses a person: the capability
@@ -187,12 +224,13 @@ func TestRolePlanHoldsEveryProcedureForEveryPerson(t *testing.T) {
 
 	deciders := map[string]int{}
 	var procedures int
+	people := rolePlanPeople(t)
 	for _, policy := range business.RPCPolicies() {
 		if policy.PolicyError != "" || !policy.Tier.Valid() {
 			continue // refused as unclassified; TestReflectionRPCsAreDeniedAsUnclassified
 		}
 		procedures++
-		for _, person := range rolePlanPeople() {
+		for _, person := range people {
 			t.Run(strings.TrimPrefix(policy.FullMethod, "/")+"/"+person.name, func(t *testing.T) {
 				refusal := rolePlanFor(policy, person)
 				reached, err := admitThroughTenantAdmission(t, person, policy.FullMethod)

@@ -86,3 +86,7 @@ registration keep their own controls. Configure the network entry separately.
 ```bash
 codefly add module --agent saas-starter <your-module-name>
 ```
+
+### Development fixture cast
+
+The local Authority fixture owns the shared cast. Alice installs, Sarah administers the platform, Dana administers pages, Carol uses them and Bob holds no page role. Each host chooses its sign-in picker. After changing the cast, run `ruby scripts/render-authority-fixture.rb PATH_TO_AUTHORITY` from the SaaS repository root. Append `--check` to verify the module fixture and its embedded copy. SaaS-specific seed data and sign-in choices live in `scripts/fixtures/dev-admin.yaml.erb`.

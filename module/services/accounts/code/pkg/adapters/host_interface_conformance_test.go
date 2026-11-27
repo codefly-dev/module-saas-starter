@@ -1923,6 +1923,22 @@ installations:
 		residue.grant = writeEnvelope
 		testReadBindingHeldToTheRole(t, residue)
 	})
+	t.Run("the shipped page administrator has no platform authority", func(t *testing.T) {
+		t.Setenv("DEV_FIXTURE_PATH", "")
+		require.NoError(t, fixtures.Seed(ctx, svc, "dev-admin"))
+		require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
+			for email, want := range map[string]string{"admin@acme.com": "super_admin", "alice@acme.com": "", "dana@example.com": "", "carol@acme.com": "", "bob@acme.com": ""} {
+				user, err := store.GetUserByEmail(ctx, email)
+				require.NoError(t, err)
+				require.NotNil(t, user)
+				got, err := store.GetPlatformRole(ctx, user.GetUuid())
+				require.NoError(t, err)
+				require.Equal(t, want, got, email)
+			}
+			return nil
+		}))
+	})
+
 }
 
 // installedModule is the id of target's active installation at Acme.
