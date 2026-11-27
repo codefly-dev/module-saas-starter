@@ -291,6 +291,11 @@ test("the shipped workflows satisfy the release-gate contract", () => {
   assert.deepEqual(releaseGateGraphErrors(REPOSITORY_ROOT), []);
 });
 
+test("the downstream release announcement waits for verified frontend publication", () => {
+  const { jobs } = parseWorkflowYaml(readFileSync(CI_WORKFLOW, "utf8"));
+  assert.ok(needsClosure("handbook-surface-bump", jobs).has("publish-frontend-kit"));
+});
+
 test("every artifact-writing job in ci.yml transitively requires every mandatory gate", () => {
   const document = parseWorkflowYaml(readFileSync(CI_WORKFLOW, "utf8"));
   const publishers = Object.entries(document.jobs).filter(
