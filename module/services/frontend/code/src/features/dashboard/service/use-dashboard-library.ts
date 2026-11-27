@@ -64,13 +64,18 @@ export function useDashboardLibrary(
 	const [readError, setReadError] = useState<Error | null>(null);
 	const [isLoading, setLoading] = useState(true);
 
-	useEffect(() => {
-		let cancelled = false;
-		supersededRef.current = false;
+	const [previousLibrary, setPreviousLibrary] = useState(activeLibrary);
+	if (previousLibrary !== activeLibrary) {
+		setPreviousLibrary(activeLibrary);
 		setRecords([]);
 		setError(null);
 		setReadError(null);
 		setLoading(true);
+	}
+
+	useEffect(() => {
+		let cancelled = false;
+		supersededRef.current = false;
 
 		Promise.resolve()
 			.then(() => activeLibrary.list())

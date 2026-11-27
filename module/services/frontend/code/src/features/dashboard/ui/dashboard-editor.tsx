@@ -170,10 +170,15 @@ export function DashboardEditor({
 		points: number;
 	} | null>(null);
 
-	useEffect(() => {
-		let active = true;
+	const [vocabularyRequest, setVocabularyRequest] = useState({ authoring, reload });
+	if (vocabularyRequest.authoring !== authoring || vocabularyRequest.reload !== reload) {
+		setVocabularyRequest({ authoring, reload });
 		setVocabularyLoading(true);
 		setVocabularyError(undefined);
+	}
+
+	useEffect(() => {
+		let active = true;
 		authoring
 			.listEventTypes()
 			.then((vocab) => {

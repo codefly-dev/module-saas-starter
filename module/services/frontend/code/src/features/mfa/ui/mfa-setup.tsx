@@ -216,11 +216,11 @@ export function MFASetup({ open, onClose }: MFASetupProps) {
 						</DialogHeader>
 						<form
 							noValidate
-							onSubmit={form.handleSubmit((vals) => {
+							onSubmit={(event) => form.handleSubmit((vals) => {
 								if (verifying.current || pending) return;
 								verifying.current = true;
 								verifyMutation.mutate(vals.code);
-							})}
+							})(event)}
 							className="space-y-4"
 						>
 							<Field

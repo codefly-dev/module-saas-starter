@@ -43,18 +43,12 @@ registered, installed nowhere, tenant moved, another registry binding) answers
 `UNAUTHENTICATED`: the module drops its context and mints again. An absent or unrecognised reason is retainable too — only
 `TENANT_MEMBERSHIP_MISSING` is final.
 
-**The consuming side of this distinction is not done, and this host cannot
-finish it.** The host now answers these facts separably; a sender only benefits
-once it reads them. At the time of writing the Go SDK facade wraps the error
-without exporting a membership sentinel, and the consuming notification adapter
-classifies `PermissionDenied` and *every* `FAILED_PRECONDITION` as terminal — so
-an unregistered principal, a rotated secret and an unconfigured host still let a
-journal cursor advance past notifications nobody received, which correcting the
-configuration afterwards does not retry. That defect lives in those
-repositories, predates this contract, and is theirs to fix: the sentinel keyed on
-code, domain and reason, then the adapter repinned to it. Until that lands, read
-this section as describing what the host guarantees, not what any consumer
-currently does.
+The Go notification facade belongs to `codefly-dev/saas-sdk-go`. The journal
+consumer belongs to the annotations module and calls the generated Accounts
+client. Its current release checks selected precondition reasons but overlooks
+the domain and treats permission denial as a final refusal. Adoption of the
+typed SDK classifier is tracked by [SDK PR #49](https://github.com/codefly-dev/saas-sdk-go/pull/49).
+A sender must preserve its pending notice when authority can be repaired.
 
 The host shell renders the bell, SSE unread updates, inbox and banner. The
 banner requests unread items in the active organization before pagination and
@@ -97,7 +91,7 @@ NotifyUser**. No customer Slack installation or live SMS send is enabled by them
 The internal platform-operations webhook is unchanged.
 
 Slack output uses plain-text blocks with mention parsing and unfurls disabled.
-The transport rejects redirects, bounds response reads, redacts provider failures
+A Slack reply uses the root message timestamp and channel selected by the host’s authorized thread binding. The transport sends top-level notifications without a thread timestamp. The transport rejects redirects, bounds response reads, redacts provider failures
 and distinguishes rate limits from ambiguous acceptance. An HTTP timeout after
 sending may mean Slack accepted a message: the adapter never retries it or
 promises exactly-once network delivery. Signature verification enforces the
@@ -113,7 +107,5 @@ encrypted token lifecycle, user-to-Slack recipient binding, preferences, durable
 inbound event acceptance and Runtime-driven delivery remain outstanding there.
 The host queue retirement is #835: new notification delivery must use the journal
 and internal idempotent operations consumed by Runtime, not new host jobs,
-retry tables or a private receipt ledger. SDK-Go #32 is still unmerged and #31
-still owns the generic receipt lookup service. Until that recovery path is
-available and composed, external notification delivery is not declared shipped.
+retry tables or a private receipt ledger. SDK-Go [#32](https://github.com/codefly-dev/sdk-go/pull/32) merged transactional effect receipts and replay support. Runtime tracks the generic operation adapter in its issue #119, now closed. External delivery still needs a composed test covering a provider acceptance followed by a process crash before the host records the outcome.
 Email also remains limited to the host's existing transactional flows.
