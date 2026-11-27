@@ -5,6 +5,7 @@ package infra_test
 import (
 	"context"
 	"errors"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -349,6 +350,55 @@ func TestInvitationEmailRunsThroughTransactionalGenericEmailWorker(t *testing.T)
 		`SELECT state FROM job_messages WHERE id = $1`, jobID,
 	).Scan(&state))
 	require.Equal(t, "succeeded", state)
+}
+
+// The link is consumed exactly as delivered to the recipient. No test token is
+// substituted into the waitlist row and no external mail provider is used.
+func TestWaitlistLinkFromTheTransactionalEmailVerifiesItsRecipient(t *testing.T) {
+	const origin = "https://app.example.com"
+	address := uuid.NewString() + "@example.com"
+	service, err := business.NewService(testStore)
+	require.NoError(t, err)
+	require.NoError(t, service.SetAcquisitionMode("approval_required"))
+	outbox, err := email.NewOutbox(testStore, infra.NewPostgresTemplateStore(testStore), "no-reply@example.com")
+	require.NoError(t, err)
+	service.SetEmailOutbox(outbox, origin)
+	_, err = service.JoinWaitlist(testCtx, &accountsv1.JoinWaitlistRequest{
+		Email: address, PolicyVersion: business.CurrentConsentPolicyVersion,
+	})
+	require.NoError(t, err)
+
+	pool, err := infra.NewJobWorkerPool(testCtx)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	sink := email.NewFakeSender()
+	handler, err := email.NewJobHandler(sink)
+	require.NoError(t, err)
+	worker, err := jobs.NewWorker(jobs.WorkerConfig{
+		Store: infra.NewPostgresJobStore(pool), Queue: email.DeliveryQueue,
+		Handler: handler, WorkerID: "waitlist-email-test", BatchSize: 100,
+	})
+	require.NoError(t, err)
+	_, err = worker.RunOnce(testCtx)
+	require.NoError(t, err)
+	var verification *url.URL
+	for _, message := range sink.Sent {
+		if len(message.To) != 1 || message.To[0] != address {
+			continue
+		}
+		for _, word := range strings.Fields(message.TextBody) {
+			link, err := url.Parse(word)
+			if err == nil && link.Scheme+"://"+link.Host == origin && link.Path == "/waitlist/verify" {
+				verification = link
+			}
+		}
+	}
+	require.NotNil(t, verification, "delivered mail must include the host's verification link")
+	token := verification.Query().Get("token")
+	require.NotEmpty(t, token)
+	verified, err := service.VerifyWaitlist(testCtx, &accountsv1.VerifyWaitlistRequest{Token: token})
+	require.NoError(t, err)
+	require.Equal(t, accountsv1.WaitlistState_WAITLIST_STATE_VERIFIED, verified.GetState())
 }
 
 func TestInvitationAndEmailJobCommitOrRollBackTogether(t *testing.T) {
