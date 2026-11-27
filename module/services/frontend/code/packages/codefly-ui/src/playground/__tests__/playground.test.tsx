@@ -40,6 +40,36 @@ it("keeps every capability and gap reason visible, and navigates to a refusal", 
 	expect(screen.getByText("Running")).toBeTruthy();
 });
 
+it("lets a retained panel host navigate its scenario tabs from the keyboard", () => {
+	const onSelect = vi.fn();
+	render(
+		<PlaygroundShell
+			title="Documents"
+			moduleName="Example"
+			composition="Local"
+			scenarios={[
+				{ id: "docs", label: "Documents" },
+				{ id: "voice", label: "Voice" },
+			]}
+			active="docs"
+			onSelect={onSelect}
+			panelId={(id) => `panel-${id}`}
+		>
+			<section id="panel-docs" role="tabpanel" aria-label="Documents" />
+		</PlaygroundShell>,
+	);
+	const current = screen.getByRole("tab", {
+		name: "Documents",
+		selected: true,
+	});
+	expect(current.getAttribute("aria-controls")).toBe("panel-docs");
+	fireEvent.keyDown(current, { key: "ArrowDown" });
+	expect(onSelect).toHaveBeenCalledWith("voice");
+	expect(document.activeElement).toBe(
+		screen.getByRole("tab", { name: "Voice" }),
+	);
+});
+
 it("retains repeated calls in invocation order and expands their own exchanges", () => {
 	render(<FixtureScenario.render />);
 	const record = screen.getByRole("button", { name: "Record fixture call" });

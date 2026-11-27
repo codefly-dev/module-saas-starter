@@ -1,6 +1,7 @@
 "use client";
 
-import { Children, type ReactNode } from "react";
+import { PanelLeft, PanelsTopLeft } from "lucide-react";
+import { Children, type ReactNode, useId, useState } from "react";
 import { JsonView, TextBlock } from "../content/index.js";
 import {
 	Badge,
@@ -9,23 +10,8 @@ import {
 	Disclosure,
 	Grid,
 	Layout,
-	Page,
-	PageHeader,
 	Section,
-	Sidebar,
-	SidebarContent,
-	SidebarGroup,
-	SidebarGroupContent,
-	SidebarGroupLabel,
-	SidebarHeader,
-	SidebarInset,
-	SidebarMenu,
-	SidebarMenuButton,
-	SidebarMenuItem,
-	SidebarProvider,
-	SidebarTrigger,
 	Stack,
-	useSidebar,
 } from "../layout/index.js";
 
 const defaultLabels = {
@@ -81,6 +67,7 @@ export interface PlaygroundScenario {
 	label: string;
 	description?: string;
 	icon?: ReactNode;
+	dividerBefore?: boolean;
 }
 
 export interface PlaygroundShellProps {
@@ -91,6 +78,13 @@ export interface PlaygroundShellProps {
 	theme?: PlaygroundThemeToggleProps;
 	labels?: PlaygroundLabels;
 	moduleName: string;
+	moduleIcon?: ReactNode;
+	brandSuffix?: string;
+	navigationStatus?: ReactNode;
+	/** Retained panels render their own shared header beside panel-specific actions. */
+	panelHeaders?: boolean;
+	/** For retained tab panels, provide their DOM ids to enable tab semantics and arrow navigation. */
+	panelId?: (scenarioId: string) => string;
 	composition: string;
 	scenarios: readonly PlaygroundScenario[];
 	active: string;
@@ -101,100 +95,156 @@ export interface PlaygroundShellProps {
 	children: ReactNode;
 }
 
-function Navigation({
-	moduleName,
-	labels,
-	scenarios,
-	active,
-	onSelect,
-}: PlaygroundShellProps) {
-	const { setOpenMobile } = useSidebar();
-	const text = { ...defaultLabels, ...labels };
+export function PlaygroundPanelHeader({
+	title,
+	description,
+	icon,
+	children,
+}: {
+	title: string;
+	description?: string;
+	icon?: ReactNode;
+	children?: ReactNode;
+}) {
 	return (
-		<Sidebar variant="inset">
-			<SidebarHeader>
-				<span className="type-card-title [overflow-wrap:anywhere]">
-					{moduleName}
-				</span>
-			</SidebarHeader>
-			<SidebarContent>
-				<SidebarGroup>
-					<SidebarGroupLabel>{text.navigationTitle}</SidebarGroupLabel>
-					<SidebarGroupContent>
-						<nav aria-label={text.navigation}>
-							{scenarios.length === 0 && (
-								<TextBlock text={text.emptyScenarios} />
-							)}
-							<SidebarMenu>
-								{scenarios.map((scenario) => (
-									<SidebarMenuItem key={scenario.id}>
-										<SidebarMenuButton
-											isActive={active === scenario.id}
-											aria-current={active === scenario.id ? "page" : undefined}
-											onClick={() => {
-												onSelect(scenario.id);
-												setOpenMobile(false);
-											}}
-										>
-											{scenario.icon}
-											<span>{scenario.label}</span>
-										</SidebarMenuButton>
-									</SidebarMenuItem>
-								))}
-							</SidebarMenu>
-						</nav>
-					</SidebarGroupContent>
-				</SidebarGroup>
-			</SidebarContent>
-		</Sidebar>
+		<header className="pg-panel-head">
+			{icon && <div className="pg-panel-icon">{icon}</div>}
+			<div>
+				<h1>{title}</h1>
+				{description && <p>{description}</p>}
+			</div>
+			{children}
+		</header>
 	);
 }
 
-/** The shared frame. The page supplies navigation state, content and operations. */
 export function PlaygroundShell(props: PlaygroundShellProps) {
 	const text = { ...defaultLabels, ...props.labels };
-	const scenario = props.scenarios.find((item) => item.id === props.active);
+	const { scenarios, active, panelId } = props;
+	const [navigationOpen, setNavigationOpen] = useState(true);
+	const navigationId = useId();
+	const selected = scenarios.find((item) => item.id === active);
 	return (
-		<SidebarProvider>
-			<Navigation {...props} />
-			<SidebarInset className="min-w-0">
-				<Layout className={props.className ?? "p-6"}>
-					<Page>
-						<Stack direction="row" justify="between" align="center">
-							<SidebarTrigger aria-label={text.toggleNavigation} />
-							<Stack
-								direction="row"
-								gap={2}
-								align="center"
-								className="min-w-0 flex-wrap justify-end"
-							>
-								{props.actions}
-								{props.theme && (
-									<PlaygroundThemeToggle
-										{...props.theme}
-										labels={props.theme.labels ?? props.labels}
-									/>
-								)}
-							</Stack>
-						</Stack>
-						<PageHeader
-							className="[overflow-wrap:anywhere]"
-							title={props.title}
-							description={
-								scenario?.description ??
-								props.description ??
-								(props.scenarios.length === 0 ? text.emptyScenarios : undefined)
-							}
+		<div className="pg">
+			<header className="pg-top">
+				<div className="pg-brand">
+					<span>{props.moduleIcon ?? <PanelsTopLeft size={21} />}</span>
+					<div>
+						{props.moduleName}
+						{props.brandSuffix && <strong>{props.brandSuffix}</strong>}
+					</div>
+				</div>
+				<div className="pg-top-right">
+					<button
+						type="button"
+						className="pg-icon"
+						aria-label={text.toggleNavigation}
+						aria-controls={navigationId}
+						aria-expanded={navigationOpen}
+						onClick={() => setNavigationOpen((value) => !value)}
+					>
+						<PanelLeft size={16} />
+					</button>
+					<span className="pg-local">
+						{text.composition} {props.composition}
+					</span>
+					{props.theme && (
+						<PlaygroundThemeToggle
+							{...props.theme}
+							labels={props.theme.labels ?? props.labels}
 						/>
-						{props.notices}
-						{props.children}
-						<p className="type-caption-plain text-muted-foreground [overflow-wrap:anywhere]">
-							{text.composition} {props.composition}
-						</p>
-					</Page>
-				</Layout>
-			</SidebarInset>
-		</SidebarProvider>
+					)}
+					{props.actions}
+				</div>
+			</header>
+			<div className="pg-workspace">
+				<aside id={navigationId} className="pg-rail" hidden={!navigationOpen}>
+					<div className="pg-rail-heading">{text.navigationTitle}</div>
+					<nav aria-label={text.navigation}>
+						{!scenarios.length && <TextBlock text={text.emptyScenarios} />}
+						<div
+							className="pg-nav-items"
+							role={panelId ? "tablist" : undefined}
+							aria-label={panelId ? text.navigation : undefined}
+							aria-orientation={panelId ? "vertical" : undefined}
+						>
+							{scenarios.map((item, index) => (
+								<button
+									key={item.id}
+									type="button"
+									className={
+										item.dividerBefore ? "pg-tab pg-divider" : "pg-tab"
+									}
+									role={panelId ? "tab" : undefined}
+									aria-selected={panelId ? active === item.id : undefined}
+									aria-current={
+										!panelId && active === item.id ? "page" : undefined
+									}
+									aria-controls={panelId?.(item.id)}
+									tabIndex={panelId && active !== item.id ? -1 : undefined}
+									onKeyDown={
+										panelId
+											? (event) => {
+													const offsets: Record<string, number> = {
+														ArrowDown: 1,
+														ArrowRight: 1,
+														ArrowUp: -1,
+														ArrowLeft: -1,
+														Home: -index,
+														End: scenarios.length - index - 1,
+													};
+													const offset = offsets[event.key];
+													if (offset === undefined) return;
+													event.preventDefault();
+													const next =
+														(index + offset + scenarios.length) %
+														scenarios.length;
+													props.onSelect(scenarios[next].id);
+													event.currentTarget
+														.closest('[role="tablist"]')
+														?.querySelectorAll<HTMLElement>('[role="tab"]')
+														[next]?.focus();
+												}
+											: undefined
+									}
+									onClick={() => props.onSelect(item.id)}
+								>
+									<span>{item.icon}</span>
+									{item.label}
+								</button>
+							))}
+						</div>
+					</nav>
+					{props.navigationStatus && (
+						<div className="pg-rail-foot">{props.navigationStatus}</div>
+					)}
+				</aside>
+				<main className="pg-main">
+					{props.panelHeaders ? (
+						<>
+							{props.notices}
+							{props.children}
+						</>
+					) : (
+						<section className="pg-panel">
+							<PlaygroundPanelHeader
+								title={props.title}
+								description={
+									selected?.description ??
+									props.description ??
+									(!scenarios.length ? text.emptyScenarios : undefined)
+								}
+								icon={selected?.icon}
+							/>
+							<Layout className={props.className ?? "pg-content"}>
+								{props.notices}
+								{props.children}
+							</Layout>
+						</section>
+					)}
+				</main>
+			</div>
+		</div>
 	);
 }
 

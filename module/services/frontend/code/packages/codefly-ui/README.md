@@ -741,9 +741,11 @@ tinted background in the tested default and supplied light/dark skins.
 ## A playground page supplies the work; the shell supplies the frame
 
 `@codefly-dev/ui/playground` (since 0.12.16) extracts the shared sidebar, page
-header and composition footer into `PlaygroundShell`. Pass
+header and composition toolbar into `PlaygroundShell`. Pass
 `title`, `moduleName`, `composition`, `scenarios`, `active` and `onSelect`; the
-shell closes mobile navigation after selection. Pages own scenario selection,
+shell owns the responsive rail, editable-panel layout and light and dark styles. Use
+`PlaygroundPanelHeader` for retained panels with their own controls. Import
+`@codefly-dev/ui/preview.css` for the complete compiled playground stylesheet. Pages own scenario selection,
 transport, authorization, fixture data and actions, passed through children,
 `actions` and `notices`. The shell fetches nothing and grants no access.
 
